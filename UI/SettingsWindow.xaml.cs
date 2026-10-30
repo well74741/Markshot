@@ -26,17 +26,8 @@ public partial class SettingsWindow : Window
         TargetBox.Text = config.Translation.TargetLanguage;
         TimeoutBox.Text = config.Translation.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
 
-        try
-        {
-            var languages = OcrService.AvailableLanguages;
-            OcrHintText.Text = languages.Count == 0
-                ? "系统未安装 OCR 语言包。"
-                : "系统可用：" + string.Join("、", languages);
-        }
-        catch (Exception ex)
-        {
-            OcrHintText.Text = "无法枚举 OCR 语言：" + ex.Message;
-        }
+        OcrHintText.Text =
+            "内置 PP-OCRv5 模型，本地识别中英混排。留空使用中文模型；填 en 切换到英文专用模型。";
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)

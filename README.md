@@ -2,7 +2,7 @@
 
 Windows 截图 / 贴图 / 批注 / 截图翻译工具，交互对标 PixPin 的基础工作流。
 
-> 当前版本 **0.1.0（MVP）**。长截图、录屏不在本阶段范围。
+> 当前版本 **0.2.0（MVP）**。长截图、录屏不在本阶段范围。
 
 ---
 
@@ -30,7 +30,7 @@ Windows 截图 / 贴图 / 批注 / 截图翻译工具，交互对标 PixPin 的�
 - 剪贴板没有图片时，可把纯文本渲染成卡片贴出
 
 ### OCR 与翻译
-- 使用 Windows 内置 OCR，本地识别，图片不出本机
+- OCR 使用 RapidOcrNet（ONNX Runtime + PP-OCRv5），与 PixPin 同属 PaddleOCR 模型体系；本地推理，图片不出本机
 - 翻译服务为任意 OpenAI 兼容 `/chat/completions` 接口（DeepSeek / OpenAI / Moonshot / Ollama / LM Studio / one-api 等）
 - 原文可编辑，译文对照显示；支持复制译文、把译文贴到屏幕
 - 目标语言可临时切换，默认语言可在设置中修改
@@ -87,7 +87,7 @@ Windows 截图 / 贴图 / 批注 / 截图翻译工具，交互对标 PixPin 的�
 - 构建：.NET 8 SDK
 - 运行：.NET 8 Desktop Runtime（自包含发布则不需要）
 
-OCR 使用系统语言包。若提示不可用，请在“设置 → 时间和语言 → 语言”中为目标语言安装“光学字符识别”可选功能。
+OCR 模型随程序发布，不需要安装 Windows 语言包。首次识别会加载 ONNX 模型，约 1–2 秒；之后同一进程内会复用。
 
 ---
 
@@ -112,6 +112,8 @@ dotnet publish Markshot.csproj -c Release -r win-x64 --self-contained true -p:Pu
 
 产物在 `publish\Markshot.exe`。
 
+> 发布目录里必须保留 `models\v5` 文件夹（约 30 MB），OCR 依赖它；不要只拷走 exe。
+
 ---
 
 ## 配置
@@ -130,7 +132,7 @@ dotnet publish Markshot.csproj -c Release -r win-x64 --self-contained true -p:Pu
   "CaptureHotkey": "F1",
   "PinHotkey": "F3",
   "SaveDirectory": "",
-  "OcrLanguage": "zh-Hans-CN",
+  "OcrLanguage": "",
   "Translation": {
     "BaseUrl": "https://api.deepseek.com/v1",
     "ApiKey": "sk-...",
@@ -160,7 +162,7 @@ dotnet publish Markshot.csproj -c Release -r win-x64 --self-contained true -p:Pu
 | `CaptureHotkey` | 截图全局热键，如 `F1`、`Ctrl+1`、`Ctrl+Shift+S` |
 | `PinHotkey` | 贴图剪贴板全局热键 |
 | `SaveDirectory` | 保存目录，留空则为 `图片\Markshot` |
-| `OcrLanguage` | OCR 语言标签，如 `zh-Hans-CN`、`en-US`；留空使用系统默认 |
+| `OcrLanguage` | 留空使用中文 PP-OCRv5 模型；填 `en` 使用英文专用识别模型 |
 | `Translation.BaseUrl` | OpenAI 兼容接口根地址，需包含 `/v1`（如果服务如此） |
 | `Translation.ApiKey` | 本地服务可留空 |
 | `Translation.Model` | 模型名 |
@@ -208,6 +210,7 @@ Markshot/
 ├─ Core/               配置、抓屏、剪贴板、热键、托盘、日志
 ├─ Services/           OCR、翻译、文字卡片渲染
 ├─ UI/                 覆盖层、贴图窗口、翻译窗口、设置窗口
+├─ models/v5/          PP-OCRv5 中文识别模型与字典（随程序发布）
 ├─ tools/              本地 mock 翻译服务
 ├─ App.xaml[.cs]       应用入口、托盘与窗口编排
 └─ Markshot.csproj
@@ -219,7 +222,7 @@ Markshot/
 
 - 主要针对单屏 / 统一缩放比例验证；混合 DPI 的多屏场景仍需联调
 - 长截图、录屏、贴图分组、批注二次编辑、鼠标穿透、贴图历史持久化、开机启动尚未实现
-- OCR 依赖 Windows 引擎，对界面截图的中文识别准确率一般；后续可接 PaddleOCR / OneOCR
+- PP-OCRv5 对极小字号、低对比度和艺术字仍可能误识；当前按检测行返回文本，没有版面/表格结构分析
 - 翻译按整段文本处理，暂不支持把译文按原版式回填图片
 - API Key 以明文保存在本地配置文件中，后续可接 DPAPI
 - 保存失败、剪贴板被占用等异常只写日志或弹窗，没有统一的重试中心
@@ -229,8 +232,22 @@ Markshot/
 ## Roadmap
 
 1. **P1**：长截图、贴图分组、截图/贴图历史持久化、鼠标穿透、批注二次编辑
-2. **P2**：更好的 OCR（PaddleOCR / OneOCR）、译文原位覆盖、术语表、增量翻译
-3. **P3**：录屏、表格/公式识别、开机启动、多语言 UI
+2. **P2**：OCR 版面分析、表格/公式识别、译文原位覆盖、术语表、增量翻译
+3. **P3**：录屏、开机启动、多语言 UI
+
+---
+
+## 第三方组件
+
+| 组件 | 许可 | 用途 |
+| --- | --- | --- |
+| [RapidOcrNet](https://github.com/BobLd/RapidOcrNet) | Apache-2.0 | OCR 流水线（ONNX Runtime + PP-OCRv5） |
+| [RapidOCR / PaddleOCR 模型](https://github.com/RapidAI/RapidOCR) | Apache-2.0 | PP-OCRv5 检测、分类、识别模型与字典 |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | MIT | 本地推理 |
+| [SkiaSharp](https://github.com/mono/SkiaSharp) | MIT | 图像解码与缩放 |
+| Clipper2 | BSL-1.0 | 多边形裁剪（RapidOcrNet 依赖） |
+
+`models/v5/ch_PP-OCRv5_rec_mobile.onnx`（16.6 MB）来自 RapidOCR 的 PP-OCRv5 模型发布，随仓库一起分发；其余检测/分类/英文模型由 RapidOcrNet 包提供。
 
 ---
 

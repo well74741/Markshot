@@ -56,7 +56,7 @@
 
                 <TextBlock Text="文字识别" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
 
-                <TextBlock Text="OCR 语言（留空自动）" Style="{StaticResource FieldLabel}" />
+                <TextBlock Text="OCR 模型（留空 = 中文）" Style="{StaticResource FieldLabel}" />
                 <TextBox x:Name="OcrLanguageBox" Style="{StaticResource InputBox}" />
                 <TextBlock x:Name="OcrHintText" Foreground="#8A8A8A" FontSize="12" Margin="0,6,0,0"
                            TextWrapping="Wrap" />

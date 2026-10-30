@@ -1,48 +1,105 @@
 using System.Text.RegularExpressions;
-using Windows.Media.Ocr;
-using WpfBitmapFrame = System.Windows.Media.Imaging.BitmapFrame;
-using WinBitmapDecoder = Windows.Graphics.Imaging.BitmapDecoder;
+using RapidOcrNet;
+using SkiaSharp;
 
 namespace Markshot.Services;
 
-/// <summary>Uses the OCR engine built into Windows (Windows.Media.Ocr). Nothing leaves the machine.</summary>
+/// <summary>
+/// Local OCR using RapidOcrNet (ONNX Runtime + PaddleOCR PP-OCRv5 models),
+/// the same model family PixPin uses. Images never leave the machine.
+/// </summary>
 public static class OcrService
 {
-    public static async Task<string> RecognizeAsync(BitmapSource image, string languageTag = "")
+    private static readonly object Gate = new();
+    private static RapidOcr? _chineseEngine;
+    private static RapidOcr? _latinEngine;
+
+    public static Task<string> RecognizeAsync(BitmapSource image, string languageTag = "")
     {
-        var engine = CreateEngine(languageTag)
-                     ?? throw new InvalidOperationException(
-                         "系统没有可用的 OCR 语言包。请在 Windows 设置 → 时间和语言 → 语言中安装“光学字符识别”组件。");
+        return Task.Run(() => Recognize(image, languageTag));
+    }
 
-        var input = Downscale(image);
-
-        using var memory = new MemoryStream();
-        var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(WpfBitmapFrame.Create(input));
-        encoder.Save(memory);
-        memory.Position = 0;
-
-        using var randomAccess = memory.AsRandomAccessStream();
-        var decoder = await WinBitmapDecoder.CreateAsync(randomAccess);
-        using var softwareBitmap = await decoder.GetSoftwareBitmapAsync();
-
-        var result = await engine.RecognizeAsync(softwareBitmap);
-
-        var builder = new StringBuilder();
-        foreach (var line in result.Lines)
+    private static string Recognize(BitmapSource image, string languageTag)
+    {
+        if (image.CanFreeze && !image.IsFrozen)
         {
-            if (!string.IsNullOrWhiteSpace(line.Text))
+            image.Freeze();
+        }
+
+        lock (Gate)
+        {
+            var engine = UseLatin(languageTag)
+                ? _latinEngine ??= CreateEngine(latin: true)
+                : _chineseEngine ??= CreateEngine(latin: false);
+
+            using var bitmap = ToSkBitmap(image);
+
+            var result = engine.Detect(bitmap, RapidOcrOptions.Default with
             {
-                builder.AppendLine(line.Text.Trim());
+                // Screenshots are upright; skip the 180° classifier for speed.
+                DoAngle = false
+            });
+
+            var text = result.StrRes;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                text = string.Join(Environment.NewLine,
+                    result.TextBlocks?.Select(block => block.Text) ?? Array.Empty<string>());
+            }
+
+            return Cleanup(text);
+        }
+    }
+
+    private static bool UseLatin(string languageTag)
+    {
+        return !string.IsNullOrWhiteSpace(languageTag)
+               && languageTag.StartsWith("en", StringComparison.OrdinalIgnoreCase)
+               && !languageTag.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static RapidOcr CreateEngine(bool latin)
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "models", "v5");
+
+        var detPath = Path.Combine(directory, "ch_PP-OCRv5_mobile_det.onnx");
+        var clsPath = Path.Combine(directory, "ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx");
+        var recPath = Path.Combine(
+            directory,
+            latin ? "latin_PP-OCRv5_rec_mobile_infer.onnx" : "ch_PP-OCRv5_rec_mobile.onnx");
+        var keysPath = Path.Combine(
+            directory,
+            latin ? "ppocrv5_latin_dict.txt" : "ppocrv5_dict.txt");
+
+        foreach (var path in new[] { detPath, clsPath, recPath, keysPath })
+        {
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException(
+                    "OCR 模型缺失：" + path + "。请确认 models/v5 已随程序一起发布。", path);
             }
         }
 
-        return Cleanup(builder.ToString());
+        var engine = new RapidOcr();
+        engine.InitModels(detPath, clsPath, recPath, keysPath);
+        return engine;
+    }
+
+    private static SKBitmap ToSkBitmap(BitmapSource image)
+    {
+        using var memory = new MemoryStream();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(image));
+        encoder.Save(memory);
+        memory.Position = 0;
+
+        return SKBitmap.Decode(memory)
+               ?? throw new InvalidOperationException("无法把截图解码为 OCR 输入图像。");
     }
 
     /// <summary>
-    /// Windows OCR puts spaces between Chinese characters. Remove spaces between CJK
-    /// characters only, keeping spaces around Latin words and across line breaks.
+    /// PP-OCRv5 is usually already space-free for CJK, but older models insert
+    /// spaces between characters; remove only CJK-to-CJK spaces, keeping line breaks.
     /// </summary>
     private static string Cleanup(string text)
     {
@@ -50,64 +107,5 @@ public static class OcrService
         text = Regex.Replace(text, @"(?<=[\u4e00-\u9fff])[ \t\u3000]+(?=[，。；：！？、）】》”’])", string.Empty);
         text = Regex.Replace(text, @"(?<=[（【《“‘])[ \t\u3000]+(?=[\u4e00-\u9fff])", string.Empty);
         return text.Trim();
-    }
-
-    public static IReadOnlyList<string> AvailableLanguages =>
-        OcrEngine.AvailableRecognizerLanguages
-            .Select(language => $"{language.DisplayName} ({language.LanguageTag})")
-            .ToList();
-
-    private static BitmapSource Downscale(BitmapSource image)
-    {
-        var max = OcrEngine.MaxImageDimension;
-        if (image.PixelWidth <= max && image.PixelHeight <= max)
-        {
-            return image;
-        }
-
-        var scale = Math.Min((double)max / image.PixelWidth, (double)max / image.PixelHeight);
-        var transformed = new TransformedBitmap(image, new ScaleTransform(scale, scale));
-        transformed.Freeze();
-        return transformed;
-    }
-
-    private static OcrEngine? CreateEngine(string languageTag)
-    {
-        if (!string.IsNullOrWhiteSpace(languageTag))
-        {
-            try
-            {
-                var language = new Windows.Globalization.Language(languageTag);
-                if (OcrEngine.IsLanguageSupported(language))
-                {
-                    var engine = OcrEngine.TryCreateFromLanguage(language);
-                    if (engine != null)
-                    {
-                        return engine;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"创建 OCR 引擎失败：{languageTag}", ex);
-            }
-        }
-
-        var fallback = OcrEngine.TryCreateFromUserProfileLanguages();
-        if (fallback != null)
-        {
-            return fallback;
-        }
-
-        foreach (var language in OcrEngine.AvailableRecognizerLanguages)
-        {
-            var engine = OcrEngine.TryCreateFromLanguage(language);
-            if (engine != null)
-            {
-                return engine;
-            }
-        }
-
-        return null;
     }
 }
