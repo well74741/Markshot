@@ -1,0 +1,7 @@
+* text=auto
+
+*.onnx binary
+*.png binary
+*.ico binary
+*.dll binary
+models/v5/*.txt -text
