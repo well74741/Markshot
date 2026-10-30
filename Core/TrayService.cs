@@ -1,0 +1,120 @@
+using Drawing = System.Drawing;
+using Drawing2D = System.Drawing.Drawing2D;
+using Forms = System.Windows.Forms;
+
+namespace Markshot.Core;
+
+public sealed class TrayService : IDisposable
+{
+    private readonly Forms.NotifyIcon _notifyIcon;
+    private readonly Forms.ContextMenuStrip _menu;
+    private bool _disposed;
+
+    public TrayService(Action capture, Action pin, Action restoreLastPin, Action settings, Action exit)
+    {
+        _menu = new Forms.ContextMenuStrip();
+
+        _menu.Items.Add("截图", null, (_, _) => capture());
+        _menu.Items.Add("贴图剪贴板", null, (_, _) => pin());
+        _menu.Items.Add(new Forms.ToolStripSeparator());
+        _menu.Items.Add("恢复最近贴图", null, (_, _) => restoreLastPin());
+        _menu.Items.Add(new Forms.ToolStripSeparator());
+        _menu.Items.Add("设置…", null, (_, _) => settings());
+        _menu.Items.Add(new Forms.ToolStripSeparator());
+        _menu.Items.Add("退出", null, (_, _) => exit());
+
+        _notifyIcon = new Forms.NotifyIcon
+        {
+            Icon = CreateIcon(),
+            Text = "Markshot · 截图 / 贴图 / 翻译",
+            Visible = true,
+            ContextMenuStrip = _menu
+        };
+
+        _notifyIcon.DoubleClick += (_, _) => capture();
+    }
+
+    public void ShowBalloon(string title, string text)
+    {
+        try
+        {
+            _notifyIcon.BalloonTipTitle = title;
+            _notifyIcon.BalloonTipText = text;
+            _notifyIcon.ShowBalloonTip(3000);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("显示托盘消息失败", ex);
+        }
+    }
+
+    public void SetTooltip(string text)
+    {
+        try
+        {
+            _notifyIcon.Text = text.Length > 63 ? text[..63] : text;
+        }
+        catch
+        {
+            // Ignore tooltip failures.
+        }
+    }
+
+    private static Drawing.Icon CreateIcon()
+    {
+        using var bitmap = new Drawing.Bitmap(32, 32);
+        using (var graphics = Drawing.Graphics.FromImage(bitmap))
+        {
+            graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias;
+            graphics.Clear(Drawing.Color.Transparent);
+
+            using var path = RoundedRect(new Drawing.Rectangle(2, 2, 28, 28), 8);
+            using var brush = new Drawing.SolidBrush(Drawing.Color.FromArgb(76, 141, 255));
+            graphics.FillPath(brush, path);
+
+            using var font = new Drawing.Font("Segoe UI", 16, Drawing.FontStyle.Bold, Drawing.GraphicsUnit.Pixel);
+            using var format = new Drawing.StringFormat
+            {
+                Alignment = Drawing.StringAlignment.Center,
+                LineAlignment = Drawing.StringAlignment.Center
+            };
+            graphics.DrawString("M", font, Drawing.Brushes.White, new Drawing.RectangleF(0, 1, 32, 32), format);
+        }
+
+        var handle = bitmap.GetHicon();
+        try
+        {
+            using var temp = Drawing.Icon.FromHandle(handle);
+            return (Drawing.Icon)temp.Clone();
+        }
+        finally
+        {
+            Native.DestroyIcon(handle);
+        }
+    }
+
+    private static Drawing2D.GraphicsPath RoundedRect(Drawing.Rectangle bounds, int radius)
+    {
+        var path = new Drawing2D.GraphicsPath();
+        var diameter = radius * 2;
+        path.AddArc(bounds.X, bounds.Y, diameter, diameter, 180, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(bounds.X, bounds.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _notifyIcon.Visible = false;
+        _notifyIcon.Dispose();
+        _menu.Dispose();
+    }
+}

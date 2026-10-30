@@ -1,0 +1,86 @@
+<Window x:Class="Markshot.UI.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:annotations="clr-namespace:Markshot.Annotations"
+        Title="Markshot"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        AllowsTransparency="False"
+        Background="Black"
+        WindowStartupLocation="Manual"
+        Left="0" Top="0"
+        Width="800" Height="600"
+        UseLayoutRounding="False"
+        SnapsToDevicePixels="True"
+        Focusable="True"
+        PreviewKeyDown="OnPreviewKeyDown">
+
+    <Grid x:Name="Root" Background="Black">
+        <Image x:Name="ScreenImage" Stretch="Fill" IsHitTestVisible="False" />
+        <Rectangle x:Name="DimLayer" Fill="#66000000" IsHitTestVisible="False" />
+        <Image x:Name="BrightImage" Stretch="Fill" IsHitTestVisible="False">
+            <Image.Clip>
+                <RectangleGeometry x:Name="BrightClip" Rect="0,0,0,0" />
+            </Image.Clip>
+        </Image>
+
+        <annotations:AnnotationEditor x:Name="Editor" />
+
+        <Rectangle x:Name="InputLayer" Fill="Transparent" Cursor="Cross"
+                   MouseLeftButtonDown="Input_MouseLeftButtonDown"
+                   MouseMove="Input_MouseMove"
+                   MouseLeftButtonUp="Input_MouseLeftButtonUp" />
+
+        <Canvas x:Name="UiLayer">
+            <Border x:Name="Hint" Background="#CC1C1C1C" BorderBrush="#33FFFFFF" BorderThickness="1"
+                    CornerRadius="7" Padding="16,9" IsHitTestVisible="False">
+                <TextBlock Text="拖拽选择区域　·　双击复制　·　Esc 取消" Foreground="#EDEDED" FontSize="13" />
+            </Border>
+
+            <Border x:Name="Toolbar" Visibility="Collapsed" Background="#F21E1E1E"
+                    BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="9" Padding="6,4">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <RadioButton x:Name="ToolRect" Style="{StaticResource ToolRadio}" Content="矩形" Tag="Rectangle" GroupName="Tool" Checked="Tool_Checked" ToolTip="矩形 (R)" />
+                    <RadioButton x:Name="ToolEllipse" Style="{StaticResource ToolRadio}" Content="椭圆" Tag="Ellipse" GroupName="Tool" Checked="Tool_Checked" ToolTip="椭圆 (O)" />
+                    <RadioButton x:Name="ToolArrow" Style="{StaticResource ToolRadio}" Content="箭头" Tag="Arrow" GroupName="Tool" Checked="Tool_Checked" ToolTip="箭头 (A)" />
+                    <RadioButton x:Name="ToolPen" Style="{StaticResource ToolRadio}" Content="画笔" Tag="Pen" GroupName="Tool" Checked="Tool_Checked" ToolTip="画笔 (P)" />
+                    <RadioButton x:Name="ToolHighlighter" Style="{StaticResource ToolRadio}" Content="荧光" Tag="Highlighter" GroupName="Tool" Checked="Tool_Checked" ToolTip="荧光笔 (H)" />
+                    <RadioButton x:Name="ToolMosaic" Style="{StaticResource ToolRadio}" Content="马赛克" Tag="Mosaic" GroupName="Tool" Checked="Tool_Checked" ToolTip="马赛克 (M)" />
+                    <RadioButton x:Name="ToolText" Style="{StaticResource ToolRadio}" Content="文字" Tag="Text" GroupName="Tool" Checked="Tool_Checked" ToolTip="文字 (T)" />
+                    <RadioButton x:Name="ToolNumber" Style="{StaticResource ToolRadio}" Content="序号" Tag="Number" GroupName="Tool" Checked="Tool_Checked" ToolTip="序号 (N)" />
+
+                    <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+
+                    <Button x:Name="UndoButton" Style="{StaticResource ToolButton}" Content="撤销" Click="Undo_Click" ToolTip="撤销 (Ctrl+Z)" />
+                    <Button x:Name="RedoButton" Style="{StaticResource ToolButton}" Content="重做" Click="Redo_Click" ToolTip="重做 (Ctrl+Y)" />
+
+                    <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+
+                    <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />
+
+                    <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+
+                    <RadioButton x:Name="WidthThin" Style="{StaticResource ToolRadio}" Content="细" Tag="2" GroupName="Width" Checked="Width_Checked" IsChecked="True" ToolTip="细线" />
+                    <RadioButton x:Name="WidthMedium" Style="{StaticResource ToolRadio}" Content="中" Tag="4" GroupName="Width" Checked="Width_Checked" ToolTip="中等线宽" />
+                    <RadioButton x:Name="WidthThick" Style="{StaticResource ToolRadio}" Content="粗" Tag="8" GroupName="Width" Checked="Width_Checked" ToolTip="粗线" />
+
+                    <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+
+                    <Button Style="{StaticResource ToolButton}" Content="复制" Click="Copy_Click" ToolTip="复制到剪贴板 (Enter)" />
+                    <Button Style="{StaticResource ToolButton}" Content="保存" Click="Save_Click" ToolTip="保存为文件 (Ctrl+S)" />
+                    <Button Style="{StaticResource AccentButton}" Content="贴图" Click="Pin_Click" ToolTip="贴到屏幕 (F3)" />
+                    <Button Style="{StaticResource AccentButton}" Content="翻译" Click="Translate_Click" ToolTip="识别并翻译 (Ctrl+Q)" />
+                    <Button Style="{StaticResource ToolButton}" Content="✕" Click="Cancel_Click" ToolTip="取消 (Esc)" />
+                </StackPanel>
+            </Border>
+
+            <TextBox x:Name="TextEditor" Style="{StaticResource InputBox}"
+                     Width="280" MinHeight="36" FontSize="16" Visibility="Collapsed"
+                     AcceptsReturn="True" TextWrapping="Wrap"
+                     Background="#E6101010" BorderBrush="#FF4C8DFF"
+                     PreviewKeyDown="TextEditor_PreviewKeyDown" />
+        </Canvas>
+    </Grid>
+</Window>

@@ -1,0 +1,21 @@
+<Window x:Class="Markshot.UI.PinWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Markshot Pin"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        ShowActivated="False"
+        AllowsTransparency="False"
+        Background="#FF3B82F6"
+        UseLayoutRounding="False"
+        SnapsToDevicePixels="True"
+        Focusable="True"
+        PreviewKeyDown="OnPreviewKeyDown">
+
+    <Grid>
+        <Image x:Name="Img" Stretch="Fill" SnapsToDevicePixels="True" />
+        <Border x:Name="FrameBorder" BorderThickness="1" BorderBrush="#FF3B82F6" IsHitTestVisible="False" />
+    </Grid>
+</Window>

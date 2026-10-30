@@ -1,0 +1,111 @@
+<Window x:Class="Markshot.UI.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Markshot 设置"
+        Width="820" Height="920" MinWidth="640" MinHeight="620"
+        Background="#FF1C1C1C"
+        WindowStartupLocation="CenterScreen"
+        Topmost="True"
+        FontFamily="Microsoft YaHei UI">
+
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+
+                <TextBlock Text="快捷键" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="截图" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="CaptureHotkeyBox" Style="{StaticResource InputBox}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="贴图剪贴板" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="PinHotkeyBox" Style="{StaticResource InputBox}" />
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="格式示例：F1、Ctrl+1、Ctrl+Shift+S。保存后立即生效。"
+                           Foreground="#8A8A8A" FontSize="12" Margin="0,8,0,0" />
+
+                <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
+
+                <TextBlock Text="保存" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                <TextBlock Text="保存目录" Style="{StaticResource FieldLabel}" />
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="浏览…" Style="{StaticResource ToolButton}"
+                            Click="Browse_Click" Margin="8,0,0,0" />
+                    <TextBox x:Name="SaveDirBox" Style="{StaticResource InputBox}" />
+                </DockPanel>
+                <TextBlock Text="留空则保存到 图片\Markshot。" Foreground="#8A8A8A" FontSize="12" Margin="0,6,0,0" />
+
+                <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
+
+                <TextBlock Text="文字识别" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                <TextBlock Text="OCR 语言（留空自动）" Style="{StaticResource FieldLabel}" />
+                <TextBox x:Name="OcrLanguageBox" Style="{StaticResource InputBox}" />
+                <TextBlock x:Name="OcrHintText" Foreground="#8A8A8A" FontSize="12" Margin="0,6,0,0"
+                           TextWrapping="Wrap" />
+
+                <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
+
+                <TextBlock Text="翻译服务" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                <TextBlock Text="Base URL（OpenAI 兼容）" Style="{StaticResource FieldLabel}" />
+                <TextBox x:Name="BaseUrlBox" Style="{StaticResource InputBox}" />
+
+                <TextBlock Text="API Key" Style="{StaticResource FieldLabel}" Margin="0,10,0,4" />
+                <TextBox x:Name="ApiKeyBox" Style="{StaticResource InputBox}" />
+
+                <TextBlock Text="模型" Style="{StaticResource FieldLabel}" Margin="0,10,0,4" />
+                <TextBox x:Name="ModelBox" Style="{StaticResource InputBox}" />
+
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="160" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="默认目标语言" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="TargetBox" Style="{StaticResource InputBox}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="超时（秒）" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="TimeoutBox" Style="{StaticResource InputBox}" />
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="支持 DeepSeek、OpenAI、Moonshot、SiliconFlow、Ollama、LM Studio 等兼容 /chat/completions 的服务。"
+                           Foreground="#8A8A8A" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <TextBlock x:Name="StatusText" Foreground="#9A9A9A" FontSize="12"
+                       VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360" HorizontalAlignment="Left" />
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="TestButton" Content="测试翻译" Style="{StaticResource ToolButton}" Click="Test_Click" />
+                <Button Content="取消" Style="{StaticResource ToolButton}" Click="Cancel_Click" Margin="8,0,0,0" IsCancel="True" />
+                <Button Content="保存" Style="{StaticResource AccentButton}" Click="Save_Click" Margin="8,0,0,0" IsDefault="True" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,19 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local, machine-specific configuration (may contain API keys)
+config.json
+!config.sample.json
+
+# Runtime artifacts
+logs/
+publish/
+docs/saved/
+docs/*.png
+docs/*.txt
+tools/__pycache__/

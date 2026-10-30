@@ -1,0 +1,14 @@
+{
+  "CaptureHotkey": "F1",
+  "PinHotkey": "F3",
+  "SaveDirectory": "",
+  "OcrLanguage": "",
+  "Translation": {
+    "BaseUrl": "https://api.deepseek.com/v1",
+    "ApiKey": "",
+    "Model": "deepseek-chat",
+    "TargetLanguage": "简体中文",
+    "SystemPrompt": "",
+    "TimeoutSeconds": 60
+  }
+}
