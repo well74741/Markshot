@@ -197,7 +197,25 @@ public sealed class PenAnnotation : Annotation
         using (var context = geometry.Open())
         {
             context.BeginFigure(Points[0], false, false);
-            context.PolyLineTo(Points.Skip(1).ToList(), true, true);
+            if (Points.Count == 2)
+            {
+                context.LineTo(Points[1], true, true);
+            }
+            else
+            {
+                for (var i = 1; i < Points.Count - 1; i++)
+                {
+                    var control = Points[i];
+                    var next = Points[i + 1];
+                    context.QuadraticBezierTo(
+                        control,
+                        new Point((control.X + next.X) / 2, (control.Y + next.Y) / 2),
+                        true,
+                        true);
+                }
+
+                context.QuadraticBezierTo(Points[^1], Points[^1], true, true);
+            }
         }
 
         geometry.Freeze();

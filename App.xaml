@@ -13,6 +13,39 @@
         <SolidColorBrush x:Key="Hover" Color="#26FFFFFF" />
         <SolidColorBrush x:Key="InputBackground" Color="#FF262626" />
 
+        <Geometry x:Key="IconSelect">M3.2 1.6 L3.2 13.2 L6.1 10.5 L8.2 15 L10.1 14.1 L8 9.7 L12 9.7 Z</Geometry>
+        <Geometry x:Key="IconRect">M2.5 3.5 H13.5 V12.5 H2.5 Z</Geometry>
+        <Geometry x:Key="IconEllipse">M8 2.5 A5.5 5.5 0 1 1 8 13.5 A5.5 5.5 0 1 1 8 2.5 Z</Geometry>
+        <Geometry x:Key="IconArrow">M3 13 L13 3 M6.5 3 H13 V9.5</Geometry>
+        <Geometry x:Key="IconLine">M3 13 L13 3</Geometry>
+        <Geometry x:Key="IconPen">M3 13 L7 12 L13 6 L10 3 L4 9 Z M11 2 L14 5 M3 15 H10</Geometry>
+        <Geometry x:Key="IconHighlight">M7 11 L5 13 L3 15 L6 14 L8 12 M10 3 L14 7 L9 12 L5 8 Z</Geometry>
+        <Geometry x:Key="IconMosaic">M3 3 H7 V7 H3 Z M8 3 H12 V7 H8 Z M3 8 H7 V12 H3 Z M8 8 H12 V12 H8 Z M5 13 H9 V15 H5 Z</Geometry>
+        <Geometry x:Key="IconText">M3.5 3.5 H12.5 M8 3.5 V12.5 M6 12.5 H10</Geometry>
+        <Geometry x:Key="IconNumber">M8 2.5 A5.5 5.5 0 1 1 8 13.5 A5.5 5.5 0 1 1 8 2.5 Z M6.6 7 L8 6 V11</Geometry>
+        <Geometry x:Key="IconEraser">M2 10 L7 5 L13 11 L10 14 H5 L2 11 Z M6 14 H14</Geometry>
+        <Geometry x:Key="IconUndo">M9 7 L4 12 L9 17 M4 12 H11 A5 5 0 0 1 16 17</Geometry>
+        <Geometry x:Key="IconRedo">M7 7 L12 12 L7 17 M12 12 H5 A5 5 0 0 0 0 17</Geometry>
+        <Geometry x:Key="IconCopy">M8 8 H14 V14 H8 Z M5 11 H3 V3 H11 V5</Geometry>
+        <Geometry x:Key="IconSave">M3 3 H11 L13 5 V14 H3 Z M5 3 V7 H10 V3 M5 14 V10 H10 V14</Geometry>
+        <Geometry x:Key="IconPin">M8 15 V9 M5 3 H11 L10 7 L13 10 H3 L6 7 Z</Geometry>
+        <Geometry x:Key="IconTranslate">M3 4 H8 M5.5 2.5 V4 M4.5 4 C4.5 8 6.5 9.5 9 10 M9 4 C9 8 7 9.5 4.5 10 M9 15 L12 8 L15 15 M10 12 H14</Geometry>
+        <Geometry x:Key="IconClose">M4 4 L12 12 M12 4 L4 12</Geometry>
+        <Geometry x:Key="IconCheck">M3 8 L6.5 11.5 L13 4</Geometry>
+        <Geometry x:Key="IconPlus">M8 3 V13 M3 8 H13</Geometry>
+
+        <Style x:Key="IconPath" TargetType="Path">
+            <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ButtonBase}}}" />
+            <Setter Property="StrokeThickness" Value="1.6" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Setter Property="Fill" Value="Transparent" />
+            <Setter Property="Width" Value="17" />
+            <Setter Property="Height" Value="17" />
+            <Setter Property="Stretch" Value="Uniform" />
+        </Style>
+
         <Style x:Key="ToolButton" TargetType="Button">
             <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
             <Setter Property="Background" Value="Transparent" />
@@ -72,6 +105,18 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="IconToolRadio" TargetType="RadioButton" BasedOn="{StaticResource ToolRadio}">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+        </Style>
+
+        <Style x:Key="IconToolButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
         </Style>
 
         <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">

@@ -60,6 +60,7 @@ public partial class OverlayWindow : Window
     private int _numberCounter = 1;
 
     private Color _color = Palette[0];
+    private Color _customColor = Color.FromRgb(0x37, 0xD6, 0xC0);
     private double _thickness = 3;
 
     private bool _textActive;
@@ -195,6 +196,26 @@ public partial class OverlayWindow : Window
             _colorSwatches[i].BorderBrush = selected
                 ? Brushes.White
                 : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
+        }
+
+        if (CustomColorRing != null)
+        {
+            var selected = _color == _customColor;
+            CustomColorRing.Fill = new SolidColorBrush(_customColor);
+            CustomColorRing.Stroke = selected
+                ? Brushes.White
+                : new SolidColorBrush(Color.FromArgb(120, 255, 255, 255));
+            CustomColorRing.StrokeThickness = selected ? 2 : 1.5;
+        }
+    }
+
+    private void CustomColor_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new ColorPickerWindow(_color) { Owner = this };
+        if (picker.ShowDialog() == true)
+        {
+            _customColor = picker.SelectedColor;
+            SetColor(_customColor);
         }
     }
 
@@ -1117,7 +1138,9 @@ public partial class OverlayWindow : Window
             }
 
             case ArrowAnnotation arrow:
-                arrow.End = point;
+                arrow.End = (Keyboard.Modifiers & ModifierKeys.Shift) != 0
+                    ? SnapLine(_annotationStart, point)
+                    : point;
                 break;
 
             case LineAnnotation line:
@@ -1645,7 +1668,7 @@ public partial class OverlayWindow : Window
 
         if (_tool != AnnotationTool.None && _hasSelection && _selection.Contains(point))
         {
-            InputLayer.Cursor = Cursors.Cross;
+            InputLayer.Cursor = ToolCursors.Get(_tool);
             return;
         }
 
