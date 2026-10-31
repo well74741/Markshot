@@ -49,6 +49,7 @@ public partial class PinWindow : Window
     private double _creatingRotateStartAngle;
     private bool _textActive;
     private Point _textPosition;
+    private WatermarkAnnotation? _editingWatermark;
     private int _number = 1;
     private double _thickness = 3;
     private Color _color = Color.FromRgb(0xFF, 0x33, 0x00);
@@ -185,6 +186,19 @@ public partial class PinWindow : Window
 
         _selected.Fill = _fill;
         _selected.CornerRadius = _corner;
+        if (_selected is TextAnnotation textAnnotation)
+        {
+            textAnnotation.FontSize = Math.Max(8, _thickness);
+            textAnnotation.StrokeColor = Toolbar.StrokeColor;
+            textAnnotation.StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0;
+        }
+        else if (_selected is WatermarkAnnotation watermarkAnnotation)
+        {
+            watermarkAnnotation.FontSize = Math.Max(10, _thickness);
+            watermarkAnnotation.StrokeColor = Toolbar.StrokeColor;
+            watermarkAnnotation.StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0;
+        }
+
         Editor.InvalidateVisual();
     }
 
@@ -373,6 +387,13 @@ public partial class PinWindow : Window
         if (_editMode && (_tool == AnnotationTool.None || _tool == AnnotationTool.Select))
         {
             var point = ToPixels(e.GetPosition(ImageHost));
+            if (e.ClickCount == 2 && HitAnnotation(point) is WatermarkAnnotation watermark)
+            {
+                BeginWatermarkEdit(watermark);
+                e.Handled = true;
+                return;
+            }
+
             if (_selected != null && TryBeginAnnotationTransform(point))
             {
                 CaptureMouse();
@@ -392,6 +413,8 @@ public partial class PinWindow : Window
                 e.Handled = true;
                 return;
             }
+
+            ClearSelection();
         }
 
         var cursor = Native.CursorPosition();
@@ -458,6 +481,11 @@ public partial class PinWindow : Window
 
         if (!_dragging)
         {
+            if (_editMode && _tool == AnnotationTool.None && _selected != null)
+            {
+                UpdateAnnotationTransformCursor(ToPixels(e.GetPosition(ImageHost)));
+            }
+
             return;
         }
 
@@ -505,6 +533,13 @@ public partial class PinWindow : Window
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (_editMode && _selected != null)
+        {
+            AdjustSelectedByWheel(e.Delta);
+            e.Handled = true;
+            return;
+        }
+
         if (_locked || _editMode)
         {
             return;
@@ -909,6 +944,16 @@ public partial class PinWindow : Window
         _annotationStart = point;
         _lastPoint = point;
 
+        if (e.ClickCount == 2 && _tool == AnnotationTool.Watermark)
+        {
+            if (HitAnnotation(ToPixels(e.GetPosition(InputLayer))) is WatermarkAnnotation watermark)
+            {
+                BeginWatermarkEdit(watermark);
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
         {
             var candidate = HitAnnotation(point);
@@ -1073,7 +1118,11 @@ public partial class PinWindow : Window
             },
             AnnotationTool.Watermark => new WatermarkAnnotation
             {
-                Rect = new Rect(point, point), Color = _color, Thickness = _thickness, Opacity = 0.22
+                Rect = new Rect(point, point), Color = _color,
+                FontSize = Math.Max(10, _thickness),
+                StrokeColor = Toolbar.StrokeColor,
+                StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0,
+                Opacity = 0.22
             },
             AnnotationTool.Number => new NumberAnnotation
             {
@@ -1192,12 +1241,26 @@ public partial class PinWindow : Window
 
     private void BeginText(Point point)
     {
+        _editingWatermark = null;
         _textActive = true;
         _textPosition = point;
         TextEditor.Text = string.Empty;
         TextEditor.Visibility = Visibility.Visible;
         Canvas.SetLeft(TextEditor, point.X / _zoom + 4);
         Canvas.SetTop(TextEditor, point.Y / _zoom + 4);
+        TextEditor.Focus();
+        Keyboard.Focus(TextEditor);
+    }
+
+    private void BeginWatermarkEdit(WatermarkAnnotation watermark)
+    {
+        _editingWatermark = watermark;
+        _textActive = true;
+        _textPosition = new Point(watermark.Rect.X, watermark.Rect.Y);
+        TextEditor.Text = watermark.Text;
+        TextEditor.Visibility = Visibility.Visible;
+        Canvas.SetLeft(TextEditor, watermark.Rect.X / _zoom + 4);
+        Canvas.SetTop(TextEditor, watermark.Rect.Y / _zoom + 4);
         TextEditor.Focus();
         Keyboard.Focus(TextEditor);
     }
@@ -1213,6 +1276,19 @@ public partial class PinWindow : Window
         var text = TextEditor.Text.Trim();
         TextEditor.Visibility = Visibility.Collapsed;
 
+        if (_editingWatermark != null)
+        {
+            if (text.Length > 0)
+            {
+                _editingWatermark.Text = text;
+                Editor.InvalidateVisual();
+            }
+
+            _editingWatermark = null;
+            InputLayer.Focus();
+            return;
+        }
+
         if (text.Length > 0)
         {
             Editor.Items.Add(new TextAnnotation
@@ -1221,7 +1297,9 @@ public partial class PinWindow : Window
                 Text = text,
                 Color = _color,
                 Thickness = _thickness,
-                FontSize = Math.Max(15, 10 + _thickness * 2.5)
+                FontSize = Math.Max(8, _thickness),
+                StrokeColor = Toolbar.StrokeColor,
+                StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0
             });
             _redo.Clear();
             UpdateUndoButtons();
@@ -1234,6 +1312,7 @@ public partial class PinWindow : Window
     private void CancelText()
     {
         _textActive = false;
+        _editingWatermark = null;
         TextEditor.Text = string.Empty;
         TextEditor.Visibility = Visibility.Collapsed;
         InputLayer.Focus();
@@ -1288,15 +1367,32 @@ public partial class PinWindow : Window
         Toolbar.SetTool(AnnotationTool.None);
         Toolbar.SetSelection(annotation);
         Toolbar.SetColor(annotation.Color);
-        Toolbar.SetThickness(annotation is NumberAnnotation number ? number.Radius : annotation.Thickness);
+        var size = annotation switch
+        {
+            TextAnnotation text => text.FontSize,
+            WatermarkAnnotation watermark => watermark.FontSize,
+            NumberAnnotation number => number.Radius,
+            _ => annotation.Thickness
+        };
+        Toolbar.SetThickness(size);
         Toolbar.SetFill(annotation.Fill);
         Toolbar.SetCorner(annotation.CornerRadius);
+        if (annotation is TextAnnotation selectedText)
+        {
+            Toolbar.SetStroke(selectedText.StrokeThickness > 0, selectedText.StrokeColor, selectedText.StrokeThickness);
+        }
+        else if (annotation is WatermarkAnnotation selectedWatermark)
+        {
+            Toolbar.SetStroke(selectedWatermark.StrokeThickness > 0, selectedWatermark.StrokeColor, selectedWatermark.StrokeThickness);
+        }
+
         _color = annotation.Color;
-        _thickness = annotation is NumberAnnotation n ? n.Radius : annotation.Thickness;
+        _thickness = size;
         _fill = annotation.Fill;
         _corner = annotation.CornerRadius;
         InputLayer.IsHitTestVisible = false;
         InputLayer.Cursor = Cursors.Arrow;
+        ImageHost.Cursor = Cursors.Arrow;
         ClearAnnotationHover();
         Editor.Selected = annotation;
         Editor.InvalidateVisual();
@@ -1383,6 +1479,9 @@ public partial class PinWindow : Window
                 break;
             case WatermarkAnnotation watermark:
                 watermark.Rect = target;
+                watermark.FontSize = Math.Max(10, watermark.FontSize * Math.Min(
+                    target.Width / Math.Max(1, source.Width),
+                    target.Height / Math.Max(1, source.Height)));
                 break;
             case LineAnnotation line:
                 line.Start = MapShapePoint(line.Start, source, target);
@@ -1440,6 +1539,7 @@ public partial class PinWindow : Window
             Toolbar.SetSelection(null);
         }
 
+        ImageHost.Cursor = Cursors.Arrow;
         ClearAnnotationHover();
         Editor.InvalidateVisual();
     }
@@ -1526,6 +1626,100 @@ public partial class PinWindow : Window
         AnnotationTool.Number => annotation is NumberAnnotation,
         _ => false
     };
+
+    private bool UpdateAnnotationTransformCursor(Point point)
+    {
+        if (_selected == null)
+        {
+            return false;
+        }
+
+        var bounds = _selected.Bounds;
+        var frame = AnnotationEditor.SelectionFrame(bounds, 1 / _zoom);
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var local = AnnotationEditor.RotatePoint(point, center, -_selected.Rotation);
+
+        if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 / _zoom)
+        {
+            ImageHost.Cursor = Cursors.Hand;
+            return true;
+        }
+
+        var handles = AnnotationEditor.HandleCenters(frame);
+        for (var i = 0; i < handles.Length; i++)
+        {
+            if ((local - handles[i]).Length <= 10 / _zoom)
+            {
+                ImageHost.Cursor = i switch
+                {
+                    0 or 4 => Cursors.SizeNWSE,
+                    2 or 6 => Cursors.SizeNESW,
+                    1 or 5 => Cursors.SizeNS,
+                    3 or 7 => Cursors.SizeWE,
+                    _ => Cursors.SizeAll
+                };
+                return true;
+            }
+        }
+
+        var edge = 6 / _zoom;
+        var nearX = Math.Abs(local.X - frame.Left) <= edge || Math.Abs(local.X - frame.Right) <= edge;
+        var nearY = Math.Abs(local.Y - frame.Top) <= edge || Math.Abs(local.Y - frame.Bottom) <= edge;
+        if (nearX && nearY)
+        {
+            ImageHost.Cursor = (local.X < center.X) == (local.Y < center.Y)
+                ? Cursors.SizeNWSE
+                : Cursors.SizeNESW;
+            return true;
+        }
+
+        if (nearX) { ImageHost.Cursor = Cursors.SizeWE; return true; }
+        if (nearY) { ImageHost.Cursor = Cursors.SizeNS; return true; }
+        if (frame.Contains(local)) { ImageHost.Cursor = Cursors.SizeAll; return true; }
+        return false;
+    }
+
+    private void AdjustSelectedByWheel(int delta)
+    {
+        if (_selected == null)
+        {
+            return;
+        }
+
+        var step = Math.Sign(delta);
+        switch (_selected)
+        {
+            case TextAnnotation text:
+                text.FontSize = Math.Clamp(text.FontSize + step * 2, 8, 120);
+                Toolbar.SetThickness(text.FontSize);
+                _thickness = text.FontSize;
+                break;
+            case WatermarkAnnotation watermark:
+                watermark.FontSize = Math.Clamp(watermark.FontSize + step * 2, 10, 120);
+                Toolbar.SetThickness(watermark.FontSize);
+                _thickness = watermark.FontSize;
+                break;
+            case NumberAnnotation number:
+                number.Radius = Math.Clamp(number.Radius + step * 2, 8, 80);
+                Toolbar.SetThickness(number.Radius);
+                _thickness = number.Radius;
+                break;
+            case MosaicAnnotation mosaic:
+                mosaic.Thickness = Math.Clamp(mosaic.Thickness + step * 2, 8, 40);
+                mosaic.Pattern = MosaicBuilder.Build(
+                    _baseImage, mosaic.Rect, Math.Clamp((int)Math.Round(mosaic.Thickness), 8, 40));
+                Toolbar.SetThickness(mosaic.Thickness);
+                _thickness = mosaic.Thickness;
+                break;
+            default:
+                _selected.Thickness = Math.Clamp(_selected.Thickness + step * 0.5, 1, 24);
+                _thickness = _selected.Thickness;
+                Toolbar.SetThickness(_thickness);
+                break;
+        }
+
+        Editor.InvalidateVisual();
+    }
 
     private Rect Clamp(Rect rect)
     {

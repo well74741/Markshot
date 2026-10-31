@@ -54,7 +54,9 @@
 
                 <RadioButton x:Name="ToolMosaic" Style="{StaticResource IconToolRadio}"
                              Tag="Mosaic" GroupName="Tool" Click="Tool_Click" ToolTip="马赛克/水印">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconMosaic}" />
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconMosaic}"
+                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ButtonBase}}}"
+                          Stroke="Transparent" />
                 </RadioButton>
                 <Button Style="{StaticResource ChevronButton}" Click="MosaicMenu_Click" ToolTip="马赛克样式">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
@@ -81,7 +83,7 @@
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconClose}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Pin_Click" ToolTip="贴图 (F3)" Foreground="{StaticResource Accent}">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconStar}" />
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconPin}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存 (Ctrl+S)">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconSave}" />
@@ -139,7 +141,7 @@
                             <Path Style="{StaticResource IconPath}" Data="{StaticResource IconMosaic}" />
                         </RadioButton>
                         <RadioButton x:Name="VariantWatermark" Style="{StaticResource IconToolRadio}" Tag="Watermark" GroupName="Variant" Checked="Variant_Checked" ToolTip="水印">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconText}" />
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconWatermark}" />
                         </RadioButton>
                     </StackPanel>
 
@@ -161,6 +163,21 @@
                         <Slider x:Name="CornerSlider" Width="64" Minimum="0" Maximum="40" Value="0"
                                 ValueChanged="Corner_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
                         <TextBlock x:Name="CornerValue" Text="0" Foreground="#C8C8C8" FontSize="11" Width="20"
+                                   TextAlignment="Center" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="StrokeGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <ToggleButton x:Name="StrokeToggle" Style="{StaticResource ToolToggle}" Content="描边"
+                                      Click="Stroke_Click" ToolTip="文字/水印描边" />
+                        <Button x:Name="StrokeColorButton" Style="{StaticResource IconToolButton}"
+                                Click="StrokeColor_Click" ToolTip="描边颜色">
+                            <Ellipse x:Name="StrokeColorCircle" Width="16" Height="16" Fill="#202020"
+                                     Stroke="#D8D8D8" StrokeThickness="1.2" />
+                        </Button>
+                        <Slider x:Name="StrokeSlider" Width="56" Minimum="0" Maximum="8" Value="0"
+                                ValueChanged="Stroke_Changed" VerticalAlignment="Center" Margin="4,0,2,0" />
+                        <TextBlock x:Name="StrokeValue" Text="0" Foreground="#C8C8C8" FontSize="11" Width="16"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 

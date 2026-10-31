@@ -319,6 +319,12 @@ public sealed class WatermarkAnnotation : Annotation
 
     public string Text { get; set; } = "Markshot";
 
+    public double FontSize { get; set; } = 24;
+
+    public Color StrokeColor { get; set; } = Color.FromRgb(0x20, 0x20, 0x20);
+
+    public double StrokeThickness { get; set; }
+
     public override void Draw(DrawingContext dc)
     {
         if (Rect.Width < 4 || Rect.Height < 4)
@@ -328,12 +334,12 @@ public sealed class WatermarkAnnotation : Annotation
 
         var alpha = (byte)Math.Clamp(Opacity * 255, 0, 255);
         var brush = new SolidColorBrush(Color.FromArgb(alpha, Color.R, Color.G, Color.B));
-        var fontSize = Math.Clamp(Thickness * 3.5, 14, 72);
+        var fontSize = Math.Clamp(FontSize, 10, 160);
         var text = new FormattedText(
             Text,
             CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
-            new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
+            new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
             fontSize,
             brush,
             1.0);
@@ -347,7 +353,18 @@ public sealed class WatermarkAnnotation : Annotation
             var offset = row % 2 == 0 ? 0 : stepX / 2;
             for (var x = Rect.Left - stepX; x < Rect.Right + stepX; x += stepX)
             {
-                dc.DrawText(text, new Point(x + offset, y));
+                var point = new Point(x + offset, y);
+                if (StrokeThickness > 0)
+                {
+                    var geometry = text.BuildGeometry(point);
+                    dc.DrawGeometry(brush,
+                        new Pen(new SolidColorBrush(Color.FromArgb(alpha, StrokeColor.R, StrokeColor.G, StrokeColor.B)), StrokeThickness),
+                        geometry);
+                }
+                else
+                {
+                    dc.DrawText(text, point);
+                }
             }
         }
 
@@ -370,6 +387,10 @@ public sealed class TextAnnotation : Annotation
 
     public double FontSize { get; set; } = 18;
 
+    public Color StrokeColor { get; set; } = Color.FromRgb(0x20, 0x20, 0x20);
+
+    public double StrokeThickness { get; set; }
+
     public override void Draw(DrawingContext dc)
     {
         if (string.IsNullOrEmpty(Text))
@@ -389,14 +410,18 @@ public sealed class TextAnnotation : Annotation
             MaxTextWidth = 2400
         };
 
-        const double pad = 4;
-        dc.DrawRoundedRectangle(
-            new SolidColorBrush(Color.FromArgb(150, 15, 15, 15)),
-            null,
-            new Rect(Position.X - pad, Position.Y - pad, formatted.Width + pad * 2, formatted.Height + pad * 2),
-            3, 3);
-
-        dc.DrawText(formatted, Position);
+        if (StrokeThickness > 0)
+        {
+            var geometry = formatted.BuildGeometry(Position);
+            dc.DrawGeometry(
+                new SolidColorBrush(Color),
+                new Pen(new SolidColorBrush(StrokeColor), StrokeThickness),
+                geometry);
+        }
+        else
+        {
+            dc.DrawText(formatted, Position);
+        }
     }
 
     public override Rect Bounds

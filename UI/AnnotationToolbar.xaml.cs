@@ -45,6 +45,8 @@ public partial class AnnotationToolbar : UserControl
     private double _thickness = 3;
     private double _corner;
     private bool _fill;
+    private Color _strokeColor = Color.FromRgb(0x20, 0x20, 0x20);
+    private double _strokeWidth;
     private bool _dragging;
     private Point _dragStart;
     private double _dragLeft;
@@ -83,6 +85,12 @@ public partial class AnnotationToolbar : UserControl
     public double CornerRadius => _corner;
 
     public bool AutoTranslate => TranslateToggle.IsChecked == true;
+
+    public bool StrokeEnabled => StrokeToggle.IsChecked == true;
+
+    public Color StrokeColor => _strokeColor;
+
+    public double StrokeWidth => _strokeWidth;
 
     public void SetMode(AnnotationToolbarMode mode)
     {
@@ -171,6 +179,18 @@ public partial class AnnotationToolbar : UserControl
         _configuring = false;
     }
 
+    public void SetStroke(bool enabled, Color color, double width)
+    {
+        _configuring = true;
+        _strokeColor = color;
+        _strokeWidth = enabled ? Math.Clamp(width, 0.5, 8) : 0;
+        StrokeToggle.IsChecked = enabled;
+        StrokeSlider.Value = _strokeWidth;
+        StrokeValue.Text = ((int)Math.Round(_strokeWidth)).ToString(CultureInfo.InvariantCulture);
+        StrokeColorCircle.Fill = new SolidColorBrush(_strokeColor);
+        _configuring = false;
+    }
+
     public void RefreshUndo(bool canUndo, bool canRedo)
     {
         UndoButton.IsEnabled = canUndo;
@@ -248,6 +268,7 @@ public partial class AnnotationToolbar : UserControl
         SettingsBar.Visibility = Visibility.Visible;
         WidthGroup.Visibility = Visibility.Visible;
         ColorSection.Visibility = Visibility.Visible;
+        StrokeGroup.Visibility = Visibility.Collapsed;
         FillToggle.Visibility = Visibility.Collapsed;
         CornerGroup.Visibility = Visibility.Collapsed;
         WidthLabel.Text = "粗细";
@@ -276,17 +297,28 @@ public partial class AnnotationToolbar : UserControl
                 PenVariants.Visibility = Visibility.Visible;
                 break;
 
-            case ToolFamily.Mosaic:
-                MosaicVariants.Visibility = Visibility.Visible;
-                WidthLabel.Text = "块大小";
-                WidthSlider.Minimum = 4;
-                WidthSlider.Maximum = 40;
-                break;
-
             case ToolFamily.Text:
                 WidthLabel.Text = "字号";
                 WidthSlider.Minimum = 8;
                 WidthSlider.Maximum = 64;
+                StrokeGroup.Visibility = Visibility.Visible;
+                break;
+
+            case ToolFamily.Mosaic:
+                MosaicVariants.Visibility = Visibility.Visible;
+                if (_tool == AnnotationTool.Watermark || annotation is WatermarkAnnotation)
+                {
+                    WidthLabel.Text = "字号";
+                    WidthSlider.Minimum = 8;
+                    WidthSlider.Maximum = 64;
+                    StrokeGroup.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    WidthLabel.Text = "块大小";
+                    WidthSlider.Minimum = 4;
+                    WidthSlider.Maximum = 40;
+                }
                 break;
 
             case ToolFamily.Number:
@@ -336,10 +368,28 @@ public partial class AnnotationToolbar : UserControl
 
     private void SyncFromAnnotation(Annotation annotation)
     {
-        _thickness = annotation.Thickness;
+        _thickness = annotation switch
+        {
+            TextAnnotation text => text.FontSize,
+            WatermarkAnnotation watermark => watermark.FontSize,
+            NumberAnnotation number => number.Radius,
+            _ => annotation.Thickness
+        };
         _color = annotation.Color;
         _fill = annotation.Fill;
         _corner = annotation.CornerRadius;
+        _strokeColor = annotation switch
+        {
+            TextAnnotation text => text.StrokeColor,
+            WatermarkAnnotation watermark => watermark.StrokeColor,
+            _ => _strokeColor
+        };
+        _strokeWidth = annotation switch
+        {
+            TextAnnotation text => text.StrokeThickness,
+            WatermarkAnnotation watermark => watermark.StrokeThickness,
+            _ => 0
+        };
 
         switch (annotation)
         {
@@ -372,6 +422,10 @@ public partial class AnnotationToolbar : UserControl
         CornerSlider.Value = Math.Clamp(_corner, 0, 40);
         CornerValue.Text = ((int)Math.Round(CornerSlider.Value)).ToString(CultureInfo.InvariantCulture);
         FillToggle.IsChecked = _fill;
+        StrokeToggle.IsChecked = _strokeWidth > 0;
+        StrokeSlider.Value = Math.Clamp(_strokeWidth, 0, 8);
+        StrokeValue.Text = ((int)Math.Round(StrokeSlider.Value)).ToString(CultureInfo.InvariantCulture);
+        StrokeColorCircle.Fill = new SolidColorBrush(_strokeColor);
         UpdateSwatches();
     }
 
@@ -515,6 +569,47 @@ public partial class AnnotationToolbar : UserControl
 
         _fill = FillToggle.IsChecked == true;
         SettingsChanged?.Invoke();
+    }
+
+    private void Stroke_Click(object sender, RoutedEventArgs e)
+    {
+        if (_configuring)
+        {
+            return;
+        }
+
+        _strokeWidth = StrokeToggle.IsChecked == true ? Math.Max(1, StrokeSlider.Value) : 0;
+        StrokeSlider.Value = _strokeWidth;
+        SettingsChanged?.Invoke();
+    }
+
+    private void Stroke_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_configuring || StrokeValue == null)
+        {
+            return;
+        }
+
+        _strokeWidth = StrokeToggle.IsChecked == true ? e.NewValue : 0;
+        StrokeValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
+        SettingsChanged?.Invoke();
+    }
+
+    private void StrokeColor_Click(object sender, RoutedEventArgs e)
+    {
+        var owner = Window.GetWindow(this);
+        var picker = new ColorPickerWindow(_strokeColor);
+        if (owner != null)
+        {
+            picker.Owner = owner;
+        }
+
+        if (picker.ShowDialog() == true)
+        {
+            _strokeColor = picker.SelectedColor;
+            StrokeColorCircle.Fill = new SolidColorBrush(_strokeColor);
+            SettingsChanged?.Invoke();
+        }
     }
 
     private void CustomColor_Click(object sender, RoutedEventArgs e)

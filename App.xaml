@@ -13,29 +13,62 @@
         <SolidColorBrush x:Key="Hover" Color="#26FFFFFF" />
         <SolidColorBrush x:Key="InputBackground" Color="#FF262626" />
 
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FF1E1E1E" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FFF0F0F0" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#3D4C8DFF" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1E1E1E" />
+
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background" Value="#FF1E1E1E" />
+            <Setter Property="Foreground" Value="#FFF0F0F0" />
+            <Setter Property="BorderBrush" Value="#33FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="HasDropShadow" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ItemsPresenter />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="MenuItem">
+            <Setter Property="Foreground" Value="#FFF0F0F0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="10,5" />
+        </Style>
+
         <Geometry x:Key="IconSelect">M3.2 1.6 L3.2 13.2 L6.1 10.5 L8.2 15 L10.1 14.1 L8 9.7 L12 9.7 Z</Geometry>
         <Geometry x:Key="IconRect">M2.5 3.5 H13.5 V12.5 H2.5 Z</Geometry>
         <Geometry x:Key="IconEllipse">M8 2.5 A5.5 5.5 0 1 1 8 13.5 A5.5 5.5 0 1 1 8 2.5 Z</Geometry>
         <Geometry x:Key="IconArrow">M3 13 L13 3 M6.5 3 H13 V9.5</Geometry>
         <Geometry x:Key="IconLine">M3 13 L13 3</Geometry>
-        <Geometry x:Key="IconPen">M3 13 L7 12 L13 6 L10 3 L4 9 Z M11 2 L14 5 M3 15 H10</Geometry>
+        <Geometry x:Key="IconPen">M4 17 L8 16 L18 6 L14 2 L3 13 Z M5 14 L9 18 M2 20 H14</Geometry>
         <Geometry x:Key="IconHighlight">M7 11 L5 13 L3 15 L6 14 L8 12 M10 3 L14 7 L9 12 L5 8 Z</Geometry>
-        <Geometry x:Key="IconMosaic">M3 3 H7 V7 H3 Z M8 3 H12 V7 H8 Z M3 8 H7 V12 H3 Z M8 8 H12 V12 H8 Z M5 13 H9 V15 H5 Z</Geometry>
+        <Geometry x:Key="IconMosaic">M3 3 H17 V17 H3 Z M9 3 H17 V9 H9 Z M3 9 H9 V17 H3 Z</Geometry>
         <Geometry x:Key="IconText">M3.5 3.5 H12.5 M8 3.5 V12.5 M6 12.5 H10</Geometry>
         <Geometry x:Key="IconNumber">M8 2.5 A5.5 5.5 0 1 1 8 13.5 A5.5 5.5 0 1 1 8 2.5 Z M6.6 7 L8 6 V11</Geometry>
-        <Geometry x:Key="IconEraser">M2 10 L7 5 L13 11 L10 14 H5 L2 11 Z M6 14 H14</Geometry>
+        <Geometry x:Key="IconEraser">M3 15 L10 8 L17 15 L13 19 H7 Z M9 19 H20</Geometry>
         <Geometry x:Key="IconUndo">M9 7 L4 12 L9 17 M4 12 H11 A5 5 0 0 1 16 17</Geometry>
         <Geometry x:Key="IconRedo">M7 7 L12 12 L7 17 M12 12 H5 A5 5 0 0 0 0 17</Geometry>
         <Geometry x:Key="IconCopy">M8 8 H14 V14 H8 Z M5 11 H3 V3 H11 V5</Geometry>
-        <Geometry x:Key="IconSave">M3 3 H11 L13 5 V14 H3 Z M5 3 V7 H10 V3 M5 14 V10 H10 V14</Geometry>
+        <Geometry x:Key="IconSave">M8 2 V12 M4 9 L8 13 L12 9 M3 15 H13</Geometry>
         <Geometry x:Key="IconPin">M8 15 V9 M5 3 H11 L10 7 L13 10 H3 L6 7 Z</Geometry>
-        <Geometry x:Key="IconTranslate">M3 4 H8 M5.5 2.5 V4 M4.5 4 C4.5 8 6.5 9.5 9 10 M9 4 C9 8 7 9.5 4.5 10 M9 15 L12 8 L15 15 M10 12 H14</Geometry>
+        <Geometry x:Key="IconTranslate">M2 3 H7 M4.5 1.5 V3 M3.5 3 C3.5 7 5 8.5 8 9 M8 3 C8 7 6.5 8.5 3.5 9 M2 15 C2 11 5 10 8 10 H9 M2 15 C2 12 4 12 6 12 M10 16 L13 7 L16 16 M11 13 H15</Geometry>
         <Geometry x:Key="IconClose">M4 4 L12 12 M12 4 L4 12</Geometry>
         <Geometry x:Key="IconCheck">M3 8 L6.5 11.5 L13 4</Geometry>
         <Geometry x:Key="IconPlus">M8 3 V13 M3 8 H13</Geometry>
         <Geometry x:Key="IconOcr">M3 3 H7 M3 3 V7 M13 3 H17 V7 M3 13 V17 H7 M13 17 H17 V13 M8 13 L10.5 7 L13 13 M9 11 H12</Geometry>
         <Geometry x:Key="IconStar">M12 3 L14.5 9 L21 9.5 L16 14 L17.5 21 L12 17.5 L6.5 21 L8 14 L3 9.5 L9.5 9 Z</Geometry>
         <Geometry x:Key="IconChevron">M4 6 L8 10 L12 6</Geometry>
+        <Geometry x:Key="IconWatermark">M4 3 H16 V6 H12 V17 H8 V6 H4 Z</Geometry>
 
         <Style x:Key="IconPath" TargetType="Path">
             <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ButtonBase}}}" />

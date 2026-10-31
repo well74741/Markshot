@@ -53,6 +53,7 @@ public partial class OverlayWindow : Window
 
     private bool _textActive;
     private Point _textPosition;
+    private WatermarkAnnotation? _editingWatermark;
 
     private readonly byte[] _pixelBuffer = new byte[4];
     private WindowTarget? _hoverTarget;
@@ -205,6 +206,19 @@ public partial class OverlayWindow : Window
 
         _selectedAnnotation.Fill = _fill;
         _selectedAnnotation.CornerRadius = _corner;
+        if (_selectedAnnotation is TextAnnotation textAnnotation)
+        {
+            textAnnotation.FontSize = Math.Max(8, _thickness);
+            textAnnotation.StrokeColor = Toolbar.StrokeColor;
+            textAnnotation.StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0;
+        }
+        else if (_selectedAnnotation is WatermarkAnnotation watermarkAnnotation)
+        {
+            watermarkAnnotation.FontSize = Math.Max(10, _thickness);
+            watermarkAnnotation.StrokeColor = Toolbar.StrokeColor;
+            watermarkAnnotation.StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0;
+        }
+
         Editor.InvalidateVisual();
     }
 
@@ -327,7 +341,7 @@ public partial class OverlayWindow : Window
         Editor.InvalidateVisual();
 
         Hint.Visibility = Visibility.Collapsed;
-        Magnifier.Visibility = Visibility.Collapsed;
+        Magnifier.Visibility = _dragging ? Visibility.Visible : Visibility.Collapsed;
 
         if (_dragging)
         {
@@ -474,6 +488,17 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (e.ClickCount == 2 &&
+            (_tool == AnnotationTool.Watermark || _tool == AnnotationTool.Select || _tool == AnnotationTool.None))
+        {
+            if (HitAnnotation(ToPixels(e.GetPosition(InputLayer))) is WatermarkAnnotation watermark)
+            {
+                BeginWatermarkEdit(watermark);
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
         {
             var candidate = HitAnnotation(point);
@@ -596,7 +621,7 @@ public partial class OverlayWindow : Window
         }
 
         var point = ToPixels(e.GetPosition(InputLayer));
-        if (!_hasSelection)
+        if (_dragging || !_hasSelection)
         {
             UpdateMagnifier(point);
         }
@@ -799,6 +824,7 @@ public partial class OverlayWindow : Window
 
         InputLayer.ReleaseMouseCapture();
         _dragging = false;
+        Magnifier.Visibility = Visibility.Collapsed;
         _spaceDrag = false;
         _spaceAnnotation = false;
         _resizingAnnotation = false;
@@ -868,6 +894,12 @@ public partial class OverlayWindow : Window
     {
         if (_hasSelection || _active != null || _closed)
         {
+            if (_selectedAnnotation != null)
+            {
+                AdjustSelectedByWheel(e.Delta);
+                e.Handled = true;
+            }
+
             return;
         }
 
@@ -920,11 +952,27 @@ public partial class OverlayWindow : Window
         Toolbar.SetTool(AnnotationTool.Select);
         Toolbar.SetSelection(annotation);
         Toolbar.SetColor(annotation.Color);
-        Toolbar.SetThickness(annotation is NumberAnnotation number ? number.Radius : annotation.Thickness);
+        var size = annotation switch
+        {
+            TextAnnotation text => text.FontSize,
+            WatermarkAnnotation watermark => watermark.FontSize,
+            NumberAnnotation number => number.Radius,
+            _ => annotation.Thickness
+        };
+        Toolbar.SetThickness(size);
         Toolbar.SetFill(annotation.Fill);
         Toolbar.SetCorner(annotation.CornerRadius);
+        if (annotation is TextAnnotation selectedText)
+        {
+            Toolbar.SetStroke(selectedText.StrokeThickness > 0, selectedText.StrokeColor, selectedText.StrokeThickness);
+        }
+        else if (annotation is WatermarkAnnotation selectedWatermark)
+        {
+            Toolbar.SetStroke(selectedWatermark.StrokeThickness > 0, selectedWatermark.StrokeColor, selectedWatermark.StrokeThickness);
+        }
+
         _color = annotation.Color;
-        _thickness = annotation is NumberAnnotation n ? n.Radius : annotation.Thickness;
+        _thickness = size;
         _fill = annotation.Fill;
         _corner = annotation.CornerRadius;
         Editor.Selected = annotation;
@@ -1099,6 +1147,9 @@ public partial class OverlayWindow : Window
                 break;
             case WatermarkAnnotation watermark:
                 watermark.Rect = target;
+                watermark.FontSize = Math.Max(10, watermark.FontSize * Math.Min(
+                    target.Width / Math.Max(1, source.Width),
+                    target.Height / Math.Max(1, source.Height)));
                 break;
             case LineAnnotation line:
                 line.Start = MapShapePoint(line.Start, source, target);
@@ -1443,7 +1494,9 @@ public partial class OverlayWindow : Window
                 {
                     Rect = new Rect(point, point),
                     Color = _color,
-                    Thickness = _thickness,
+                    FontSize = Math.Max(10, _thickness),
+                    StrokeColor = Toolbar.StrokeColor,
+                    StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0,
                     Opacity = 0.22
                 };
                 break;
@@ -1598,12 +1651,26 @@ public partial class OverlayWindow : Window
 
     private void BeginText(Point point)
     {
+        _editingWatermark = null;
         _textActive = true;
         _textPosition = point;
         TextEditor.Text = string.Empty;
         TextEditor.Visibility = Visibility.Visible;
         Canvas.SetLeft(TextEditor, point.X / _scale + 4);
         Canvas.SetTop(TextEditor, point.Y / _scale + 4);
+        TextEditor.Focus();
+        Keyboard.Focus(TextEditor);
+    }
+
+    private void BeginWatermarkEdit(WatermarkAnnotation watermark)
+    {
+        _editingWatermark = watermark;
+        _textActive = true;
+        _textPosition = new Point(watermark.Rect.X, watermark.Rect.Y);
+        TextEditor.Text = watermark.Text;
+        TextEditor.Visibility = Visibility.Visible;
+        Canvas.SetLeft(TextEditor, watermark.Rect.X / _scale + 4);
+        Canvas.SetTop(TextEditor, watermark.Rect.Y / _scale + 4);
         TextEditor.Focus();
         Keyboard.Focus(TextEditor);
     }
@@ -1619,6 +1686,20 @@ public partial class OverlayWindow : Window
         var text = TextEditor.Text.Trim();
         TextEditor.Visibility = Visibility.Collapsed;
 
+        if (_editingWatermark != null)
+        {
+            if (text.Length > 0)
+            {
+                _editingWatermark.Text = text;
+                Editor.InvalidateVisual();
+            }
+
+            _editingWatermark = null;
+            Focus();
+            Keyboard.Focus(this);
+            return;
+        }
+
         if (text.Length > 0 && !_closed)
         {
             Editor.Items.Add(new TextAnnotation
@@ -1627,7 +1708,9 @@ public partial class OverlayWindow : Window
                 Text = text,
                 Color = _color,
                 Thickness = _thickness,
-                FontSize = Math.Max(15, 10 + _thickness * 2.5)
+                FontSize = Math.Max(8, _thickness),
+                StrokeColor = Toolbar.StrokeColor,
+                StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0
             });
             _redo.Clear();
             UpdateUndoButtons();
@@ -1641,6 +1724,7 @@ public partial class OverlayWindow : Window
     private void CancelText()
     {
         _textActive = false;
+        _editingWatermark = null;
         TextEditor.Text = string.Empty;
         TextEditor.Visibility = Visibility.Collapsed;
         Focus();
@@ -2038,6 +2122,115 @@ public partial class OverlayWindow : Window
         _ => false
     };
 
+    private bool UpdateAnnotationTransformCursor(Point point)
+    {
+        if (_selectedAnnotation == null)
+        {
+            return false;
+        }
+
+        var bounds = _selectedAnnotation.Bounds;
+        var frame = AnnotationEditor.SelectionFrame(bounds, 1 / _scale);
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var local = AnnotationEditor.RotatePoint(point, center, -_selectedAnnotation.Rotation);
+
+        if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 / _scale)
+        {
+            InputLayer.Cursor = Cursors.Hand;
+            return true;
+        }
+
+        var handles = AnnotationEditor.HandleCenters(frame);
+        for (var i = 0; i < handles.Length; i++)
+        {
+            if ((local - handles[i]).Length <= 10 / _scale)
+            {
+                InputLayer.Cursor = i switch
+                {
+                    0 or 4 => Cursors.SizeNWSE,
+                    2 or 6 => Cursors.SizeNESW,
+                    1 or 5 => Cursors.SizeNS,
+                    3 or 7 => Cursors.SizeWE,
+                    _ => Cursors.SizeAll
+                };
+                return true;
+            }
+        }
+
+        var edge = 6 / _scale;
+        var nearX = Math.Abs(local.X - frame.Left) <= edge || Math.Abs(local.X - frame.Right) <= edge;
+        var nearY = Math.Abs(local.Y - frame.Top) <= edge || Math.Abs(local.Y - frame.Bottom) <= edge;
+        if (nearX && nearY)
+        {
+            InputLayer.Cursor = (local.X < center.X) == (local.Y < center.Y)
+                ? Cursors.SizeNWSE
+                : Cursors.SizeNESW;
+            return true;
+        }
+
+        if (nearX)
+        {
+            InputLayer.Cursor = Cursors.SizeWE;
+            return true;
+        }
+
+        if (nearY)
+        {
+            InputLayer.Cursor = Cursors.SizeNS;
+            return true;
+        }
+
+        if (frame.Contains(local))
+        {
+            InputLayer.Cursor = Cursors.SizeAll;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void AdjustSelectedByWheel(int delta)
+    {
+        if (_selectedAnnotation == null)
+        {
+            return;
+        }
+
+        var step = Math.Sign(delta);
+        switch (_selectedAnnotation)
+        {
+            case TextAnnotation text:
+                text.FontSize = Math.Clamp(text.FontSize + step * 2, 8, 120);
+                Toolbar.SetThickness(text.FontSize);
+                _thickness = text.FontSize;
+                break;
+            case WatermarkAnnotation watermark:
+                watermark.FontSize = Math.Clamp(watermark.FontSize + step * 2, 10, 120);
+                Toolbar.SetThickness(watermark.FontSize);
+                _thickness = watermark.FontSize;
+                break;
+            case NumberAnnotation number:
+                number.Radius = Math.Clamp(number.Radius + step * 2, 8, 80);
+                Toolbar.SetThickness(number.Radius);
+                _thickness = number.Radius;
+                break;
+            case MosaicAnnotation mosaic:
+                mosaic.Thickness = Math.Clamp(mosaic.Thickness + step * 2, 8, 40);
+                mosaic.Pattern = MosaicBuilder.Build(
+                    _screen, mosaic.Rect, Math.Clamp((int)Math.Round(mosaic.Thickness), 8, 40));
+                Toolbar.SetThickness(mosaic.Thickness);
+                _thickness = mosaic.Thickness;
+                break;
+            default:
+                _selectedAnnotation.Thickness = Math.Clamp(_selectedAnnotation.Thickness + step * 0.5, 1, 24);
+                _thickness = _selectedAnnotation.Thickness;
+                Toolbar.SetThickness(_thickness);
+                break;
+        }
+
+        Editor.InvalidateVisual();
+    }
+
     private int HitHandle(Point point)
     {
         if (!_hasSelection)
@@ -2070,6 +2263,11 @@ public partial class OverlayWindow : Window
     {
         if (_tool == AnnotationTool.Select || _tool == AnnotationTool.None)
         {
+            if (_selectedAnnotation != null && UpdateAnnotationTransformCursor(point))
+            {
+                return;
+            }
+
             if (HitAnnotation(point) != null)
             {
                 InputLayer.Cursor = Cursors.SizeAll;
