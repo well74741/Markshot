@@ -644,8 +644,12 @@ public partial class AnnotationToolbar : UserControl
 
     private void Ocr_Click(object sender, RoutedEventArgs e) => OcrRequested?.Invoke();
 
-    private void TranslateToggle_Click(object sender, RoutedEventArgs e) =>
-        TranslateToggled?.Invoke(TranslateToggle.IsChecked == true);
+    private void TranslateToggle_Click(object sender, RoutedEventArgs e)
+    {
+        var enabled = TranslateToggle.IsChecked == true;
+        TranslateHint.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        TranslateToggled?.Invoke(enabled);
+    }
 
     private void Close_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke();
 

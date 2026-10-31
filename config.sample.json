@@ -1,6 +1,9 @@
 {
   "CaptureHotkey": "F1",
   "PinHotkey": "F3",
+  "MouseThroughHotkey": "Ctrl+Alt+M",
+  "RestorePinHotkey": "Ctrl+Alt+Z",
+  "TextBypassModifier": "Alt",
   "ToolPenHotkey": "B",
   "ToolSelectHotkey": "V",
   "ToolEraserHotkey": "E",

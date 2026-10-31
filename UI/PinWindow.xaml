@@ -17,7 +17,7 @@
         PreviewKeyDown="OnPreviewKeyDown"
         PreviewKeyUp="OnPreviewKeyUp">
 
-    <Grid>
+    <Grid x:Name="RootGrid" Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -25,6 +25,9 @@
 
         <Grid x:Name="ImageHost" Grid.Row="0" HorizontalAlignment="Left" VerticalAlignment="Top"
               ClipToBounds="True">
+            <Grid.Effect>
+                <DropShadowEffect x:Name="ImageShadow" Color="#000000" BlurRadius="14" ShadowDepth="0" Opacity="0.7" />
+            </Grid.Effect>
             <Image x:Name="Img" Stretch="Fill" SnapsToDevicePixels="True" />
             <annotations:AnnotationEditor x:Name="Editor" Visibility="Collapsed" IsHitTestVisible="False" />
             <Rectangle x:Name="InputLayer" Fill="Transparent" Visibility="Collapsed"
@@ -39,7 +42,7 @@
                          Background="#E6101010" BorderBrush="#4C8DFF"
                          PreviewKeyDown="TextEditor_PreviewKeyDown" />
             </Canvas>
-            <Border x:Name="FrameBorder" BorderThickness="1" BorderBrush="#FF3B82F6" IsHitTestVisible="False" />
+            <Border x:Name="FrameBorder" BorderThickness="0" BorderBrush="Transparent" IsHitTestVisible="False" />
         </Grid>
 
         <ui:AnnotationToolbar x:Name="Toolbar" Grid.Row="1" Visibility="Collapsed" Margin="0,6,0,0"

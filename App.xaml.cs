@@ -316,6 +316,20 @@ public partial class App : Application
         }
     }
 
+    public void CloseAllPins()
+    {
+        foreach (var pin in _pins.ToArray())
+        {
+            pin.Close();
+        }
+    }
+
+    public void ToggleMouseThrough()
+    {
+        var target = _pins.LastOrDefault(p => p.IsActive) ?? _pins.LastOrDefault();
+        target?.SetClickThrough(!target.IsClickThrough);
+    }
+
     public void ShowSettings()
     {
         var dialog = new SettingsWindow(Config);
@@ -354,6 +368,16 @@ public partial class App : Application
         if (!string.IsNullOrWhiteSpace(Config.PinHotkey))
         {
             bindings.Add((Config.PinHotkey, PinFromClipboard));
+        }
+
+        if (!string.IsNullOrWhiteSpace(Config.MouseThroughHotkey))
+        {
+            bindings.Add((Config.MouseThroughHotkey, ToggleMouseThrough));
+        }
+
+        if (!string.IsNullOrWhiteSpace(Config.RestorePinHotkey))
+        {
+            bindings.Add((Config.RestorePinHotkey, RestoreLastPin));
         }
 
         var errors = _hotkeys.RegisterAll(bindings.ToArray());

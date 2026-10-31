@@ -30,7 +30,7 @@
                 <ColumnDefinition Width="44" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="R" Foreground="#E8E8E8" VerticalAlignment="Center" />
-            <Slider x:Name="RSlider" Grid.Column="1" Minimum="0" Maximum="255" Value="55"
+            <Slider x:Name="RSlider" IsMoveToPointEnabled="True" Grid.Column="1" Minimum="0" Maximum="255" Value="55"
                     ValueChanged="Slider_Changed" VerticalAlignment="Center" />
             <TextBlock x:Name="RValue" Grid.Column="2" Foreground="#C8C8C8" TextAlignment="Center"
                        VerticalAlignment="Center" />
@@ -43,7 +43,7 @@
                 <ColumnDefinition Width="44" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="G" Foreground="#E8E8E8" VerticalAlignment="Center" />
-            <Slider x:Name="GSlider" Grid.Column="1" Minimum="0" Maximum="255" Value="214"
+            <Slider x:Name="GSlider" IsMoveToPointEnabled="True" Grid.Column="1" Minimum="0" Maximum="255" Value="214"
                     ValueChanged="Slider_Changed" VerticalAlignment="Center" />
             <TextBlock x:Name="GValue" Grid.Column="2" Foreground="#C8C8C8" TextAlignment="Center"
                        VerticalAlignment="Center" />
@@ -56,7 +56,7 @@
                 <ColumnDefinition Width="44" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="B" Foreground="#E8E8E8" VerticalAlignment="Center" />
-            <Slider x:Name="BSlider" Grid.Column="1" Minimum="0" Maximum="255" Value="192"
+            <Slider x:Name="BSlider" IsMoveToPointEnabled="True" Grid.Column="1" Minimum="0" Maximum="255" Value="192"
                     ValueChanged="Slider_Changed" VerticalAlignment="Center" />
             <TextBlock x:Name="BValue" Grid.Column="2" Foreground="#C8C8C8" TextAlignment="Center"
                        VerticalAlignment="Center" />

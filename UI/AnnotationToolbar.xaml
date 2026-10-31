@@ -95,6 +95,8 @@
                                   Click="TranslateToggle_Click" ToolTip="自动翻译（可激活）">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconTranslate}" />
                     </ToggleButton>
+                    <TextBlock x:Name="TranslateHint" Text="自动翻译" Foreground="#6BA1FF" FontSize="10"
+                               VerticalAlignment="Center" Margin="2,0,0,0" Visibility="Collapsed" />
                 </StackPanel>
 
                 <StackPanel x:Name="PinActions" Orientation="Horizontal" Visibility="Collapsed">
@@ -151,7 +153,7 @@
                     <StackPanel x:Name="WidthGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border x:Name="WidthSeparator" Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
                         <TextBlock x:Name="WidthLabel" Text="粗细" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
-                        <Slider x:Name="WidthSlider" Width="86" Minimum="1" Maximum="16" Value="3"
+                        <Slider x:Name="WidthSlider" IsMoveToPointEnabled="True" Width="86" Minimum="1" Maximum="16" Value="3"
                                 ValueChanged="Width_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
                         <TextBlock x:Name="WidthValue" Text="3" Foreground="#C8C8C8" FontSize="11" Width="20"
                                    TextAlignment="Center" VerticalAlignment="Center" />
@@ -160,7 +162,7 @@
                     <StackPanel x:Name="CornerGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border Width="1" Height="18" Background="#33FFFFFF" Margin="5,0" />
                         <TextBlock Text="圆角" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
-                        <Slider x:Name="CornerSlider" Width="64" Minimum="0" Maximum="40" Value="0"
+                        <Slider x:Name="CornerSlider" IsMoveToPointEnabled="True" Width="64" Minimum="0" Maximum="40" Value="0"
                                 ValueChanged="Corner_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
                         <TextBlock x:Name="CornerValue" Text="0" Foreground="#C8C8C8" FontSize="11" Width="20"
                                    TextAlignment="Center" VerticalAlignment="Center" />
@@ -175,7 +177,7 @@
                             <Ellipse x:Name="StrokeColorCircle" Width="16" Height="16" Fill="#202020"
                                      Stroke="#D8D8D8" StrokeThickness="1.2" />
                         </Button>
-                        <Slider x:Name="StrokeSlider" Width="56" Minimum="0" Maximum="8" Value="0"
+                        <Slider x:Name="StrokeSlider" IsMoveToPointEnabled="True" Width="56" Minimum="0" Maximum="8" Value="0"
                                 ValueChanged="Stroke_Changed" VerticalAlignment="Center" Margin="4,0,2,0" />
                         <TextBlock x:Name="StrokeValue" Text="0" Foreground="#C8C8C8" FontSize="11" Width="16"
                                    TextAlignment="Center" VerticalAlignment="Center" />

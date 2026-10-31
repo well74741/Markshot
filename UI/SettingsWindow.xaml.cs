@@ -18,6 +18,9 @@ public partial class SettingsWindow : Window
 
         CaptureHotkeyBox.Text = config.CaptureHotkey;
         PinHotkeyBox.Text = config.PinHotkey;
+        MouseThroughHotkeyBox.Text = config.MouseThroughHotkey;
+        RestorePinHotkeyBox.Text = config.RestorePinHotkey;
+        TextBypassBox.Text = config.TextBypassModifier;
         PenKeyBox.Text = config.ToolPenHotkey;
         SelectKeyBox.Text = config.ToolSelectHotkey;
         EraserKeyBox.Text = config.ToolEraserHotkey;
@@ -114,8 +117,12 @@ public partial class SettingsWindow : Window
         var manual = ManualHotkeyCheck.IsChecked == true;
         CaptureHotkeyBox.IsReadOnly = !manual;
         PinHotkeyBox.IsReadOnly = !manual;
+        MouseThroughHotkeyBox.IsReadOnly = !manual;
+        RestorePinHotkeyBox.IsReadOnly = !manual;
         CaptureHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
         PinHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
+        MouseThroughHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
+        RestorePinHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
 
         if (manual)
         {
@@ -193,8 +200,32 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        var hasMouseThrough = !string.IsNullOrWhiteSpace(MouseThroughHotkeyBox.Text);
+        var mouseThrough = default(HotkeyGesture);
+        if (hasMouseThrough &&
+            !HotkeyGesture.TryParse(MouseThroughHotkeyBox.Text, out mouseThrough, out error))
+        {
+            MessageBox.Show(this, "鼠标穿透快捷键无效：" + error, "Markshot",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var hasRestore = !string.IsNullOrWhiteSpace(RestorePinHotkeyBox.Text);
+        var restore = default(HotkeyGesture);
+        if (hasRestore && !HotkeyGesture.TryParse(RestorePinHotkeyBox.Text, out restore, out error))
+        {
+            MessageBox.Show(this, "返回上一贴图快捷键无效：" + error, "Markshot",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         _config.CaptureHotkey = capture.Text;
         _config.PinHotkey = hasPinHotkey ? pin.Text : "";
+        _config.MouseThroughHotkey = hasMouseThrough ? mouseThrough.Text : "";
+        _config.RestorePinHotkey = hasRestore ? restore.Text : "";
+        _config.TextBypassModifier = string.IsNullOrWhiteSpace(TextBypassBox.Text)
+            ? "Alt"
+            : TextBypassBox.Text.Trim();
 
         var penKey = NormalizeToolKey(PenKeyBox.Text, "B");
         var selectKey = NormalizeToolKey(SelectKeyBox.Text, "V");

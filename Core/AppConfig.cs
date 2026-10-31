@@ -8,6 +8,12 @@ public sealed class AppConfig
     public string CaptureHotkey { get; set; } = "F1";
     public string PinHotkey { get; set; } = "F3";
 
+    public string MouseThroughHotkey { get; set; } = "Ctrl+Alt+M";
+
+    public string RestorePinHotkey { get; set; } = "Ctrl+Alt+Z";
+
+    public string TextBypassModifier { get; set; } = "Alt";
+
     public string ToolPenHotkey { get; set; } = "B";
 
     public string ToolSelectHotkey { get; set; } = "V";

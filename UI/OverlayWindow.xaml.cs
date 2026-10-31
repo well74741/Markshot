@@ -187,6 +187,7 @@ public partial class OverlayWindow : Window
         _thickness = Toolbar.Thickness;
         _fill = Toolbar.FillEnabled;
         _corner = Toolbar.CornerRadius;
+        UpdateCursorToPointer();
 
         if (_selectedAnnotation == null)
         {
@@ -1617,7 +1618,7 @@ public partial class OverlayWindow : Window
                 Editor.InvalidateVisual();
                 return;
 
-            case PenAnnotation pen when pen.Points.Count < 2:
+            case PenAnnotation pen when pen.Points.Count < 1:
                 Editor.InvalidateVisual();
                 return;
         }
@@ -2073,7 +2074,7 @@ public partial class OverlayWindow : Window
             Toolbar.SetSelection(_selectedAnnotation);
         }
 
-        InputLayer.Cursor = ToolCursors.Get(tool);
+        InputLayer.Cursor = ToolCursors.Get(tool, _thickness, _color);
     }
 
     private void UpdateAnnotationHover(Point point)
@@ -2092,7 +2093,7 @@ public partial class OverlayWindow : Window
         }
 
         ClearAnnotationHover();
-        InputLayer.Cursor = ToolCursors.Get(_tool);
+        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
     }
 
     private void ClearAnnotationHover()
@@ -2296,7 +2297,7 @@ public partial class OverlayWindow : Window
 
         if (_tool != AnnotationTool.None && _hasSelection && _selection.Contains(point))
         {
-            InputLayer.Cursor = ToolCursors.Get(_tool);
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
             return;
         }
 

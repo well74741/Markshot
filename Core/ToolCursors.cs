@@ -12,7 +12,7 @@ namespace Markshot.Core;
 /// </summary>
 public static class ToolCursors
 {
-    private static readonly Dictionary<AnnotationTool, Cursor> Cache = new();
+    private static readonly Dictionary<string, Cursor> Cache = new();
     private static readonly List<CursorHandle> Handles = new();
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -31,7 +31,7 @@ public static class ToolCursors
         protected override bool ReleaseHandle() => DestroyCursor(handle);
     }
 
-    public static Cursor Get(AnnotationTool tool)
+    public static Cursor Get(AnnotationTool tool, double thickness = 3, Color? color = null)
     {
         if (tool == AnnotationTool.Select || tool == AnnotationTool.None)
         {
@@ -49,17 +49,22 @@ public static class ToolCursors
             return Cursors.Cross;
         }
 
-        if (Cache.TryGetValue(tool, out var cached))
+        var diameter = Math.Clamp((int)Math.Round(thickness * 2), 6, 48);
+        var ink = tool == AnnotationTool.Eraser
+            ? Color.FromRgb(0xFF, 0x6B, 0x6B)
+            : color ?? Color.FromRgb(0xF5, 0xF5, 0xF5);
+        var key = $"{tool}-{diameter}-{ink.R:X2}{ink.G:X2}{ink.B:X2}";
+        if (Cache.TryGetValue(key, out var cached))
         {
             return cached;
         }
 
-        var cursor = Build(tool) ?? Cursors.Cross;
-        Cache[tool] = cursor;
+        var cursor = Build(diameter, ink, key) ?? Cursors.Cross;
+        Cache[key] = cursor;
         return cursor;
     }
 
-    private static Cursor? Build(AnnotationTool tool)
+    private static Cursor? Build(int diameter, Color ink, string key)
     {
         try
         {
@@ -67,17 +72,13 @@ public static class ToolCursors
             using (var dc = visual.RenderOpen())
             {
                 var outline = new Pen(new SolidColorBrush(Color.FromArgb(235, 0, 0, 0)), 3.0);
-                var line = new Pen(
-                    new SolidColorBrush(tool == AnnotationTool.Eraser
-                        ? Color.FromRgb(0xFF, 0x6B, 0x6B)
-                        : Color.FromArgb(250, 245, 245, 245)),
-                    1.5);
-
-                dc.DrawEllipse(null, outline, new Point(16, 16), 10, 10);
-                dc.DrawEllipse(null, line, new Point(16, 16), 10, 10);
+                var line = new Pen(new SolidColorBrush(ink), 1.5);
+                var radius = diameter / 2.0;
+                dc.DrawEllipse(null, outline, new Point(32, 32), radius, radius);
+                dc.DrawEllipse(null, line, new Point(32, 32), radius, radius);
             }
 
-            var bitmap = new RenderTargetBitmap(32, 32, 96, 96, PixelFormats.Pbgra32);
+            var bitmap = new RenderTargetBitmap(64, 64, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(visual);
 
             var encoder = new PngBitmapEncoder();
@@ -89,17 +90,17 @@ public static class ToolCursors
             using var cur = new MemoryStream();
             using (var writer = new BinaryWriter(cur, Encoding.UTF8, leaveOpen: true))
             {
-                writer.Write((ushort)0);       // reserved
-                writer.Write((ushort)2);       // cursor
-                writer.Write((ushort)1);       // one image
-                writer.Write((byte)32);        // width
-                writer.Write((byte)32);        // height
-                writer.Write((byte)0);         // colors
-                writer.Write((byte)0);         // reserved
-                writer.Write((ushort)16);      // hotspot x
-                writer.Write((ushort)16);      // hotspot y
+                writer.Write((ushort)0);
+                writer.Write((ushort)2);
+                writer.Write((ushort)1);
+                writer.Write((byte)64);
+                writer.Write((byte)64);
+                writer.Write((byte)0);
+                writer.Write((byte)0);
+                writer.Write((ushort)32);
+                writer.Write((ushort)32);
                 writer.Write((uint)payload.Length);
-                writer.Write((uint)22);        // offset: 6 + 16
+                writer.Write((uint)22);
             }
 
             cur.Write(payload, 0, payload.Length);
@@ -115,7 +116,7 @@ public static class ToolCursors
                 Directory.CreateDirectory(directory);
             }
 
-            var file = Path.Combine(directory, $"tool-{tool}.cur");
+            var file = Path.Combine(directory, $"cursor-{key}.cur");
             File.WriteAllBytes(file, cur.ToArray());
 
             var handle = LoadCursorFromFile(file);
@@ -130,7 +131,7 @@ public static class ToolCursors
         }
         catch (Exception ex)
         {
-            Log.Error("创建工具光标失败: " + tool, ex);
+            Log.Error("创建工具光标失败: " + key, ex);
             return null;
         }
     }
