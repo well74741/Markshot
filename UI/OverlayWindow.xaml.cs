@@ -2720,7 +2720,7 @@ public partial class OverlayWindow : Window
             _selection.Height);
         if (_autoTranslate && action is CaptureAction.Copy or CaptureAction.Save or CaptureAction.Pin)
         {
-            Dispatcher.BeginInvoke(new Action(() => ((App)Application.Current).ShowTranslation(image)));
+            Dispatcher.BeginInvoke(new Action(() => ((App)Application.Current).ShowAutoTranslation(image)));
         }
 
         Close();

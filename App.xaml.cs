@@ -13,7 +13,7 @@ public partial class App : Application
         string.IsNullOrWhiteSpace(Config.PinHotkey) ? "贴图未设快捷键" : $"贴图 {Config.PinHotkey}";
 
     private readonly List<PinWindow> _pins = new();
-    private readonly List<TranslationWindow> _translations = new();
+    private readonly List<Window> _translations = new();
 
     private const int MaxPins = 20;
 
@@ -283,6 +283,15 @@ public partial class App : Application
     public void ShowOcr(BitmapSource image)
     {
         var window = new TranslationWindow(image, autoTranslate: false);
+        window.Closed += (_, _) => _translations.Remove(window);
+        _translations.Add(window);
+        window.Show();
+        window.Activate();
+    }
+
+    public void ShowAutoTranslation(BitmapSource image)
+    {
+        var window = new AutoTranslateWindow(image);
         window.Closed += (_, _) => _translations.Remove(window);
         _translations.Add(window);
         window.Show();

@@ -434,6 +434,13 @@ public partial class PinWindow : Window
                     return;
                 }
 
+                if (HitAnnotation(point) is TextAnnotation directText)
+                {
+                    BeginTextEdit(directText);
+                    e.Handled = true;
+                    return;
+                }
+
                 if (_selected != null && TryBeginAnnotationTransform(point))
                 {
                     CaptureMouse();
