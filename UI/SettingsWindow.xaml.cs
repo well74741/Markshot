@@ -18,6 +18,12 @@ public partial class SettingsWindow : Window
 
         CaptureHotkeyBox.Text = config.CaptureHotkey;
         PinHotkeyBox.Text = config.PinHotkey;
+        PenKeyBox.Text = config.ToolPenHotkey;
+        SelectKeyBox.Text = config.ToolSelectHotkey;
+        EraserKeyBox.Text = config.ToolEraserHotkey;
+        TextKeyBox.Text = config.ToolTextHotkey;
+        NumberKeyBox.Text = config.ToolNumberHotkey;
+        LineKeyBox.Text = config.ToolLineHotkey;
         SaveDirBox.Text = config.SaveDirectory;
         OcrLanguageBox.Text = config.OcrLanguage;
         BaseUrlBox.Text = config.Translation.BaseUrl;
@@ -124,6 +130,17 @@ public partial class SettingsWindow : Window
         Key.LeftShift or Key.RightShift or
         Key.LWin or Key.RWin;
 
+    private static string NormalizeToolKey(string text, string fallback)
+    {
+        var value = (text ?? string.Empty).Trim().ToUpperInvariant();
+        if (value.Length == 1 && char.IsLetterOrDigit(value[0]))
+        {
+            return value;
+        }
+
+        return fallback;
+    }
+
     private static string FormatModifierPreview(ModifierKeys modifiers)
     {
         var parts = new List<string>();
@@ -178,6 +195,28 @@ public partial class SettingsWindow : Window
 
         _config.CaptureHotkey = capture.Text;
         _config.PinHotkey = hasPinHotkey ? pin.Text : "";
+
+        var penKey = NormalizeToolKey(PenKeyBox.Text, "B");
+        var selectKey = NormalizeToolKey(SelectKeyBox.Text, "V");
+        var eraserKey = NormalizeToolKey(EraserKeyBox.Text, "E");
+        var textKey = NormalizeToolKey(TextKeyBox.Text, "T");
+        var numberKey = NormalizeToolKey(NumberKeyBox.Text, "S");
+        var lineKey = NormalizeToolKey(LineKeyBox.Text, "L");
+        var toolKeys = new[] { penKey, selectKey, eraserKey, textKey, numberKey, lineKey };
+        if (toolKeys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != toolKeys.Length)
+        {
+            MessageBox.Show(this, "标注工具快捷键不能重复。", "Markshot",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _config.ToolPenHotkey = penKey;
+        _config.ToolSelectHotkey = selectKey;
+        _config.ToolEraserHotkey = eraserKey;
+        _config.ToolTextHotkey = textKey;
+        _config.ToolNumberHotkey = numberKey;
+        _config.ToolLineHotkey = lineKey;
+
         _config.SaveDirectory = SaveDirBox.Text.Trim();
         _config.OcrLanguage = OcrLanguageBox.Text.Trim();
 

@@ -1,6 +1,12 @@
 {
   "CaptureHotkey": "F1",
   "PinHotkey": "F3",
+  "ToolPenHotkey": "B",
+  "ToolSelectHotkey": "V",
+  "ToolEraserHotkey": "E",
+  "ToolTextHotkey": "T",
+  "ToolNumberHotkey": "S",
+  "ToolLineHotkey": "L",
   "SaveDirectory": "",
   "OcrLanguage": "",
   "RecentRegions": [],

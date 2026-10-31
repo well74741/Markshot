@@ -23,24 +23,10 @@ public partial class OverlayWindow : Window
         Resizing
     }
 
-    private static readonly Color[] Palette =
-    {
-        Color.FromRgb(0xFF, 0x4D, 0x4F),
-        Color.FromRgb(0xFF, 0xA9, 0x40),
-        Color.FromRgb(0xFF, 0xD6, 0x66),
-        Color.FromRgb(0x52, 0xC4, 0x1A),
-        Color.FromRgb(0x4C, 0x8D, 0xFF),
-        Color.FromRgb(0xB3, 0x7F, 0xEB),
-        Colors.White,
-        Color.FromRgb(0x20, 0x20, 0x20)
-    };
-
     private readonly BitmapSource _screen;
     private readonly Int32Rect _bounds;
     private readonly bool _demo;
 
-    private readonly Dictionary<AnnotationTool, RadioButton> _toolButtons = new();
-    private readonly List<Border> _colorSwatches = new();
     private readonly Stack<Annotation> _redo = new();
 
     private double _scale = 1.0;
@@ -54,14 +40,15 @@ public partial class OverlayWindow : Window
     private int _handle = -1;
     private bool _dragging;
 
-    private AnnotationTool _tool = AnnotationTool.None;
+    private AnnotationTool _tool = AnnotationTool.Select;
     private Annotation? _active;
     private Point _annotationStart;
     private int _numberCounter = 1;
 
-    private Color _color = Palette[0];
-    private Color _customColor = Color.FromRgb(0x37, 0xD6, 0xC0);
+    private Color _color = Color.FromRgb(0xFF, 0x33, 0x00);
     private double _thickness = 3;
+    private bool _fill;
+    private double _corner;
 
     private bool _textActive;
     private Point _textPosition;
@@ -83,6 +70,9 @@ public partial class OverlayWindow : Window
     private Point _spaceAnchor;
     private Rect _spaceSelectionOrigin;
     private Point _spaceDragStartOrigin;
+    private bool _spaceAnnotation;
+    private Point _spaceAnnotationAnchor;
+    private Point _spaceAnnotationDelta;
 
     public CaptureAction Result { get; private set; } = CaptureAction.None;
 
@@ -103,8 +93,7 @@ public partial class OverlayWindow : Window
         Editor.Source = screen;
         Magnifier.Source = screen;
 
-        InitToolButtons();
-        InitPalette();
+        InitToolbar();
 
         _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.4) };
         _noticeTimer.Tick += (_, _) =>
@@ -130,95 +119,80 @@ public partial class OverlayWindow : Window
         };
     }
 
-    private void InitToolButtons()
+    private void InitToolbar()
     {
-        _toolButtons[AnnotationTool.Select] = ToolSelect;
-        _toolButtons[AnnotationTool.Rectangle] = ToolRect;
-        _toolButtons[AnnotationTool.Ellipse] = ToolEllipse;
-        _toolButtons[AnnotationTool.Arrow] = ToolArrow;
-        _toolButtons[AnnotationTool.Line] = ToolLine;
-        _toolButtons[AnnotationTool.Pen] = ToolPen;
-        _toolButtons[AnnotationTool.Highlighter] = ToolHighlighter;
-        _toolButtons[AnnotationTool.Mosaic] = ToolMosaic;
-        _toolButtons[AnnotationTool.Text] = ToolText;
-        _toolButtons[AnnotationTool.Number] = ToolNumber;
-        _toolButtons[AnnotationTool.Eraser] = ToolEraser;
-    }
-
-    private void InitPalette()
-    {
-        foreach (var color in Palette)
+        Toolbar.SetMode(AnnotationToolbarMode.Capture);
+        Toolbar.ToolChanged += OnToolbarToolChanged;
+        Toolbar.VariantChanged += OnToolbarVariantChanged;
+        Toolbar.SettingsChanged += ApplyToolbarSettings;
+        Toolbar.UndoRequested += Undo;
+        Toolbar.RedoRequested += Redo;
+        Toolbar.CopyRequested += CopyAndClose;
+        Toolbar.SaveRequested += SaveAndClose;
+        Toolbar.PinRequested += PinAndClose;
+        Toolbar.TranslateRequested += TranslateAndClose;
+        Toolbar.CloseRequested += Close;
+        Toolbar.SizeChanged += (_, _) =>
         {
-            var swatch = new Border
+            if (!_closed && Toolbar.Visibility == Visibility.Visible)
             {
-                Width = 18,
-                Height = 18,
-                CornerRadius = new CornerRadius(9),
-                Background = new SolidColorBrush(color),
-                BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255)),
-                Margin = new Thickness(3, 0, 3, 0),
-                Cursor = Cursors.Hand,
-                ToolTip = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
-            };
+                PositionToolbar();
+            }
+        };
 
-            swatch.MouseLeftButtonDown += (_, e) =>
-            {
-                SetColor(color);
-                e.Handled = true;
-            };
-
-            _colorSwatches.Add(swatch);
-            ColorPanel.Children.Add(swatch);
-        }
-
-        UpdateSwatchSelection();
+        _tool = AnnotationTool.Select;
+        Toolbar.SetTool(AnnotationTool.Select);
+        Toolbar.SetSelection(null);
     }
 
-    private void SetColor(Color color)
+    private void OnToolbarToolChanged(AnnotationTool tool)
     {
-        _color = color;
-        if (_selectedAnnotation != null)
-        {
-            _selectedAnnotation.Color = color;
-            Editor.InvalidateVisual();
-        }
-
-        UpdateSwatchSelection();
+        _tool = tool;
+        ClearAnnotationSelection();
+        Toolbar.SetSelection(null);
+        UpdateCursorToPointer();
     }
 
-    private void UpdateSwatchSelection()
+    private void OnToolbarVariantChanged(AnnotationTool tool)
     {
-        for (var i = 0; i < _colorSwatches.Count; i++)
+        if (_tool == AnnotationTool.Select && _selectedAnnotation != null)
         {
-            var selected = Palette[i] == _color;
-            _colorSwatches[i].BorderThickness = new Thickness(selected ? 2 : 1);
-            _colorSwatches[i].BorderBrush = selected
-                ? Brushes.White
-                : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
+            ConvertSelected(tool);
+            return;
         }
 
-        if (CustomColorRing != null)
-        {
-            var selected = _color == _customColor;
-            CustomColorRing.Fill = new SolidColorBrush(_customColor);
-            CustomColorRing.Stroke = selected
-                ? Brushes.White
-                : new SolidColorBrush(Color.FromArgb(120, 255, 255, 255));
-            CustomColorRing.StrokeThickness = selected ? 2 : 1.5;
-        }
+        _tool = tool;
+        UpdateCursorToPointer();
     }
 
-    private void CustomColor_Click(object sender, RoutedEventArgs e)
+    private void ApplyToolbarSettings()
     {
-        var picker = new ColorPickerWindow(_color) { Owner = this };
-        if (picker.ShowDialog() == true)
+        _color = Toolbar.Color;
+        _thickness = Toolbar.Thickness;
+        _fill = Toolbar.FillEnabled;
+        _corner = Toolbar.CornerRadius;
+
+        if (_selectedAnnotation == null)
         {
-            _customColor = picker.SelectedColor;
-            SetColor(_customColor);
+            return;
         }
+
+        _selectedAnnotation.Color = _color;
+        _selectedAnnotation.Thickness = _thickness;
+        _selectedAnnotation.Fill = _fill;
+        _selectedAnnotation.CornerRadius = _corner;
+        Editor.InvalidateVisual();
     }
 
+    private void UpdateCursorToPointer()
+    {
+        if (_closed || _scale <= 0)
+        {
+            return;
+        }
+
+        UpdateCursor(ToPixels(Mouse.GetPosition(InputLayer)));
+    }
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         var handle = new WindowInteropHelper(this).Handle;
@@ -408,14 +382,14 @@ public partial class OverlayWindow : Window
         Editor.Items.Add(new RectAnnotation
         {
             Rect = inner,
-            Color = Palette[0],
+            Color = Color.FromRgb(0xFF, 0x33, 0x00),
             Thickness = 4
         });
         Editor.Items.Add(new ArrowAnnotation
         {
             Start = new Point(inner.Right - 20, inner.Bottom - 10),
             End = new Point(inner.Right + 130, inner.Bottom + 70),
-            Color = Palette[0],
+            Color = Color.FromRgb(0xFF, 0x33, 0x00),
             Thickness = 4
         });
         Editor.Items.Add(new TextAnnotation
@@ -427,7 +401,7 @@ public partial class OverlayWindow : Window
         });
 
         var mosaicRect = new Rect(inner.Left, inner.Bottom + 84, 260, 78);
-        var mosaic = new MosaicAnnotation { Rect = mosaicRect, Color = Palette[4], Thickness = 3 };
+        var mosaic = new MosaicAnnotation { Rect = mosaicRect, Color = Color.FromRgb(0x00, 0xE5, 0xE5), Thickness = 3 };
         mosaic.Pattern = MosaicBuilder.Build(_screen, mosaicRect, 12);
         if (mosaic.Pattern != null)
         {
@@ -438,7 +412,7 @@ public partial class OverlayWindow : Window
         {
             Center = new Point(inner.Right + 14, inner.Top + 18),
             Number = 1,
-            Color = Palette[0],
+            Color = Color.FromRgb(0xFF, 0x33, 0x00),
             Radius = 15
         });
 
@@ -585,6 +559,19 @@ public partial class OverlayWindow : Window
             Magnifier.Visibility = Visibility.Collapsed;
         }
 
+        if (_spaceAnnotation && _active != null)
+        {
+            var dx = point.X - _spaceAnnotationAnchor.X;
+            var dy = point.Y - _spaceAnnotationAnchor.Y;
+            _active.Translate(dx - _spaceAnnotationDelta.X, dy - _spaceAnnotationDelta.Y);
+            _annotationStart = new Point(
+                _annotationStart.X + dx - _spaceAnnotationDelta.X,
+                _annotationStart.Y + dy - _spaceAnnotationDelta.Y);
+            _spaceAnnotationDelta = new Point(dx, dy);
+            Editor.InvalidateVisual();
+            return;
+        }
+
         if (_spaceDrag && _mode == DragMode.Creating)
         {
             var dx = point.X - _spaceAnchor.X;
@@ -704,6 +691,7 @@ public partial class OverlayWindow : Window
         InputLayer.ReleaseMouseCapture();
         _dragging = false;
         _spaceDrag = false;
+        _spaceAnnotation = false;
 
         if (_erasing)
         {
@@ -802,9 +790,105 @@ public partial class OverlayWindow : Window
     private void SelectAnnotation(Annotation annotation)
     {
         _selectedAnnotation = annotation;
-        Editor.Selected = annotation;
+        _tool = AnnotationTool.Select;
+        Toolbar.SetTool(AnnotationTool.Select);
+        Toolbar.SetSelection(annotation);
+        Toolbar.SetColor(annotation.Color);
+        Toolbar.SetThickness(annotation.Thickness);
+        Toolbar.SetFill(annotation.Fill);
+        Toolbar.SetCorner(annotation.CornerRadius);
         _color = annotation.Color;
-        UpdateSwatchSelection();
+        _thickness = annotation.Thickness;
+        _fill = annotation.Fill;
+        _corner = annotation.CornerRadius;
+        Editor.Selected = annotation;
+        Editor.InvalidateVisual();
+    }
+
+    private void ConvertSelected(AnnotationTool variant)
+    {
+        if (_selectedAnnotation == null)
+        {
+            return;
+        }
+
+        var old = _selectedAnnotation;
+        Annotation? replacement = null;
+
+        switch (old, variant)
+        {
+            case (RectAnnotation rect, AnnotationTool.Ellipse):
+                replacement = new EllipseAnnotation
+                {
+                    Rect = rect.Rect, Color = rect.Color, Thickness = rect.Thickness, Fill = rect.Fill
+                };
+                break;
+            case (EllipseAnnotation ellipse, AnnotationTool.Rectangle):
+                replacement = new RectAnnotation
+                {
+                    Rect = ellipse.Rect, Color = ellipse.Color, Thickness = ellipse.Thickness,
+                    Fill = ellipse.Fill, CornerRadius = _corner
+                };
+                break;
+            case (LineAnnotation line, AnnotationTool.Arrow):
+                replacement = new ArrowAnnotation
+                {
+                    Start = line.Start, End = line.End, Color = line.Color, Thickness = line.Thickness
+                };
+                break;
+            case (ArrowAnnotation arrow, AnnotationTool.Line):
+                replacement = new LineAnnotation
+                {
+                    Start = arrow.Start, End = arrow.End, Color = arrow.Color, Thickness = arrow.Thickness
+                };
+                break;
+            case (PenAnnotation pen, AnnotationTool.Pen):
+                pen.Highlight = false;
+                SelectAnnotation(pen);
+                return;
+            case (PenAnnotation pen, AnnotationTool.Highlighter):
+                pen.Highlight = true;
+                SelectAnnotation(pen);
+                return;
+            case (MosaicAnnotation mosaic, AnnotationTool.Watermark):
+                replacement = new WatermarkAnnotation
+                {
+                    Rect = mosaic.Rect, Color = mosaic.Color, Thickness = Math.Max(8, mosaic.Thickness),
+                    Opacity = 0.22
+                };
+                break;
+            case (WatermarkAnnotation watermark, AnnotationTool.Mosaic):
+                var newMosaic = new MosaicAnnotation
+                {
+                    Rect = watermark.Rect, Color = watermark.Color, Thickness = watermark.Thickness
+                };
+                newMosaic.Pattern = MosaicBuilder.Build(_screen, newMosaic.Rect);
+                replacement = newMosaic;
+                break;
+        }
+
+        if (replacement == null)
+        {
+            return;
+        }
+
+        replacement.Fill = _fill;
+        replacement.CornerRadius = _corner;
+        var index = Editor.Items.IndexOf(old);
+        if (index < 0)
+        {
+            return;
+        }
+
+        Editor.Items[index] = replacement;
+        _selectedAnnotation = replacement;
+        Editor.Selected = replacement;
+        Toolbar.SetTool(AnnotationTool.Select);
+        Toolbar.SetSelection(replacement);
+        Toolbar.SetColor(replacement.Color);
+        Toolbar.SetThickness(replacement.Thickness);
+        Toolbar.SetFill(replacement.Fill);
+        Toolbar.SetCorner(replacement.CornerRadius);
         Editor.InvalidateVisual();
     }
 
@@ -817,6 +901,11 @@ public partial class OverlayWindow : Window
 
         _selectedAnnotation = null;
         Editor.Selected = null;
+        if (Toolbar != null)
+        {
+            Toolbar.SetSelection(null);
+        }
+
         Editor.InvalidateVisual();
     }
 
@@ -830,6 +919,7 @@ public partial class OverlayWindow : Window
         Editor.Items.Remove(_selectedAnnotation);
         _selectedAnnotation = null;
         Editor.Selected = null;
+        Toolbar?.SetSelection(null);
         _redo.Clear();
         UpdateUndoButtons();
         Editor.InvalidateVisual();
@@ -1031,7 +1121,9 @@ public partial class OverlayWindow : Window
                 {
                     Rect = new Rect(point, point),
                     Color = _color,
-                    Thickness = _thickness
+                    Thickness = _thickness,
+                    Fill = _fill,
+                    CornerRadius = _corner
                 };
                 break;
 
@@ -1040,7 +1132,8 @@ public partial class OverlayWindow : Window
                 {
                     Rect = new Rect(point, point),
                     Color = _color,
-                    Thickness = _thickness
+                    Thickness = _thickness,
+                    Fill = _fill
                 };
                 break;
 
@@ -1086,6 +1179,16 @@ public partial class OverlayWindow : Window
                     Rect = new Rect(point, point),
                     Color = _color,
                     Thickness = _thickness
+                };
+                break;
+
+            case AnnotationTool.Watermark:
+                _active = new WatermarkAnnotation
+                {
+                    Rect = new Rect(point, point),
+                    Color = _color,
+                    Thickness = _thickness,
+                    Opacity = 0.22
                 };
                 break;
 
@@ -1160,6 +1263,10 @@ public partial class OverlayWindow : Window
 
             case MosaicAnnotation mosaic:
                 mosaic.Rect = ClampToScreen(NormalizeRect(_annotationStart, point));
+                break;
+
+            case WatermarkAnnotation watermark:
+                watermark.Rect = ClampToScreen(NormalizeRect(_annotationStart, point));
                 break;
 
             case NumberAnnotation number:
@@ -1303,6 +1410,17 @@ public partial class OverlayWindow : Window
         var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
+        if (e.Key == Key.Space && _dragging && _active != null && !_spaceAnnotation)
+        {
+            _spaceAnnotation = true;
+            var cursor = Native.CursorPosition();
+            _spaceAnnotationAnchor = new Point(cursor.X - _bounds.X, cursor.Y - _bounds.Y);
+            _spaceAnnotationDelta = new Point();
+            InputLayer.Cursor = Cursors.SizeAll;
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Space && _dragging && _mode == DragMode.Creating && !_spaceDrag)
         {
             _spaceDrag = true;
@@ -1311,6 +1429,14 @@ public partial class OverlayWindow : Window
             _spaceSelectionOrigin = _selection;
             _spaceDragStartOrigin = _dragStart;
             InputLayer.Cursor = Cursors.SizeAll;
+            e.Handled = true;
+            return;
+        }
+
+        if (!control && (Keyboard.Modifiers & ModifierKeys.Alt) == 0 &&
+            ToolHotkeys.TryMap(e.Key, App.Config, out var toolShortcut))
+        {
+            SetTool(toolShortcut);
             e.Handled = true;
             return;
         }
@@ -1553,6 +1679,12 @@ public partial class OverlayWindow : Window
 
     private void OnPreviewKeyUp(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Space && _spaceAnnotation)
+        {
+            _spaceAnnotation = false;
+            e.Handled = true;
+        }
+
         if (e.Key == Key.Space && _spaceDrag)
         {
             _spaceDrag = false;
@@ -1560,52 +1692,20 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private void Tool_Checked(object sender, RoutedEventArgs e)
-    {
-        if (sender is not RadioButton { Tag: string tag })
-        {
-            return;
-        }
-
-        if (Enum.TryParse<AnnotationTool>(tag, out var tool))
-        {
-            _tool = tool;
-            if (tool != AnnotationTool.Select && Editor != null)
-            {
-                ClearAnnotationSelection();
-            }
-        }
-    }
-
-    private void Width_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        _thickness = e.NewValue;
-        if (WidthValue != null)
-        {
-            WidthValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
-        }
-
-        if (_selectedAnnotation != null)
-        {
-            _selectedAnnotation.Thickness = e.NewValue;
-            Editor.InvalidateVisual();
-        }
-    }
-
     private void SetTool(AnnotationTool tool)
     {
         _tool = tool;
+        Toolbar.SetTool(tool);
         if (tool != AnnotationTool.Select)
         {
             ClearAnnotationSelection();
         }
-
-        foreach (var (key, button) in _toolButtons)
+        else if (_selectedAnnotation != null)
         {
-            button.IsChecked = key == tool;
+            Toolbar.SetSelection(_selectedAnnotation);
         }
 
-        InputLayer.Cursor = tool == AnnotationTool.Select ? Cursors.Arrow : Cursors.Cross;
+        InputLayer.Cursor = ToolCursors.Get(tool);
     }
 
     private int HitHandle(Point point)
@@ -1779,8 +1879,7 @@ public partial class OverlayWindow : Window
 
     private void UpdateUndoButtons()
     {
-        UndoButton.IsEnabled = Editor.Items.Count > 0;
-        RedoButton.IsEnabled = _redo.Count > 0;
+        Toolbar.RefreshUndo(Editor.Items.Count > 0, _redo.Count > 0);
     }
 
     private void Undo()

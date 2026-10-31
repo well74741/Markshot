@@ -54,6 +54,50 @@
 
                 <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
 
+                <TextBlock Text="标注工具快捷键（单字母）" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Grid.Column="0">
+                        <TextBlock Text="画笔" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="PenKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="2">
+                        <TextBlock Text="选择" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="SelectKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="4">
+                        <TextBlock Text="橡皮擦" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="EraserKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,8,0,0">
+                        <TextBlock Text="文字" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="TextKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
+                        <TextBlock Text="序号" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="NumberKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="4" Margin="0,8,0,0">
+                        <TextBlock Text="直线 / 箭头" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="LineKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
+                    </StackPanel>
+                </Grid>
+
+                <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
+
                 <TextBlock Text="保存" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
 
                 <TextBlock Text="保存目录" Style="{StaticResource FieldLabel}" />

@@ -7,22 +7,7 @@ namespace Markshot.UI;
 
 public partial class PinWindow : Window
 {
-    private static readonly Color[] Palette =
-    {
-        Color.FromRgb(0xFF, 0x33, 0x00),
-        Color.FromRgb(0xFF, 0xAA, 0x00),
-        Color.FromRgb(0xFF, 0xFF, 0x00),
-        Color.FromRgb(0x00, 0xEE, 0x44),
-        Color.FromRgb(0x00, 0xE5, 0xE5),
-        Color.FromRgb(0x1F, 0x5B, 0xFF),
-        Color.FromRgb(0xCC, 0x44, 0xFF),
-        Colors.White,
-        Color.FromRgb(0x20, 0x20, 0x20)
-    };
-
-    private readonly List<Border> _swatches = new();
     private readonly Stack<Annotation> _redo = new();
-    private readonly Dictionary<AnnotationTool, RadioButton> _toolButtons = new();
 
     private int _pixelWidth;
     private int _pixelHeight;
@@ -47,12 +32,16 @@ public partial class PinWindow : Window
     private Point _lastPoint;
     private bool _movingSelected;
     private bool _erasing;
+    private bool _spaceAnnotation;
+    private Point _spaceAnnotationAnchor;
+    private Point _spaceAnnotationDelta;
     private bool _textActive;
     private Point _textPosition;
     private int _number = 1;
     private double _thickness = 3;
-    private Color _color = Palette[0];
-    private Color _customColor = Color.FromRgb(0x37, 0xD6, 0xC0);
+    private Color _color = Color.FromRgb(0xFF, 0x33, 0x00);
+    private bool _fill;
+    private double _corner;
 
     public BitmapSource SourceImage { get; private set; }
 
@@ -87,9 +76,7 @@ public partial class PinWindow : Window
         MouseDown += OnMouseDown;
         ContextMenuOpening += (_, _) => BuildContextMenu();
 
-        InitToolButtons();
-        InitPalette();
-        UpdateUndoButtons();
+        InitToolbar();
         BuildContextMenu();
         UpdateFrame();
     }
@@ -105,95 +92,157 @@ public partial class PinWindow : Window
         ApplyBounds();
     }
 
-    private void InitToolButtons()
+    private void InitToolbar()
     {
-        _toolButtons[AnnotationTool.Select] = ToolSelect;
-        _toolButtons[AnnotationTool.Rectangle] = ToolRect;
-        _toolButtons[AnnotationTool.Ellipse] = ToolEllipse;
-        _toolButtons[AnnotationTool.Arrow] = ToolArrow;
-        _toolButtons[AnnotationTool.Line] = ToolLine;
-        _toolButtons[AnnotationTool.Pen] = ToolPen;
-        _toolButtons[AnnotationTool.Highlighter] = ToolHighlighter;
-        _toolButtons[AnnotationTool.Mosaic] = ToolMosaic;
-        _toolButtons[AnnotationTool.Text] = ToolText;
-        _toolButtons[AnnotationTool.Number] = ToolNumber;
-        _toolButtons[AnnotationTool.Eraser] = ToolEraser;
-    }
-
-    private void InitPalette()
-    {
-        foreach (var color in Palette)
+        Toolbar.SetMode(AnnotationToolbarMode.Pin);
+        Toolbar.ToolChanged += OnToolbarToolChanged;
+        Toolbar.VariantChanged += OnToolbarVariantChanged;
+        Toolbar.SettingsChanged += ApplyToolbarSettings;
+        Toolbar.UndoRequested += Undo;
+        Toolbar.RedoRequested += Redo;
+        Toolbar.CopyRequested += Copy;
+        Toolbar.SaveRequested += Save;
+        Toolbar.TranslateRequested += Translate;
+        Toolbar.ApplyRequested += () => ExitEditMode(true);
+        Toolbar.RefreshUndo(false, false);
+        Toolbar.SizeChanged += (_, _) =>
         {
-            var swatch = new Border
+            if (_editMode)
             {
-                Width = 18,
-                Height = 18,
-                CornerRadius = new CornerRadius(9),
-                Background = new SolidColorBrush(color),
-                BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255)),
-                Margin = new Thickness(3, 0, 3, 0),
-                Cursor = Cursors.Hand,
-                ToolTip = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
-            };
+                Dispatcher.BeginInvoke(new Action(ApplyBounds), DispatcherPriority.Loaded);
+            }
+        };
 
-            swatch.MouseLeftButtonDown += (_, e) =>
-            {
-                SetColor(color);
-                e.Handled = true;
-            };
-
-            _swatches.Add(swatch);
-            ColorPanel.Children.Add(swatch);
-        }
-
-        UpdateSwatchSelection();
+        _tool = AnnotationTool.Select;
+        Toolbar.SetTool(AnnotationTool.Select);
+        Toolbar.SetSelection(null);
     }
 
-    private void UpdateSwatchSelection()
+    private void OnToolbarToolChanged(AnnotationTool tool)
     {
-        for (var i = 0; i < _swatches.Count; i++)
-        {
-            var selected = Palette[i] == _color;
-            _swatches[i].BorderThickness = new Thickness(selected ? 2 : 1);
-            _swatches[i].BorderBrush = selected
-                ? Brushes.White
-                : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
-        }
-
-        if (CustomColorRing != null)
-        {
-            var selected = _color == _customColor;
-            CustomColorRing.Fill = new SolidColorBrush(_customColor);
-            CustomColorRing.Stroke = selected
-                ? Brushes.White
-                : new SolidColorBrush(Color.FromArgb(120, 255, 255, 255));
-            CustomColorRing.StrokeThickness = selected ? 2 : 1.5;
-        }
+        _tool = tool;
+        ClearSelection();
+        Toolbar.SetSelection(null);
+        InputLayer.Cursor = ToolCursors.Get(tool);
     }
 
-    private void SetColor(Color color)
+    private void OnToolbarVariantChanged(AnnotationTool tool)
     {
-        _color = color;
-        if (_selected != null)
+        if (_tool == AnnotationTool.Select && _selected != null)
         {
-            _selected.Color = color;
-            Editor.InvalidateVisual();
+            ConvertSelected(tool);
+            return;
         }
 
-        UpdateSwatchSelection();
+        _tool = tool;
+        InputLayer.Cursor = ToolCursors.Get(tool);
     }
 
-    private void CustomColor_Click(object sender, RoutedEventArgs e)
+    private void ApplyToolbarSettings()
     {
-        var picker = new ColorPickerWindow(_color) { Owner = this };
-        if (picker.ShowDialog() == true)
+        _color = Toolbar.Color;
+        _thickness = Toolbar.Thickness;
+        _fill = Toolbar.FillEnabled;
+        _corner = Toolbar.CornerRadius;
+
+        if (_selected == null)
         {
-            _customColor = picker.SelectedColor;
-            SetColor(_customColor);
+            return;
         }
+
+        _selected.Color = _color;
+        _selected.Thickness = _thickness;
+        _selected.Fill = _fill;
+        _selected.CornerRadius = _corner;
+        Editor.InvalidateVisual();
     }
 
+    private void ConvertSelected(AnnotationTool variant)
+    {
+        if (_selected == null)
+        {
+            return;
+        }
+
+        var old = _selected;
+        Annotation? replacement = null;
+
+        switch (old, variant)
+        {
+            case (RectAnnotation rect, AnnotationTool.Ellipse):
+                replacement = new EllipseAnnotation
+                {
+                    Rect = rect.Rect, Color = rect.Color, Thickness = rect.Thickness, Fill = rect.Fill
+                };
+                break;
+            case (EllipseAnnotation ellipse, AnnotationTool.Rectangle):
+                replacement = new RectAnnotation
+                {
+                    Rect = ellipse.Rect, Color = ellipse.Color, Thickness = ellipse.Thickness,
+                    Fill = ellipse.Fill, CornerRadius = _corner
+                };
+                break;
+            case (LineAnnotation line, AnnotationTool.Arrow):
+                replacement = new ArrowAnnotation
+                {
+                    Start = line.Start, End = line.End, Color = line.Color, Thickness = line.Thickness
+                };
+                break;
+            case (ArrowAnnotation arrow, AnnotationTool.Line):
+                replacement = new LineAnnotation
+                {
+                    Start = arrow.Start, End = arrow.End, Color = arrow.Color, Thickness = arrow.Thickness
+                };
+                break;
+            case (PenAnnotation pen, AnnotationTool.Pen):
+                pen.Highlight = false;
+                SelectAnnotation(pen);
+                return;
+            case (PenAnnotation pen, AnnotationTool.Highlighter):
+                pen.Highlight = true;
+                SelectAnnotation(pen);
+                return;
+            case (MosaicAnnotation mosaic, AnnotationTool.Watermark):
+                replacement = new WatermarkAnnotation
+                {
+                    Rect = mosaic.Rect, Color = mosaic.Color, Thickness = Math.Max(8, mosaic.Thickness),
+                    Opacity = 0.22
+                };
+                break;
+            case (WatermarkAnnotation watermark, AnnotationTool.Mosaic):
+                var newMosaic = new MosaicAnnotation
+                {
+                    Rect = watermark.Rect, Color = watermark.Color, Thickness = watermark.Thickness
+                };
+                newMosaic.Pattern = MosaicBuilder.Build(SourceImage, newMosaic.Rect);
+                replacement = newMosaic;
+                break;
+        }
+
+        if (replacement == null)
+        {
+            return;
+        }
+
+        replacement.Fill = _fill;
+        replacement.CornerRadius = _corner;
+        var index = Editor.Items.IndexOf(old);
+        if (index < 0)
+        {
+            return;
+        }
+
+        Editor.Items[index] = replacement;
+        _selected = replacement;
+        Editor.Selected = replacement;
+        Toolbar.SetTool(AnnotationTool.Select);
+        Toolbar.SetSelection(replacement);
+        Toolbar.SetColor(replacement.Color);
+        Toolbar.SetThickness(replacement.Thickness);
+        Toolbar.SetFill(replacement.Fill);
+        Toolbar.SetCorner(replacement.CornerRadius);
+        Editor.InvalidateVisual();
+    }
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         var handle = new WindowInteropHelper(this).Handle;
@@ -225,8 +274,19 @@ public partial class PinWindow : Window
         Editor.Height = imageHeight;
         Editor.Scale = 1.0 / _zoom;
 
-        var width = _editMode ? Math.Max(imageWidth, 1040) : imageWidth;
-        var height = imageHeight + (_editMode ? 46 : 0);
+        var toolbarWidth = 0;
+        var toolbarHeight = 0;
+        if (_editMode)
+        {
+            Toolbar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            toolbarWidth = (int)Math.Ceiling(Toolbar.DesiredSize.Width);
+            toolbarHeight = (int)Math.Ceiling(Toolbar.DesiredSize.Height);
+        }
+
+        var width = _editMode
+            ? Math.Max(imageWidth, Math.Max(toolbarWidth, 900))
+            : imageWidth;
+        var height = imageHeight + (_editMode ? toolbarHeight + 8 : 0);
 
         var virtualX = Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN);
         var virtualY = Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN);
@@ -406,8 +466,9 @@ public partial class PinWindow : Window
         Editor.Scale = 1.0 / _zoom;
         Editor.Visibility = Visibility.Visible;
         InputLayer.Visibility = Visibility.Visible;
-        EditToolbar.Visibility = Visibility.Visible;
+        Toolbar.Visibility = Visibility.Visible;
         SetTool(AnnotationTool.Select);
+        Toolbar.SetSelection(null);
         UpdateUndoButtons();
         ApplyBounds();
         InputLayer.Focus();
@@ -440,7 +501,7 @@ public partial class PinWindow : Window
         Editor.Items.Clear();
         Editor.Visibility = Visibility.Collapsed;
         InputLayer.Visibility = Visibility.Collapsed;
-        EditToolbar.Visibility = Visibility.Collapsed;
+        Toolbar.Visibility = Visibility.Collapsed;
         _redo.Clear();
         UpdateUndoButtons();
         ApplyBounds();
@@ -472,16 +533,10 @@ public partial class PinWindow : Window
 
     private BitmapSource CurrentImage => _editMode ? ComposeEditedImage() : SourceImage;
 
-    private void ApplyEdit_Click(object sender, RoutedEventArgs e) => ExitEditMode(true);
-
-    private void CancelEdit_Click(object sender, RoutedEventArgs e) => ExitEditMode(false);
-
-    private void Copy_Click(object sender, RoutedEventArgs e) => Copy();
-
-    private void Save_Click(object sender, RoutedEventArgs e) => Save();
-
-    private void Translate_Click(object sender, RoutedEventArgs e) =>
+    private void Translate()
+    {
         ((App)Application.Current).TranslateImage(CurrentImage, this);
+    }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -533,10 +588,37 @@ public partial class PinWindow : Window
         }
     }
 
+    private void OnPreviewKeyUp(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Space && _spaceAnnotation)
+        {
+            _spaceAnnotation = false;
+            e.Handled = true;
+        }
+    }
+
     private void OnEditKeyDown(KeyEventArgs e)
     {
         var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+
+        if (e.Key == Key.Space && _active != null && !_spaceAnnotation)
+        {
+            _spaceAnnotation = true;
+            _spaceAnnotationAnchor = ToPixels(Mouse.GetPosition(InputLayer));
+            _spaceAnnotationDelta = new Point();
+            InputLayer.Cursor = Cursors.SizeAll;
+            e.Handled = true;
+            return;
+        }
+
+        if (!control && (Keyboard.Modifiers & ModifierKeys.Alt) == 0 &&
+            ToolHotkeys.TryMap(e.Key, App.Config, out var toolShortcut))
+        {
+            SetTool(toolShortcut);
+            e.Handled = true;
+            return;
+        }
 
         if (e.Key == Key.Escape)
         {
@@ -562,14 +644,14 @@ public partial class PinWindow : Window
 
         if (control && e.Key == Key.Z)
         {
-            Undo_Click(this, new RoutedEventArgs());
+            Undo();
             e.Handled = true;
             return;
         }
 
         if (control && e.Key == Key.Y)
         {
-            Redo_Click(this, new RoutedEventArgs());
+            Redo();
             e.Handled = true;
             return;
         }
@@ -627,53 +709,23 @@ public partial class PinWindow : Window
         }
     }
 
-    private void Tool_Checked(object sender, RoutedEventArgs e)
-    {
-        if (sender is RadioButton { Tag: string tag } &&
-            Enum.TryParse<AnnotationTool>(tag, out var tool))
-        {
-            _tool = tool;
-            if (tool != AnnotationTool.Select)
-            {
-                ClearSelection();
-            }
-
-            InputLayer.Cursor = ToolCursors.Get(tool);
-        }
-    }
-
     private void SetTool(AnnotationTool tool)
     {
         _tool = tool;
+        Toolbar.SetTool(tool);
         if (tool != AnnotationTool.Select)
         {
             ClearSelection();
         }
-
-        foreach (var (key, button) in _toolButtons)
+        else if (_selected != null)
         {
-            button.IsChecked = key == tool;
+            Toolbar.SetSelection(_selected);
         }
 
         InputLayer.Cursor = ToolCursors.Get(tool);
     }
 
-    private void Width_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        _thickness = e.NewValue;
-        if (WidthValue != null)
-        {
-            WidthValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
-        }
-
-        if (_selected != null)
-        {
-            _selected.Thickness = e.NewValue;
-            Editor.InvalidateVisual();
-        }
-    }
-
-    private void Undo_Click(object sender, RoutedEventArgs e)
+    private void Undo()
     {
         if (Editor.Items.Count == 0)
         {
@@ -687,7 +739,7 @@ public partial class PinWindow : Window
         Editor.InvalidateVisual();
     }
 
-    private void Redo_Click(object sender, RoutedEventArgs e)
+    private void Redo()
     {
         if (_redo.Count == 0)
         {
@@ -701,8 +753,7 @@ public partial class PinWindow : Window
 
     private void UpdateUndoButtons()
     {
-        UndoButton.IsEnabled = Editor.Items.Count > 0;
-        RedoButton.IsEnabled = _redo.Count > 0;
+        Toolbar.RefreshUndo(Editor.Items.Count > 0, _redo.Count > 0);
     }
 
     private Point ToPixels(Point dip) => new(dip.X / _zoom, dip.Y / _zoom);
@@ -753,6 +804,19 @@ public partial class PinWindow : Window
     {
         var point = ToPixels(e.GetPosition(InputLayer));
 
+        if (_spaceAnnotation && _active != null)
+        {
+            var dx = point.X - _spaceAnnotationAnchor.X;
+            var dy = point.Y - _spaceAnnotationAnchor.Y;
+            _active.Translate(dx - _spaceAnnotationDelta.X, dy - _spaceAnnotationDelta.Y);
+            _annotationStart = new Point(
+                _annotationStart.X + dx - _spaceAnnotationDelta.X,
+                _annotationStart.Y + dy - _spaceAnnotationDelta.Y);
+            _spaceAnnotationDelta = new Point(dx, dy);
+            Editor.InvalidateVisual();
+            return;
+        }
+
         if (_active != null)
         {
             UpdateAnnotation(point);
@@ -785,6 +849,7 @@ public partial class PinWindow : Window
     private void Input_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         InputLayer.ReleaseMouseCapture();
+        _spaceAnnotation = false;
 
         if (_erasing)
         {
@@ -810,11 +875,12 @@ public partial class PinWindow : Window
         {
             AnnotationTool.Rectangle => new RectAnnotation
             {
-                Rect = new Rect(point, point), Color = _color, Thickness = _thickness
+                Rect = new Rect(point, point), Color = _color, Thickness = _thickness,
+                Fill = _fill, CornerRadius = _corner
             },
             AnnotationTool.Ellipse => new EllipseAnnotation
             {
-                Rect = new Rect(point, point), Color = _color, Thickness = _thickness
+                Rect = new Rect(point, point), Color = _color, Thickness = _thickness, Fill = _fill
             },
             AnnotationTool.Arrow => new ArrowAnnotation
             {
@@ -827,6 +893,10 @@ public partial class PinWindow : Window
             AnnotationTool.Mosaic => new MosaicAnnotation
             {
                 Rect = new Rect(point, point), Color = _color, Thickness = _thickness
+            },
+            AnnotationTool.Watermark => new WatermarkAnnotation
+            {
+                Rect = new Rect(point, point), Color = _color, Thickness = _thickness, Opacity = 0.22
             },
             AnnotationTool.Number => new NumberAnnotation
             {
@@ -883,6 +953,9 @@ public partial class PinWindow : Window
                 break;
             case MosaicAnnotation mosaic:
                 mosaic.Rect = Clamp(Normalize(_annotationStart, point));
+                break;
+            case WatermarkAnnotation watermark:
+                watermark.Rect = Clamp(Normalize(_annotationStart, point));
                 break;
             case NumberAnnotation number:
                 number.Center = point;
@@ -1015,9 +1088,18 @@ public partial class PinWindow : Window
     private void SelectAnnotation(Annotation annotation)
     {
         _selected = annotation;
-        Editor.Selected = annotation;
+        _tool = AnnotationTool.Select;
+        Toolbar.SetTool(AnnotationTool.Select);
+        Toolbar.SetSelection(annotation);
+        Toolbar.SetColor(annotation.Color);
+        Toolbar.SetThickness(annotation.Thickness);
+        Toolbar.SetFill(annotation.Fill);
+        Toolbar.SetCorner(annotation.CornerRadius);
         _color = annotation.Color;
-        UpdateSwatchSelection();
+        _thickness = annotation.Thickness;
+        _fill = annotation.Fill;
+        _corner = annotation.CornerRadius;
+        Editor.Selected = annotation;
         Editor.InvalidateVisual();
     }
 
@@ -1025,6 +1107,11 @@ public partial class PinWindow : Window
     {
         _selected = null;
         Editor.Selected = null;
+        if (Toolbar != null)
+        {
+            Toolbar.SetSelection(null);
+        }
+
         Editor.InvalidateVisual();
     }
 

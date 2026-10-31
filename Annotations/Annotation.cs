@@ -11,6 +11,7 @@ public enum AnnotationTool
     Pen,
     Highlighter,
     Mosaic,
+    Watermark,
     Text,
     Number,
     Eraser
@@ -21,6 +22,12 @@ public abstract class Annotation
     public Color Color { get; set; } = Color.FromRgb(0xFF, 0x4D, 0x4F);
 
     public double Thickness { get; set; } = 3;
+
+    public bool Fill { get; set; }
+
+    public double CornerRadius { get; set; }
+
+    public double Opacity { get; set; } = 1.0;
 
     public abstract void Draw(DrawingContext dc);
 
@@ -50,7 +57,18 @@ public sealed class RectAnnotation : Annotation
     public override void Draw(DrawingContext dc)
     {
         var pen = new Pen(new SolidColorBrush(Color), Thickness) { LineJoin = PenLineJoin.Round };
-        dc.DrawRectangle(null, pen, Rect);
+        var fill = Fill
+            ? new SolidColorBrush(Color.FromArgb(70, Color.R, Color.G, Color.B))
+            : null;
+
+        if (CornerRadius > 0.5)
+        {
+            dc.DrawRoundedRectangle(fill, pen, Rect, CornerRadius, CornerRadius);
+        }
+        else
+        {
+            dc.DrawRectangle(fill, pen, Rect);
+        }
     }
 
     public override Rect Bounds => Rect;
@@ -68,8 +86,11 @@ public sealed class EllipseAnnotation : Annotation
     public override void Draw(DrawingContext dc)
     {
         var pen = new Pen(new SolidColorBrush(Color), Thickness);
+        var fill = Fill
+            ? new SolidColorBrush(Color.FromArgb(70, Color.R, Color.G, Color.B))
+            : null;
         var center = new Point(Rect.X + Rect.Width / 2, Rect.Y + Rect.Height / 2);
-        dc.DrawEllipse(null, pen, center, Rect.Width / 2, Rect.Height / 2);
+        dc.DrawEllipse(fill, pen, center, Rect.Width / 2, Rect.Height / 2);
     }
 
     public override Rect Bounds => Rect;
@@ -280,6 +301,55 @@ public sealed class MosaicAnnotation : Annotation
             new SolidColorBrush(Color.FromArgb(120, 30, 30, 30)),
             null,
             Rect);
+    }
+
+    public override Rect Bounds => Rect;
+
+    public override void Translate(double dx, double dy)
+    {
+        Rect = new Rect(Rect.X + dx, Rect.Y + dy, Rect.Width, Rect.Height);
+    }
+}
+
+public sealed class WatermarkAnnotation : Annotation
+{
+    public Rect Rect { get; set; }
+
+    public string Text { get; set; } = "Markshot";
+
+    public override void Draw(DrawingContext dc)
+    {
+        if (Rect.Width < 4 || Rect.Height < 4)
+        {
+            return;
+        }
+
+        var alpha = (byte)Math.Clamp(Opacity * 255, 0, 255);
+        var brush = new SolidColorBrush(Color.FromArgb(alpha, Color.R, Color.G, Color.B));
+        var fontSize = Math.Clamp(Thickness * 3.5, 14, 72);
+        var text = new FormattedText(
+            Text,
+            CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
+            fontSize,
+            brush,
+            1.0);
+
+        dc.PushClip(new RectangleGeometry(Rect));
+        var stepX = Math.Max(80, text.Width + 46);
+        var stepY = Math.Max(46, text.Height + 34);
+        var row = 0;
+        for (var y = Rect.Top - stepY; y < Rect.Bottom + stepY; y += stepY, row++)
+        {
+            var offset = row % 2 == 0 ? 0 : stepX / 2;
+            for (var x = Rect.Left - stepX; x < Rect.Right + stepX; x += stepX)
+            {
+                dc.DrawText(text, new Point(x + offset, y));
+            }
+        }
+
+        dc.Pop();
     }
 
     public override Rect Bounds => Rect;

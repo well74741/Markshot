@@ -8,6 +8,18 @@ public sealed class AppConfig
     public string CaptureHotkey { get; set; } = "F1";
     public string PinHotkey { get; set; } = "F3";
 
+    public string ToolPenHotkey { get; set; } = "B";
+
+    public string ToolSelectHotkey { get; set; } = "V";
+
+    public string ToolEraserHotkey { get; set; } = "E";
+
+    public string ToolTextHotkey { get; set; } = "T";
+
+    public string ToolNumberHotkey { get; set; } = "S";
+
+    public string ToolLineHotkey { get; set; } = "L";
+
     /// <summary>Empty means Pictures\Markshot.</summary>
     public string SaveDirectory { get; set; } = "";
 
