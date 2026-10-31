@@ -38,7 +38,7 @@ public partial class AnnotationToolbar : UserControl
     private AnnotationTool _tool = AnnotationTool.Select;
     private Annotation? _selection;
     private Color _color = Palette[0];
-    private Color _customColor = Color.FromRgb(0x37, 0xD6, 0xC0);
+    private Color _customColor = Color.FromRgb(0xD9, 0x4B, 0x38);
     private double _thickness = 3;
     private double _corner;
     private bool _fill;
