@@ -13,6 +13,7 @@ public partial class PinWindow : Window
     private double _zoom = 1.0;
     private double _opacity = 1.0;
     private bool _locked;
+    private bool _clickThrough;
 
     private bool _dragging;
     private int _dragStartCursorX;
@@ -22,11 +23,14 @@ public partial class PinWindow : Window
 
     public BitmapSource SourceImage { get; }
 
-    public PinWindow(BitmapSource image, int screenX, int screenY)
+    public string Group { get; set; }
+
+    public PinWindow(BitmapSource image, int screenX, int screenY, string group = "默认")
     {
         InitializeComponent();
 
         SourceImage = image;
+        Group = group;
         Img.Source = image;
         _pixelWidth = image.PixelWidth;
         _pixelHeight = image.PixelHeight;
@@ -44,8 +48,38 @@ public partial class PinWindow : Window
         MouseLeftButtonUp += OnMouseLeftButtonUp;
         MouseWheel += OnMouseWheel;
         MouseDown += OnMouseDown;
+        ContextMenuOpening += (_, _) => BuildContextMenu();
 
         BuildContextMenu();
+        UpdateFrame();
+    }
+
+    public bool IsClickThrough => _clickThrough;
+
+    public void SetClickThrough(bool enabled)
+    {
+        if (_clickThrough == enabled)
+        {
+            return;
+        }
+
+        _clickThrough = enabled;
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle != IntPtr.Zero)
+        {
+            var style = Native.GetWindowLongPtr(handle, Native.GWL_EXSTYLE).ToInt64();
+            var updated = enabled
+                ? style | Native.WS_EX_TRANSPARENT
+                : style & ~(long)Native.WS_EX_TRANSPARENT;
+
+            Native.SetWindowLongPtr(handle, Native.GWL_EXSTYLE, new IntPtr(updated));
+            Native.SetWindowPos(
+                handle,
+                Topmost ? Native.HWND_TOPMOST : Native.HWND_NOTOPMOST,
+                0, 0, 0, 0,
+                Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | Native.SWP_FRAMECHANGED);
+        }
+
         UpdateFrame();
     }
 
@@ -101,11 +135,13 @@ public partial class PinWindow : Window
 
     private void UpdateFrame()
     {
-        var color = _locked
-            ? Color.FromRgb(0xF5, 0x9E, 0x0B)
-            : IsActive
-                ? Color.FromRgb(0x3B, 0x82, 0xF6)
-                : Color.FromRgb(0x6B, 0x72, 0x80);
+        var color = _clickThrough
+            ? Color.FromRgb(0x2F, 0xC7, 0x6B)
+            : _locked
+                ? Color.FromRgb(0xF5, 0x9E, 0x0B)
+                : IsActive
+                    ? Color.FromRgb(0x3B, 0x82, 0xF6)
+                    : Color.FromRgb(0x6B, 0x72, 0x80);
 
         FrameBorder.BorderBrush = new SolidColorBrush(color);
     }
@@ -265,6 +301,23 @@ public partial class PinWindow : Window
         translate.Click += (_, _) => ((App)Application.Current).TranslateImage(SourceImage, this);
         menu.Items.Add(translate);
 
+        var app = (App)Application.Current;
+        var groupMenu = new MenuItem { Header = "移动到贴图组" };
+        foreach (var group in app.PinGroups)
+        {
+            var groupItem = new MenuItem
+            {
+                Header = group,
+                IsCheckable = true,
+                IsChecked = string.Equals(group, Group, StringComparison.Ordinal)
+            };
+            var target = group;
+            groupItem.Click += (_, _) => app.MovePinToGroup(this, target);
+            groupMenu.Items.Add(groupItem);
+        }
+
+        menu.Items.Add(groupMenu);
+
         menu.Items.Add(new Separator());
 
         var topmost = new MenuItem { Header = "置顶" };
@@ -282,6 +335,15 @@ public partial class PinWindow : Window
             UpdateFrame();
         };
         menu.Items.Add(lockItem);
+
+        var clickThroughItem = new MenuItem
+        {
+            Header = "鼠标穿透",
+            IsCheckable = true,
+            IsChecked = _clickThrough
+        };
+        clickThroughItem.Click += (_, _) => SetClickThrough(!_clickThrough);
+        menu.Items.Add(clickThroughItem);
 
         var reset = new MenuItem { Header = "重置大小和透明度" };
         reset.Click += (_, _) => ResetView();

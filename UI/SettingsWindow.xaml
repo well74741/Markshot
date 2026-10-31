@@ -36,7 +36,7 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="贴图剪贴板" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="贴图剪贴板（可留空）" Style="{StaticResource FieldLabel}" />
                         <TextBox x:Name="PinHotkeyBox" Style="{StaticResource InputBox}"
                                  IsReadOnly="True" Cursor="Hand"
                                  GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"

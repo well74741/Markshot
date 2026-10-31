@@ -9,6 +9,9 @@ public partial class App : Application
 
     public PinHistory History { get; } = new();
 
+    private static string PinHotkeyLabel =>
+        string.IsNullOrWhiteSpace(Config.PinHotkey) ? "贴图未设快捷键" : $"贴图 {Config.PinHotkey}";
+
     private readonly List<PinWindow> _pins = new();
     private readonly List<TranslationWindow> _translations = new();
 
@@ -33,6 +36,11 @@ public partial class App : Application
         }
 
         Config = AppConfig.Load();
+
+        foreach (var entry in PinStore.Load())
+        {
+            History.Add(entry);
+        }
 
         if (e.Args.Contains("--logtest"))
         {
@@ -73,13 +81,14 @@ public partial class App : Application
             ShowSettings,
             ShutdownApp);
 
+        RefreshTrayGroups();
         ApplyHotkeys();
 
         _tray.ShowBalloon(
             "Markshot 已启动",
-            $"截图 {Config.CaptureHotkey} · 贴图 {Config.PinHotkey}\n右键托盘图标打开设置");
+            $"截图 {Config.CaptureHotkey} · {PinHotkeyLabel}\n右键托盘图标打开设置");
 
-        Log.Info($"Markshot 启动，截图键 {Config.CaptureHotkey}，贴图键 {Config.PinHotkey}");
+        Log.Info($"Markshot 启动，截图键 {Config.CaptureHotkey}，{PinHotkeyLabel}");
 
         var arguments = e.Args;
         if (arguments.Contains("--settings"))
@@ -161,6 +170,7 @@ public partial class App : Application
         }
 
         _capturing = true;
+        _hotkeys?.UnregisterAll();
 
         try
         {
@@ -174,6 +184,12 @@ public partial class App : Application
             if (result == CaptureAction.None || output == null)
             {
                 return;
+            }
+
+            if (overlay.SelectionScreenRect.Width >= 2 && overlay.SelectionScreenRect.Height >= 2)
+            {
+                Config.RememberRegion(overlay.SelectionScreenRect);
+                Config.Save();
             }
 
             switch (result)
@@ -195,19 +211,26 @@ public partial class App : Application
         finally
         {
             _capturing = false;
+            if (!_shuttingDown)
+            {
+                ApplyHotkeys();
+            }
         }
     }
 
-    public PinWindow CreatePin(BitmapSource image, int screenX, int screenY)
+    public PinWindow CreatePin(BitmapSource image, int screenX, int screenY, string? group = null)
     {
-        var pin = new PinWindow(image, screenX, screenY);
+        group ??= Config.CurrentPinGroup;
+        var pin = new PinWindow(image, screenX, screenY, group);
 
         pin.Closed += (_, _) =>
         {
             _pins.Remove(pin);
             if (!_shuttingDown)
             {
-                History.Add(pin.SourceImage);
+                var entry = new PinEntry { Image = pin.SourceImage, Group = pin.Group };
+                History.Add(entry);
+                PinStore.Save(entry, pin.SourceImage);
             }
         };
 
@@ -216,10 +239,10 @@ public partial class App : Application
         return pin;
     }
 
-    public void CreatePinAtCursor(BitmapSource image)
+    public void CreatePinAtCursor(BitmapSource image, string? group = null)
     {
         var cursor = Native.CursorPosition();
-        CreatePin(image, cursor.X + 16, cursor.Y + 16);
+        CreatePin(image, cursor.X + 16, cursor.Y + 16, group);
     }
 
     public void PinFromClipboard()
@@ -259,14 +282,105 @@ public partial class App : Application
 
     public void RestoreLastPin()
     {
-        var last = History.Last;
-        if (last == null)
+        var entry = History.LastForGroup(Config.CurrentPinGroup);
+        var image = entry?.LoadImage();
+        if (entry == null || image == null)
         {
             _tray?.ShowBalloon("没有历史贴图", "关闭过的贴图会保留在这里，可随时恢复。");
             return;
         }
 
-        CreatePinAtCursor(last);
+        CreatePinAtCursor(image, entry.Group);
+    }
+
+    public IReadOnlyList<string> PinGroups => Config.PinGroups;
+
+    public string CurrentPinGroup => Config.CurrentPinGroup;
+
+    public void SwitchPinGroup(string group)
+    {
+        if (!Config.PinGroups.Contains(group))
+        {
+            return;
+        }
+
+        Config.CurrentPinGroup = group;
+        Config.Save();
+
+        foreach (var pin in _pins)
+        {
+            if (string.Equals(pin.Group, group, StringComparison.Ordinal))
+            {
+                pin.Show();
+            }
+            else
+            {
+                pin.Hide();
+            }
+        }
+
+        RefreshTrayGroups();
+        _tray?.SetTooltip($"Markshot · 贴图组：{group}");
+    }
+
+    public void MovePinToGroup(PinWindow pin, string group)
+    {
+        if (!Config.PinGroups.Contains(group))
+        {
+            return;
+        }
+
+        pin.Group = group;
+        if (string.Equals(group, Config.CurrentPinGroup, StringComparison.Ordinal))
+        {
+            pin.Show();
+        }
+        else
+        {
+            pin.Hide();
+        }
+
+        Config.Save();
+        RefreshTrayGroups();
+    }
+
+    public void CreatePinGroup()
+    {
+        var name = TextPromptWindow.Prompt("贴图组名称", "新建贴图组");
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        name = name.Trim();
+        if (Config.PinGroups.Contains(name))
+        {
+            _tray?.ShowBalloon("贴图组已存在", name);
+            return;
+        }
+
+        Config.PinGroups.Add(name);
+        Config.CurrentPinGroup = name;
+        Config.Save();
+        SwitchPinGroup(name);
+    }
+
+    public void DisableClickThrough()
+    {
+        foreach (var pin in _pins)
+        {
+            pin.SetClickThrough(false);
+        }
+    }
+
+    private void RefreshTrayGroups()
+    {
+        _tray?.UpdateGroups(
+            Config.PinGroups,
+            Config.CurrentPinGroup,
+            SwitchPinGroup,
+            CreatePinGroup,
+            DisableClickThrough);
     }
 
     public void ShowSettings()
@@ -282,7 +396,7 @@ public partial class App : Application
             if (dialog.ShowDialog() == true)
             {
                 Config.Save();
-                _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {Config.PinHotkey} 贴图");
+                _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {PinHotkeyLabel}");
                 _tray?.ShowBalloon("设置已保存", "快捷键与翻译配置已更新。");
             }
         }
@@ -299,9 +413,17 @@ public partial class App : Application
             return;
         }
 
-        var errors = _hotkeys.RegisterAll(
-            (Config.CaptureHotkey, () => StartCapture()),
-            (Config.PinHotkey, PinFromClipboard));
+        var bindings = new List<(string Gesture, Action Action)>
+        {
+            (Config.CaptureHotkey, () => StartCapture())
+        };
+
+        if (!string.IsNullOrWhiteSpace(Config.PinHotkey))
+        {
+            bindings.Add((Config.PinHotkey, PinFromClipboard));
+        }
+
+        var errors = _hotkeys.RegisterAll(bindings.ToArray());
 
         foreach (var error in errors)
         {

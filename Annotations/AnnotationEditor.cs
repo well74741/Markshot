@@ -18,6 +18,14 @@ public sealed class AnnotationEditor : FrameworkElement
 
     public Annotation? Preview { get; set; }
 
+    public Annotation? Selected { get; set; }
+
+    public Rect HoverBounds { get; set; } = Rect.Empty;
+
+    public string? HoverLabel { get; set; }
+
+    public bool ShowHover { get; set; }
+
     public AnnotationEditor()
     {
         IsHitTestVisible = false;
@@ -46,6 +54,16 @@ public sealed class AnnotationEditor : FrameworkElement
 
         Preview?.Draw(dc);
 
+        if (ShowHover && HoverBounds.Width > 0)
+        {
+            DrawHover(dc, HoverBounds, HoverLabel);
+        }
+
+        if (Selected != null)
+        {
+            DrawAnnotationSelection(dc, Selected);
+        }
+
         if (hasSelection)
         {
             dc.Pop();
@@ -53,6 +71,86 @@ public sealed class AnnotationEditor : FrameworkElement
         }
 
         dc.Pop();
+    }
+
+    private void DrawHover(DrawingContext dc, Rect bounds, string? label)
+    {
+        var unit = 1.0 / Scale;
+        var accent = new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF));
+
+        dc.DrawRectangle(
+            null,
+            new Pen(accent, 1.5 * unit)
+            {
+                DashStyle = new DashStyle(new[] { 5.0, 3.0 }, 0)
+            },
+            bounds);
+
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return;
+        }
+
+        var text = new FormattedText(
+            label!,
+            CultureInfo.CurrentUICulture,
+            FlowDirection.LeftToRight,
+            new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
+            12 * unit,
+            Brushes.White,
+            1.0);
+
+        var labelRect = new Rect(
+            bounds.X,
+            bounds.Y - text.Height - 8 * unit,
+            text.Width + 12 * unit,
+            text.Height + 6 * unit);
+
+        if (labelRect.Top < 0)
+        {
+            labelRect = new Rect(bounds.X, bounds.Y + 4 * unit, labelRect.Width, labelRect.Height);
+        }
+
+        dc.DrawRoundedRectangle(
+            new SolidColorBrush(Color.FromArgb(210, 20, 20, 20)),
+            null,
+            labelRect,
+            3 * unit,
+            3 * unit);
+
+        dc.DrawText(text, new Point(labelRect.X + 6 * unit, labelRect.Y + 3 * unit));
+    }
+
+    private void DrawAnnotationSelection(DrawingContext dc, Annotation annotation)
+    {
+        var bounds = annotation.Bounds;
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return;
+        }
+
+        var unit = 1.0 / Scale;
+        bounds.Inflate(4 * unit, 4 * unit);
+
+        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF)), 1.4 * unit)
+        {
+            DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0)
+        };
+
+        dc.DrawRectangle(null, pen, bounds);
+
+        var handle = 6 * unit;
+        var handlePen = new Pen(Brushes.White, unit);
+        foreach (var point in new[]
+                 {
+                     bounds.TopLeft, bounds.TopRight, bounds.BottomLeft, bounds.BottomRight
+                 })
+        {
+            dc.DrawRectangle(
+                new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF)),
+                handlePen,
+                new Rect(point.X - handle / 2, point.Y - handle / 2, handle, handle));
+        }
     }
 
     private void DrawSelectionChrome(DrawingContext dc, Rect selection)

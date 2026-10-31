@@ -3,6 +3,9 @@
   "PinHotkey": "F3",
   "SaveDirectory": "",
   "OcrLanguage": "",
+  "PinGroups": ["默认"],
+  "CurrentPinGroup": "默认",
+  "RecentRegions": [],
   "Translation": {
     "BaseUrl": "https://api.deepseek.com/v1",
     "ApiKey": "",

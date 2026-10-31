@@ -8,6 +8,7 @@ public sealed class TrayService : IDisposable
 {
     private readonly Forms.NotifyIcon _notifyIcon;
     private readonly Forms.ContextMenuStrip _menu;
+    private readonly Forms.ToolStripMenuItem _groupMenu;
     private bool _disposed;
 
     public TrayService(Action capture, Action pin, Action restoreLastPin, Action settings, Action exit)
@@ -16,6 +17,10 @@ public sealed class TrayService : IDisposable
 
         _menu.Items.Add("截图", null, (_, _) => capture());
         _menu.Items.Add("贴图剪贴板", null, (_, _) => pin());
+
+        _groupMenu = new Forms.ToolStripMenuItem("贴图组");
+        _menu.Items.Add(_groupMenu);
+
         _menu.Items.Add(new Forms.ToolStripSeparator());
         _menu.Items.Add("恢复最近贴图", null, (_, _) => restoreLastPin());
         _menu.Items.Add(new Forms.ToolStripSeparator());
@@ -32,6 +37,32 @@ public sealed class TrayService : IDisposable
         };
 
         _notifyIcon.DoubleClick += (_, _) => capture();
+    }
+
+    public void UpdateGroups(
+        IReadOnlyList<string> groups,
+        string currentGroup,
+        Action<string> switchGroup,
+        Action createGroup,
+        Action disableClickThrough)
+    {
+        _groupMenu.DropDownItems.Clear();
+
+        foreach (var group in groups)
+        {
+            var item = new Forms.ToolStripMenuItem(group)
+            {
+                Checked = string.Equals(group, currentGroup, StringComparison.Ordinal)
+            };
+
+            var target = group;
+            item.Click += (_, _) => switchGroup(target);
+            _groupMenu.DropDownItems.Add(item);
+        }
+
+        _groupMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
+        _groupMenu.DropDownItems.Add("新建贴图组…", null, (_, _) => createGroup());
+        _groupMenu.DropDownItems.Add("取消所有鼠标穿透", null, (_, _) => disableClickThrough());
     }
 
     public void ShowBalloon(string title, string text)

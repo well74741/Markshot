@@ -159,14 +159,17 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        if (!HotkeyGesture.TryParse(PinHotkeyBox.Text, out var pin, out error))
+        var hasPinHotkey = !string.IsNullOrWhiteSpace(PinHotkeyBox.Text);
+        var pin = default(HotkeyGesture);
+        if (hasPinHotkey && !HotkeyGesture.TryParse(PinHotkeyBox.Text, out pin, out error))
         {
             MessageBox.Show(this, "贴图快捷键无效：" + error, "Markshot",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        if (string.Equals(capture.Text, pin.Text, StringComparison.OrdinalIgnoreCase))
+        if (hasPinHotkey &&
+            string.Equals(capture.Text, pin.Text, StringComparison.OrdinalIgnoreCase))
         {
             MessageBox.Show(this, "截图和贴图不能使用同一个快捷键。", "Markshot",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -174,7 +177,7 @@ public partial class SettingsWindow : Window
         }
 
         _config.CaptureHotkey = capture.Text;
-        _config.PinHotkey = pin.Text;
+        _config.PinHotkey = hasPinHotkey ? pin.Text : "";
         _config.SaveDirectory = SaveDirBox.Text.Trim();
         _config.OcrLanguage = OcrLanguageBox.Text.Trim();
 

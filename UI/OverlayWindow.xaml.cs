@@ -65,6 +65,20 @@ public partial class OverlayWindow : Window
     private bool _textActive;
     private Point _textPosition;
 
+    private readonly byte[] _pixelBuffer = new byte[4];
+    private WindowTarget? _hoverTarget;
+    private Rect _hoverLocal = Rect.Empty;
+    private Rect _pendingWindow = Rect.Empty;
+    private bool _preferChild;
+    private bool _hexColor = true;
+    private int _recentRegionIndex = -1;
+
+    private Annotation? _selectedAnnotation;
+    private bool _draggingAnnotation;
+    private Point _lastAnnotationPoint;
+    private bool _erasing;
+    private readonly DispatcherTimer _noticeTimer;
+
     public CaptureAction Result { get; private set; } = CaptureAction.None;
 
     public BitmapSource? OutputImage { get; private set; }
@@ -82,9 +96,18 @@ public partial class OverlayWindow : Window
         ScreenImage.Source = screen;
         BrightImage.Source = screen;
         Editor.Source = screen;
+        Magnifier.Source = screen;
 
         InitToolButtons();
         InitPalette();
+
+        _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.4) };
+        _noticeTimer.Tick += (_, _) =>
+        {
+            _noticeTimer.Stop();
+            Magnifier.Notice = null;
+            Magnifier.InvalidateVisual();
+        };
 
         Loaded += OnLoaded;
         SourceInitialized += OnSourceInitialized;
@@ -104,14 +127,17 @@ public partial class OverlayWindow : Window
 
     private void InitToolButtons()
     {
+        _toolButtons[AnnotationTool.Select] = ToolSelect;
         _toolButtons[AnnotationTool.Rectangle] = ToolRect;
         _toolButtons[AnnotationTool.Ellipse] = ToolEllipse;
         _toolButtons[AnnotationTool.Arrow] = ToolArrow;
+        _toolButtons[AnnotationTool.Line] = ToolLine;
         _toolButtons[AnnotationTool.Pen] = ToolPen;
         _toolButtons[AnnotationTool.Highlighter] = ToolHighlighter;
         _toolButtons[AnnotationTool.Mosaic] = ToolMosaic;
         _toolButtons[AnnotationTool.Text] = ToolText;
         _toolButtons[AnnotationTool.Number] = ToolNumber;
+        _toolButtons[AnnotationTool.Eraser] = ToolEraser;
     }
 
     private void InitPalette()
@@ -147,6 +173,12 @@ public partial class OverlayWindow : Window
     private void SetColor(Color color)
     {
         _color = color;
+        if (_selectedAnnotation != null)
+        {
+            _selectedAnnotation.Color = color;
+            Editor.InvalidateVisual();
+        }
+
         UpdateSwatchSelection();
     }
 
@@ -396,8 +428,13 @@ public partial class OverlayWindow : Window
         }
 
         var point = ToPixels(e.GetPosition(InputLayer));
+        _dragStart = point;
+        _dragOrigin = _selection;
+        _dragging = true;
+        _pendingWindow = Rect.Empty;
 
-        if (e.ClickCount == 2 && _tool == AnnotationTool.None &&
+        if (e.ClickCount == 2 &&
+            (_tool == AnnotationTool.None || _tool == AnnotationTool.Select) &&
             _hasSelection && _selection.Contains(point))
         {
             CopyAndClose();
@@ -405,11 +442,33 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        _dragStart = point;
-        _dragOrigin = _selection;
-        _dragging = true;
+        if (_tool == AnnotationTool.Select)
+        {
+            var hit = HitAnnotation(point);
+            if (hit != null)
+            {
+                SelectAnnotation(hit);
+                _draggingAnnotation = true;
+                _lastAnnotationPoint = point;
+                InputLayer.CaptureMouse();
+                e.Handled = true;
+                return;
+            }
 
-        if (_tool != AnnotationTool.None && _hasSelection && _selection.Contains(point))
+            ClearAnnotationSelection();
+        }
+
+        if (_tool == AnnotationTool.Eraser)
+        {
+            _erasing = true;
+            EraseAt(point);
+            InputLayer.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
+        if (_tool is not (AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Eraser) &&
+            _hasSelection && _selection.Contains(point))
         {
             StartAnnotation(point);
             InputLayer.CaptureMouse();
@@ -424,6 +483,7 @@ public partial class OverlayWindow : Window
             {
                 _mode = DragMode.Resizing;
                 _handle = handle;
+                _recentRegionIndex = -1;
                 InputLayer.CaptureMouse();
                 e.Handled = true;
                 return;
@@ -432,18 +492,43 @@ public partial class OverlayWindow : Window
             if (_selection.Contains(point))
             {
                 _mode = DragMode.Moving;
+                _recentRegionIndex = -1;
                 InputLayer.CaptureMouse();
                 e.Handled = true;
                 return;
             }
         }
 
+        ClearAnnotationSelection();
+
+        // Clicking a highlighted window selects it; dragging starts a manual selection.
+        if (_hoverTarget != null && !_hasSelection)
+        {
+            _pendingWindow = _hoverLocal;
+            _mode = DragMode.Creating;
+            _handle = -1;
+            _selection = Rect.Empty;
+            _hasSelection = false;
+            _recentRegionIndex = -1;
+            Editor.Items.Clear();
+            _redo.Clear();
+            ClearHover();
+            UpdateUndoButtons();
+            UpdateSelectionVisuals();
+            InputLayer.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
         _mode = DragMode.Creating;
         _handle = -1;
+        _pendingWindow = Rect.Empty;
+        _recentRegionIndex = -1;
         _selection = new Rect(point, point);
         _hasSelection = false;
         Editor.Items.Clear();
         _redo.Clear();
+        ClearHover();
         UpdateUndoButtons();
         UpdateSelectionVisuals();
         InputLayer.CaptureMouse();
@@ -457,6 +542,7 @@ public partial class OverlayWindow : Window
         }
 
         var point = ToPixels(e.GetPosition(InputLayer));
+        UpdateMagnifier(point);
 
         if (_active != null)
         {
@@ -464,9 +550,47 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (_erasing)
+        {
+            EraseAt(point);
+            return;
+        }
+
+        if (_draggingAnnotation && _selectedAnnotation != null)
+        {
+            var dx = point.X - _lastAnnotationPoint.X;
+            var dy = point.Y - _lastAnnotationPoint.Y;
+            if (Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01)
+            {
+                _selectedAnnotation.Translate(dx, dy);
+                _lastAnnotationPoint = point;
+                Editor.InvalidateVisual();
+            }
+
+            return;
+        }
+
         if (!_dragging)
         {
+            if (!_hasSelection)
+            {
+                UpdateHover(point);
+            }
+
             UpdateCursor(point);
+            return;
+        }
+
+        if (_pendingWindow != Rect.Empty)
+        {
+            if ((point - _dragStart).Length > 4)
+            {
+                _pendingWindow = Rect.Empty;
+                _selection = ClampToScreen(NormalizeRect(_dragStart, point));
+                _hasSelection = _selection.Width >= 2 && _selection.Height >= 2;
+                UpdateSelectionVisuals();
+            }
+
             return;
         }
 
@@ -520,10 +644,36 @@ public partial class OverlayWindow : Window
         InputLayer.ReleaseMouseCapture();
         _dragging = false;
 
+        if (_erasing)
+        {
+            _erasing = false;
+            _mode = DragMode.None;
+            return;
+        }
+
+        if (_draggingAnnotation)
+        {
+            _draggingAnnotation = false;
+            _mode = DragMode.None;
+            return;
+        }
+
         if (_active != null)
         {
             CommitAnnotation();
             _mode = DragMode.None;
+            return;
+        }
+
+        if (_pendingWindow != Rect.Empty)
+        {
+            _selection = _pendingWindow;
+            _hasSelection = true;
+            _pendingWindow = Rect.Empty;
+            _mode = DragMode.None;
+            _handle = -1;
+            ClearHover();
+            UpdateSelectionVisuals();
             return;
         }
 
@@ -542,6 +692,261 @@ public partial class OverlayWindow : Window
 
         _mode = DragMode.None;
         _handle = -1;
+        ClearHover();
+        UpdateSelectionVisuals();
+    }
+
+    private void Input_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_hasSelection || _active != null || _closed)
+        {
+            return;
+        }
+
+        // PixPin switches between the window and its child element with the wheel.
+        _preferChild = !_preferChild;
+        ClearHover();
+        UpdateHover(ToPixels(e.GetPosition(InputLayer)));
+        e.Handled = true;
+    }
+
+    private void Input_MouseLeave(object sender, MouseEventArgs e)
+    {
+        Magnifier.Visibility = Visibility.Collapsed;
+        ClearHover();
+    }
+
+    private Annotation? HitAnnotation(Point point)
+    {
+        var tolerance = 7 / _scale;
+        for (var i = Editor.Items.Count - 1; i >= 0; i--)
+        {
+            if (Editor.Items[i].HitTest(point, tolerance))
+            {
+                return Editor.Items[i];
+            }
+        }
+
+        return null;
+    }
+
+    private void SelectAnnotation(Annotation annotation)
+    {
+        _selectedAnnotation = annotation;
+        Editor.Selected = annotation;
+        _color = annotation.Color;
+        UpdateSwatchSelection();
+        Editor.InvalidateVisual();
+    }
+
+    private void ClearAnnotationSelection()
+    {
+        if (_selectedAnnotation == null && Editor.Selected == null)
+        {
+            return;
+        }
+
+        _selectedAnnotation = null;
+        Editor.Selected = null;
+        Editor.InvalidateVisual();
+    }
+
+    private void RemoveSelectedAnnotation()
+    {
+        if (_selectedAnnotation == null)
+        {
+            return;
+        }
+
+        Editor.Items.Remove(_selectedAnnotation);
+        _selectedAnnotation = null;
+        Editor.Selected = null;
+        _redo.Clear();
+        UpdateUndoButtons();
+        Editor.InvalidateVisual();
+    }
+
+    private void EraseAt(Point point)
+    {
+        var hit = HitAnnotation(point);
+        if (hit == null)
+        {
+            return;
+        }
+
+        Editor.Items.Remove(hit);
+        if (ReferenceEquals(_selectedAnnotation, hit))
+        {
+            ClearAnnotationSelection();
+        }
+
+        _redo.Clear();
+        UpdateUndoButtons();
+        Editor.InvalidateVisual();
+    }
+
+    private void UpdateHover(Point point)
+    {
+        if (_hasSelection || _dragging ||
+            (_tool != AnnotationTool.None && _tool != AnnotationTool.Select))
+        {
+            ClearHover();
+            return;
+        }
+
+        if (_hoverTarget != null && _hoverLocal.Contains(point))
+        {
+            return;
+        }
+
+        var screenX = _bounds.X + (int)Math.Round(point.X);
+        var screenY = _bounds.Y + (int)Math.Round(point.Y);
+        var target = WindowDetector.Detect(screenX, screenY, _preferChild);
+
+        if (target == null || target.Bounds.Width < 4 || target.Bounds.Height < 4)
+        {
+            ClearHover();
+            return;
+        }
+
+        var local = new Rect(
+            target.Bounds.X - _bounds.X,
+            target.Bounds.Y - _bounds.Y,
+            target.Bounds.Width,
+            target.Bounds.Height);
+
+        var screenRect = new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight);
+        local = Rect.Intersect(local, screenRect);
+        if (local.Width < 4 || local.Height < 4)
+        {
+            ClearHover();
+            return;
+        }
+
+        _hoverTarget = target;
+        _hoverLocal = local;
+        Editor.HoverBounds = local;
+        Editor.HoverLabel = $"{target.Label}  {Math.Round(local.Width)} × {Math.Round(local.Height)}";
+        Editor.ShowHover = true;
+        Editor.InvalidateVisual();
+    }
+
+    private void ClearHover()
+    {
+        if (_hoverTarget == null && !Editor.ShowHover)
+        {
+            return;
+        }
+
+        _hoverTarget = null;
+        _hoverLocal = Rect.Empty;
+        Editor.ShowHover = false;
+        Editor.HoverBounds = Rect.Empty;
+        Editor.HoverLabel = null;
+        Editor.InvalidateVisual();
+    }
+
+    private void UpdateMagnifier(Point point)
+    {
+        if (point.X < 0 || point.Y < 0 ||
+            point.X >= _screen.PixelWidth || point.Y >= _screen.PixelHeight)
+        {
+            Magnifier.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var x = Math.Clamp((int)point.X, 0, _screen.PixelWidth - 1);
+        var y = Math.Clamp((int)point.Y, 0, _screen.PixelHeight - 1);
+        _screen.CopyPixels(new Int32Rect(x, y, 1, 1), _pixelBuffer, 4, 0);
+
+        Magnifier.Pixel = point;
+        Magnifier.PixelColor = Color.FromRgb(_pixelBuffer[2], _pixelBuffer[1], _pixelBuffer[0]);
+        Magnifier.HasPixel = true;
+        Magnifier.HexFormat = _hexColor;
+        Magnifier.Visibility = Visibility.Visible;
+        Magnifier.InvalidateVisual();
+        PositionMagnifier(point);
+    }
+
+    private void PositionMagnifier(Point point)
+    {
+        var dip = new Point(point.X / _scale, point.Y / _scale);
+        var left = dip.X + 18;
+        var top = dip.Y + 18;
+
+        if (left + MagnifierLayer.CardWidth > ActualWidth)
+        {
+            left = dip.X - MagnifierLayer.CardWidth - 18;
+        }
+
+        if (top + MagnifierLayer.CardHeight > ActualHeight)
+        {
+            top = dip.Y - MagnifierLayer.CardHeight - 18;
+        }
+
+        left = Math.Clamp(left, 4, Math.Max(4, ActualWidth - MagnifierLayer.CardWidth - 4));
+        top = Math.Clamp(top, 4, Math.Max(4, ActualHeight - MagnifierLayer.CardHeight - 4));
+        Canvas.SetLeft(Magnifier, left);
+        Canvas.SetTop(Magnifier, top);
+    }
+
+    private void CopyCurrentColor()
+    {
+        if (!Magnifier.HasPixel)
+        {
+            return;
+        }
+
+        var color = Magnifier.PixelColor;
+        var text = _hexColor
+            ? $"#{color.R:X2}{color.G:X2}{color.B:X2}"
+            : $"{color.R}, {color.G}, {color.B}";
+
+        if (ClipboardService.CopyText(text))
+        {
+            Magnifier.Notice = $"已复制 {text}";
+            Magnifier.InvalidateVisual();
+            _noticeTimer.Stop();
+            _noticeTimer.Start();
+        }
+    }
+
+    private void ApplyRecentRegion(bool forward)
+    {
+        var regions = App.Config.RecentRegions;
+        if (regions.Count == 0)
+        {
+            return;
+        }
+
+        _recentRegionIndex = _recentRegionIndex < 0
+            ? 0
+            : (forward
+                ? (_recentRegionIndex + 1) % regions.Count
+                : (_recentRegionIndex - 1 + regions.Count) % regions.Count);
+
+        var region = regions[_recentRegionIndex];
+        var local = new Rect(
+            region.X - _bounds.X,
+            region.Y - _bounds.Y,
+            region.Width,
+            region.Height);
+
+        local = Rect.Intersect(local, new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight));
+        if (local.Width < 2 || local.Height < 2)
+        {
+            return;
+        }
+
+        _selection = local;
+        _hasSelection = true;
+        _pendingWindow = Rect.Empty;
+        _mode = DragMode.None;
+        ClearHover();
+        Editor.Items.Clear();
+        _redo.Clear();
+        ClearAnnotationSelection();
+        UpdateUndoButtons();
         UpdateSelectionVisuals();
     }
 
@@ -572,6 +977,16 @@ public partial class OverlayWindow : Window
 
             case AnnotationTool.Arrow:
                 _active = new ArrowAnnotation
+                {
+                    Start = point,
+                    End = point,
+                    Color = _color,
+                    Thickness = _thickness
+                };
+                break;
+
+            case AnnotationTool.Line:
+                _active = new LineAnnotation
                 {
                     Start = point,
                     End = point,
@@ -657,6 +1072,12 @@ public partial class OverlayWindow : Window
                 arrow.End = point;
                 break;
 
+            case LineAnnotation line:
+                line.End = (Keyboard.Modifiers & ModifierKeys.Shift) != 0
+                    ? SnapLine(_annotationStart, point)
+                    : point;
+                break;
+
             case PenAnnotation pen:
                 if (pen.Points.Count == 0 ||
                     (pen.Points[^1] - point).Length > 1.5)
@@ -697,6 +1118,10 @@ public partial class OverlayWindow : Window
                 return;
 
             case ArrowAnnotation arrow when (arrow.End - arrow.Start).Length < 2:
+                Editor.InvalidateVisual();
+                return;
+
+            case LineAnnotation line when (line.End - line.Start).Length < 2:
                 Editor.InvalidateVisual();
                 return;
 
@@ -804,16 +1229,74 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+
+        if (e.Key is Key.LeftShift or Key.RightShift)
+        {
+            _hexColor = !_hexColor;
+            Magnifier.HexFormat = _hexColor;
+            if (Magnifier.Visibility == Visibility.Visible)
+            {
+                Magnifier.InvalidateVisual();
+            }
+        }
+
+        if (shift && e.Key >= Key.D1 && e.Key <= Key.D9)
+        {
+            SetTool(e.Key switch
+            {
+                Key.D1 => AnnotationTool.Rectangle,
+                Key.D2 => AnnotationTool.Line,
+                Key.D3 => AnnotationTool.Arrow,
+                Key.D4 => AnnotationTool.Number,
+                Key.D5 => AnnotationTool.Pen,
+                Key.D6 => AnnotationTool.Highlighter,
+                Key.D7 => AnnotationTool.Mosaic,
+                Key.D8 => AnnotationTool.Text,
+                Key.D9 => AnnotationTool.Eraser,
+                _ => AnnotationTool.Select
+            });
+            e.Handled = true;
+            return;
+        }
+
+        if (!control && e.Key == Key.C)
+        {
+            CopyCurrentColor();
+            e.Handled = true;
+            return;
+        }
+
+        if (!control && e.Key == Key.R)
+        {
+            ApplyRecentRegion(!shift);
+            e.Handled = true;
+            return;
+        }
+
+        if (!control && e.Key == Key.V)
+        {
+            SetTool(AnnotationTool.Select);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Escape)
         {
-            if (_tool != AnnotationTool.None)
+            if (_selectedAnnotation != null)
             {
-                SetTool(AnnotationTool.None);
+                ClearAnnotationSelection();
+            }
+            else if (_tool != AnnotationTool.None && _tool != AnnotationTool.Select)
+            {
+                SetTool(AnnotationTool.Select);
             }
             else if (_hasSelection)
             {
                 _hasSelection = false;
                 _selection = Rect.Empty;
+                ClearAnnotationSelection();
                 UpdateSelectionVisuals();
             }
             else
@@ -824,9 +1307,6 @@ public partial class OverlayWindow : Window
             e.Handled = true;
             return;
         }
-
-        var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
-        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
         if (control && e.Key == Key.Z)
         {
@@ -844,6 +1324,25 @@ public partial class OverlayWindow : Window
 
         if (!_hasSelection)
         {
+            return;
+        }
+
+        if (_selectedAnnotation != null && e.Key is Key.Delete or Key.Back)
+        {
+            RemoveSelectedAnnotation();
+            e.Handled = true;
+            return;
+        }
+
+        if (_selectedAnnotation != null &&
+            e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            var amount = shift ? 10.0 : 1.0;
+            var dx = e.Key == Key.Left ? -amount : e.Key == Key.Right ? amount : 0;
+            var dy = e.Key == Key.Up ? -amount : e.Key == Key.Down ? amount : 0;
+            _selectedAnnotation.Translate(dx, dy);
+            Editor.InvalidateVisual();
+            e.Handled = true;
             return;
         }
 
@@ -929,16 +1428,20 @@ public partial class OverlayWindow : Window
         {
             switch (e.Key)
             {
-                case Key.R:
-                    SetTool(AnnotationTool.Rectangle);
-                    e.Handled = true;
-                    break;
                 case Key.O:
                     SetTool(AnnotationTool.Ellipse);
                     e.Handled = true;
                     break;
                 case Key.A:
                     SetTool(AnnotationTool.Arrow);
+                    e.Handled = true;
+                    break;
+                case Key.L:
+                    SetTool(AnnotationTool.Line);
+                    e.Handled = true;
+                    break;
+                case Key.E:
+                    SetTool(AnnotationTool.Eraser);
                     e.Handled = true;
                     break;
                 case Key.P:
@@ -975,6 +1478,10 @@ public partial class OverlayWindow : Window
         if (Enum.TryParse<AnnotationTool>(tag, out var tool))
         {
             _tool = tool;
+            if (tool != AnnotationTool.Select && Editor != null)
+            {
+                ClearAnnotationSelection();
+            }
         }
     }
 
@@ -984,18 +1491,28 @@ public partial class OverlayWindow : Window
             double.TryParse(tag, NumberStyles.Any, CultureInfo.InvariantCulture, out var width))
         {
             _thickness = width;
+            if (_selectedAnnotation != null)
+            {
+                _selectedAnnotation.Thickness = width;
+                Editor.InvalidateVisual();
+            }
         }
     }
 
     private void SetTool(AnnotationTool tool)
     {
         _tool = tool;
+        if (tool != AnnotationTool.Select)
+        {
+            ClearAnnotationSelection();
+        }
+
         foreach (var (key, button) in _toolButtons)
         {
             button.IsChecked = key == tool;
         }
 
-        InputLayer.Cursor = Cursors.Cross;
+        InputLayer.Cursor = tool == AnnotationTool.Select ? Cursors.Arrow : Cursors.Cross;
     }
 
     private int HitHandle(Point point)
@@ -1022,6 +1539,34 @@ public partial class OverlayWindow : Window
 
     private void UpdateCursor(Point point)
     {
+        if (_tool == AnnotationTool.Select)
+        {
+            if (HitAnnotation(point) != null)
+            {
+                InputLayer.Cursor = Cursors.SizeAll;
+                return;
+            }
+
+            var selectedHandle = HitHandle(point);
+            if (selectedHandle >= 0)
+            {
+                InputLayer.Cursor = selectedHandle switch
+                {
+                    0 or 4 => Cursors.SizeNWSE,
+                    2 or 6 => Cursors.SizeNESW,
+                    1 or 5 => Cursors.SizeNS,
+                    3 or 7 => Cursors.SizeWE,
+                    _ => Cursors.SizeAll
+                };
+                return;
+            }
+
+            InputLayer.Cursor = _hasSelection && _selection.Contains(point)
+                ? Cursors.SizeAll
+                : Cursors.Cross;
+            return;
+        }
+
         if (_tool != AnnotationTool.None && _hasSelection && _selection.Contains(point))
         {
             InputLayer.Cursor = Cursors.Cross;
@@ -1058,6 +1603,24 @@ public partial class OverlayWindow : Window
             dy < 0 ? start.Y - size : start.Y,
             size,
             size);
+    }
+
+    private static Point SnapLine(Point start, Point end)
+    {
+        var dx = end.X - start.X;
+        var dy = end.Y - start.Y;
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        if (length < 1)
+        {
+            return end;
+        }
+
+        var angle = Math.Atan2(dy, dx);
+        var step = Math.PI / 4;
+        var snapped = Math.Round(angle / step) * step;
+        return new Point(
+            start.X + Math.Cos(snapped) * length,
+            start.Y + Math.Sin(snapped) * length);
     }
 
     private Rect ClampToScreen(Rect rect)
@@ -1358,6 +1921,7 @@ public partial class OverlayWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _closed = true;
+        _noticeTimer.Stop();
         _active = null;
         _textActive = false;
         Editor.Preview = null;

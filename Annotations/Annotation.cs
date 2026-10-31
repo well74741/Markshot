@@ -3,14 +3,17 @@ namespace Markshot.Annotations;
 public enum AnnotationTool
 {
     None,
+    Select,
     Rectangle,
     Ellipse,
     Arrow,
+    Line,
     Pen,
     Highlighter,
     Mosaic,
     Text,
-    Number
+    Number,
+    Eraser
 }
 
 public abstract class Annotation
@@ -22,6 +25,22 @@ public abstract class Annotation
     public abstract void Draw(DrawingContext dc);
 
     public virtual Rect Bounds => Rect.Empty;
+
+    public virtual void Translate(double dx, double dy)
+    {
+    }
+
+    public virtual bool HitTest(Point point, double tolerance)
+    {
+        var bounds = Bounds;
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return false;
+        }
+
+        bounds.Inflate(tolerance, tolerance);
+        return bounds.Contains(point);
+    }
 }
 
 public sealed class RectAnnotation : Annotation
@@ -35,6 +54,11 @@ public sealed class RectAnnotation : Annotation
     }
 
     public override Rect Bounds => Rect;
+
+    public override void Translate(double dx, double dy)
+    {
+        Rect = new Rect(Rect.X + dx, Rect.Y + dy, Rect.Width, Rect.Height);
+    }
 }
 
 public sealed class EllipseAnnotation : Annotation
@@ -49,6 +73,11 @@ public sealed class EllipseAnnotation : Annotation
     }
 
     public override Rect Bounds => Rect;
+
+    public override void Translate(double dx, double dy)
+    {
+        Rect = new Rect(Rect.X + dx, Rect.Y + dy, Rect.Width, Rect.Height);
+    }
 }
 
 public sealed class ArrowAnnotation : Annotation
@@ -97,6 +126,48 @@ public sealed class ArrowAnnotation : Annotation
     }
 
     public override Rect Bounds => new(Start, End);
+
+    public override void Translate(double dx, double dy)
+    {
+        Start = new Point(Start.X + dx, Start.Y + dy);
+        End = new Point(End.X + dx, End.Y + dy);
+    }
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        return GeometryUtil.DistanceToSegment(point, Start, End) <= tolerance + Thickness;
+    }
+}
+
+public sealed class LineAnnotation : Annotation
+{
+    public Point Start { get; set; }
+
+    public Point End { get; set; }
+
+    public override void Draw(DrawingContext dc)
+    {
+        var pen = new Pen(new SolidColorBrush(Color), Thickness)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round
+        };
+
+        dc.DrawLine(pen, Start, End);
+    }
+
+    public override Rect Bounds => new(Start, End);
+
+    public override void Translate(double dx, double dy)
+    {
+        Start = new Point(Start.X + dx, Start.Y + dy);
+        End = new Point(End.X + dx, End.Y + dy);
+    }
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        return GeometryUtil.DistanceToSegment(point, Start, End) <= tolerance + Thickness;
+    }
 }
 
 public sealed class PenAnnotation : Annotation
@@ -157,6 +228,19 @@ public sealed class PenAnnotation : Annotation
             return new Rect(minX, minY, Math.Max(1, maxX - minX), Math.Max(1, maxY - minY));
         }
     }
+
+    public override void Translate(double dx, double dy)
+    {
+        for (var i = 0; i < Points.Count; i++)
+        {
+            Points[i] = new Point(Points[i].X + dx, Points[i].Y + dy);
+        }
+    }
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        return GeometryUtil.DistanceToPolyline(point, Points) <= tolerance + Thickness * (Highlight ? 2 : 1);
+    }
 }
 
 public sealed class MosaicAnnotation : Annotation
@@ -181,6 +265,11 @@ public sealed class MosaicAnnotation : Annotation
     }
 
     public override Rect Bounds => Rect;
+
+    public override void Translate(double dx, double dy)
+    {
+        Rect = new Rect(Rect.X + dx, Rect.Y + dy, Rect.Width, Rect.Height);
+    }
 }
 
 public sealed class TextAnnotation : Annotation
@@ -220,7 +309,39 @@ public sealed class TextAnnotation : Annotation
         dc.DrawText(formatted, Position);
     }
 
-    public override Rect Bounds => new(Position.X, Position.Y, 200, FontSize * 2);
+    public override Rect Bounds
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Text))
+            {
+                return Rect.Empty;
+            }
+
+            var measured = Measure();
+            return new Rect(Position.X - 4, Position.Y - 4, measured.Width + 8, measured.Height + 8);
+        }
+    }
+
+    public override void Translate(double dx, double dy)
+    {
+        Position = new Point(Position.X + dx, Position.Y + dy);
+    }
+
+    private FormattedText Measure()
+    {
+        return new FormattedText(
+            Text,
+            CultureInfo.CurrentUICulture,
+            FlowDirection.LeftToRight,
+            new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
+            FontSize,
+            new SolidColorBrush(Color),
+            1.0)
+        {
+            MaxTextWidth = 2400
+        };
+    }
 }
 
 public sealed class NumberAnnotation : Annotation
@@ -249,6 +370,56 @@ public sealed class NumberAnnotation : Annotation
     }
 
     public override Rect Bounds => new(Center.X - Radius, Center.Y - Radius, Radius * 2, Radius * 2);
+
+    public override void Translate(double dx, double dy)
+    {
+        Center = new Point(Center.X + dx, Center.Y + dy);
+    }
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        return (point - Center).Length <= Radius + tolerance;
+    }
+}
+
+internal static class GeometryUtil
+{
+    public static double DistanceToSegment(Point point, Point start, Point end)
+    {
+        var segment = end - start;
+        var lengthSquared = segment.X * segment.X + segment.Y * segment.Y;
+        if (lengthSquared < 0.0001)
+        {
+            return (point - start).Length;
+        }
+
+        var toPoint = point - start;
+        var t = (toPoint.X * segment.X + toPoint.Y * segment.Y) / lengthSquared;
+        t = Math.Clamp(t, 0, 1);
+        var projection = start + segment * t;
+        return (point - projection).Length;
+    }
+
+    public static double DistanceToPolyline(Point point, IReadOnlyList<Point> points)
+    {
+        if (points.Count == 0)
+        {
+            return double.MaxValue;
+        }
+
+        if (points.Count == 1)
+        {
+            return (point - points[0]).Length;
+        }
+
+        var best = double.MaxValue;
+        for (var i = 1; i < points.Count; i++)
+        {
+            best = Math.Min(best, DistanceToSegment(point, points[i - 1], points[i]));
+        }
+
+        return best;
+    }
 }
 
 public static class MosaicBuilder

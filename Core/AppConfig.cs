@@ -16,6 +16,53 @@ public sealed class AppConfig
 
     public TranslationConfig Translation { get; set; } = new();
 
+    public List<string> PinGroups { get; set; } = new() { "默认" };
+
+    public string CurrentPinGroup { get; set; } = "默认";
+
+    public List<CaptureRegion> RecentRegions { get; set; } = new();
+
+    public void EnsureDefaults()
+    {
+        PinGroups ??= new List<string>();
+        if (PinGroups.Count == 0)
+        {
+            PinGroups.Add("默认");
+        }
+
+        if (string.IsNullOrWhiteSpace(CurrentPinGroup) || !PinGroups.Contains(CurrentPinGroup))
+        {
+            CurrentPinGroup = PinGroups[0];
+        }
+
+        RecentRegions ??= new List<CaptureRegion>();
+    }
+
+    public void RememberRegion(Rect region)
+    {
+        RecentRegions ??= new List<CaptureRegion>();
+
+        var entry = new CaptureRegion
+        {
+            X = (int)Math.Round(region.X),
+            Y = (int)Math.Round(region.Y),
+            Width = (int)Math.Round(region.Width),
+            Height = (int)Math.Round(region.Height)
+        };
+
+        RecentRegions.RemoveAll(existing =>
+            Math.Abs(existing.X - entry.X) < 3 &&
+            Math.Abs(existing.Y - entry.Y) < 3 &&
+            Math.Abs(existing.Width - entry.Width) < 3 &&
+            Math.Abs(existing.Height - entry.Height) < 3);
+
+        RecentRegions.Insert(0, entry);
+        while (RecentRegions.Count > 10)
+        {
+            RecentRegions.RemoveAt(RecentRegions.Count - 1);
+        }
+    }
+
     public static string ConfigDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Markshot");
 
@@ -50,6 +97,7 @@ public sealed class AppConfig
                 if (config != null)
                 {
                     config.Translation ??= new TranslationConfig();
+                    config.EnsureDefaults();
                     return config;
                 }
             }
@@ -102,8 +150,7 @@ public sealed class AppConfig
     };
 }
 
-public sealed class TranslationConfig
-{
+public sealed class TranslationConfig{
     /// <summary>OpenAI-compatible base URL, e.g. https://api.deepseek.com/v1</summary>
     public string BaseUrl { get; set; } = "https://api.deepseek.com/v1";
 
@@ -124,6 +171,19 @@ public sealed class TranslationConfig
         (!string.IsNullOrWhiteSpace(ApiKey) ||
          BaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
          BaseUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase));
+}
+
+public sealed class CaptureRegion
+{
+    public int X { get; set; }
+
+    public int Y { get; set; }
+
+    public int Width { get; set; }
+
+    public int Height { get; set; }
+
+    public Rect ToRect() => new(X, Y, Width, Height);
 }
 
 public static class Log

@@ -4,7 +4,7 @@ namespace Markshot.Core;
 
 public static class ClipboardService
 {
-    private const int MaxAttempts = 6;
+    private const int MaxAttempts = 10;
 
     public static bool CopyImage(BitmapSource image)
     {
@@ -73,7 +73,7 @@ public static class ClipboardService
             }
             catch (COMException)
             {
-                Thread.Sleep(30);
+                Thread.Sleep(60);
             }
         }
 
