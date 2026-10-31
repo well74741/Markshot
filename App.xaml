@@ -1,6 +1,7 @@
 <Application x:Class="Markshot.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:Markshot.Core"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
 
@@ -159,6 +160,21 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/watermark.png" /></Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="IconRectMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/rect.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconEllipseMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/ellipse.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconEyedropperMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/eyedropper.png" /></Setter.Value>
+            </Setter>
+        </Style>
 
         <Style x:Key="ToolButton" TargetType="Button">
             <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
@@ -298,6 +314,7 @@
 
         <Style TargetType="Slider">
             <Setter Property="Height" Value="20" />
+            <Setter Property="core:SliderDragBehavior.Enabled" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">

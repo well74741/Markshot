@@ -48,6 +48,7 @@ public partial class AnnotationToolbar : UserControl
     private Point _dragStart;
     private double _dragLeft;
     private double _dragTop;
+    private AnnotationToolbarMode _mode = AnnotationToolbarMode.Capture;
 
     public event Action<AnnotationTool>? ToolChanged;
     public event Action<AnnotationTool>? VariantChanged;
@@ -91,8 +92,64 @@ public partial class AnnotationToolbar : UserControl
 
     public void SetMode(AnnotationToolbarMode mode)
     {
+        _mode = mode;
         CaptureActions.Visibility = mode == AnnotationToolbarMode.Capture ? Visibility.Visible : Visibility.Collapsed;
         PinActions.Visibility = mode == AnnotationToolbarMode.Pin ? Visibility.Visible : Visibility.Collapsed;
+        ApplyToolOrderFromConfig();
+    }
+
+    public void ApplyToolOrderFromConfig()
+    {
+        var config = App.Config;
+        ApplyToolOrder(
+            _mode == AnnotationToolbarMode.Pin ? config.PinToolOrder : config.CaptureToolOrder,
+            _mode == AnnotationToolbarMode.Pin ? config.PinToolHidden : config.CaptureToolHidden);
+    }
+
+    public void ApplyToolOrder(string? order, string? hidden)
+    {
+        if (ToolItems == null)
+        {
+            return;
+        }
+
+        var groups = new Dictionary<string, FrameworkElement[]>
+        {
+            ["Shape"] = new FrameworkElement[] { ToolShape, ShapeChevron },
+            ["Pen"] = new FrameworkElement[] { ToolPen, PenChevron },
+            ["Arrow"] = new FrameworkElement[] { ToolArrow, ArrowChevron },
+            ["Text"] = new FrameworkElement[] { ToolText, TextChevron },
+            ["Number"] = new FrameworkElement[] { ToolNumber },
+            ["Mosaic"] = new FrameworkElement[] { ToolMosaic, MosaicChevron },
+            ["Eraser"] = new FrameworkElement[] { ToolEraser }
+        };
+        var defaults = new[] { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
+        var keys = (order ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(groups.ContainsKey)
+            .Distinct()
+            .ToList();
+        foreach (var key in defaults)
+        {
+            if (!keys.Contains(key))
+            {
+                keys.Add(key);
+            }
+        }
+
+        var hiddenSet = new HashSet<string>(
+            (hidden ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            StringComparer.OrdinalIgnoreCase);
+
+        ToolItems.Children.Clear();
+        foreach (var key in keys)
+        {
+            foreach (var element in groups[key])
+            {
+                element.Visibility = hiddenSet.Contains(key) ? Visibility.Collapsed : Visibility.Visible;
+                ToolItems.Children.Add(element);
+            }
+        }
     }
 
     public void SetTool(AnnotationTool tool, bool notify = false)
@@ -602,7 +659,8 @@ public partial class AnnotationToolbar : UserControl
             picker.Owner = owner;
         }
 
-        if (picker.ShowDialog() == true)
+        picker.ShowDialog();
+        if (picker.Accepted)
         {
             _strokeColor = picker.SelectedColor;
             StrokeColorCircle.Fill = new SolidColorBrush(_strokeColor);
@@ -619,7 +677,8 @@ public partial class AnnotationToolbar : UserControl
             picker.Owner = owner;
         }
 
-        if (picker.ShowDialog() == true)
+        picker.ShowDialog();
+        if (picker.Accepted)
         {
             _customColor = picker.SelectedColor;
             _color = _customColor;

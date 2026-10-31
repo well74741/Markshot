@@ -1116,6 +1116,8 @@ public partial class OverlayWindow : Window
         var frame = AnnotationEditor.SelectionFrame(bounds, 1 / _scale);
         var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         var local = AnnotationEditor.RotatePoint(point, center, -_selectedAnnotation.Rotation);
+        _resizingAnnotation = false;
+        _rotatingAnnotation = false;
 
         if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 / _scale)
         {
@@ -1138,6 +1140,18 @@ public partial class OverlayWindow : Window
                 _annotationCenter = center;
                 return true;
             }
+        }
+
+        var edge = 6 / _scale;
+        var nearX = Math.Abs(local.X - frame.Left) <= edge || Math.Abs(local.X - frame.Right) <= edge;
+        var nearY = Math.Abs(local.Y - frame.Top) <= edge || Math.Abs(local.Y - frame.Bottom) <= edge;
+        if (nearX || nearY)
+        {
+            _rotatingAnnotation = true;
+            _annotationCenter = center;
+            _annotationStartRotation = _selectedAnnotation.Rotation;
+            _annotationRotateStartAngle = Math.Atan2(point.Y - center.Y, point.X - center.X) * 180 / Math.PI;
+            return true;
         }
 
         return false;
@@ -2199,23 +2213,10 @@ public partial class OverlayWindow : Window
         var edge = 6 / _scale;
         var nearX = Math.Abs(local.X - frame.Left) <= edge || Math.Abs(local.X - frame.Right) <= edge;
         var nearY = Math.Abs(local.Y - frame.Top) <= edge || Math.Abs(local.Y - frame.Bottom) <= edge;
-        if (nearX && nearY)
+        if (nearX || nearY)
         {
-            InputLayer.Cursor = (local.X < center.X) == (local.Y < center.Y)
-                ? Cursors.SizeNWSE
-                : Cursors.SizeNESW;
-            return true;
-        }
-
-        if (nearX)
-        {
-            InputLayer.Cursor = Cursors.SizeWE;
-            return true;
-        }
-
-        if (nearY)
-        {
-            InputLayer.Cursor = Cursors.SizeNS;
+            InputLayer.Cursor = ToolCursors.GetRotationCursor(
+                nearX ? local.X >= center.X : local.Y >= center.Y);
             return true;
         }
 

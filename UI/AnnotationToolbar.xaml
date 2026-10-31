@@ -15,11 +15,12 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
 
+                <StackPanel x:Name="ToolItems" Orientation="Horizontal">
                 <RadioButton x:Name="ToolShape" Style="{StaticResource IconToolRadio}"
                              Tag="Rectangle" GroupName="Tool" Click="Tool_Click" ToolTip="图形：矩形/椭圆">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconRect}" />
+                    <Border Style="{StaticResource IconRectMask}" />
                 </RadioButton>
-                <Button Style="{StaticResource ChevronButton}" Click="ShapeMenu_Click" ToolTip="图形样式">
+                <Button Style="{StaticResource ChevronButton}" Click="ShapeMenu_Click" ToolTip="图形样式" x:Name="ShapeChevron">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
                 </Button>
 
@@ -27,7 +28,7 @@
                              Tag="Pen" GroupName="Tool" Click="Tool_Click" ToolTip="画笔/荧光笔 (B)">
                     <Border Style="{StaticResource IconPenMask}" />
                 </RadioButton>
-                <Button Style="{StaticResource ChevronButton}" Click="PenMenu_Click" ToolTip="画笔样式">
+                <Button Style="{StaticResource ChevronButton}" Click="PenMenu_Click" ToolTip="画笔样式" x:Name="PenChevron">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
                 </Button>
 
@@ -35,7 +36,7 @@
                              Tag="Arrow" GroupName="Tool" Click="Tool_Click" ToolTip="箭头/直线 (L)">
                     <Border Style="{StaticResource IconArrowMask}" />
                 </RadioButton>
-                <Button Style="{StaticResource ChevronButton}" Click="ArrowMenu_Click" ToolTip="箭头样式">
+                <Button Style="{StaticResource ChevronButton}" Click="ArrowMenu_Click" ToolTip="箭头样式" x:Name="ArrowChevron">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
                 </Button>
 
@@ -43,7 +44,7 @@
                              Tag="Text" GroupName="Tool" Click="Tool_Click" ToolTip="文字 (T)">
                     <Border Style="{StaticResource IconTextMask}" />
                 </RadioButton>
-                <Button Style="{StaticResource ChevronButton}" Click="TextMenu_Click" ToolTip="文字字号">
+                <Button Style="{StaticResource ChevronButton}" Click="TextMenu_Click" ToolTip="文字字号" x:Name="TextChevron">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
                 </Button>
 
@@ -56,7 +57,7 @@
                              Tag="Mosaic" GroupName="Tool" Click="Tool_Click" ToolTip="马赛克/水印">
                     <Border Style="{StaticResource IconMosaicMask}" />
                 </RadioButton>
-                <Button Style="{StaticResource ChevronButton}" Click="MosaicMenu_Click" ToolTip="马赛克样式">
+                <Button Style="{StaticResource ChevronButton}" Click="MosaicMenu_Click" ToolTip="马赛克样式" x:Name="MosaicChevron">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
                 </Button>
 
@@ -64,6 +65,7 @@
                              Tag="Eraser" GroupName="Tool" Click="Tool_Click" ToolTip="橡皮擦 (E)">
                     <Border Style="{StaticResource IconEraserMask}" />
                 </RadioButton>
+                </StackPanel>
 
                 <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
@@ -111,10 +113,10 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <StackPanel x:Name="RectVariants" Orientation="Horizontal" Visibility="Collapsed">
                         <RadioButton x:Name="VariantRect" Style="{StaticResource IconToolRadio}" Tag="Rectangle" GroupName="Variant" Checked="Variant_Checked" ToolTip="矩形">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconRect}" />
+                            <Border Style="{StaticResource IconRectMask}" />
                         </RadioButton>
                         <RadioButton x:Name="VariantEllipse" Style="{StaticResource IconToolRadio}" Tag="Ellipse" GroupName="Variant" Checked="Variant_Checked" ToolTip="椭圆">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconEllipse}" />
+                            <Border Style="{StaticResource IconEllipseMask}" />
                         </RadioButton>
                     </StackPanel>
 

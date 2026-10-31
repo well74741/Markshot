@@ -557,18 +557,33 @@ public partial class PinWindow : Window
         {
             _movingSelected = false;
             ReleaseMouseCapture();
+            RefreshTransformCursor(e.GetPosition(ImageHost));
             e.Handled = true;
             return;
         }
 
         if (!_dragging)
         {
+            RefreshTransformCursor(e.GetPosition(ImageHost));
             return;
         }
 
         _dragging = false;
         ReleaseMouseCapture();
+        RefreshTransformCursor(e.GetPosition(ImageHost));
         e.Handled = true;
+    }
+
+    private void RefreshTransformCursor(Point pointer)
+    {
+        if (_editMode && _tool == AnnotationTool.None && _selected != null)
+        {
+            UpdateAnnotationTransformCursor(ToPixels(pointer));
+        }
+        else if (!_editMode || _tool == AnnotationTool.None)
+        {
+            ImageHost.Cursor = Cursors.Arrow;
+        }
     }
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
@@ -755,6 +770,14 @@ public partial class PinWindow : Window
             return;
         }
 
+        if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0 &&
+            MatchesPinKey(App.Config.PinResetHotkey, e.Key))
+        {
+            ResetPinImageTransform();
+            e.Handled = true;
+            return;
+        }
+
         if (!_editMode &&
             (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0)
         {
@@ -776,13 +799,6 @@ public partial class PinWindow : Window
             if (MatchesPinKey(config.PinRotateHotkey, e.Key))
             {
                 RotatePinImageCounterClockwise();
-                e.Handled = true;
-                return;
-            }
-
-            if (MatchesPinKey(config.PinResetHotkey, e.Key))
-            {
-                ResetPinImageTransform();
                 e.Handled = true;
                 return;
             }
@@ -1535,6 +1551,8 @@ public partial class PinWindow : Window
         var frame = AnnotationEditor.SelectionFrame(bounds, scale);
         var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         var local = AnnotationEditor.RotatePoint(point, center, -_selected.Rotation);
+        _resizingAnnotation = false;
+        _rotatingAnnotation = false;
 
         if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 * scale)
         {
@@ -1557,6 +1575,18 @@ public partial class PinWindow : Window
                 _annotationCenter = center;
                 return true;
             }
+        }
+
+        var edge = 6 * scale;
+        var nearX = Math.Abs(local.X - frame.Left) <= edge || Math.Abs(local.X - frame.Right) <= edge;
+        var nearY = Math.Abs(local.Y - frame.Top) <= edge || Math.Abs(local.Y - frame.Bottom) <= edge;
+        if (nearX || nearY)
+        {
+            _rotatingAnnotation = true;
+            _annotationCenter = center;
+            _annotationStartRotation = _selected.Rotation;
+            _annotationRotateStartAngle = Math.Atan2(point.Y - center.Y, point.X - center.X) * 180 / Math.PI;
+            return true;
         }
 
         return false;
@@ -1790,16 +1820,13 @@ public partial class PinWindow : Window
         var edge = 6 / _zoom;
         var nearX = Math.Abs(local.X - frame.Left) <= edge || Math.Abs(local.X - frame.Right) <= edge;
         var nearY = Math.Abs(local.Y - frame.Top) <= edge || Math.Abs(local.Y - frame.Bottom) <= edge;
-        if (nearX && nearY)
+        if (nearX || nearY)
         {
-            ImageHost.Cursor = (local.X < center.X) == (local.Y < center.Y)
-                ? Cursors.SizeNWSE
-                : Cursors.SizeNESW;
+            ImageHost.Cursor = ToolCursors.GetRotationCursor(
+                nearX ? local.X >= center.X : local.Y >= center.Y);
             return true;
         }
 
-        if (nearX) { ImageHost.Cursor = Cursors.SizeWE; return true; }
-        if (nearY) { ImageHost.Cursor = Cursors.SizeNS; return true; }
         if (frame.Contains(local)) { ImageHost.Cursor = Cursors.SizeAll; return true; }
         return false;
     }
@@ -1900,6 +1927,9 @@ public partial class PinWindow : Window
         SourceImage = _originalImage;
         _pixelWidth = _originalImage.PixelWidth;
         _pixelHeight = _originalImage.PixelHeight;
+        _zoom = 1.0;
+        _opacity = 1.0;
+        Img.Opacity = 1.0;
         Editor.Items.Clear();
         Editor.Selected = null;
         _selected = null;

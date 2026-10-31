@@ -17,6 +17,8 @@ public partial class ColorPickerWindow : Window
 
     public Color SelectedColor { get; private set; }
 
+    public bool Accepted { get; private set; }
+
     public ColorPickerWindow(Color color)
     {
         InitializeComponent();
@@ -281,10 +283,15 @@ public partial class ColorPickerWindow : Window
         ParseHex();
         ParseAlphaPercent();
         SelectedColor = CurrentColor;
-        DialogResult = true;
+        Accepted = true;
+        Close();
     }
 
-    private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+    private void Cancel_Click(object sender, RoutedEventArgs e)
+    {
+        Accepted = false;
+        Close();
+    }
 
     private static (double H, double S, double V) RgbToHsv(byte r, byte g, byte b)
     {

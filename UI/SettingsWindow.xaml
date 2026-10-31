@@ -28,7 +28,7 @@
 
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="截图" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="CaptureHotkeyBox" Style="{StaticResource InputBox}"
+                        <TextBox x:Name="CaptureHotkeyBox" Style="{StaticResource InputBox}" Width="170" HorizontalAlignment="Left"
                                  IsReadOnly="True" Cursor="Hand"
                                  GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
                                  PreviewKeyDown="HotkeyBox_PreviewKeyDown"
@@ -37,7 +37,7 @@
 
                     <StackPanel Grid.Column="2">
                         <TextBlock Text="贴图剪贴板（可留空）" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="PinHotkeyBox" Style="{StaticResource InputBox}"
+                        <TextBox x:Name="PinHotkeyBox" Style="{StaticResource InputBox}" Width="170" HorizontalAlignment="Left"
                                  IsReadOnly="True" Cursor="Hand"
                                  GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
                                  PreviewKeyDown="HotkeyBox_PreviewKeyDown"
@@ -53,14 +53,14 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="鼠标穿透" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="MouseThroughHotkeyBox" Style="{StaticResource InputBox}"
+                        <TextBox x:Name="MouseThroughHotkeyBox" Style="{StaticResource InputBox}" Width="170" HorizontalAlignment="Left"
                                  IsReadOnly="True" Cursor="Hand"
                                  GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
                                  PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
                     </StackPanel>
                     <StackPanel Grid.Column="2">
                         <TextBlock Text="返回上一贴图" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="RestorePinHotkeyBox" Style="{StaticResource InputBox}"
+                        <TextBox x:Name="RestorePinHotkeyBox" Style="{StaticResource InputBox}" Width="170" HorizontalAlignment="Left"
                                  IsReadOnly="True" Cursor="Hand"
                                  GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
                                  PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
@@ -141,6 +141,52 @@
                         <TextBox x:Name="PinResetBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
                     </StackPanel>
                 </StackPanel>
+
+                <TextBlock Text="批注栏按钮（拖动排序，勾选显示）" FontSize="15" Foreground="#F5F5F5"
+                           FontWeight="SemiBold" Margin="0,18,0,8" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="截图模式" Style="{StaticResource FieldLabel}" />
+                        <ListBox x:Name="CaptureOrderList" Height="150" AllowDrop="True"
+                                 Background="#FF262626" BorderBrush="#33FFFFFF" Foreground="#FFF0F0F0"
+                                 PreviewMouseLeftButtonDown="OrderList_PreviewMouseLeftButtonDown"
+                                 PreviewMouseMove="OrderList_PreviewMouseMove"
+                                 DragOver="OrderList_DragOver" Drop="OrderList_Drop">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox IsChecked="{Binding Visible, Mode=TwoWay}" VerticalAlignment="Center"
+                                                  Margin="0,0,8,0" />
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="贴图模式" Style="{StaticResource FieldLabel}" />
+                        <ListBox x:Name="PinOrderList" Height="150" AllowDrop="True"
+                                 Background="#FF262626" BorderBrush="#33FFFFFF" Foreground="#FFF0F0F0"
+                                 PreviewMouseLeftButtonDown="OrderList_PreviewMouseLeftButtonDown"
+                                 PreviewMouseMove="OrderList_PreviewMouseMove"
+                                 DragOver="OrderList_DragOver" Drop="OrderList_Drop">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox IsChecked="{Binding Visible, Mode=TwoWay}" VerticalAlignment="Center"
+                                                  Margin="0,0,8,0" />
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </Grid>
 
                 <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
 

@@ -1,5 +1,7 @@
 using Markshot.Services;
 using Microsoft.Win32;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows.Interop;
 
 namespace Markshot.UI;
@@ -7,6 +9,9 @@ namespace Markshot.UI;
 public partial class SettingsWindow : Window
 {
     private readonly AppConfig _config;
+
+    private Point _orderDragStart;
+    private ToolOrderItem? _orderDragItem;
 
     public SettingsWindow(AppConfig config)
     {
@@ -38,6 +43,8 @@ public partial class SettingsWindow : Window
         ModelBox.Text = config.Translation.Model;
         TargetBox.Text = config.Translation.TargetLanguage;
         TimeoutBox.Text = config.Translation.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+        LoadToolOrder(CaptureOrderList, config.CaptureToolOrder, config.CaptureToolHidden);
+        LoadToolOrder(PinOrderList, config.PinToolOrder, config.PinToolHidden);
 
         Loaded += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
         {
@@ -234,6 +241,10 @@ public partial class SettingsWindow : Window
         _config.PinFlipVerticalHotkey = string.IsNullOrWhiteSpace(PinFlipVBox.Text) ? "W" : PinFlipVBox.Text.Trim();
         _config.PinRotateHotkey = string.IsNullOrWhiteSpace(PinRotateBox.Text) ? "E" : PinRotateBox.Text.Trim();
         _config.PinResetHotkey = string.IsNullOrWhiteSpace(PinResetBox.Text) ? "F" : PinResetBox.Text.Trim();
+        _config.CaptureToolOrder = OrderString(CaptureOrderList);
+        _config.CaptureToolHidden = HiddenString(CaptureOrderList);
+        _config.PinToolOrder = OrderString(PinOrderList);
+        _config.PinToolHidden = HiddenString(PinOrderList);
 
         var penKey = NormalizeToolKey(PenKeyBox.Text, "B");
         var selectKey = NormalizeToolKey(SelectKeyBox.Text, "V");
@@ -317,5 +328,167 @@ public partial class SettingsWindow : Window
         {
             TestButton.IsEnabled = true;
         }
+    }
+
+    private static readonly (string Key, string Name)[] ToolDefinitions =
+    {
+        ("Shape", "图形"),
+        ("Pen", "画笔/荧光笔"),
+        ("Arrow", "箭头/直线"),
+        ("Text", "文字"),
+        ("Number", "序号"),
+        ("Mosaic", "马赛克/水印"),
+        ("Eraser", "橡皮擦")
+    };
+
+    private static void LoadToolOrder(ListBox list, string? order, string? hidden)
+    {
+        var hiddenSet = new HashSet<string>(
+            (hidden ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            StringComparer.OrdinalIgnoreCase);
+        var keys = (order ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        foreach (var (key, _) in ToolDefinitions)
+        {
+            if (!keys.Contains(key, StringComparer.OrdinalIgnoreCase))
+            {
+                keys.Add(key);
+            }
+        }
+
+        var items = new ObservableCollection<ToolOrderItem>();
+        foreach (var key in keys)
+        {
+            var definition = ToolDefinitions.FirstOrDefault(t =>
+                string.Equals(t.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (definition.Key == null)
+            {
+                continue;
+            }
+
+            items.Add(new ToolOrderItem
+            {
+                Key = definition.Key,
+                Name = definition.Name,
+                Visible = !hiddenSet.Contains(definition.Key)
+            });
+        }
+
+        list.ItemsSource = items;
+    }
+
+    private static string OrderString(ListBox list) =>
+        string.Join(",", (list.ItemsSource as ObservableCollection<ToolOrderItem> ?? new())
+            .Select(item => item.Key));
+
+    private static string HiddenString(ListBox list) =>
+        string.Join(",", (list.ItemsSource as ObservableCollection<ToolOrderItem> ?? new())
+            .Where(item => !item.Visible)
+            .Select(item => item.Key));
+
+    private void OrderList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListBox list || e.OriginalSource is CheckBox)
+        {
+            return;
+        }
+
+        _orderDragStart = e.GetPosition(list);
+        _orderDragItem = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?
+            .DataContext as ToolOrderItem;
+    }
+
+    private void OrderList_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _orderDragItem == null || sender is not ListBox list)
+        {
+            return;
+        }
+
+        var current = e.GetPosition(list);
+        if (Math.Abs(current.X - _orderDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(current.Y - _orderDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        DragDrop.DoDragDrop(list, _orderDragItem, DragDropEffects.Move);
+        _orderDragItem = null;
+    }
+
+    private void OrderList_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(typeof(ToolOrderItem)) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OrderList_Drop(object sender, DragEventArgs e)
+    {
+        if (sender is not ListBox list ||
+            !e.Data.GetDataPresent(typeof(ToolOrderItem)) ||
+            list.ItemsSource is not ObservableCollection<ToolOrderItem> items)
+        {
+            return;
+        }
+
+        var dragged = (ToolOrderItem)e.Data.GetData(typeof(ToolOrderItem))!;
+        var target = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as ToolOrderItem;
+        var oldIndex = items.IndexOf(dragged);
+        if (oldIndex < 0)
+        {
+            return;
+        }
+
+        items.RemoveAt(oldIndex);
+        var newIndex = target == null ? items.Count : items.IndexOf(target);
+        if (newIndex < 0)
+        {
+            newIndex = items.Count;
+        }
+
+        items.Insert(newIndex, dragged);
+        e.Handled = true;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
+    {
+        while (current != null)
+        {
+            if (current is T typed)
+            {
+                return typed;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
+    }
+
+    public sealed class ToolOrderItem : INotifyPropertyChanged
+    {
+        public string Key { get; set; } = string.Empty;
+
+        public string Name { get; set; } = string.Empty;
+
+        private bool _visible = true;
+
+        public bool Visible
+        {
+            get => _visible;
+            set
+            {
+                if (_visible == value)
+                {
+                    return;
+                }
+
+                _visible = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Visible)));
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
     }
 }
