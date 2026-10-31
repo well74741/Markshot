@@ -15,6 +15,8 @@ public partial class App : Application
     private readonly List<PinWindow> _pins = new();
     private readonly List<TranslationWindow> _translations = new();
 
+    private const int MaxPins = 20;
+
     private Mutex? _mutex;
     private HotkeyManager? _hotkeys;
     private TrayService? _tray;
@@ -79,9 +81,9 @@ public partial class App : Application
             PinFromClipboard,
             RestoreLastPin,
             ShowSettings,
+            DisableClickThrough,
             ShutdownApp);
 
-        RefreshTrayGroups();
         ApplyHotkeys();
 
         _tray.ShowBalloon(
@@ -218,17 +220,21 @@ public partial class App : Application
         }
     }
 
-    public PinWindow CreatePin(BitmapSource image, int screenX, int screenY, string? group = null)
+    public PinWindow CreatePin(BitmapSource image, int screenX, int screenY)
     {
-        group ??= Config.CurrentPinGroup;
-        var pin = new PinWindow(image, screenX, screenY, group);
+        while (_pins.Count >= MaxPins)
+        {
+            _pins[0].Close();
+        }
+
+        var pin = new PinWindow(image, screenX, screenY);
 
         pin.Closed += (_, _) =>
         {
             _pins.Remove(pin);
             if (!_shuttingDown)
             {
-                var entry = new PinEntry { Image = pin.SourceImage, Group = pin.Group };
+                var entry = new PinEntry { Image = pin.SourceImage };
                 History.Add(entry);
                 PinStore.Save(entry, pin.SourceImage);
             }
@@ -239,10 +245,10 @@ public partial class App : Application
         return pin;
     }
 
-    public void CreatePinAtCursor(BitmapSource image, string? group = null)
+    public void CreatePinAtCursor(BitmapSource image)
     {
         var cursor = Native.CursorPosition();
-        CreatePin(image, cursor.X + 16, cursor.Y + 16, group);
+        CreatePin(image, cursor.X + 16, cursor.Y + 16);
     }
 
     public void PinFromClipboard()
@@ -282,7 +288,7 @@ public partial class App : Application
 
     public void RestoreLastPin()
     {
-        var entry = History.LastForGroup(Config.CurrentPinGroup);
+        var entry = History.Last;
         var image = entry?.LoadImage();
         if (entry == null || image == null)
         {
@@ -290,79 +296,7 @@ public partial class App : Application
             return;
         }
 
-        CreatePinAtCursor(image, entry.Group);
-    }
-
-    public IReadOnlyList<string> PinGroups => Config.PinGroups;
-
-    public string CurrentPinGroup => Config.CurrentPinGroup;
-
-    public void SwitchPinGroup(string group)
-    {
-        if (!Config.PinGroups.Contains(group))
-        {
-            return;
-        }
-
-        Config.CurrentPinGroup = group;
-        Config.Save();
-
-        foreach (var pin in _pins)
-        {
-            if (string.Equals(pin.Group, group, StringComparison.Ordinal))
-            {
-                pin.Show();
-            }
-            else
-            {
-                pin.Hide();
-            }
-        }
-
-        RefreshTrayGroups();
-        _tray?.SetTooltip($"Markshot · 贴图组：{group}");
-    }
-
-    public void MovePinToGroup(PinWindow pin, string group)
-    {
-        if (!Config.PinGroups.Contains(group))
-        {
-            return;
-        }
-
-        pin.Group = group;
-        if (string.Equals(group, Config.CurrentPinGroup, StringComparison.Ordinal))
-        {
-            pin.Show();
-        }
-        else
-        {
-            pin.Hide();
-        }
-
-        Config.Save();
-        RefreshTrayGroups();
-    }
-
-    public void CreatePinGroup()
-    {
-        var name = TextPromptWindow.Prompt("贴图组名称", "新建贴图组");
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return;
-        }
-
-        name = name.Trim();
-        if (Config.PinGroups.Contains(name))
-        {
-            _tray?.ShowBalloon("贴图组已存在", name);
-            return;
-        }
-
-        Config.PinGroups.Add(name);
-        Config.CurrentPinGroup = name;
-        Config.Save();
-        SwitchPinGroup(name);
+        CreatePinAtCursor(image);
     }
 
     public void DisableClickThrough()
@@ -371,16 +305,6 @@ public partial class App : Application
         {
             pin.SetClickThrough(false);
         }
-    }
-
-    private void RefreshTrayGroups()
-    {
-        _tray?.UpdateGroups(
-            Config.PinGroups,
-            Config.CurrentPinGroup,
-            SwitchPinGroup,
-            CreatePinGroup,
-            DisableClickThrough);
     }
 
     public void ShowSettings()

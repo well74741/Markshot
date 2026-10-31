@@ -45,16 +45,11 @@ public sealed class PinHistory
 {
     private readonly List<PinEntry> _items = new();
 
-    public int Capacity { get; } = 20;
+    public int Capacity { get; } = 10;
 
     public IReadOnlyList<PinEntry> Items => _items;
 
     public PinEntry? Last => _items.Count == 0 ? null : _items[^1];
-
-    public PinEntry? LastForGroup(string group)
-    {
-        return _items.LastOrDefault(entry => string.Equals(entry.Group, group, StringComparison.Ordinal));
-    }
 
     public void Add(PinEntry entry)
     {

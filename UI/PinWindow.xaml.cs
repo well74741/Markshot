@@ -5,9 +5,8 @@ namespace Markshot.UI;
 
 public partial class PinWindow : Window
 {
-    private readonly int _pixelWidth;
-    private readonly int _pixelHeight;
-
+    private int _pixelWidth;
+    private int _pixelHeight;
     private int _left;
     private int _top;
     private double _zoom = 1.0;
@@ -21,16 +20,13 @@ public partial class PinWindow : Window
     private int _dragStartLeft;
     private int _dragStartTop;
 
-    public BitmapSource SourceImage { get; }
+    public BitmapSource SourceImage { get; private set; }
 
-    public string Group { get; set; }
-
-    public PinWindow(BitmapSource image, int screenX, int screenY, string group = "默认")
+    public PinWindow(BitmapSource image, int screenX, int screenY)
     {
         InitializeComponent();
 
         SourceImage = image;
-        Group = group;
         Img.Source = image;
         _pixelWidth = image.PixelWidth;
         _pixelHeight = image.PixelHeight;
@@ -55,6 +51,29 @@ public partial class PinWindow : Window
     }
 
     public bool IsClickThrough => _clickThrough;
+
+    public void ReplaceImage(BitmapSource image)
+    {
+        SourceImage = image;
+        Img.Source = image;
+        _pixelWidth = image.PixelWidth;
+        _pixelHeight = image.PixelHeight;
+        ApplyBounds();
+    }
+
+    private void OpenEditor()
+    {
+        if (_locked || _clickThrough)
+        {
+            return;
+        }
+
+        var editor = new PinEditWindow(SourceImage) { Owner = this };
+        if (editor.ShowDialog() == true && editor.ResultImage != null)
+        {
+            ReplaceImage(editor.ResultImage);
+        }
+    }
 
     public void SetClickThrough(bool enabled)
     {
@@ -213,7 +232,7 @@ public partial class PinWindow : Window
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             _opacity = Math.Clamp(_opacity + (e.Delta > 0 ? 0.1 : -0.1), 0.2, 1.0);
-            Opacity = _opacity;
+            Img.Opacity = _opacity;
         }
         else
         {
@@ -246,7 +265,7 @@ public partial class PinWindow : Window
     {
         _zoom = 1.0;
         _opacity = 1.0;
-        Opacity = 1.0;
+        Img.Opacity = 1.0;
         ApplyBounds();
     }
 
@@ -282,6 +301,10 @@ public partial class PinWindow : Window
                 UpdateFrame();
                 e.Handled = true;
                 break;
+            case Key.Space:
+                OpenEditor();
+                e.Handled = true;
+                break;
         }
     }
 
@@ -301,22 +324,9 @@ public partial class PinWindow : Window
         translate.Click += (_, _) => ((App)Application.Current).TranslateImage(SourceImage, this);
         menu.Items.Add(translate);
 
-        var app = (App)Application.Current;
-        var groupMenu = new MenuItem { Header = "移动到贴图组" };
-        foreach (var group in app.PinGroups)
-        {
-            var groupItem = new MenuItem
-            {
-                Header = group,
-                IsCheckable = true,
-                IsChecked = string.Equals(group, Group, StringComparison.Ordinal)
-            };
-            var target = group;
-            groupItem.Click += (_, _) => app.MovePinToGroup(this, target);
-            groupMenu.Items.Add(groupItem);
-        }
-
-        menu.Items.Add(groupMenu);
+        var edit = new MenuItem { Header = "编辑标注（空格）" };
+        edit.Click += (_, _) => OpenEditor();
+        menu.Items.Add(edit);
 
         menu.Items.Add(new Separator());
 

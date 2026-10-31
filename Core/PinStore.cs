@@ -5,7 +5,7 @@ namespace Markshot.Core;
 /// <summary>Persists closed pins under %APPDATA%\Markshot\pins (or next to the exe).</summary>
 public static class PinStore
 {
-    private const int MaxEntries = 20;
+    private const int MaxEntries = 10;
     private static readonly object Gate = new();
     private static string? _root;
 

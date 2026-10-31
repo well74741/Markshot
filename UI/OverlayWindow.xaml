@@ -16,7 +16,8 @@
         UseLayoutRounding="False"
         SnapsToDevicePixels="True"
         Focusable="True"
-        PreviewKeyDown="OnPreviewKeyDown">
+        PreviewKeyDown="OnPreviewKeyDown"
+        PreviewKeyUp="OnPreviewKeyUp">
 
     <Grid x:Name="Root" Background="Black">
         <Image x:Name="ScreenImage" Stretch="Fill" IsHitTestVisible="False" />
@@ -48,23 +49,23 @@
             <Border x:Name="Toolbar" Visibility="Collapsed" Background="#F21E1E1E"
                     BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="9" Padding="6,4">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <RadioButton x:Name="ToolSelect" Style="{StaticResource ToolRadio}" Content="选择" Tag="Select"
-                                 GroupName="Tool" Checked="Tool_Checked" IsChecked="True" ToolTip="选择/移动批注 (V)" />
-                    <RadioButton x:Name="ToolRect" Style="{StaticResource ToolRadio}" Content="矩形" Tag="Rectangle" GroupName="Tool" Checked="Tool_Checked" ToolTip="矩形 (Shift+1)" />
-                    <RadioButton x:Name="ToolEllipse" Style="{StaticResource ToolRadio}" Content="椭圆" Tag="Ellipse" GroupName="Tool" Checked="Tool_Checked" ToolTip="椭圆 (Shift+1 再按切换)" />
-                    <RadioButton x:Name="ToolArrow" Style="{StaticResource ToolRadio}" Content="箭头" Tag="Arrow" GroupName="Tool" Checked="Tool_Checked" ToolTip="箭头 (Shift+3)" />
-                    <RadioButton x:Name="ToolLine" Style="{StaticResource ToolRadio}" Content="直线" Tag="Line" GroupName="Tool" Checked="Tool_Checked" ToolTip="直线 (Shift+2)" />
-                    <RadioButton x:Name="ToolPen" Style="{StaticResource ToolRadio}" Content="画笔" Tag="Pen" GroupName="Tool" Checked="Tool_Checked" ToolTip="画笔 (Shift+5)" />
-                    <RadioButton x:Name="ToolHighlighter" Style="{StaticResource ToolRadio}" Content="荧光" Tag="Highlighter" GroupName="Tool" Checked="Tool_Checked" ToolTip="荧光笔 (Shift+6)" />
-                    <RadioButton x:Name="ToolMosaic" Style="{StaticResource ToolRadio}" Content="马赛克" Tag="Mosaic" GroupName="Tool" Checked="Tool_Checked" ToolTip="马赛克 (Shift+7)" />
-                    <RadioButton x:Name="ToolText" Style="{StaticResource ToolRadio}" Content="文字" Tag="Text" GroupName="Tool" Checked="Tool_Checked" ToolTip="文字 (Shift+8)" />
-                    <RadioButton x:Name="ToolNumber" Style="{StaticResource ToolRadio}" Content="序号" Tag="Number" GroupName="Tool" Checked="Tool_Checked" ToolTip="序号 (Shift+4)" />
-                    <RadioButton x:Name="ToolEraser" Style="{StaticResource ToolRadio}" Content="橡皮" Tag="Eraser" GroupName="Tool" Checked="Tool_Checked" ToolTip="橡皮擦 (Shift+9)" />
+                    <RadioButton x:Name="ToolSelect" Style="{StaticResource ToolRadio}" Content="↖" FontFamily="Segoe UI Symbol" FontSize="16"
+                                 Tag="Select" GroupName="Tool" Checked="Tool_Checked" IsChecked="True" ToolTip="选择/移动批注 (V)" />
+                    <RadioButton x:Name="ToolRect" Style="{StaticResource ToolRadio}" Content="▭" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Rectangle" GroupName="Tool" Checked="Tool_Checked" ToolTip="矩形 (Shift+1)" />
+                    <RadioButton x:Name="ToolEllipse" Style="{StaticResource ToolRadio}" Content="◯" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Ellipse" GroupName="Tool" Checked="Tool_Checked" ToolTip="椭圆" />
+                    <RadioButton x:Name="ToolArrow" Style="{StaticResource ToolRadio}" Content="↗" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Arrow" GroupName="Tool" Checked="Tool_Checked" ToolTip="箭头 (Shift+3)" />
+                    <RadioButton x:Name="ToolLine" Style="{StaticResource ToolRadio}" Content="╱" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Line" GroupName="Tool" Checked="Tool_Checked" ToolTip="直线 (Shift+2)" />
+                    <RadioButton x:Name="ToolPen" Style="{StaticResource ToolRadio}" Content="✎" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Pen" GroupName="Tool" Checked="Tool_Checked" ToolTip="画笔 (Shift+5)" />
+                    <RadioButton x:Name="ToolHighlighter" Style="{StaticResource ToolRadio}" Content="▤" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Highlighter" GroupName="Tool" Checked="Tool_Checked" ToolTip="荧光笔 (Shift+6)" />
+                    <RadioButton x:Name="ToolMosaic" Style="{StaticResource ToolRadio}" Content="▦" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Mosaic" GroupName="Tool" Checked="Tool_Checked" ToolTip="马赛克 (Shift+7)" />
+                    <RadioButton x:Name="ToolText" Style="{StaticResource ToolRadio}" Content="T" FontSize="15" Tag="Text" GroupName="Tool" Checked="Tool_Checked" ToolTip="文字 (Shift+8)" />
+                    <RadioButton x:Name="ToolNumber" Style="{StaticResource ToolRadio}" Content="①" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Number" GroupName="Tool" Checked="Tool_Checked" ToolTip="序号 (Shift+4)" />
+                    <RadioButton x:Name="ToolEraser" Style="{StaticResource ToolRadio}" Content="⌫" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Eraser" GroupName="Tool" Checked="Tool_Checked" ToolTip="橡皮擦 (Shift+9)" />
 
                     <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
-                    <Button x:Name="UndoButton" Style="{StaticResource ToolButton}" Content="撤销" Click="Undo_Click" ToolTip="撤销 (Ctrl+Z)" />
-                    <Button x:Name="RedoButton" Style="{StaticResource ToolButton}" Content="重做" Click="Redo_Click" ToolTip="重做 (Ctrl+Y)" />
+                    <Button x:Name="UndoButton" Style="{StaticResource ToolButton}" Content="↶" FontFamily="Segoe UI Symbol" FontSize="16" Click="Undo_Click" ToolTip="撤销 (Ctrl+Z)" />
+                    <Button x:Name="RedoButton" Style="{StaticResource ToolButton}" Content="↷" FontFamily="Segoe UI Symbol" FontSize="16" Click="Redo_Click" ToolTip="重做 (Ctrl+Y)" />
 
                     <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
@@ -72,16 +73,17 @@
 
                     <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
-                    <RadioButton x:Name="WidthThin" Style="{StaticResource ToolRadio}" Content="细" Tag="2" GroupName="Width" Checked="Width_Checked" IsChecked="True" ToolTip="细线" />
-                    <RadioButton x:Name="WidthMedium" Style="{StaticResource ToolRadio}" Content="中" Tag="4" GroupName="Width" Checked="Width_Checked" ToolTip="中等线宽" />
-                    <RadioButton x:Name="WidthThick" Style="{StaticResource ToolRadio}" Content="粗" Tag="8" GroupName="Width" Checked="Width_Checked" ToolTip="粗线" />
+                    <Slider x:Name="WidthSlider" Width="84" Minimum="1" Maximum="16" Value="3"
+                            ValueChanged="Width_Changed" VerticalAlignment="Center" ToolTip="笔触/图形粗细" />
+                    <TextBlock x:Name="WidthValue" Text="3" Foreground="#C8C8C8" FontSize="11" Width="20"
+                               TextAlignment="Center" VerticalAlignment="Center" />
 
                     <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
-                    <Button Style="{StaticResource ToolButton}" Content="复制" Click="Copy_Click" ToolTip="复制到剪贴板 (Enter)" />
-                    <Button Style="{StaticResource ToolButton}" Content="保存" Click="Save_Click" ToolTip="保存为文件 (Ctrl+S)" />
-                    <Button Style="{StaticResource AccentButton}" Content="贴图" Click="Pin_Click" ToolTip="贴到屏幕 (F3)" />
-                    <Button Style="{StaticResource AccentButton}" Content="翻译" Click="Translate_Click" ToolTip="识别并翻译 (Ctrl+Q)" />
+                    <Button Style="{StaticResource ToolButton}" Content="⧉" FontFamily="Segoe UI Symbol" FontSize="16" Click="Copy_Click" ToolTip="复制到剪贴板 (Enter)" />
+                    <Button Style="{StaticResource ToolButton}" Content="⇩" FontFamily="Segoe UI Symbol" FontSize="16" Click="Save_Click" ToolTip="保存为文件 (Ctrl+S)" />
+                    <Button Style="{StaticResource AccentButton}" Content="⌖" FontFamily="Segoe UI Symbol" FontSize="16" Click="Pin_Click" ToolTip="贴到屏幕 (F3)" />
+                    <Button Style="{StaticResource AccentButton}" Content="文" FontSize="13" Click="Translate_Click" ToolTip="识别并翻译 (Ctrl+Q)" />
                     <Button Style="{StaticResource ToolButton}" Content="✕" Click="Cancel_Click" ToolTip="取消 (Esc)" />
                 </StackPanel>
             </Border>

@@ -16,25 +16,10 @@ public sealed class AppConfig
 
     public TranslationConfig Translation { get; set; } = new();
 
-    public List<string> PinGroups { get; set; } = new() { "默认" };
-
-    public string CurrentPinGroup { get; set; } = "默认";
-
     public List<CaptureRegion> RecentRegions { get; set; } = new();
 
     public void EnsureDefaults()
     {
-        PinGroups ??= new List<string>();
-        if (PinGroups.Count == 0)
-        {
-            PinGroups.Add("默认");
-        }
-
-        if (string.IsNullOrWhiteSpace(CurrentPinGroup) || !PinGroups.Contains(CurrentPinGroup))
-        {
-            CurrentPinGroup = PinGroups[0];
-        }
-
         RecentRegions ??= new List<CaptureRegion>();
     }
 

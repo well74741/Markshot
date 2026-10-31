@@ -1,0 +1,77 @@
+<Window x:Class="Markshot.UI.PinEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:annotations="clr-namespace:Markshot.Annotations"
+        Title="编辑贴图"
+        Width="1100" Height="760"
+        WindowStartupLocation="CenterScreen"
+        Topmost="True"
+        Background="#FF1C1C1C"
+        FontFamily="Microsoft YaHei UI"
+        PreviewKeyDown="OnPreviewKeyDown">
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#FF111111" CornerRadius="6" ClipToBounds="True">
+            <Grid x:Name="CanvasHost" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Image x:Name="BackgroundImage" Stretch="Fill" />
+                <annotations:AnnotationEditor x:Name="Editor" />
+                <Rectangle x:Name="InputLayer" Fill="Transparent" Cursor="Cross"
+                           MouseLeftButtonDown="Input_MouseLeftButtonDown"
+                           MouseMove="Input_MouseMove"
+                           MouseLeftButtonUp="Input_MouseLeftButtonUp" />
+                <Canvas x:Name="UiLayer">
+                    <TextBox x:Name="TextEditor" Style="{StaticResource InputBox}"
+                             Width="260" MinHeight="34" FontSize="16" Visibility="Collapsed"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             Background="#E6101010" BorderBrush="#FF4C8DFF"
+                             PreviewKeyDown="TextEditor_PreviewKeyDown" />
+                </Canvas>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Background="#F21E1E1E" BorderBrush="#33FFFFFF" BorderThickness="1"
+                CornerRadius="9" Padding="6,4" Margin="0,10,0,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <RadioButton x:Name="ToolSelect" Style="{StaticResource ToolRadio}" Content="↖" FontFamily="Segoe UI Symbol" FontSize="16"
+                             Tag="Select" GroupName="Tool" Checked="Tool_Checked" IsChecked="True" ToolTip="选择/移动 (V)" />
+                <RadioButton x:Name="ToolRect" Style="{StaticResource ToolRadio}" Content="▭" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Rectangle" GroupName="Tool" Checked="Tool_Checked" ToolTip="矩形 (Shift+1)" />
+                <RadioButton x:Name="ToolEllipse" Style="{StaticResource ToolRadio}" Content="◯" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Ellipse" GroupName="Tool" Checked="Tool_Checked" ToolTip="椭圆" />
+                <RadioButton x:Name="ToolArrow" Style="{StaticResource ToolRadio}" Content="↗" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Arrow" GroupName="Tool" Checked="Tool_Checked" ToolTip="箭头 (Shift+3)" />
+                <RadioButton x:Name="ToolLine" Style="{StaticResource ToolRadio}" Content="╱" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Line" GroupName="Tool" Checked="Tool_Checked" ToolTip="直线 (Shift+2)" />
+                <RadioButton x:Name="ToolPen" Style="{StaticResource ToolRadio}" Content="✎" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Pen" GroupName="Tool" Checked="Tool_Checked" ToolTip="画笔 (Shift+5)" />
+                <RadioButton x:Name="ToolHighlighter" Style="{StaticResource ToolRadio}" Content="▤" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Highlighter" GroupName="Tool" Checked="Tool_Checked" ToolTip="荧光笔 (Shift+6)" />
+                <RadioButton x:Name="ToolMosaic" Style="{StaticResource ToolRadio}" Content="▦" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Mosaic" GroupName="Tool" Checked="Tool_Checked" ToolTip="马赛克 (Shift+7)" />
+                <RadioButton x:Name="ToolText" Style="{StaticResource ToolRadio}" Content="T" FontSize="15" Tag="Text" GroupName="Tool" Checked="Tool_Checked" ToolTip="文字 (Shift+8)" />
+                <RadioButton x:Name="ToolNumber" Style="{StaticResource ToolRadio}" Content="①" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Number" GroupName="Tool" Checked="Tool_Checked" ToolTip="序号 (Shift+4)" />
+                <RadioButton x:Name="ToolEraser" Style="{StaticResource ToolRadio}" Content="⌫" FontFamily="Segoe UI Symbol" FontSize="16" Tag="Eraser" GroupName="Tool" Checked="Tool_Checked" ToolTip="橡皮擦 (Shift+9)" />
+
+                <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+
+                <Button x:Name="UndoButton" Style="{StaticResource ToolButton}" Content="↶" FontFamily="Segoe UI Symbol" FontSize="16" Click="Undo_Click" ToolTip="撤销 (Ctrl+Z)" />
+                <Button x:Name="RedoButton" Style="{StaticResource ToolButton}" Content="↷" FontFamily="Segoe UI Symbol" FontSize="16" Click="Redo_Click" ToolTip="重做 (Ctrl+Y)" />
+
+                <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+
+                <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />
+
+                <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+
+                <Slider x:Name="WidthSlider" Width="84" Minimum="1" Maximum="16" Value="3"
+                        ValueChanged="Width_Changed" VerticalAlignment="Center" ToolTip="笔触/图形粗细" />
+                <TextBlock x:Name="WidthValue" Text="3" Foreground="#C8C8C8" FontSize="11" Width="20"
+                           TextAlignment="Center" VerticalAlignment="Center" />
+
+                <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+
+                <Button Style="{StaticResource AccentButton}" Content="✓" FontFamily="Segoe UI Symbol" FontSize="16"
+                        Click="Apply_Click" ToolTip="应用 (Ctrl+S)" />
+                <Button Style="{StaticResource ToolButton}" Content="✕" FontSize="14" Click="Cancel_Click" ToolTip="取消 (Esc)" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

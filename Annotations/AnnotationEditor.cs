@@ -159,19 +159,20 @@ public sealed class AnnotationEditor : FrameworkElement
 
         dc.DrawRectangle(
             null,
-            new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), unit * 2),
-            new Rect(selection.X - unit, selection.Y - unit, selection.Width + unit * 2, selection.Height + unit * 2));
+            new Pen(new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)), unit * 4),
+            new Rect(selection.X - unit * 2, selection.Y - unit * 2, selection.Width + unit * 4, selection.Height + unit * 4));
 
-        dc.DrawRectangle(null, new Pen(Brushes.White, unit), selection);
+        var blue = new SolidColorBrush(Color.FromRgb(0x2F, 0x7B, 0xFF));
+        dc.DrawRectangle(null, new Pen(blue, unit * 2), selection);
 
-        const double handleDip = 8;
+        const double handleDip = 9;
         var handleSize = handleDip * unit;
-        var handlePen = new Pen(new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)), unit);
+        var handlePen = new Pen(Brushes.White, unit * 1.2);
 
         foreach (var center in HandleCenters(selection))
         {
             dc.DrawRectangle(
-                Brushes.White,
+                blue,
                 handlePen,
                 new Rect(center.X - handleSize / 2, center.Y - handleSize / 2, handleSize, handleSize));
         }

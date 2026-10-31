@@ -78,6 +78,10 @@ public partial class OverlayWindow : Window
     private Point _lastAnnotationPoint;
     private bool _erasing;
     private readonly DispatcherTimer _noticeTimer;
+    private bool _spaceDrag;
+    private Point _spaceAnchor;
+    private Rect _spaceSelectionOrigin;
+    private Point _spaceDragStartOrigin;
 
     public CaptureAction Result { get; private set; } = CaptureAction.None;
 
@@ -304,8 +308,17 @@ public partial class OverlayWindow : Window
         Editor.InvalidateVisual();
 
         Hint.Visibility = Visibility.Collapsed;
-        Toolbar.Visibility = Visibility.Visible;
-        PositionToolbar();
+        Magnifier.Visibility = Visibility.Collapsed;
+
+        if (_dragging)
+        {
+            Toolbar.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            Toolbar.Visibility = Visibility.Visible;
+            PositionToolbar();
+        }
     }
 
     private void PositionHint()
@@ -542,7 +555,33 @@ public partial class OverlayWindow : Window
         }
 
         var point = ToPixels(e.GetPosition(InputLayer));
-        UpdateMagnifier(point);
+        if (!_hasSelection)
+        {
+            UpdateMagnifier(point);
+        }
+        else
+        {
+            Magnifier.Visibility = Visibility.Collapsed;
+        }
+
+        if (_spaceDrag && _mode == DragMode.Creating)
+        {
+            var dx = point.X - _spaceAnchor.X;
+            var dy = point.Y - _spaceAnchor.Y;
+            var moved = new Rect(
+                _spaceSelectionOrigin.X + dx,
+                _spaceSelectionOrigin.Y + dy,
+                _spaceSelectionOrigin.Width,
+                _spaceSelectionOrigin.Height);
+
+            moved.X = Math.Clamp(moved.X, 0, Math.Max(0, _screen.PixelWidth - moved.Width));
+            moved.Y = Math.Clamp(moved.Y, 0, Math.Max(0, _screen.PixelHeight - moved.Height));
+            _selection = moved;
+            _dragStart = new Point(_spaceDragStartOrigin.X + dx, _spaceDragStartOrigin.Y + dy);
+            _hasSelection = true;
+            UpdateSelectionVisuals();
+            return;
+        }
 
         if (_active != null)
         {
@@ -643,11 +682,14 @@ public partial class OverlayWindow : Window
 
         InputLayer.ReleaseMouseCapture();
         _dragging = false;
+        _spaceDrag = false;
 
         if (_erasing)
         {
             _erasing = false;
             _mode = DragMode.None;
+            UpdateSelectionVisuals();
+            UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
             return;
         }
 
@@ -655,6 +697,8 @@ public partial class OverlayWindow : Window
         {
             _draggingAnnotation = false;
             _mode = DragMode.None;
+            UpdateSelectionVisuals();
+            UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
             return;
         }
 
@@ -662,6 +706,8 @@ public partial class OverlayWindow : Window
         {
             CommitAnnotation();
             _mode = DragMode.None;
+            UpdateSelectionVisuals();
+            UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
             return;
         }
 
@@ -674,6 +720,7 @@ public partial class OverlayWindow : Window
             _handle = -1;
             ClearHover();
             UpdateSelectionVisuals();
+            UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
             return;
         }
 
@@ -694,6 +741,7 @@ public partial class OverlayWindow : Window
         _handle = -1;
         ClearHover();
         UpdateSelectionVisuals();
+        UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
     }
 
     private void Input_MouseWheel(object sender, MouseWheelEventArgs e)
@@ -892,7 +940,7 @@ public partial class OverlayWindow : Window
 
     private void CopyCurrentColor()
     {
-        if (!Magnifier.HasPixel)
+        if (!Magnifier.HasPixel || Magnifier.Visibility != Visibility.Visible)
         {
             return;
         }
@@ -1232,6 +1280,18 @@ public partial class OverlayWindow : Window
         var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
+        if (e.Key == Key.Space && _dragging && _mode == DragMode.Creating && !_spaceDrag)
+        {
+            _spaceDrag = true;
+            var cursor = Native.CursorPosition();
+            _spaceAnchor = new Point(cursor.X - _bounds.X, cursor.Y - _bounds.Y);
+            _spaceSelectionOrigin = _selection;
+            _spaceDragStartOrigin = _dragStart;
+            InputLayer.Cursor = Cursors.SizeAll;
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key is Key.LeftShift or Key.RightShift)
         {
             _hexColor = !_hexColor;
@@ -1468,6 +1528,15 @@ public partial class OverlayWindow : Window
         }
     }
 
+    private void OnPreviewKeyUp(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Space && _spaceDrag)
+        {
+            _spaceDrag = false;
+            e.Handled = true;
+        }
+    }
+
     private void Tool_Checked(object sender, RoutedEventArgs e)
     {
         if (sender is not RadioButton { Tag: string tag })
@@ -1485,17 +1554,18 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private void Width_Checked(object sender, RoutedEventArgs e)
+    private void Width_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (sender is RadioButton { Tag: string tag } &&
-            double.TryParse(tag, NumberStyles.Any, CultureInfo.InvariantCulture, out var width))
+        _thickness = e.NewValue;
+        if (WidthValue != null)
         {
-            _thickness = width;
-            if (_selectedAnnotation != null)
-            {
-                _selectedAnnotation.Thickness = width;
-                Editor.InvalidateVisual();
-            }
+            WidthValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (_selectedAnnotation != null)
+        {
+            _selectedAnnotation.Thickness = e.NewValue;
+            Editor.InvalidateVisual();
         }
     }
 
@@ -1522,17 +1592,23 @@ public partial class OverlayWindow : Window
             return -1;
         }
 
-        var centers = AnnotationEditor.HandleCenters(_selection);
-        var tolerance = 9 / _scale;
+        var tolerance = 12 / _scale;
+        var selection = _selection;
 
-        for (var i = 0; i < centers.Length; i++)
-        {
-            if (Math.Abs(point.X - centers[i].X) <= tolerance &&
-                Math.Abs(point.Y - centers[i].Y) <= tolerance)
-            {
-                return i;
-            }
-        }
+        var nearLeft = Math.Abs(point.X - selection.Left) <= tolerance;
+        var nearRight = Math.Abs(point.X - selection.Right) <= tolerance;
+        var nearTop = Math.Abs(point.Y - selection.Top) <= tolerance;
+        var nearBottom = Math.Abs(point.Y - selection.Bottom) <= tolerance;
+
+        if (nearLeft && nearTop) return 0;
+        if (nearRight && nearTop) return 2;
+        if (nearRight && nearBottom) return 4;
+        if (nearLeft && nearBottom) return 6;
+
+        if (nearTop) return 1;
+        if (nearBottom) return 5;
+        if (nearLeft) return 7;
+        if (nearRight) return 3;
 
         return -1;
     }
@@ -1563,7 +1639,7 @@ public partial class OverlayWindow : Window
 
             InputLayer.Cursor = _hasSelection && _selection.Contains(point)
                 ? Cursors.SizeAll
-                : Cursors.Cross;
+                : _hasSelection ? Cursors.Arrow : Cursors.Cross;
             return;
         }
 
