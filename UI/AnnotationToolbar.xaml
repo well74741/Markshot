@@ -15,37 +15,53 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
 
-                <RadioButton x:Name="ToolSelect" Style="{StaticResource IconToolRadio}"
-                             Tag="Select" GroupName="Tool" Checked="Tool_Checked" ToolTip="选择 (V)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconSelect}"
-                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ButtonBase}}}" />
-                </RadioButton>
                 <RadioButton x:Name="ToolShape" Style="{StaticResource IconToolRadio}"
-                             Tag="Rectangle" GroupName="Tool" Checked="Tool_Checked" ToolTip="图形：矩形/椭圆">
+                             Tag="Rectangle" GroupName="Tool" Click="Tool_Click" ToolTip="图形：矩形/椭圆">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconRect}" />
                 </RadioButton>
-                <RadioButton x:Name="ToolLine" Style="{StaticResource IconToolRadio}"
-                             Tag="Line" GroupName="Tool" Checked="Tool_Checked" ToolTip="直线/箭头 (L)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconLine}" />
-                </RadioButton>
+                <Button Style="{StaticResource ChevronButton}" Click="ShapeMenu_Click" ToolTip="图形样式">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
+                </Button>
+
                 <RadioButton x:Name="ToolPen" Style="{StaticResource IconToolRadio}"
-                             Tag="Pen" GroupName="Tool" Checked="Tool_Checked" ToolTip="画笔/荧光笔 (B)">
+                             Tag="Pen" GroupName="Tool" Click="Tool_Click" ToolTip="画笔/荧光笔 (B)">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconPen}" />
                 </RadioButton>
-                <RadioButton x:Name="ToolMosaic" Style="{StaticResource IconToolRadio}"
-                             Tag="Mosaic" GroupName="Tool" Checked="Tool_Checked" ToolTip="马赛克/水印">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconMosaic}" />
+                <Button Style="{StaticResource ChevronButton}" Click="PenMenu_Click" ToolTip="画笔样式">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
+                </Button>
+
+                <RadioButton x:Name="ToolArrow" Style="{StaticResource IconToolRadio}"
+                             Tag="Arrow" GroupName="Tool" Click="Tool_Click" ToolTip="箭头/直线 (L)">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconArrow}" />
                 </RadioButton>
+                <Button Style="{StaticResource ChevronButton}" Click="ArrowMenu_Click" ToolTip="箭头样式">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
+                </Button>
+
                 <RadioButton x:Name="ToolText" Style="{StaticResource IconToolRadio}"
-                             Tag="Text" GroupName="Tool" Checked="Tool_Checked" ToolTip="文字 (T)">
+                             Tag="Text" GroupName="Tool" Click="Tool_Click" ToolTip="文字 (T)">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconText}" />
                 </RadioButton>
+                <Button Style="{StaticResource ChevronButton}" Click="TextMenu_Click" ToolTip="文字字号">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
+                </Button>
+
                 <RadioButton x:Name="ToolNumber" Style="{StaticResource IconToolRadio}"
-                             Tag="Number" GroupName="Tool" Checked="Tool_Checked" ToolTip="序号 (S)">
+                             Tag="Number" GroupName="Tool" Click="Tool_Click" ToolTip="序号 (S)">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconNumber}" />
                 </RadioButton>
+
+                <RadioButton x:Name="ToolMosaic" Style="{StaticResource IconToolRadio}"
+                             Tag="Mosaic" GroupName="Tool" Click="Tool_Click" ToolTip="马赛克/水印">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconMosaic}" />
+                </RadioButton>
+                <Button Style="{StaticResource ChevronButton}" Click="MosaicMenu_Click" ToolTip="马赛克样式">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
+                </Button>
+
                 <RadioButton x:Name="ToolEraser" Style="{StaticResource IconToolRadio}"
-                             Tag="Eraser" GroupName="Tool" Checked="Tool_Checked" ToolTip="橡皮擦 (E)">
+                             Tag="Eraser" GroupName="Tool" Click="Tool_Click" ToolTip="橡皮擦 (E)">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconEraser}" />
                 </RadioButton>
 
@@ -54,46 +70,40 @@
                 <Button x:Name="UndoButton" Style="{StaticResource IconToolButton}" Click="Undo_Click" ToolTip="撤销 (Ctrl+Z)">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconUndo}" />
                 </Button>
-                <Button x:Name="RedoButton" Style="{StaticResource IconToolButton}" Click="Redo_Click" ToolTip="重做 (Ctrl+Y)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconRedo}" />
-                </Button>
 
                 <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
                 <StackPanel x:Name="CaptureActions" Orientation="Horizontal">
-                    <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" ToolTip="复制到剪贴板 (Enter)">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconCopy}" />
+                    <Button Style="{StaticResource IconToolButton}" Click="Ocr_Click" ToolTip="文字识别">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconOcr}" />
                     </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存为文件 (Ctrl+S)">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconSave}" />
-                    </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Pin_Click" ToolTip="贴到屏幕 (F3)" Foreground="{StaticResource Accent}">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconPin}" />
-                    </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Translate_Click" ToolTip="识别并翻译 (Ctrl+Q)">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconTranslate}" />
-                    </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Close_Click" ToolTip="取消 (Esc)">
+                    <Button Style="{StaticResource IconToolButton}" Click="Close_Click" ToolTip="关闭 (Esc)">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconClose}" />
                     </Button>
+                    <Button Style="{StaticResource IconToolButton}" Click="Pin_Click" ToolTip="贴图 (F3)" Foreground="{StaticResource Accent}">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconStar}" />
+                    </Button>
+                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存 (Ctrl+S)">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconSave}" />
+                    </Button>
+                    <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" ToolTip="复制 (Enter)">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconCopy}" />
+                    </Button>
+                    <ToggleButton x:Name="TranslateToggle" Style="{StaticResource IconToolToggle}"
+                                  Click="TranslateToggle_Click" ToolTip="自动翻译（可激活）">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconTranslate}" />
+                    </ToggleButton>
                 </StackPanel>
 
                 <StackPanel x:Name="PinActions" Orientation="Horizontal" Visibility="Collapsed">
-                    <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" ToolTip="复制">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconCopy}" />
-                    </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="另存为">
+                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconSave}" />
-                    </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Translate_Click" ToolTip="翻译">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconTranslate}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" ToolTip="应用 (Ctrl+S)" Foreground="{StaticResource Accent}">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconCheck}" />
                     </Button>
                 </StackPanel>
             </StackPanel>
-
             <Border x:Name="SettingsBar" Visibility="Collapsed" BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0"
                     Margin="0,3,0,0" Padding="2,3,0,0">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

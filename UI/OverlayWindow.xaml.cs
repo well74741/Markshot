@@ -49,6 +49,7 @@ public partial class OverlayWindow : Window
     private double _thickness = 3;
     private bool _fill;
     private double _corner;
+    private bool _autoTranslate;
 
     private bool _textActive;
     private Point _textPosition;
@@ -131,6 +132,8 @@ public partial class OverlayWindow : Window
         Toolbar.SaveRequested += SaveAndClose;
         Toolbar.PinRequested += PinAndClose;
         Toolbar.TranslateRequested += TranslateAndClose;
+        Toolbar.OcrRequested += OcrAndClose;
+        Toolbar.TranslateToggled += enabled => _autoTranslate = enabled;
         Toolbar.CloseRequested += Close;
         Toolbar.SizeChanged += (_, _) =>
         {
@@ -149,6 +152,7 @@ public partial class OverlayWindow : Window
     {
         _tool = tool;
         ClearAnnotationSelection();
+        ClearAnnotationHover();
         Toolbar.SetSelection(null);
         UpdateCursorToPointer();
     }
@@ -450,7 +454,19 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        if (_tool == AnnotationTool.Select)
+        if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
+        {
+            var candidate = HitAnnotation(point);
+            if (candidate != null && SameFamily(candidate, _tool))
+            {
+                SelectAnnotation(candidate);
+                ClearAnnotationHover();
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (_tool == AnnotationTool.Select || _tool == AnnotationTool.None)
         {
             var hit = HitAnnotation(point);
             if (hit != null)
@@ -625,6 +641,12 @@ public partial class OverlayWindow : Window
             }
 
             UpdateCursor(point);
+
+            if (_hasSelection && _tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
+            {
+                UpdateAnnotationHover(point);
+            }
+
             return;
         }
 
@@ -771,6 +793,7 @@ public partial class OverlayWindow : Window
     {
         Magnifier.Visibility = Visibility.Collapsed;
         ClearHover();
+        ClearAnnotationHover();
     }
 
     private Annotation? HitAnnotation(Point point)
@@ -906,6 +929,7 @@ public partial class OverlayWindow : Window
             Toolbar.SetSelection(null);
         }
 
+        ClearAnnotationHover();
         Editor.InvalidateVisual();
     }
 
@@ -1708,6 +1732,52 @@ public partial class OverlayWindow : Window
         InputLayer.Cursor = ToolCursors.Get(tool);
     }
 
+    private void UpdateAnnotationHover(Point point)
+    {
+        var hit = HitAnnotation(point);
+        if (hit != null && SameFamily(hit, _tool))
+        {
+            var bounds = hit.Bounds;
+            bounds.Inflate(4 / _scale, 4 / _scale);
+            Editor.HoverBounds = bounds;
+            Editor.HoverLabel = "点击选中并继续编辑";
+            Editor.ShowHover = true;
+            InputLayer.Cursor = Cursors.Hand;
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        ClearAnnotationHover();
+        InputLayer.Cursor = ToolCursors.Get(_tool);
+    }
+
+    private void ClearAnnotationHover()
+    {
+        if (!Editor.ShowHover && Editor.HoverBounds == Rect.Empty)
+        {
+            return;
+        }
+
+        Editor.ShowHover = false;
+        Editor.HoverBounds = Rect.Empty;
+        Editor.HoverLabel = null;
+        Editor.InvalidateVisual();
+    }
+
+    private static bool SameFamily(Annotation annotation, AnnotationTool tool) => tool switch
+    {
+        AnnotationTool.Rectangle or AnnotationTool.Ellipse =>
+            annotation is RectAnnotation or EllipseAnnotation,
+        AnnotationTool.Line or AnnotationTool.Arrow =>
+            annotation is LineAnnotation or ArrowAnnotation,
+        AnnotationTool.Pen or AnnotationTool.Highlighter => annotation is PenAnnotation,
+        AnnotationTool.Mosaic or AnnotationTool.Watermark =>
+            annotation is MosaicAnnotation or WatermarkAnnotation,
+        AnnotationTool.Text => annotation is TextAnnotation,
+        AnnotationTool.Number => annotation is NumberAnnotation,
+        _ => false
+    };
+
     private int HitHandle(Point point)
     {
         if (!_hasSelection)
@@ -1738,7 +1808,7 @@ public partial class OverlayWindow : Window
 
     private void UpdateCursor(Point point)
     {
-        if (_tool == AnnotationTool.Select)
+        if (_tool == AnnotationTool.Select || _tool == AnnotationTool.None)
         {
             if (HitAnnotation(point) != null)
             {
@@ -2093,6 +2163,19 @@ public partial class OverlayWindow : Window
         encoder.Save(stream);
     }
 
+    private void OcrAndClose()
+    {
+        if (!_hasSelection)
+        {
+            return;
+        }
+
+        CommitPendingText();
+        var image = Compose();
+        CloseWith(CaptureAction.None, image);
+        ((App)Application.Current).ShowOcr(image);
+    }
+
     private void CloseWith(CaptureAction action, BitmapSource image)
     {
         Log.Info($"CloseWith：{action}，{image.PixelWidth}x{image.PixelHeight}");
@@ -2103,6 +2186,11 @@ public partial class OverlayWindow : Window
             _bounds.Y + _selection.Y,
             _selection.Width,
             _selection.Height);
+        if (_autoTranslate && action is CaptureAction.Copy or CaptureAction.Save or CaptureAction.Pin)
+        {
+            Dispatcher.BeginInvoke(new Action(() => ((App)Application.Current).ShowTranslation(image)));
+        }
+
         Close();
     }
 

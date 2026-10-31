@@ -59,8 +59,10 @@ public partial class AnnotationToolbar : UserControl
     public event Action? SaveRequested;
     public event Action? PinRequested;
     public event Action? TranslateRequested;
+    public event Action? OcrRequested;
     public event Action? CloseRequested;
     public event Action? ApplyRequested;
+    public event Action<bool>? TranslateToggled;
 
     public AnnotationToolbar()
     {
@@ -79,6 +81,8 @@ public partial class AnnotationToolbar : UserControl
     public bool FillEnabled => _fill;
 
     public double CornerRadius => _corner;
+
+    public bool AutoTranslate => TranslateToggle.IsChecked == true;
 
     public void SetMode(AnnotationToolbarMode mode)
     {
@@ -100,11 +104,27 @@ public partial class AnnotationToolbar : UserControl
         }
     }
 
+    public void DeactivateTools()
+    {
+        _configuring = true;
+        _tool = AnnotationTool.None;
+        ToolShape.IsChecked = false;
+        ToolPen.IsChecked = false;
+        ToolArrow.IsChecked = false;
+        ToolText.IsChecked = false;
+        ToolNumber.IsChecked = false;
+        ToolMosaic.IsChecked = false;
+        ToolEraser.IsChecked = false;
+        SettingsBar.Visibility = Visibility.Collapsed;
+        _configuring = false;
+        ToolChanged?.Invoke(AnnotationTool.None);
+    }
+
     public void SetSelection(Annotation? annotation)
     {
         _selection = annotation;
         _configuring = true;
-        if (_tool == AnnotationTool.Select)
+        if (_tool is AnnotationTool.Select or AnnotationTool.None)
         {
             if (annotation == null)
             {
@@ -154,7 +174,6 @@ public partial class AnnotationToolbar : UserControl
     public void RefreshUndo(bool canUndo, bool canRedo)
     {
         UndoButton.IsEnabled = canUndo;
-        RedoButton.IsEnabled = canRedo;
     }
 
     private void InitPalette()
@@ -208,13 +227,12 @@ public partial class AnnotationToolbar : UserControl
     private void CheckMainButton(AnnotationTool tool)
     {
         var family = FamilyOf(tool);
-        ToolSelect.IsChecked = family == ToolFamily.Select;
         ToolShape.IsChecked = family == ToolFamily.Shape;
-        ToolLine.IsChecked = family == ToolFamily.Line;
         ToolPen.IsChecked = family == ToolFamily.Pen;
-        ToolMosaic.IsChecked = family == ToolFamily.Mosaic;
+        ToolArrow.IsChecked = family == ToolFamily.Line;
         ToolText.IsChecked = family == ToolFamily.Text;
         ToolNumber.IsChecked = family == ToolFamily.Number;
+        ToolMosaic.IsChecked = family == ToolFamily.Mosaic;
         ToolEraser.IsChecked = family == ToolFamily.Eraser;
     }
 
@@ -240,9 +258,6 @@ public partial class AnnotationToolbar : UserControl
         {
             case ToolFamily.None:
             case ToolFamily.Eraser:
-                SettingsBar.Visibility = Visibility.Collapsed;
-                return;
-
             case ToolFamily.Select:
                 SettingsBar.Visibility = Visibility.Collapsed;
                 return;
@@ -384,7 +399,7 @@ public partial class AnnotationToolbar : UserControl
         _ => ToolFamily.None
     };
 
-    private void Tool_Checked(object sender, RoutedEventArgs e)
+    private void Tool_Click(object sender, RoutedEventArgs e)
     {
         if (_configuring || sender is not RadioButton { Tag: string tag } ||
             !Enum.TryParse<AnnotationTool>(tag, out var tool))
@@ -392,8 +407,67 @@ public partial class AnnotationToolbar : UserControl
             return;
         }
 
-        SetTool(tool, notify: false);
-        ToolChanged?.Invoke(tool);
+        if (_tool == tool)
+        {
+            DeactivateTools();
+            return;
+        }
+
+        SetTool(tool, notify: true);
+    }
+
+    private void ShapeMenu_Click(object sender, RoutedEventArgs e) =>
+        ShowVariantMenu((Button)sender, ("矩形", AnnotationTool.Rectangle), ("椭圆", AnnotationTool.Ellipse));
+
+    private void PenMenu_Click(object sender, RoutedEventArgs e) =>
+        ShowVariantMenu((Button)sender, ("画笔", AnnotationTool.Pen), ("荧光笔", AnnotationTool.Highlighter));
+
+    private void ArrowMenu_Click(object sender, RoutedEventArgs e) =>
+        ShowVariantMenu((Button)sender, ("箭头", AnnotationTool.Arrow), ("直线", AnnotationTool.Line));
+
+    private void MosaicMenu_Click(object sender, RoutedEventArgs e) =>
+        ShowVariantMenu((Button)sender, ("马赛克", AnnotationTool.Mosaic), ("水印", AnnotationTool.Watermark));
+
+    private void TextMenu_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = (Button)sender };
+        foreach (var (label, size) in new[] { ("小号 16", 16.0), ("中号 24", 24.0), ("大号 36", 36.0) })
+        {
+            var item = new MenuItem { Header = label, IsChecked = Math.Abs(_thickness - size) < 0.1 };
+            var value = size;
+            item.Click += (_, _) =>
+            {
+                if (_tool != AnnotationTool.Text)
+                {
+                    SetTool(AnnotationTool.Text, notify: true);
+                }
+
+                SetThickness(value);
+                SettingsChanged?.Invoke();
+            };
+            menu.Items.Add(item);
+        }
+
+        menu.IsOpen = true;
+    }
+
+    private void ShowVariantMenu(Button anchor, params (string Label, AnnotationTool Tool)[] items)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor };
+        foreach (var (label, tool) in items)
+        {
+            var item = new MenuItem { Header = label, IsChecked = FamilyOf(tool) == FamilyOf(_tool) && _tool == tool };
+            var target = tool;
+            item.Click += (_, _) =>
+            {
+                SetTool(target, notify: false);
+                ToolChanged?.Invoke(target);
+            };
+            menu.Items.Add(item);
+        }
+
+        anchor.ContextMenu = menu;
+        menu.IsOpen = true;
     }
 
     private void Variant_Checked(object sender, RoutedEventArgs e)
@@ -472,6 +546,11 @@ public partial class AnnotationToolbar : UserControl
     private void Pin_Click(object sender, RoutedEventArgs e) => PinRequested?.Invoke();
 
     private void Translate_Click(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke();
+
+    private void Ocr_Click(object sender, RoutedEventArgs e) => OcrRequested?.Invoke();
+
+    private void TranslateToggle_Click(object sender, RoutedEventArgs e) =>
+        TranslateToggled?.Invoke(TranslateToggle.IsChecked == true);
 
     private void Close_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke();
 

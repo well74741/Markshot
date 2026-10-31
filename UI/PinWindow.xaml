@@ -41,6 +41,7 @@
             <Border x:Name="FrameBorder" BorderThickness="1" BorderBrush="#FF3B82F6" IsHitTestVisible="False" />
         </Grid>
 
-        <ui:AnnotationToolbar x:Name="Toolbar" Grid.Row="1" Visibility="Collapsed" Margin="0,6,0,0" />
+        <ui:AnnotationToolbar x:Name="Toolbar" Grid.Row="1" Visibility="Collapsed" Margin="0,6,0,0"
+                              HorizontalAlignment="Left" />
     </Grid>
 </Window>

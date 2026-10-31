@@ -6,14 +6,16 @@ namespace Markshot.UI;
 public partial class TranslationWindow : Window
 {
     private readonly BitmapSource? _image;
+    private readonly bool _autoTranslate;
     private readonly CancellationTokenSource _cts = new();
     private bool _busy;
     private bool _closed;
 
-    public TranslationWindow(BitmapSource? image)
+    public TranslationWindow(BitmapSource? image, bool autoTranslate = true)
     {
         InitializeComponent();
         _image = image;
+        _autoTranslate = autoTranslate;
         TargetBox.Text = App.Config.Translation.TargetLanguage;
         Loaded += OnLoaded;
         SourceInitialized += (_, _) =>
@@ -55,7 +57,14 @@ public partial class TranslationWindow : Window
                 return;
             }
 
-            await TranslateAsync();
+            if (_autoTranslate)
+            {
+                await TranslateAsync();
+            }
+            else
+            {
+                StatusText.Text = "识别完成，可点击“翻译”。";
+            }
         }
         catch (Exception ex)
         {

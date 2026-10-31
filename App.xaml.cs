@@ -280,6 +280,15 @@ public partial class App : Application
         window.Activate();
     }
 
+    public void ShowOcr(BitmapSource image)
+    {
+        var window = new TranslationWindow(image, autoTranslate: false);
+        window.Closed += (_, _) => _translations.Remove(window);
+        _translations.Add(window);
+        window.Show();
+        window.Activate();
+    }
+
     public void TranslateImage(BitmapSource image, Window? owner = null)
     {
         _ = owner;

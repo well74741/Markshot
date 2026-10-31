@@ -113,17 +113,22 @@ public partial class PinWindow : Window
             }
         };
 
-        _tool = AnnotationTool.Select;
-        Toolbar.SetTool(AnnotationTool.Select);
+        _tool = AnnotationTool.None;
+        Toolbar.SetTool(AnnotationTool.None);
         Toolbar.SetSelection(null);
+        InputLayer.IsHitTestVisible = false;
+        InputLayer.Cursor = Cursors.Arrow;
     }
 
     private void OnToolbarToolChanged(AnnotationTool tool)
     {
         _tool = tool;
         ClearSelection();
+        ClearAnnotationHover();
         Toolbar.SetSelection(null);
-        InputLayer.Cursor = ToolCursors.Get(tool);
+        var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
+        InputLayer.IsHitTestVisible = active;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool) : Cursors.Arrow;
     }
 
     private void OnToolbarVariantChanged(AnnotationTool tool)
@@ -135,7 +140,10 @@ public partial class PinWindow : Window
         }
 
         _tool = tool;
-        InputLayer.Cursor = ToolCursors.Get(tool);
+        var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
+        InputLayer.IsHitTestVisible = active;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool) : Cursors.Arrow;
+        ClearAnnotationHover();
     }
 
     private void ApplyToolbarSettings()
@@ -284,7 +292,7 @@ public partial class PinWindow : Window
         }
 
         var width = _editMode
-            ? Math.Max(imageWidth, Math.Max(toolbarWidth, 900))
+            ? Math.Max(imageWidth, toolbarWidth)
             : imageWidth;
         var height = imageHeight + (_editMode ? toolbarHeight + 8 : 0);
 
@@ -328,15 +336,30 @@ public partial class PinWindow : Window
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (_editMode || _locked)
+        if (_locked || (_editMode && _tool != AnnotationTool.None && _tool != AnnotationTool.Select))
         {
             return;
         }
 
-        if (e.ClickCount == 2)
+        if (e.ClickCount == 2 && !_editMode)
         {
             Close();
             return;
+        }
+
+        if (_editMode && (_tool == AnnotationTool.None || _tool == AnnotationTool.Select))
+        {
+            var point = ToPixels(e.GetPosition(ImageHost));
+            var hit = HitAnnotation(point);
+            if (hit != null)
+            {
+                SelectAnnotation(hit);
+                _movingSelected = true;
+                _lastPoint = point;
+                CaptureMouse();
+                e.Handled = true;
+                return;
+            }
         }
 
         var cursor = Native.CursorPosition();
@@ -351,7 +374,22 @@ public partial class PinWindow : Window
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
-        if (!_dragging || _editMode)
+        if (_movingSelected && _selected != null)
+        {
+            var point = ToPixels(e.GetPosition(ImageHost));
+            var dx = point.X - _lastPoint.X;
+            var dy = point.Y - _lastPoint.Y;
+            if (Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01)
+            {
+                _selected.Translate(dx, dy);
+                _lastPoint = point;
+                Editor.InvalidateVisual();
+            }
+
+            return;
+        }
+
+        if (!_dragging)
         {
             return;
         }
@@ -364,6 +402,14 @@ public partial class PinWindow : Window
 
     private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (_movingSelected)
+        {
+            _movingSelected = false;
+            ReleaseMouseCapture();
+            e.Handled = true;
+            return;
+        }
+
         if (!_dragging)
         {
             return;
@@ -467,7 +513,7 @@ public partial class PinWindow : Window
         Editor.Visibility = Visibility.Visible;
         InputLayer.Visibility = Visibility.Visible;
         Toolbar.Visibility = Visibility.Visible;
-        SetTool(AnnotationTool.Select);
+        SetTool(AnnotationTool.None);
         Toolbar.SetSelection(null);
         UpdateUndoButtons();
         ApplyBounds();
@@ -713,7 +759,7 @@ public partial class PinWindow : Window
     {
         _tool = tool;
         Toolbar.SetTool(tool);
-        if (tool != AnnotationTool.Select)
+        if (tool != AnnotationTool.Select && tool != AnnotationTool.None)
         {
             ClearSelection();
         }
@@ -722,7 +768,10 @@ public partial class PinWindow : Window
             Toolbar.SetSelection(_selected);
         }
 
-        InputLayer.Cursor = ToolCursors.Get(tool);
+        var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
+        InputLayer.IsHitTestVisible = active;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool) : Cursors.Arrow;
+        ClearAnnotationHover();
     }
 
     private void Undo()
@@ -770,7 +819,21 @@ public partial class PinWindow : Window
         _annotationStart = point;
         _lastPoint = point;
 
-        if (_tool == AnnotationTool.Select)
+        if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
+        {
+            var candidate = HitAnnotation(point);
+            if (candidate != null && SameFamily(candidate, _tool))
+            {
+                SelectAnnotation(candidate);
+                _movingSelected = true;
+                _lastPoint = point;
+                CaptureMouse();
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (_tool == AnnotationTool.Select || _tool == AnnotationTool.None)
         {
             var hit = HitAnnotation(point);
             if (hit != null)
@@ -844,6 +907,7 @@ public partial class PinWindow : Window
         }
 
         UpdateCursor(point);
+        UpdateAnnotationHover(point);
     }
 
     private void Input_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -1088,8 +1152,8 @@ public partial class PinWindow : Window
     private void SelectAnnotation(Annotation annotation)
     {
         _selected = annotation;
-        _tool = AnnotationTool.Select;
-        Toolbar.SetTool(AnnotationTool.Select);
+        _tool = AnnotationTool.None;
+        Toolbar.SetTool(AnnotationTool.None);
         Toolbar.SetSelection(annotation);
         Toolbar.SetColor(annotation.Color);
         Toolbar.SetThickness(annotation.Thickness);
@@ -1099,6 +1163,9 @@ public partial class PinWindow : Window
         _thickness = annotation.Thickness;
         _fill = annotation.Fill;
         _corner = annotation.CornerRadius;
+        InputLayer.IsHitTestVisible = false;
+        InputLayer.Cursor = Cursors.Arrow;
+        ClearAnnotationHover();
         Editor.Selected = annotation;
         Editor.InvalidateVisual();
     }
@@ -1112,6 +1179,7 @@ public partial class PinWindow : Window
             Toolbar.SetSelection(null);
         }
 
+        ClearAnnotationHover();
         Editor.InvalidateVisual();
     }
 
@@ -1136,7 +1204,7 @@ public partial class PinWindow : Window
 
     private void UpdateCursor(Point point)
     {
-        if (_tool == AnnotationTool.Select)
+        if (_tool is AnnotationTool.Select or AnnotationTool.None)
         {
             InputLayer.Cursor = HitAnnotation(point) != null ? Cursors.SizeAll : Cursors.Arrow;
         }
@@ -1145,6 +1213,58 @@ public partial class PinWindow : Window
             InputLayer.Cursor = ToolCursors.Get(_tool);
         }
     }
+
+    private void UpdateAnnotationHover(Point point)
+    {
+        if (_tool is AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Eraser)
+        {
+            ClearAnnotationHover();
+            return;
+        }
+
+        var hit = HitAnnotation(point);
+        if (hit != null && SameFamily(hit, _tool))
+        {
+            var bounds = hit.Bounds;
+            bounds.Inflate(4 / (1.0 / _zoom), 4 / (1.0 / _zoom));
+            Editor.HoverBounds = bounds;
+            Editor.HoverLabel = "点击选中并继续编辑";
+            Editor.ShowHover = true;
+            InputLayer.Cursor = Cursors.Hand;
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        ClearAnnotationHover();
+        InputLayer.Cursor = ToolCursors.Get(_tool);
+    }
+
+    private void ClearAnnotationHover()
+    {
+        if (!Editor.ShowHover && Editor.HoverBounds == Rect.Empty)
+        {
+            return;
+        }
+
+        Editor.ShowHover = false;
+        Editor.HoverBounds = Rect.Empty;
+        Editor.HoverLabel = null;
+        Editor.InvalidateVisual();
+    }
+
+    private static bool SameFamily(Annotation annotation, AnnotationTool tool) => tool switch
+    {
+        AnnotationTool.Rectangle or AnnotationTool.Ellipse =>
+            annotation is RectAnnotation or EllipseAnnotation,
+        AnnotationTool.Line or AnnotationTool.Arrow =>
+            annotation is LineAnnotation or ArrowAnnotation,
+        AnnotationTool.Pen or AnnotationTool.Highlighter => annotation is PenAnnotation,
+        AnnotationTool.Mosaic or AnnotationTool.Watermark =>
+            annotation is MosaicAnnotation or WatermarkAnnotation,
+        AnnotationTool.Text => annotation is TextAnnotation,
+        AnnotationTool.Number => annotation is NumberAnnotation,
+        _ => false
+    };
 
     private Rect Clamp(Rect rect)
     {

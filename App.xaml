@@ -33,6 +33,9 @@
         <Geometry x:Key="IconClose">M4 4 L12 12 M12 4 L4 12</Geometry>
         <Geometry x:Key="IconCheck">M3 8 L6.5 11.5 L13 4</Geometry>
         <Geometry x:Key="IconPlus">M8 3 V13 M3 8 H13</Geometry>
+        <Geometry x:Key="IconOcr">M3 3 H7 M3 3 V7 M13 3 H17 V7 M3 13 V17 H7 M13 17 H17 V13 M8 13 L10.5 7 L13 13 M9 11 H12</Geometry>
+        <Geometry x:Key="IconStar">M12 3 L14.5 9 L21 9.5 L16 14 L17.5 21 L12 17.5 L6.5 21 L8 14 L3 9.5 L9.5 9 Z</Geometry>
+        <Geometry x:Key="IconChevron">M4 6 L8 10 L12 6</Geometry>
 
         <Style x:Key="IconPath" TargetType="Path">
             <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ButtonBase}}}" />
@@ -119,6 +122,12 @@
             <Setter Property="Height" Value="30" />
         </Style>
 
+        <Style x:Key="ChevronButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="30" />
+        </Style>
+
         <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{StaticResource Accent}" />
@@ -174,6 +183,12 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="IconToolToggle" TargetType="ToggleButton" BasedOn="{StaticResource ToolToggle}">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
         </Style>
 
         <Style x:Key="InputBox" TargetType="TextBox">
