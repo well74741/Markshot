@@ -42,6 +42,8 @@ public partial class PinWindow : Window
     private Point _annotationScaleStartPoint;
     private double _annotationStartRotation;
     private double _annotationRotateStartAngle;
+    private readonly BitmapSource _originalImage;
+    private bool _suppressContextMenu;
     private bool _spaceAnnotation;
     private Point _spaceAnnotationAnchor;
     private Point _spaceAnnotationDelta;
@@ -66,6 +68,7 @@ public partial class PinWindow : Window
 
         SourceImage = image;
         _baseImage = image;
+        _originalImage = image;
         Img.Source = image;
         _pixelWidth = image.PixelWidth;
         _pixelHeight = image.PixelHeight;
@@ -90,7 +93,17 @@ public partial class PinWindow : Window
         MouseLeftButtonUp += OnMouseLeftButtonUp;
         MouseWheel += OnMouseWheel;
         MouseDown += OnMouseDown;
-        ContextMenuOpening += (_, _) => BuildContextMenu();
+        ContextMenuOpening += (_, args) =>
+        {
+            if (_suppressContextMenu)
+            {
+                _suppressContextMenu = false;
+                args.Handled = true;
+                return;
+            }
+
+            BuildContextMenu();
+        };
 
         InitToolbar();
         BuildContextMenu();
@@ -335,11 +348,11 @@ public partial class PinWindow : Window
         }
 
         var width = _editMode
-            ? Math.Max(imageWidth + 20, toolbarWidth + 20)
-            : imageWidth + 20;
-        var height = imageHeight + 20 + (_editMode ? toolbarHeight + 8 : 0);
-        var windowLeft = _left - 10;
-        var windowTop = _top - 10;
+            ? Math.Max(imageWidth + 32, toolbarWidth + 32)
+            : imageWidth + 32;
+        var height = imageHeight + 32 + (_editMode ? toolbarHeight + 8 : 0);
+        var windowLeft = _left - 16;
+        var windowTop = _top - 16;
 
         var virtualX = Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN);
         var virtualY = Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN);
@@ -377,10 +390,10 @@ public partial class PinWindow : Window
                     : Color.FromRgb(0x00, 0x00, 0x00);
 
         FrameBorder.BorderBrush = new SolidColorBrush(color);
-        if (ImageShadow != null)
+        if (ImageShadowLayer != null)
         {
-            ImageShadow.Color = color;
-            ImageShadow.Opacity = IsActive ? 0.85 : 0.6;
+            ImageShadowLayer.Background = new SolidColorBrush(
+                Color.FromArgb(IsActive ? (byte)200 : (byte)150, color.R, color.G, color.B));
         }
     }
 
@@ -581,6 +594,13 @@ public partial class PinWindow : Window
             return;
         }
 
+        if (_editMode && _active == null && _tool is not AnnotationTool.None and not AnnotationTool.Select)
+        {
+            AdjustActiveToolByWheel(e.Delta);
+            e.Handled = true;
+            return;
+        }
+
         if (_locked || _editMode)
         {
             return;
@@ -735,6 +755,39 @@ public partial class PinWindow : Window
             return;
         }
 
+        if (!_editMode &&
+            (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0)
+        {
+            var config = App.Config;
+            if (MatchesPinKey(config.PinFlipHorizontalHotkey, e.Key))
+            {
+                FlipPinImage(true);
+                e.Handled = true;
+                return;
+            }
+
+            if (MatchesPinKey(config.PinFlipVerticalHotkey, e.Key))
+            {
+                FlipPinImage(false);
+                e.Handled = true;
+                return;
+            }
+
+            if (MatchesPinKey(config.PinRotateHotkey, e.Key))
+            {
+                RotatePinImageCounterClockwise();
+                e.Handled = true;
+                return;
+            }
+
+            if (MatchesPinKey(config.PinResetHotkey, e.Key))
+            {
+                ResetPinImageTransform();
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (_editMode)
         {
             OnEditKeyDown(e);
@@ -840,7 +893,7 @@ public partial class PinWindow : Window
             }
             else
             {
-                ExitEditMode(false);
+                ExitEditMode(true);
             }
 
             e.Handled = true;
@@ -1104,6 +1157,7 @@ public partial class PinWindow : Window
         Editor.Preview = null;
         _active = null;
         _spaceAnnotation = false;
+        _suppressContextMenu = true;
         InputLayer.ReleaseMouseCapture();
         Editor.InvalidateVisual();
         e.Handled = true;
@@ -1750,6 +1804,23 @@ public partial class PinWindow : Window
         return false;
     }
 
+    private void AdjustActiveToolByWheel(int delta)
+    {
+        var step = Math.Sign(delta) * (_tool is AnnotationTool.Text or AnnotationTool.Number ? 2 : 1);
+        var value = _tool switch
+        {
+            AnnotationTool.Text => Math.Clamp(_thickness + step, 8, 64),
+            AnnotationTool.Number => Math.Clamp(_thickness + step, 8, 40),
+            AnnotationTool.Mosaic => Math.Clamp(_thickness + step, 4, 40),
+            AnnotationTool.Watermark => Math.Clamp(_thickness + step, 8, 64),
+            _ => Math.Clamp(_thickness + step * 0.5, 1, 16)
+        };
+
+        _thickness = value;
+        Toolbar.SetThickness(value);
+        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+    }
+
     private void AdjustSelectedByWheel(int delta)
     {
         if (_selected == null)
@@ -1799,6 +1870,123 @@ public partial class PinWindow : Window
         return (setting.Contains("Alt", StringComparison.OrdinalIgnoreCase) && (modifiers & ModifierKeys.Alt) != 0)
                || (setting.Contains("Ctrl", StringComparison.OrdinalIgnoreCase) && (modifiers & ModifierKeys.Control) != 0)
                || (setting.Contains("Shift", StringComparison.OrdinalIgnoreCase) && (modifiers & ModifierKeys.Shift) != 0);
+    }
+
+    private void FlipPinImage(bool horizontal)
+    {
+        var oldWidth = SourceImage.PixelWidth;
+        var oldHeight = SourceImage.PixelHeight;
+        var transform = horizontal
+            ? (Transform)new ScaleTransform(-1, 1)
+            : new ScaleTransform(1, -1);
+        Point Map(Point p) => horizontal
+            ? new Point(oldWidth - p.X, p.Y)
+            : new Point(p.X, oldHeight - p.Y);
+        ApplyPinImageTransform(transform, Map, oldWidth, oldHeight);
+    }
+
+    private void RotatePinImageCounterClockwise()
+    {
+        var oldWidth = SourceImage.PixelWidth;
+        var oldHeight = SourceImage.PixelHeight;
+        var transform = new RotateTransform(-90);
+        Point Map(Point p) => new Point(p.Y, oldWidth - p.X);
+        ApplyPinImageTransform(transform, Map, oldHeight, oldWidth);
+    }
+
+    private void ResetPinImageTransform()
+    {
+        _baseImage = _originalImage;
+        SourceImage = _originalImage;
+        _pixelWidth = _originalImage.PixelWidth;
+        _pixelHeight = _originalImage.PixelHeight;
+        Editor.Items.Clear();
+        Editor.Selected = null;
+        _selected = null;
+        Editor.Source = _baseImage;
+        Img.Source = _baseImage;
+        Toolbar.SetSelection(null);
+        Editor.InvalidateVisual();
+        ApplyBounds();
+    }
+
+    private void ApplyPinImageTransform(Transform transform, Func<Point, Point> map, int newWidth, int newHeight)
+    {
+        var transformed = new TransformedBitmap(SourceImage, transform);
+        transformed.Freeze();
+
+        foreach (var annotation in Editor.Items)
+        {
+            switch (annotation)
+            {
+                case RectAnnotation rect:
+                    rect.Rect = MapRect(rect.Rect, map);
+                    break;
+                case EllipseAnnotation ellipse:
+                    ellipse.Rect = MapRect(ellipse.Rect, map);
+                    break;
+                case LineAnnotation line:
+                    line.Start = map(line.Start);
+                    line.End = map(line.End);
+                    break;
+                case ArrowAnnotation arrow:
+                    arrow.Start = map(arrow.Start);
+                    arrow.End = map(arrow.End);
+                    break;
+                case PenAnnotation pen:
+                    for (var i = 0; i < pen.Points.Count; i++)
+                    {
+                        pen.Points[i] = map(pen.Points[i]);
+                    }
+                    break;
+                case TextAnnotation text:
+                    text.Position = map(text.Position);
+                    break;
+                case NumberAnnotation number:
+                    number.Center = map(number.Center);
+                    break;
+                case WatermarkAnnotation watermark:
+                    watermark.Rect = MapRect(watermark.Rect, map);
+                    break;
+                case MosaicAnnotation mosaic:
+                    mosaic.Rect = MapRect(mosaic.Rect, map);
+                    mosaic.Pattern = MosaicBuilder.Build(transformed, mosaic.Rect);
+                    break;
+            }
+        }
+
+        _baseImage = transformed;
+        SourceImage = transformed;
+        _pixelWidth = newWidth;
+        _pixelHeight = newHeight;
+        Editor.Source = transformed;
+        Img.Source = transformed;
+        _selected = null;
+        Editor.Selected = null;
+        Toolbar.SetSelection(null);
+        Editor.InvalidateVisual();
+        ApplyBounds();
+    }
+
+    private static Rect MapRect(Rect rect, Func<Point, Point> map)
+    {
+        var a = map(rect.TopLeft);
+        var b = map(rect.BottomRight);
+        return new Rect(
+            Math.Min(a.X, b.X), Math.Min(a.Y, b.Y),
+            Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
+    }
+
+    private static bool MatchesPinKey(string? configured, Key key)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return false;
+        }
+
+        return string.Equals(configured.Trim(), key.ToString(), StringComparison.OrdinalIgnoreCase)
+               || (configured.Trim().Length == 1
+                   && char.ToUpperInvariant(configured.Trim()[0]) == (char)('A' + ((int)key - (int)Key.A)));
     }
 
     private Rect Clamp(Rect rect)

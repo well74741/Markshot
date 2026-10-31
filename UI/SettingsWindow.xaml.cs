@@ -21,6 +21,10 @@ public partial class SettingsWindow : Window
         MouseThroughHotkeyBox.Text = config.MouseThroughHotkey;
         RestorePinHotkeyBox.Text = config.RestorePinHotkey;
         TextBypassBox.Text = config.TextBypassModifier;
+        PinFlipHBox.Text = config.PinFlipHorizontalHotkey;
+        PinFlipVBox.Text = config.PinFlipVerticalHotkey;
+        PinRotateBox.Text = config.PinRotateHotkey;
+        PinResetBox.Text = config.PinResetHotkey;
         PenKeyBox.Text = config.ToolPenHotkey;
         SelectKeyBox.Text = config.ToolSelectHotkey;
         EraserKeyBox.Text = config.ToolEraserHotkey;
@@ -226,6 +230,10 @@ public partial class SettingsWindow : Window
         _config.TextBypassModifier = string.IsNullOrWhiteSpace(TextBypassBox.Text)
             ? "Alt"
             : TextBypassBox.Text.Trim();
+        _config.PinFlipHorizontalHotkey = string.IsNullOrWhiteSpace(PinFlipHBox.Text) ? "Q" : PinFlipHBox.Text.Trim();
+        _config.PinFlipVerticalHotkey = string.IsNullOrWhiteSpace(PinFlipVBox.Text) ? "W" : PinFlipVBox.Text.Trim();
+        _config.PinRotateHotkey = string.IsNullOrWhiteSpace(PinRotateBox.Text) ? "E" : PinRotateBox.Text.Trim();
+        _config.PinResetHotkey = string.IsNullOrWhiteSpace(PinResetBox.Text) ? "F" : PinResetBox.Text.Trim();
 
         var penKey = NormalizeToolKey(PenKeyBox.Text, "B");
         var selectKey = NormalizeToolKey(SelectKeyBox.Text, "V");

@@ -86,6 +86,7 @@ public partial class OverlayWindow : Window
     private bool _creatingRotate;
     private Point _creatingRotateCenter;
     private double _creatingRotateStartAngle;
+    private bool _suppressContextMenu;
 
     public CaptureAction Result { get; private set; } = CaptureAction.None;
 
@@ -107,6 +108,14 @@ public partial class OverlayWindow : Window
         Magnifier.Source = screen;
 
         InitToolbar();
+        ContextMenuOpening += (_, args) =>
+        {
+            if (_suppressContextMenu)
+            {
+                _suppressContextMenu = false;
+                args.Handled = true;
+            }
+        };
 
         _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.4) };
         _noticeTimer.Tick += (_, _) =>
@@ -342,7 +351,10 @@ public partial class OverlayWindow : Window
         Editor.InvalidateVisual();
 
         Hint.Visibility = Visibility.Collapsed;
-        Magnifier.Visibility = _dragging ? Visibility.Visible : Visibility.Collapsed;
+        if (_mode is DragMode.Moving or DragMode.Resizing && _dragging)
+        {
+            Magnifier.Visibility = Visibility.Visible;
+        }
 
         if (_dragging)
         {
@@ -622,7 +634,7 @@ public partial class OverlayWindow : Window
         }
 
         var point = ToPixels(e.GetPosition(InputLayer));
-        if (_dragging || !_hasSelection)
+        if (ShouldShowMagnifier(point))
         {
             UpdateMagnifier(point);
         }
@@ -811,6 +823,7 @@ public partial class OverlayWindow : Window
         _dragging = false;
         _spaceAnnotation = false;
         _spaceDrag = false;
+        _suppressContextMenu = true;
         InputLayer.ReleaseMouseCapture();
         Editor.InvalidateVisual();
         e.Handled = true;
@@ -900,6 +913,11 @@ public partial class OverlayWindow : Window
                 AdjustSelectedByWheel(e.Delta);
                 e.Handled = true;
             }
+            else if (_active == null && _tool is not AnnotationTool.None and not AnnotationTool.Select)
+            {
+                AdjustActiveToolByWheel(e.Delta);
+                e.Handled = true;
+            }
 
             return;
         }
@@ -909,6 +927,26 @@ public partial class OverlayWindow : Window
         ClearHover();
         UpdateHover(ToPixels(e.GetPosition(InputLayer)));
         e.Handled = true;
+    }
+
+    private bool ShouldShowMagnifier(Point point)
+    {
+        if (!_hasSelection)
+        {
+            return true;
+        }
+
+        if (_mode is DragMode.Moving or DragMode.Resizing && _dragging)
+        {
+            return true;
+        }
+
+        if (HitHandle(point) >= 0)
+        {
+            return true;
+        }
+
+        return !_selection.Contains(point);
     }
 
     private void Input_MouseLeave(object sender, MouseEventArgs e)
@@ -2190,6 +2228,23 @@ public partial class OverlayWindow : Window
         return false;
     }
 
+    private void AdjustActiveToolByWheel(int delta)
+    {
+        var step = Math.Sign(delta) * (_tool is AnnotationTool.Text or AnnotationTool.Number ? 2 : 1);
+        var value = _tool switch
+        {
+            AnnotationTool.Text => Math.Clamp(_thickness + step, 8, 64),
+            AnnotationTool.Number => Math.Clamp(_thickness + step, 8, 40),
+            AnnotationTool.Mosaic => Math.Clamp(_thickness + step, 4, 40),
+            AnnotationTool.Watermark => Math.Clamp(_thickness + step, 8, 64),
+            _ => Math.Clamp(_thickness + step * 0.5, 1, 16)
+        };
+
+        _thickness = value;
+        Toolbar.SetThickness(value);
+        UpdateCursorToPointer();
+    }
+
     private void AdjustSelectedByWheel(int delta)
     {
         if (_selectedAnnotation == null)
@@ -2262,6 +2317,23 @@ public partial class OverlayWindow : Window
 
     private void UpdateCursor(Point point)
     {
+        if (_hasSelection)
+        {
+            var frameHandle = HitHandle(point);
+            if (frameHandle >= 0)
+            {
+                InputLayer.Cursor = frameHandle switch
+                {
+                    0 or 4 => Cursors.SizeNWSE,
+                    2 or 6 => Cursors.SizeNESW,
+                    1 or 5 => Cursors.SizeNS,
+                    3 or 7 => Cursors.SizeWE,
+                    _ => Cursors.SizeAll
+                };
+                return;
+            }
+        }
+
         if (_tool == AnnotationTool.Select || _tool == AnnotationTool.None)
         {
             if (_selectedAnnotation != null && UpdateAnnotationTransformCursor(point))

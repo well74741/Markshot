@@ -12,15 +12,12 @@ public partial class AnnotationToolbar : UserControl
 {
     private static readonly Color[] Palette =
     {
-        Color.FromRgb(0xFF, 0x33, 0x00),
-        Color.FromRgb(0xFF, 0xAA, 0x00),
-        Color.FromRgb(0xFF, 0xFF, 0x00),
-        Color.FromRgb(0x00, 0xEE, 0x44),
-        Color.FromRgb(0x00, 0xE5, 0xE5),
-        Color.FromRgb(0x1F, 0x5B, 0xFF),
-        Color.FromRgb(0xCC, 0x44, 0xCC),
-        Colors.White,
-        Color.FromRgb(0x20, 0x20, 0x20)
+        Color.FromRgb(0xD9, 0x4B, 0x38),
+        Color.FromRgb(0xE4, 0xC4, 0x5A),
+        Color.FromRgb(0x68, 0xB6, 0x6B),
+        Color.FromRgb(0x5C, 0x8F, 0xE6),
+        Color.FromRgb(0x20, 0x20, 0x20),
+        Colors.White
     };
 
     private enum ToolFamily
@@ -202,13 +199,13 @@ public partial class AnnotationToolbar : UserControl
         {
             var swatch = new Border
             {
-                Width = 18,
-                Height = 18,
-                CornerRadius = new CornerRadius(9),
+                Width = 20,
+                Height = 20,
+                CornerRadius = new CornerRadius(10),
                 Background = new SolidColorBrush(color),
                 BorderThickness = new Thickness(1),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255)),
-                Margin = new Thickness(2, 0, 2, 0),
+                Margin = new Thickness(3, 0, 3, 0),
                 Cursor = Cursors.Hand,
                 ToolTip = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
             };
@@ -240,6 +237,7 @@ public partial class AnnotationToolbar : UserControl
         }
 
         var custom = !Palette.Contains(_color);
+        CustomColorInner.Fill = new SolidColorBrush(_customColor);
         CustomColorButton.BorderThickness = new Thickness(custom ? 2 : 0);
         CustomColorButton.BorderBrush = custom ? Brushes.White : Brushes.Transparent;
     }

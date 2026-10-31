@@ -14,6 +14,14 @@ public sealed class AppConfig
 
     public string TextBypassModifier { get; set; } = "Alt";
 
+    public string PinFlipHorizontalHotkey { get; set; } = "Q";
+
+    public string PinFlipVerticalHotkey { get; set; } = "W";
+
+    public string PinRotateHotkey { get; set; } = "E";
+
+    public string PinResetHotkey { get; set; } = "F";
+
     public string ToolPenHotkey { get; set; } = "B";
 
     public string ToolSelectHotkey { get; set; } = "V";

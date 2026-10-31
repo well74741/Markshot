@@ -119,29 +119,30 @@ public sealed class ArrowAnnotation : Annotation
         }
 
         var unit = direction / length;
-        var headLength = Math.Max(12, Thickness * 4.5);
-        var headWidth = headLength * 0.62;
-
+        var headLength = Math.Max(18, Thickness * 5.5);
+        var headWidth = headLength * 0.78;
         var brush = new SolidColorBrush(Color);
-        var pen = new Pen(brush, Thickness)
-        {
-            StartLineCap = PenLineCap.Round,
-            EndLineCap = PenLineCap.Round
-        };
-
-        var headBase = End - unit * headLength;
         var perpendicular = new Vector(-unit.Y, unit.X);
-        var left = headBase + perpendicular * (headWidth / 2);
-        var right = headBase - perpendicular * (headWidth / 2);
+        var headBase = End - unit * headLength;
+        var tailHalf = Math.Max(Thickness * 0.32, 0.9);
 
-        dc.DrawLine(pen, Start, headBase);
+        // Swept-back barbs and a pointed tail: the two wings sit behind the
+        // head base, while the tail narrows to a point at Start.
+        var barbCenter = headBase - unit * (headLength * 0.22);
+        var left = barbCenter + perpendicular * (headWidth / 2);
+        var right = barbCenter - perpendicular * (headWidth / 2);
+        var tailLeft = headBase + perpendicular * tailHalf;
+        var tailRight = headBase - perpendicular * tailHalf;
 
         var geometry = new StreamGeometry();
         using (var context = geometry.Open())
         {
-            context.BeginFigure(End, true, true);
+            context.BeginFigure(Start, true, true);
+            context.LineTo(tailLeft, true, false);
             context.LineTo(left, true, false);
+            context.LineTo(End, true, false);
             context.LineTo(right, true, false);
+            context.LineTo(tailRight, true, false);
         }
 
         geometry.Freeze();

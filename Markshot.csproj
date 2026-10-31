@@ -23,6 +23,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\Icons\*.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="RapidOcrNet" Version="4.2.0" />
   </ItemGroup>
 

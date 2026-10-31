@@ -82,6 +82,84 @@
             <Setter Property="Stretch" Value="Uniform" />
         </Style>
 
+        <Style x:Key="IconMask" TargetType="Border">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Background" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ButtonBase}}}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+        </Style>
+
+        <Style x:Key="IconPenMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/pen.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconHighlighterMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/highlighter.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconMosaicMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/mosaic.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconEraserMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/eraser.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconTextMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/text.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconNumberMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/number.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconArrowMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/arrow.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconLineMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/line.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconSaveMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/save.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconCloseMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/close.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconCopyMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/copy.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconTranslateMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/translate.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconPinMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/pin.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconWatermarkMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/watermark.png" /></Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="ToolButton" TargetType="Button">
             <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
             <Setter Property="Background" Value="Transparent" />
@@ -213,6 +291,48 @@
                                 <Setter Property="Foreground" Value="{StaticResource Accent}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Slider">
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid>
+                            <Border Height="4" CornerRadius="2" Background="#4A4A4A" VerticalAlignment="Center" />
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="14" Height="14">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Ellipse Fill="#F2F2F2" Stroke="#8A8A8A" StrokeThickness="1" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>

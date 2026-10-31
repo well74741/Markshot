@@ -17,17 +17,19 @@
         PreviewKeyDown="OnPreviewKeyDown"
         PreviewKeyUp="OnPreviewKeyUp">
 
-    <Grid x:Name="RootGrid" Margin="10">
+    <Grid x:Name="RootGrid" Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid x:Name="ImageHost" Grid.Row="0" HorizontalAlignment="Left" VerticalAlignment="Top"
-              ClipToBounds="True">
-            <Grid.Effect>
-                <DropShadowEffect x:Name="ImageShadow" Color="#000000" BlurRadius="14" ShadowDepth="0" Opacity="0.7" />
-            </Grid.Effect>
+              ClipToBounds="False">
+            <Border x:Name="ImageShadowLayer" Background="#B0000000" IsHitTestVisible="False">
+                <Border.Effect>
+                    <BlurEffect Radius="12" KernelType="Gaussian" />
+                </Border.Effect>
+            </Border>
             <Image x:Name="Img" Stretch="Fill" SnapsToDevicePixels="True" />
             <annotations:AnnotationEditor x:Name="Editor" Visibility="Collapsed" IsHitTestVisible="False" />
             <Rectangle x:Name="InputLayer" Fill="Transparent" Visibility="Collapsed"

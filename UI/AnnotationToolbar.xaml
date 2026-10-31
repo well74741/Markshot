@@ -25,7 +25,7 @@
 
                 <RadioButton x:Name="ToolPen" Style="{StaticResource IconToolRadio}"
                              Tag="Pen" GroupName="Tool" Click="Tool_Click" ToolTip="画笔/荧光笔 (B)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconPen}" />
+                    <Border Style="{StaticResource IconPenMask}" />
                 </RadioButton>
                 <Button Style="{StaticResource ChevronButton}" Click="PenMenu_Click" ToolTip="画笔样式">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
@@ -33,7 +33,7 @@
 
                 <RadioButton x:Name="ToolArrow" Style="{StaticResource IconToolRadio}"
                              Tag="Arrow" GroupName="Tool" Click="Tool_Click" ToolTip="箭头/直线 (L)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconArrow}" />
+                    <Border Style="{StaticResource IconArrowMask}" />
                 </RadioButton>
                 <Button Style="{StaticResource ChevronButton}" Click="ArrowMenu_Click" ToolTip="箭头样式">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
@@ -41,7 +41,7 @@
 
                 <RadioButton x:Name="ToolText" Style="{StaticResource IconToolRadio}"
                              Tag="Text" GroupName="Tool" Click="Tool_Click" ToolTip="文字 (T)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconText}" />
+                    <Border Style="{StaticResource IconTextMask}" />
                 </RadioButton>
                 <Button Style="{StaticResource ChevronButton}" Click="TextMenu_Click" ToolTip="文字字号">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
@@ -49,14 +49,12 @@
 
                 <RadioButton x:Name="ToolNumber" Style="{StaticResource IconToolRadio}"
                              Tag="Number" GroupName="Tool" Click="Tool_Click" ToolTip="序号 (S)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconNumber}" />
+                    <Border Style="{StaticResource IconNumberMask}" />
                 </RadioButton>
 
                 <RadioButton x:Name="ToolMosaic" Style="{StaticResource IconToolRadio}"
                              Tag="Mosaic" GroupName="Tool" Click="Tool_Click" ToolTip="马赛克/水印">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconMosaic}"
-                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ButtonBase}}}"
-                          Stroke="Transparent" />
+                    <Border Style="{StaticResource IconMosaicMask}" />
                 </RadioButton>
                 <Button Style="{StaticResource ChevronButton}" Click="MosaicMenu_Click" ToolTip="马赛克样式">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
@@ -64,7 +62,7 @@
 
                 <RadioButton x:Name="ToolEraser" Style="{StaticResource IconToolRadio}"
                              Tag="Eraser" GroupName="Tool" Click="Tool_Click" ToolTip="橡皮擦 (E)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconEraser}" />
+                    <Border Style="{StaticResource IconEraserMask}" />
                 </RadioButton>
 
                 <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
@@ -80,20 +78,20 @@
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconOcr}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Close_Click" ToolTip="关闭 (Esc)">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconClose}" />
+                        <Border Style="{StaticResource IconCloseMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Pin_Click" ToolTip="贴图 (F3)" Foreground="{StaticResource Accent}">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconPin}" />
+                        <Border Style="{StaticResource IconPinMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存 (Ctrl+S)">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconSave}" />
+                        <Border Style="{StaticResource IconSaveMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" ToolTip="复制 (Enter)">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconCopy}" />
+                        <Border Style="{StaticResource IconCopyMask}" />
                     </Button>
                     <ToggleButton x:Name="TranslateToggle" Style="{StaticResource IconToolToggle}"
                                   Click="TranslateToggle_Click" ToolTip="自动翻译（可激活）">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconTranslate}" />
+                        <Border Style="{StaticResource IconTranslateMask}" />
                     </ToggleButton>
                     <TextBlock x:Name="TranslateHint" Text="自动翻译" Foreground="#6BA1FF" FontSize="10"
                                VerticalAlignment="Center" Margin="2,0,0,0" Visibility="Collapsed" />
@@ -101,7 +99,7 @@
 
                 <StackPanel x:Name="PinActions" Orientation="Horizontal" Visibility="Collapsed">
                     <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconSave}" />
+                        <Border Style="{StaticResource IconSaveMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" ToolTip="应用 (Ctrl+S)" Foreground="{StaticResource Accent}">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconCheck}" />
@@ -122,28 +120,28 @@
 
                     <StackPanel x:Name="LineVariants" Orientation="Horizontal" Visibility="Collapsed">
                         <RadioButton x:Name="VariantLine" Style="{StaticResource IconToolRadio}" Tag="Line" GroupName="Variant" Checked="Variant_Checked" ToolTip="直线">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconLine}" />
+                            <Border Style="{StaticResource IconLineMask}" />
                         </RadioButton>
                         <RadioButton x:Name="VariantArrow" Style="{StaticResource IconToolRadio}" Tag="Arrow" GroupName="Variant" Checked="Variant_Checked" ToolTip="箭头">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconArrow}" />
+                            <Border Style="{StaticResource IconArrowMask}" />
                         </RadioButton>
                     </StackPanel>
 
                     <StackPanel x:Name="PenVariants" Orientation="Horizontal" Visibility="Collapsed">
                         <RadioButton x:Name="VariantPen" Style="{StaticResource IconToolRadio}" Tag="Pen" GroupName="Variant" Checked="Variant_Checked" ToolTip="画笔">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconPen}" />
+                            <Border Style="{StaticResource IconPenMask}" />
                         </RadioButton>
                         <RadioButton x:Name="VariantHighlighter" Style="{StaticResource IconToolRadio}" Tag="Highlighter" GroupName="Variant" Checked="Variant_Checked" ToolTip="荧光笔">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconHighlight}" />
+                            <Border Style="{StaticResource IconHighlighterMask}" />
                         </RadioButton>
                     </StackPanel>
 
                     <StackPanel x:Name="MosaicVariants" Orientation="Horizontal" Visibility="Collapsed">
                         <RadioButton x:Name="VariantMosaic" Style="{StaticResource IconToolRadio}" Tag="Mosaic" GroupName="Variant" Checked="Variant_Checked" ToolTip="马赛克">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconMosaic}" />
+                            <Border Style="{StaticResource IconMosaicMask}" />
                         </RadioButton>
                         <RadioButton x:Name="VariantWatermark" Style="{StaticResource IconToolRadio}" Tag="Watermark" GroupName="Variant" Checked="Variant_Checked" ToolTip="水印">
-                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconWatermark}" />
+                            <Border Style="{StaticResource IconWatermarkMask}" />
                         </RadioButton>
                     </StackPanel>
 
@@ -186,21 +184,24 @@
                     <StackPanel x:Name="ColorSection" Orientation="Horizontal">
                         <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
                         <StackPanel x:Name="ColorGroup" Orientation="Horizontal" VerticalAlignment="Center">
-                            <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />
                             <Button x:Name="CustomColorButton" Style="{StaticResource IconToolButton}" Click="CustomColor_Click" ToolTip="自定义颜色">
-                                <Ellipse Width="18" Height="18" Stroke="#D8D8D8" StrokeThickness="1.2">
-                                    <Ellipse.Fill>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                            <GradientStop Color="#FF4D4F" Offset="0" />
-                                            <GradientStop Color="#FFD166" Offset="0.2" />
-                                            <GradientStop Color="#52C41A" Offset="0.4" />
-                                            <GradientStop Color="#00E5E5" Offset="0.6" />
-                                            <GradientStop Color="#4C8DFF" Offset="0.8" />
-                                            <GradientStop Color="#B37FEB" Offset="1" />
-                                        </LinearGradientBrush>
-                                    </Ellipse.Fill>
-                                </Ellipse>
+                                <Grid Width="22" Height="22">
+                                    <Ellipse Width="22" Height="22">
+                                        <Ellipse.Fill>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF4D4F" Offset="0" />
+                                                <GradientStop Color="#FFD166" Offset="0.2" />
+                                                <GradientStop Color="#52C41A" Offset="0.4" />
+                                                <GradientStop Color="#00E5E5" Offset="0.6" />
+                                                <GradientStop Color="#4C8DFF" Offset="0.8" />
+                                                <GradientStop Color="#B37FEB" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Ellipse.Fill>
+                                    </Ellipse>
+                                    <Ellipse x:Name="CustomColorInner" Width="14" Height="14" Stroke="#F2F2F2" StrokeThickness="1" />
+                                </Grid>
                             </Button>
+                            <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>
