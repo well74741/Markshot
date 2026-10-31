@@ -29,6 +29,8 @@ public abstract class Annotation
 
     public double Opacity { get; set; } = 1.0;
 
+    public double Rotation { get; set; }
+
     public abstract void Draw(DrawingContext dc);
 
     public virtual Rect Bounds => Rect.Empty;
@@ -58,7 +60,7 @@ public sealed class RectAnnotation : Annotation
     {
         var pen = new Pen(new SolidColorBrush(Color), Thickness) { LineJoin = PenLineJoin.Round };
         var fill = Fill
-            ? new SolidColorBrush(Color.FromArgb(70, Color.R, Color.G, Color.B))
+            ? new SolidColorBrush(Color)
             : null;
 
         if (CornerRadius > 0.5)
@@ -87,7 +89,7 @@ public sealed class EllipseAnnotation : Annotation
     {
         var pen = new Pen(new SolidColorBrush(Color), Thickness);
         var fill = Fill
-            ? new SolidColorBrush(Color.FromArgb(70, Color.R, Color.G, Color.B))
+            ? new SolidColorBrush(Color)
             : null;
         var center = new Point(Rect.X + Rect.Width / 2, Rect.Y + Rect.Height / 2);
         dc.DrawEllipse(fill, pen, center, Rect.Width / 2, Rect.Height / 2);

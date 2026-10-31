@@ -49,10 +49,13 @@ public sealed class AnnotationEditor : FrameworkElement
 
         foreach (var annotation in Items)
         {
-            annotation.Draw(dc);
+            DrawRotated(dc, annotation);
         }
 
-        Preview?.Draw(dc);
+        if (Preview != null)
+        {
+            DrawRotated(dc, Preview);
+        }
 
         if (ShowHover && HoverBounds.Width > 0)
         {
@@ -70,6 +73,21 @@ public sealed class AnnotationEditor : FrameworkElement
             DrawSelectionChrome(dc, Selection);
         }
 
+        dc.Pop();
+    }
+
+    private static void DrawRotated(DrawingContext dc, Annotation annotation)
+    {
+        if (Math.Abs(annotation.Rotation) < 0.01)
+        {
+            annotation.Draw(dc);
+            return;
+        }
+
+        var bounds = annotation.Bounds;
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
+        annotation.Draw(dc);
         dc.Pop();
     }
 
@@ -123,44 +141,89 @@ public sealed class AnnotationEditor : FrameworkElement
 
     private void DrawAnnotationSelection(DrawingContext dc, Annotation annotation)
     {
-        var bounds = annotation.Bounds;
-        if (bounds.Width <= 0 || bounds.Height <= 0)
-        {
-            return;
-        }
-
         var unit = 1.0 / Scale;
-        bounds.Inflate(4 * unit, 4 * unit);
+        var bounds = SelectionFrame(annotation.Bounds, unit);
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
 
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF)), 1.4 * unit)
+        dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
+
+        var accent = new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF));
+        var pen = new Pen(accent, 1.4 * unit)
         {
             DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0)
         };
 
         dc.DrawRectangle(null, pen, bounds);
 
-        var handle = 6 * unit;
+        var handle = 7 * unit;
         var handlePen = new Pen(Brushes.White, unit);
-        foreach (var point in new[]
-                 {
-                     bounds.TopLeft, bounds.TopRight, bounds.BottomLeft, bounds.BottomRight
-                 })
+        foreach (var point in HandleCenters(bounds))
         {
             dc.DrawRectangle(
-                new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF)),
+                accent,
                 handlePen,
                 new Rect(point.X - handle / 2, point.Y - handle / 2, handle, handle));
         }
+
+        var rotateCenter = RotationHandleCenter(bounds);
+        var radius = 9 * unit;
+        dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(220, 25, 25, 25)), new Pen(accent, 1.4 * unit),
+            rotateCenter, radius, radius);
+
+        var arc = new StreamGeometry();
+        using (var context = arc.Open())
+        {
+            var start = new Point(rotateCenter.X - radius * 0.62, rotateCenter.Y + radius * 0.35);
+            var end = new Point(rotateCenter.X + radius * 0.62, rotateCenter.Y + radius * 0.35);
+            context.BeginFigure(start, false, false);
+            context.ArcTo(end, new Size(radius * 0.72, radius * 0.72), 0, false,
+                SweepDirection.Counterclockwise, true, false);
+        }
+
+        arc.Freeze();
+        dc.DrawGeometry(null, new Pen(accent, 1.5 * unit), arc);
+        dc.DrawLine(new Pen(accent, 1.5 * unit),
+            new Point(rotateCenter.X - radius * 0.62, rotateCenter.Y + radius * 0.35),
+            new Point(rotateCenter.X - radius * 0.62, rotateCenter.Y - radius * 0.15));
+        dc.DrawLine(new Pen(accent, 1.5 * unit),
+            new Point(rotateCenter.X + radius * 0.62, rotateCenter.Y + radius * 0.35),
+            new Point(rotateCenter.X + radius * 0.62, rotateCenter.Y + radius * 0.85));
+
+        dc.Pop();
+    }
+
+    public static Point RotationHandleCenter(Rect rect) =>
+        new(rect.Left + rect.Width / 2, rect.Top - 24);
+
+    public static Rect SelectionFrame(Rect bounds, double unit)
+    {
+        var width = Math.Max(bounds.Width, 20 * unit);
+        var height = Math.Max(bounds.Height, 20 * unit);
+        var centerX = bounds.X + bounds.Width / 2;
+        var centerY = bounds.Y + bounds.Height / 2;
+        var frame = new Rect(centerX - width / 2, centerY - height / 2, width, height);
+        frame.Inflate(4 * unit, 4 * unit);
+        return frame;
+    }
+
+    public static Point RotatePoint(Point point, Point center, double degrees)
+    {
+        if (Math.Abs(degrees) < 0.01)
+        {
+            return point;
+        }
+
+        var radians = degrees * Math.PI / 180;
+        var dx = point.X - center.X;
+        var dy = point.Y - center.Y;
+        return new Point(
+            center.X + dx * Math.Cos(radians) - dy * Math.Sin(radians),
+            center.Y + dx * Math.Sin(radians) + dy * Math.Cos(radians));
     }
 
     private void DrawSelectionChrome(DrawingContext dc, Rect selection)
     {
         var unit = 1.0 / Scale;
-
-        dc.DrawRectangle(
-            null,
-            new Pen(new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)), unit * 4),
-            new Rect(selection.X - unit * 2, selection.Y - unit * 2, selection.Width + unit * 4, selection.Height + unit * 4));
 
         var blue = new SolidColorBrush(Color.FromRgb(0x2F, 0x7B, 0xFF));
         dc.DrawRectangle(null, new Pen(blue, unit * 2), selection);

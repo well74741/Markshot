@@ -30,7 +30,8 @@
             <Rectangle x:Name="InputLayer" Fill="Transparent" Visibility="Collapsed"
                        MouseLeftButtonDown="Input_MouseLeftButtonDown"
                        MouseMove="Input_MouseMove"
-                       MouseLeftButtonUp="Input_MouseLeftButtonUp" />
+                       MouseLeftButtonUp="Input_MouseLeftButtonUp"
+                       MouseRightButtonDown="Input_MouseRightButtonDown" />
             <Canvas x:Name="UiLayer">
                 <TextBox x:Name="TextEditor" Style="{StaticResource InputBox}"
                          Width="260" MinHeight="34" FontSize="16" Visibility="Collapsed"

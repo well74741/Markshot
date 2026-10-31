@@ -33,7 +33,7 @@ public static class ToolCursors
 
     public static Cursor Get(AnnotationTool tool)
     {
-        if (tool == AnnotationTool.Select)
+        if (tool == AnnotationTool.Select || tool == AnnotationTool.None)
         {
             return Cursors.Arrow;
         }
@@ -41,6 +41,12 @@ public static class ToolCursors
         if (tool == AnnotationTool.Text)
         {
             return Cursors.IBeam;
+        }
+
+        if (tool is AnnotationTool.Rectangle or AnnotationTool.Ellipse or AnnotationTool.Line
+            or AnnotationTool.Arrow or AnnotationTool.Mosaic or AnnotationTool.Watermark or AnnotationTool.Number)
+        {
+            return Cursors.Cross;
         }
 
         if (Cache.TryGetValue(tool, out var cached))
@@ -57,52 +63,18 @@ public static class ToolCursors
     {
         try
         {
-            var badge = tool switch
-            {
-                AnnotationTool.Rectangle => "R",
-                AnnotationTool.Ellipse => "O",
-                AnnotationTool.Arrow => "A",
-                AnnotationTool.Line => "L",
-                AnnotationTool.Pen => "P",
-                AnnotationTool.Highlighter => "H",
-                AnnotationTool.Mosaic => "M",
-                AnnotationTool.Number => "1",
-                AnnotationTool.Eraser => "E",
-                _ => "·"
-            };
-
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
             {
-                var outline = new Pen(new SolidColorBrush(Color.FromArgb(235, 0, 0, 0)), 3.2);
-                var line = new Pen(new SolidColorBrush(Color.FromArgb(250, 245, 245, 245)), 1.4);
+                var outline = new Pen(new SolidColorBrush(Color.FromArgb(235, 0, 0, 0)), 3.0);
+                var line = new Pen(
+                    new SolidColorBrush(tool == AnnotationTool.Eraser
+                        ? Color.FromRgb(0xFF, 0x6B, 0x6B)
+                        : Color.FromArgb(250, 245, 245, 245)),
+                    1.5);
 
-                // crosshair
-                foreach (var pen in new[] { outline, line })
-                {
-                    dc.DrawLine(pen, new Point(16, 2), new Point(16, 12));
-                    dc.DrawLine(pen, new Point(16, 20), new Point(16, 30));
-                    dc.DrawLine(pen, new Point(2, 16), new Point(12, 16));
-                    dc.DrawLine(pen, new Point(20, 16), new Point(30, 16));
-                }
-
-                // tool badge at bottom-right
-                var center = new Point(23, 23);
-                dc.DrawEllipse(
-                    new SolidColorBrush(Color.FromArgb(245, 26, 26, 26)),
-                    new Pen(new SolidColorBrush(Color.FromArgb(245, 250, 250, 250)), 1.2),
-                    center, 7.2, 7.2);
-
-                var text = new FormattedText(
-                    badge,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
-                    9.5,
-                    Brushes.White,
-                    1.0);
-
-                dc.DrawText(text, new Point(center.X - text.Width / 2, center.Y - text.Height / 2 - 0.5));
+                dc.DrawEllipse(null, outline, new Point(16, 16), 10, 10);
+                dc.DrawEllipse(null, line, new Point(16, 16), 10, 10);
             }
 
             var bitmap = new RenderTargetBitmap(32, 32, 96, 96, PixelFormats.Pbgra32);

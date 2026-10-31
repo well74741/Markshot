@@ -66,6 +66,14 @@ public partial class OverlayWindow : Window
     private bool _draggingAnnotation;
     private Point _lastAnnotationPoint;
     private bool _erasing;
+    private bool _resizingAnnotation;
+    private bool _rotatingAnnotation;
+    private int _annotationHandle = -1;
+    private Rect _annotationStartBounds;
+    private Point _annotationCenter;
+    private Point _annotationScaleStartPoint;
+    private double _annotationStartRotation;
+    private double _annotationRotateStartAngle;
     private readonly DispatcherTimer _noticeTimer;
     private bool _spaceDrag;
     private Point _spaceAnchor;
@@ -74,6 +82,9 @@ public partial class OverlayWindow : Window
     private bool _spaceAnnotation;
     private Point _spaceAnnotationAnchor;
     private Point _spaceAnnotationDelta;
+    private bool _creatingRotate;
+    private Point _creatingRotateCenter;
+    private double _creatingRotateStartAngle;
 
     public CaptureAction Result { get; private set; } = CaptureAction.None;
 
@@ -182,7 +193,16 @@ public partial class OverlayWindow : Window
         }
 
         _selectedAnnotation.Color = _color;
-        _selectedAnnotation.Thickness = _thickness;
+        if (_selectedAnnotation is NumberAnnotation number)
+        {
+            number.Radius = Math.Max(8, _thickness);
+            number.Thickness = 1.5;
+        }
+        else
+        {
+            _selectedAnnotation.Thickness = _thickness;
+        }
+
         _selectedAnnotation.Fill = _fill;
         _selectedAnnotation.CornerRadius = _corner;
         Editor.InvalidateVisual();
@@ -297,10 +317,10 @@ public partial class OverlayWindow : Window
         }
 
         BrightClip.Rect = new Rect(
-            _selection.X / _scale,
-            _selection.Y / _scale,
-            _selection.Width / _scale,
-            _selection.Height / _scale);
+            _selection.X / _scale - 1,
+            _selection.Y / _scale - 1,
+            _selection.Width / _scale + 2,
+            _selection.Height / _scale + 2);
 
         Editor.Selection = _selection;
         Editor.ShowSelectionChrome = true;
@@ -466,6 +486,14 @@ public partial class OverlayWindow : Window
             }
         }
 
+        if (_selectedAnnotation != null && (_tool == AnnotationTool.Select || _tool == AnnotationTool.None) &&
+            TryBeginAnnotationTransform(point))
+        {
+            InputLayer.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
         if (_tool == AnnotationTool.Select || _tool == AnnotationTool.None)
         {
             var hit = HitAnnotation(point);
@@ -474,6 +502,8 @@ public partial class OverlayWindow : Window
                 SelectAnnotation(hit);
                 _draggingAnnotation = true;
                 _lastAnnotationPoint = point;
+                _annotationStartBounds = hit.Bounds;
+                _annotationScaleStartPoint = point;
                 InputLayer.CaptureMouse();
                 e.Handled = true;
                 return;
@@ -575,6 +605,14 @@ public partial class OverlayWindow : Window
             Magnifier.Visibility = Visibility.Collapsed;
         }
 
+        if (_creatingRotate && _active != null)
+        {
+            var angle = Math.Atan2(point.Y - _creatingRotateCenter.Y, point.X - _creatingRotateCenter.X) * 180 / Math.PI;
+            _active.Rotation = angle - _creatingRotateStartAngle;
+            Editor.InvalidateVisual();
+            return;
+        }
+
         if (_spaceAnnotation && _active != null)
         {
             var dx = point.X - _spaceAnnotationAnchor.X;
@@ -619,8 +657,40 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (_rotatingAnnotation && _selectedAnnotation != null)
+        {
+            var angle = Math.Atan2(point.Y - _annotationCenter.Y, point.X - _annotationCenter.X) * 180 / Math.PI;
+            _selectedAnnotation.Rotation = _annotationStartRotation + angle - _annotationRotateStartAngle;
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        if (_resizingAnnotation && _selectedAnnotation != null)
+        {
+            var local = AnnotationEditor.RotatePoint(point, _annotationCenter, -_selectedAnnotation.Rotation);
+            var resized = ResizeBounds(_annotationStartBounds, _annotationHandle, local);
+            ResizeAnnotation(_selectedAnnotation, resized);
+            Editor.InvalidateVisual();
+            return;
+        }
+
         if (_draggingAnnotation && _selectedAnnotation != null)
         {
+            if (Keyboard.IsKeyDown(Key.R))
+            {
+                var center = new Point(
+                    _annotationStartBounds.X + _annotationStartBounds.Width / 2,
+                    _annotationStartBounds.Y + _annotationStartBounds.Height / 2);
+                var startDistance = (_annotationScaleStartPoint - center).Length;
+                if (startDistance > 1)
+                {
+                    var factor = Math.Max(0.1, (point - center).Length / startDistance);
+                    ResizeAnnotation(_selectedAnnotation, ScaleRect(_annotationStartBounds, center, factor));
+                    Editor.InvalidateVisual();
+                    return;
+                }
+            }
+
             var dx = point.X - _lastAnnotationPoint.X;
             var dy = point.Y - _lastAnnotationPoint.Y;
             if (Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01)
@@ -703,6 +773,23 @@ public partial class OverlayWindow : Window
         }
     }
 
+    private void Input_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_active == null)
+        {
+            return;
+        }
+
+        Editor.Preview = null;
+        _active = null;
+        _dragging = false;
+        _spaceAnnotation = false;
+        _spaceDrag = false;
+        InputLayer.ReleaseMouseCapture();
+        Editor.InvalidateVisual();
+        e.Handled = true;
+    }
+
     private void Input_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (_closed)
@@ -714,6 +801,8 @@ public partial class OverlayWindow : Window
         _dragging = false;
         _spaceDrag = false;
         _spaceAnnotation = false;
+        _resizingAnnotation = false;
+        _rotatingAnnotation = false;
 
         if (_erasing)
         {
@@ -796,14 +885,28 @@ public partial class OverlayWindow : Window
         ClearAnnotationHover();
     }
 
-    private Annotation? HitAnnotation(Point point)
+    private Annotation? HitAnnotation(Point point, bool includePen = false)
     {
         var tolerance = 7 / _scale;
         for (var i = Editor.Items.Count - 1; i >= 0; i--)
         {
-            if (Editor.Items[i].HitTest(point, tolerance))
+            if (!includePen && Editor.Items[i] is PenAnnotation)
             {
-                return Editor.Items[i];
+                continue;
+            }
+
+            var testPoint = point;
+            var annotation = Editor.Items[i];
+            if (Math.Abs(annotation.Rotation) > 0.01)
+            {
+                var bounds = annotation.Bounds;
+                var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+                testPoint = AnnotationEditor.RotatePoint(point, center, -annotation.Rotation);
+            }
+
+            if (annotation.HitTest(testPoint, tolerance))
+            {
+                return annotation;
             }
         }
 
@@ -817,11 +920,11 @@ public partial class OverlayWindow : Window
         Toolbar.SetTool(AnnotationTool.Select);
         Toolbar.SetSelection(annotation);
         Toolbar.SetColor(annotation.Color);
-        Toolbar.SetThickness(annotation.Thickness);
+        Toolbar.SetThickness(annotation is NumberAnnotation number ? number.Radius : annotation.Thickness);
         Toolbar.SetFill(annotation.Fill);
         Toolbar.SetCorner(annotation.CornerRadius);
         _color = annotation.Color;
-        _thickness = annotation.Thickness;
+        _thickness = annotation is NumberAnnotation n ? n.Radius : annotation.Thickness;
         _fill = annotation.Fill;
         _corner = annotation.CornerRadius;
         Editor.Selected = annotation;
@@ -915,6 +1018,133 @@ public partial class OverlayWindow : Window
         Editor.InvalidateVisual();
     }
 
+    private bool TryBeginAnnotationTransform(Point point)
+    {
+        if (_selectedAnnotation == null)
+        {
+            return false;
+        }
+
+        var bounds = _selectedAnnotation.Bounds;
+        var frame = AnnotationEditor.SelectionFrame(bounds, 1 / _scale);
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var local = AnnotationEditor.RotatePoint(point, center, -_selectedAnnotation.Rotation);
+
+        if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 / _scale)
+        {
+            _rotatingAnnotation = true;
+            _annotationCenter = center;
+            _annotationStartRotation = _selectedAnnotation.Rotation;
+            _annotationRotateStartAngle = Math.Atan2(point.Y - center.Y, point.X - center.X) * 180 / Math.PI;
+            return true;
+        }
+
+        var handles = AnnotationEditor.HandleCenters(frame);
+        var tolerance = 10 / _scale;
+        for (var i = 0; i < handles.Length; i++)
+        {
+            if ((local - handles[i]).Length <= tolerance)
+            {
+                _resizingAnnotation = true;
+                _annotationHandle = i;
+                _annotationStartBounds = bounds;
+                _annotationCenter = center;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Rect ResizeBounds(Rect original, int handle, Point point)
+    {
+        var left = original.Left;
+        var top = original.Top;
+        var right = original.Right;
+        var bottom = original.Bottom;
+
+        switch (handle)
+        {
+            case 0: left = point.X; top = point.Y; break;
+            case 1: top = point.Y; break;
+            case 2: right = point.X; top = point.Y; break;
+            case 3: right = point.X; break;
+            case 4: right = point.X; bottom = point.Y; break;
+            case 5: bottom = point.Y; break;
+            case 6: left = point.X; bottom = point.Y; break;
+            case 7: left = point.X; break;
+        }
+
+        var rect = new Rect(
+            Math.Min(left, right), Math.Min(top, bottom),
+            Math.Max(8, Math.Abs(right - left)), Math.Max(8, Math.Abs(bottom - top)));
+        return rect;
+    }
+
+    private void ResizeAnnotation(Annotation annotation, Rect target)
+    {
+        var source = annotation.Bounds;
+        switch (annotation)
+        {
+            case RectAnnotation rect:
+                rect.Rect = target;
+                break;
+            case EllipseAnnotation ellipse:
+                ellipse.Rect = target;
+                break;
+            case MosaicAnnotation mosaic:
+                mosaic.Rect = target;
+                mosaic.Pattern = MosaicBuilder.Build(
+                    _screen, target, Math.Clamp((int)Math.Round(mosaic.Thickness), 8, 40));
+                break;
+            case WatermarkAnnotation watermark:
+                watermark.Rect = target;
+                break;
+            case LineAnnotation line:
+                line.Start = MapShapePoint(line.Start, source, target);
+                line.End = MapShapePoint(line.End, source, target);
+                break;
+            case ArrowAnnotation arrow:
+                arrow.Start = MapShapePoint(arrow.Start, source, target);
+                arrow.End = MapShapePoint(arrow.End, source, target);
+                break;
+            case TextAnnotation text:
+                text.Position = MapPoint(text.Position, source, target);
+                text.FontSize = Math.Max(8, text.FontSize * Math.Min(target.Width / Math.Max(1, source.Width),
+                    target.Height / Math.Max(1, source.Height)));
+                break;
+            case NumberAnnotation number:
+                number.Center = MapPoint(number.Center, source, target);
+                number.Radius = Math.Max(8, Math.Min(target.Width, target.Height) / 2);
+                break;
+        }
+    }
+
+    private static Point MapPoint(Point point, Rect source, Rect target)
+    {
+        var x = source.Width < 0.01 ? target.Left : target.Left + (point.X - source.Left) * target.Width / source.Width;
+        var y = source.Height < 0.01 ? target.Top : target.Top + (point.Y - source.Top) * target.Height / source.Height;
+        return new Point(x, y);
+    }
+
+    private static Rect ScaleRect(Rect rect, Point center, double factor)
+    {
+        var width = Math.Max(8, rect.Width * factor);
+        var height = Math.Max(8, rect.Height * factor);
+        return new Rect(center.X - width / 2, center.Y - height / 2, width, height);
+    }
+
+    private static Point MapShapePoint(Point point, Rect source, Rect target)
+    {
+        var sourceCenter = new Point(source.X + source.Width / 2, source.Y + source.Height / 2);
+        var targetCenter = new Point(target.X + target.Width / 2, target.Y + target.Height / 2);
+        var sx = source.Width > 1 ? target.Width / source.Width : 1;
+        var sy = source.Height > 1 ? target.Height / source.Height : 1;
+        return new Point(
+            targetCenter.X + (point.X - sourceCenter.X) * sx,
+            targetCenter.Y + (point.Y - sourceCenter.Y) * sy);
+    }
+
     private void ClearAnnotationSelection()
     {
         if (_selectedAnnotation == null && Editor.Selected == null)
@@ -924,6 +1154,8 @@ public partial class OverlayWindow : Window
 
         _selectedAnnotation = null;
         Editor.Selected = null;
+        _resizingAnnotation = false;
+        _rotatingAnnotation = false;
         if (Toolbar != null)
         {
             Toolbar.SetSelection(null);
@@ -951,7 +1183,7 @@ public partial class OverlayWindow : Window
 
     private void EraseAt(Point point)
     {
-        var hit = HitAnnotation(point);
+        var hit = HitAnnotation(point, includePen: true);
         if (hit == null)
         {
             return;
@@ -1202,7 +1434,7 @@ public partial class OverlayWindow : Window
                 {
                     Rect = new Rect(point, point),
                     Color = _color,
-                    Thickness = _thickness
+                    Thickness = Math.Max(8, _thickness)
                 };
                 break;
 
@@ -1226,8 +1458,8 @@ public partial class OverlayWindow : Window
                     Center = point,
                     Number = _numberCounter,
                     Color = _color,
-                    Thickness = _thickness,
-                    Radius = Math.Max(13, _thickness * 4.5)
+                    Thickness = 1.5,
+                    Radius = Math.Max(10, _thickness)
                 };
                 break;
         }
@@ -1249,6 +1481,11 @@ public partial class OverlayWindow : Window
                 }
 
                 rect.Rect = ClampToScreen(bounds);
+                if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+                {
+                    rect.CornerRadius = Math.Min(rect.Rect.Width, rect.Rect.Height) * 0.25;
+                }
+
                 break;
             }
 
@@ -1340,7 +1577,7 @@ public partial class OverlayWindow : Window
                 return;
             }
 
-            mosaic.Pattern = MosaicBuilder.Build(_screen, mosaic.Rect);
+            mosaic.Pattern = MosaicBuilder.Build(_screen, mosaic.Rect, Math.Clamp((int)Math.Round(mosaic.Thickness), 8, 40));
             if (mosaic.Pattern == null)
             {
                 Editor.InvalidateVisual();
@@ -1433,6 +1670,24 @@ public partial class OverlayWindow : Window
 
         var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+
+        if (e.Key == Key.Space && _spaceAnnotation)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.E && _active != null && _active is not PenAnnotation && !_creatingRotate)
+        {
+            var bounds = _active.Bounds;
+            _creatingRotateCenter = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            var cursor = Native.CursorPosition();
+            var point = new Point(cursor.X - _bounds.X, cursor.Y - _bounds.Y);
+            _creatingRotateStartAngle = Math.Atan2(point.Y - _creatingRotateCenter.Y, point.X - _creatingRotateCenter.X) * 180 / Math.PI;
+            _creatingRotate = true;
+            e.Handled = true;
+            return;
+        }
 
         if (e.Key == Key.Space && _dragging && _active != null && !_spaceAnnotation)
         {
@@ -1709,6 +1964,11 @@ public partial class OverlayWindow : Window
             e.Handled = true;
         }
 
+        if (e.Key == Key.E)
+        {
+            _creatingRotate = false;
+        }
+
         if (e.Key == Key.Space && _spaceDrag)
         {
             _spaceDrag = false;
@@ -1770,7 +2030,7 @@ public partial class OverlayWindow : Window
             annotation is RectAnnotation or EllipseAnnotation,
         AnnotationTool.Line or AnnotationTool.Arrow =>
             annotation is LineAnnotation or ArrowAnnotation,
-        AnnotationTool.Pen or AnnotationTool.Highlighter => annotation is PenAnnotation,
+        AnnotationTool.Pen or AnnotationTool.Highlighter => false,
         AnnotationTool.Mosaic or AnnotationTool.Watermark =>
             annotation is MosaicAnnotation or WatermarkAnnotation,
         AnnotationTool.Text => annotation is TextAnnotation,

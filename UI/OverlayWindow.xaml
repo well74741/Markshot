@@ -34,6 +34,7 @@
                    MouseLeftButtonDown="Input_MouseLeftButtonDown"
                    MouseMove="Input_MouseMove"
                    MouseLeftButtonUp="Input_MouseLeftButtonUp"
+                   MouseRightButtonDown="Input_MouseRightButtonDown"
                    MouseWheel="Input_MouseWheel"
                    MouseLeave="Input_MouseLeave" />
 

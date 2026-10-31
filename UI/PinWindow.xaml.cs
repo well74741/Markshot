@@ -8,6 +8,7 @@ namespace Markshot.UI;
 public partial class PinWindow : Window
 {
     private readonly Stack<Annotation> _redo = new();
+    private BitmapSource _baseImage;
 
     private int _pixelWidth;
     private int _pixelHeight;
@@ -32,9 +33,20 @@ public partial class PinWindow : Window
     private Point _lastPoint;
     private bool _movingSelected;
     private bool _erasing;
+    private bool _resizingAnnotation;
+    private bool _rotatingAnnotation;
+    private int _annotationHandle = -1;
+    private Rect _annotationStartBounds;
+    private Point _annotationCenter;
+    private Point _annotationScaleStartPoint;
+    private double _annotationStartRotation;
+    private double _annotationRotateStartAngle;
     private bool _spaceAnnotation;
     private Point _spaceAnnotationAnchor;
     private Point _spaceAnnotationDelta;
+    private bool _creatingRotate;
+    private Point _creatingRotateCenter;
+    private double _creatingRotateStartAngle;
     private bool _textActive;
     private Point _textPosition;
     private int _number = 1;
@@ -50,6 +62,7 @@ public partial class PinWindow : Window
         InitializeComponent();
 
         SourceImage = image;
+        _baseImage = image;
         Img.Source = image;
         _pixelWidth = image.PixelWidth;
         _pixelHeight = image.PixelHeight;
@@ -86,6 +99,7 @@ public partial class PinWindow : Window
     public void ReplaceImage(BitmapSource image)
     {
         SourceImage = image;
+        _baseImage = image;
         Img.Source = image;
         _pixelWidth = image.PixelWidth;
         _pixelHeight = image.PixelHeight;
@@ -159,7 +173,16 @@ public partial class PinWindow : Window
         }
 
         _selected.Color = _color;
-        _selected.Thickness = _thickness;
+        if (_selected is NumberAnnotation number)
+        {
+            number.Radius = Math.Max(8, _thickness);
+            number.Thickness = 1.5;
+        }
+        else
+        {
+            _selected.Thickness = _thickness;
+        }
+
         _selected.Fill = _fill;
         _selected.CornerRadius = _corner;
         Editor.InvalidateVisual();
@@ -350,12 +373,21 @@ public partial class PinWindow : Window
         if (_editMode && (_tool == AnnotationTool.None || _tool == AnnotationTool.Select))
         {
             var point = ToPixels(e.GetPosition(ImageHost));
+            if (_selected != null && TryBeginAnnotationTransform(point))
+            {
+                CaptureMouse();
+                e.Handled = true;
+                return;
+            }
+
             var hit = HitAnnotation(point);
             if (hit != null)
             {
                 SelectAnnotation(hit);
                 _movingSelected = true;
                 _lastPoint = point;
+                _annotationStartBounds = hit.Bounds;
+                _annotationScaleStartPoint = point;
                 CaptureMouse();
                 e.Handled = true;
                 return;
@@ -374,8 +406,43 @@ public partial class PinWindow : Window
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
+        if (_rotatingAnnotation && _selected != null)
+        {
+            var point = ToPixels(e.GetPosition(ImageHost));
+            var angle = Math.Atan2(point.Y - _annotationCenter.Y, point.X - _annotationCenter.X) * 180 / Math.PI;
+            _selected.Rotation = _annotationStartRotation + angle - _annotationRotateStartAngle;
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        if (_resizingAnnotation && _selected != null)
+        {
+            var point = ToPixels(e.GetPosition(ImageHost));
+            var local = AnnotationEditor.RotatePoint(point, _annotationCenter, -_selected.Rotation);
+            var resized = ResizeBounds(_annotationStartBounds, _annotationHandle, local);
+            ResizeAnnotation(_selected, resized);
+            Editor.InvalidateVisual();
+            return;
+        }
+
         if (_movingSelected && _selected != null)
         {
+            if (Keyboard.IsKeyDown(Key.R))
+            {
+                var center = new Point(
+                    _annotationStartBounds.X + _annotationStartBounds.Width / 2,
+                    _annotationStartBounds.Y + _annotationStartBounds.Height / 2);
+                var startDistance = (_annotationScaleStartPoint - center).Length;
+                if (startDistance > 1)
+                {
+                    var scalePoint = ToPixels(e.GetPosition(ImageHost));
+                    var factor = Math.Max(0.1, (scalePoint - center).Length / startDistance);
+                    ResizeAnnotation(_selected, ScaleRect(_annotationStartBounds, center, factor));
+                    Editor.InvalidateVisual();
+                    return;
+                }
+            }
+
             var point = ToPixels(e.GetPosition(ImageHost));
             var dx = point.X - _lastPoint.X;
             var dy = point.Y - _lastPoint.Y;
@@ -402,6 +469,8 @@ public partial class PinWindow : Window
 
     private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        _resizingAnnotation = false;
+        _rotatingAnnotation = false;
         if (_movingSelected)
         {
             _movingSelected = false;
@@ -507,8 +576,8 @@ public partial class PinWindow : Window
         TextEditor.Visibility = Visibility.Collapsed;
         Editor.Preview = null;
         Editor.Selected = null;
-        Editor.Items.Clear();
-        Editor.Source = SourceImage;
+        Editor.Source = _baseImage;
+        Img.Source = _baseImage;
         Editor.Scale = 1.0 / _zoom;
         Editor.Visibility = Visibility.Visible;
         InputLayer.Visibility = Visibility.Visible;
@@ -544,7 +613,6 @@ public partial class PinWindow : Window
         TextEditor.Visibility = Visibility.Collapsed;
         Editor.Preview = null;
         Editor.Selected = null;
-        Editor.Items.Clear();
         Editor.Visibility = Visibility.Collapsed;
         InputLayer.Visibility = Visibility.Collapsed;
         Toolbar.Visibility = Visibility.Collapsed;
@@ -557,13 +625,13 @@ public partial class PinWindow : Window
     {
         if (Editor.Items.Count == 0)
         {
-            return SourceImage;
+            return _baseImage;
         }
 
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
-            dc.DrawImage(SourceImage, new Rect(0, 0, SourceImage.PixelWidth, SourceImage.PixelHeight));
+            dc.DrawImage(_baseImage, new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight));
             foreach (var annotation in Editor.Items)
             {
                 annotation.Draw(dc);
@@ -571,7 +639,7 @@ public partial class PinWindow : Window
         }
 
         var bitmap = new RenderTargetBitmap(
-            SourceImage.PixelWidth, SourceImage.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+            _baseImage.PixelWidth, _baseImage.PixelHeight, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(visual);
         bitmap.Freeze();
         return bitmap;
@@ -641,12 +709,34 @@ public partial class PinWindow : Window
             _spaceAnnotation = false;
             e.Handled = true;
         }
+
+        if (e.Key == Key.E)
+        {
+            _creatingRotate = false;
+        }
     }
 
     private void OnEditKeyDown(KeyEventArgs e)
     {
         var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+
+        if (e.Key == Key.Space && _spaceAnnotation)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.E && _active != null && _active is not PenAnnotation && !_creatingRotate)
+        {
+            var bounds = _active.Bounds;
+            _creatingRotateCenter = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            var point = ToPixels(Mouse.GetPosition(InputLayer));
+            _creatingRotateStartAngle = Math.Atan2(point.Y - _creatingRotateCenter.Y, point.X - _creatingRotateCenter.X) * 180 / Math.PI;
+            _creatingRotate = true;
+            e.Handled = true;
+            return;
+        }
 
         if (e.Key == Key.Space && _active != null && !_spaceAnnotation)
         {
@@ -867,6 +957,14 @@ public partial class PinWindow : Window
     {
         var point = ToPixels(e.GetPosition(InputLayer));
 
+        if (_creatingRotate && _active != null)
+        {
+            var angle = Math.Atan2(point.Y - _creatingRotateCenter.Y, point.X - _creatingRotateCenter.X) * 180 / Math.PI;
+            _active.Rotation = angle - _creatingRotateStartAngle;
+            Editor.InvalidateVisual();
+            return;
+        }
+
         if (_spaceAnnotation && _active != null)
         {
             var dx = point.X - _spaceAnnotationAnchor.X;
@@ -908,6 +1006,21 @@ public partial class PinWindow : Window
 
         UpdateCursor(point);
         UpdateAnnotationHover(point);
+    }
+
+    private void Input_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_active == null)
+        {
+            return;
+        }
+
+        Editor.Preview = null;
+        _active = null;
+        _spaceAnnotation = false;
+        InputLayer.ReleaseMouseCapture();
+        Editor.InvalidateVisual();
+        e.Handled = true;
     }
 
     private void Input_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -956,7 +1069,7 @@ public partial class PinWindow : Window
             },
             AnnotationTool.Mosaic => new MosaicAnnotation
             {
-                Rect = new Rect(point, point), Color = _color, Thickness = _thickness
+                Rect = new Rect(point, point), Color = _color, Thickness = Math.Max(8, _thickness)
             },
             AnnotationTool.Watermark => new WatermarkAnnotation
             {
@@ -964,8 +1077,8 @@ public partial class PinWindow : Window
             },
             AnnotationTool.Number => new NumberAnnotation
             {
-                Center = point, Number = _number, Color = _color, Thickness = _thickness,
-                Radius = Math.Max(13, _thickness * 4.5)
+                Center = point, Number = _number, Color = _color, Thickness = 1.5,
+                Radius = Math.Max(10, _thickness)
             },
             _ => null
         };
@@ -998,6 +1111,11 @@ public partial class PinWindow : Window
         {
             case RectAnnotation rect:
                 rect.Rect = Clamp(ConstrainSquare(_annotationStart, point, _tool == AnnotationTool.Rectangle));
+                if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+                {
+                    rect.CornerRadius = Math.Min(rect.Rect.Width, rect.Rect.Height) * 0.25;
+                }
+
                 break;
             case EllipseAnnotation ellipse:
                 ellipse.Rect = Clamp(ConstrainSquare(_annotationStart, point, true));
@@ -1053,7 +1171,7 @@ public partial class PinWindow : Window
 
         if (annotation is MosaicAnnotation mosaic)
         {
-            mosaic.Pattern = MosaicBuilder.Build(SourceImage, mosaic.Rect);
+            mosaic.Pattern = MosaicBuilder.Build(SourceImage, mosaic.Rect, Math.Clamp((int)Math.Round(mosaic.Thickness), 8, 40));
             if (mosaic.Pattern == null)
             {
                 Editor.InvalidateVisual();
@@ -1135,14 +1253,28 @@ public partial class PinWindow : Window
         }
     }
 
-    private Annotation? HitAnnotation(Point point)
+    private Annotation? HitAnnotation(Point point, bool includePen = false)
     {
         var tolerance = 7 / (1.0 / _zoom);
         for (var i = Editor.Items.Count - 1; i >= 0; i--)
         {
-            if (Editor.Items[i].HitTest(point, tolerance))
+            if (!includePen && Editor.Items[i] is PenAnnotation)
             {
-                return Editor.Items[i];
+                continue;
+            }
+
+            var annotation = Editor.Items[i];
+            var testPoint = point;
+            if (Math.Abs(annotation.Rotation) > 0.01)
+            {
+                var bounds = annotation.Bounds;
+                var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+                testPoint = AnnotationEditor.RotatePoint(point, center, -annotation.Rotation);
+            }
+
+            if (annotation.HitTest(testPoint, tolerance))
+            {
+                return annotation;
             }
         }
 
@@ -1156,11 +1288,11 @@ public partial class PinWindow : Window
         Toolbar.SetTool(AnnotationTool.None);
         Toolbar.SetSelection(annotation);
         Toolbar.SetColor(annotation.Color);
-        Toolbar.SetThickness(annotation.Thickness);
+        Toolbar.SetThickness(annotation is NumberAnnotation number ? number.Radius : annotation.Thickness);
         Toolbar.SetFill(annotation.Fill);
         Toolbar.SetCorner(annotation.CornerRadius);
         _color = annotation.Color;
-        _thickness = annotation.Thickness;
+        _thickness = annotation is NumberAnnotation n ? n.Radius : annotation.Thickness;
         _fill = annotation.Fill;
         _corner = annotation.CornerRadius;
         InputLayer.IsHitTestVisible = false;
@@ -1170,10 +1302,139 @@ public partial class PinWindow : Window
         Editor.InvalidateVisual();
     }
 
+    private bool TryBeginAnnotationTransform(Point point)
+    {
+        if (_selected == null)
+        {
+            return false;
+        }
+
+        var bounds = _selected.Bounds;
+        var scale = 1.0 / _zoom;
+        var frame = AnnotationEditor.SelectionFrame(bounds, scale);
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var local = AnnotationEditor.RotatePoint(point, center, -_selected.Rotation);
+
+        if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 * scale)
+        {
+            _rotatingAnnotation = true;
+            _annotationCenter = center;
+            _annotationStartRotation = _selected.Rotation;
+            _annotationRotateStartAngle = Math.Atan2(point.Y - center.Y, point.X - center.X) * 180 / Math.PI;
+            return true;
+        }
+
+        var handles = AnnotationEditor.HandleCenters(frame);
+        var tolerance = 10 * scale;
+        for (var i = 0; i < handles.Length; i++)
+        {
+            if ((local - handles[i]).Length <= tolerance)
+            {
+                _resizingAnnotation = true;
+                _annotationHandle = i;
+                _annotationStartBounds = bounds;
+                _annotationCenter = center;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Rect ResizeBounds(Rect original, int handle, Point point)
+    {
+        var left = original.Left;
+        var top = original.Top;
+        var right = original.Right;
+        var bottom = original.Bottom;
+
+        switch (handle)
+        {
+            case 0: left = point.X; top = point.Y; break;
+            case 1: top = point.Y; break;
+            case 2: right = point.X; top = point.Y; break;
+            case 3: right = point.X; break;
+            case 4: right = point.X; bottom = point.Y; break;
+            case 5: bottom = point.Y; break;
+            case 6: left = point.X; bottom = point.Y; break;
+            case 7: left = point.X; break;
+        }
+
+        return new Rect(
+            Math.Min(left, right), Math.Min(top, bottom),
+            Math.Max(8, Math.Abs(right - left)), Math.Max(8, Math.Abs(bottom - top)));
+    }
+
+    private void ResizeAnnotation(Annotation annotation, Rect target)
+    {
+        var source = annotation.Bounds;
+        switch (annotation)
+        {
+            case RectAnnotation rect:
+                rect.Rect = target;
+                break;
+            case EllipseAnnotation ellipse:
+                ellipse.Rect = target;
+                break;
+            case MosaicAnnotation mosaic:
+                mosaic.Rect = target;
+                mosaic.Pattern = MosaicBuilder.Build(
+                    _baseImage, target, Math.Clamp((int)Math.Round(mosaic.Thickness), 8, 40));
+                break;
+            case WatermarkAnnotation watermark:
+                watermark.Rect = target;
+                break;
+            case LineAnnotation line:
+                line.Start = MapShapePoint(line.Start, source, target);
+                line.End = MapShapePoint(line.End, source, target);
+                break;
+            case ArrowAnnotation arrow:
+                arrow.Start = MapShapePoint(arrow.Start, source, target);
+                arrow.End = MapShapePoint(arrow.End, source, target);
+                break;
+            case TextAnnotation text:
+                text.Position = MapPoint(text.Position, source, target);
+                text.FontSize = Math.Max(8, text.FontSize * Math.Min(target.Width / Math.Max(1, source.Width),
+                    target.Height / Math.Max(1, source.Height)));
+                break;
+            case NumberAnnotation number:
+                number.Center = MapPoint(number.Center, source, target);
+                number.Radius = Math.Max(8, Math.Min(target.Width, target.Height) / 2);
+                break;
+        }
+    }
+
+    private static Point MapPoint(Point point, Rect source, Rect target)
+    {
+        var x = source.Width < 0.01 ? target.Left : target.Left + (point.X - source.Left) * target.Width / source.Width;
+        var y = source.Height < 0.01 ? target.Top : target.Top + (point.Y - source.Top) * target.Height / source.Height;
+        return new Point(x, y);
+    }
+
+    private static Rect ScaleRect(Rect rect, Point center, double factor)
+    {
+        var width = Math.Max(8, rect.Width * factor);
+        var height = Math.Max(8, rect.Height * factor);
+        return new Rect(center.X - width / 2, center.Y - height / 2, width, height);
+    }
+
+    private static Point MapShapePoint(Point point, Rect source, Rect target)
+    {
+        var sourceCenter = new Point(source.X + source.Width / 2, source.Y + source.Height / 2);
+        var targetCenter = new Point(target.X + target.Width / 2, target.Y + target.Height / 2);
+        var sx = source.Width > 1 ? target.Width / source.Width : 1;
+        var sy = source.Height > 1 ? target.Height / source.Height : 1;
+        return new Point(
+            targetCenter.X + (point.X - sourceCenter.X) * sx,
+            targetCenter.Y + (point.Y - sourceCenter.Y) * sy);
+    }
+
     private void ClearSelection()
     {
         _selected = null;
         Editor.Selected = null;
+        _resizingAnnotation = false;
+        _rotatingAnnotation = false;
         if (Toolbar != null)
         {
             Toolbar.SetSelection(null);
@@ -1185,7 +1446,7 @@ public partial class PinWindow : Window
 
     private void EraseAt(Point point)
     {
-        var hit = HitAnnotation(point);
+        var hit = HitAnnotation(point, includePen: true);
         if (hit == null)
         {
             return;
@@ -1258,7 +1519,7 @@ public partial class PinWindow : Window
             annotation is RectAnnotation or EllipseAnnotation,
         AnnotationTool.Line or AnnotationTool.Arrow =>
             annotation is LineAnnotation or ArrowAnnotation,
-        AnnotationTool.Pen or AnnotationTool.Highlighter => annotation is PenAnnotation,
+        AnnotationTool.Pen or AnnotationTool.Highlighter => false,
         AnnotationTool.Mosaic or AnnotationTool.Watermark =>
             annotation is MosaicAnnotation or WatermarkAnnotation,
         AnnotationTool.Text => annotation is TextAnnotation,
