@@ -67,6 +67,96 @@ public readonly record struct HotkeyGesture(uint Modifiers, uint VirtualKey, str
         return true;
     }
 
+    public static bool TryFormat(Key key, ModifierKeys modifiers, out string text)
+    {
+        var keyName = GetKeyName(key);
+        if (keyName == null)
+        {
+            text = string.Empty;
+            return false;
+        }
+
+        var parts = new List<string>();
+        if ((modifiers & ModifierKeys.Control) != 0)
+        {
+            parts.Add("Ctrl");
+        }
+
+        if ((modifiers & ModifierKeys.Alt) != 0)
+        {
+            parts.Add("Alt");
+        }
+
+        if ((modifiers & ModifierKeys.Shift) != 0)
+        {
+            parts.Add("Shift");
+        }
+
+        if ((modifiers & ModifierKeys.Windows) != 0)
+        {
+            parts.Add("Win");
+        }
+
+        parts.Add(keyName);
+        text = string.Join("+", parts);
+        return true;
+    }
+
+    private static string? GetKeyName(Key key)
+    {
+        var value = (int)key;
+
+        if (value >= (int)Key.A && value <= (int)Key.Z)
+        {
+            return ((char)('A' + value - (int)Key.A)).ToString();
+        }
+
+        if (value >= (int)Key.D0 && value <= (int)Key.D9)
+        {
+            return ((char)('0' + value - (int)Key.D0)).ToString();
+        }
+
+        var name = key.ToString();
+
+        if (name.Length is 2 or 3 && name[0] == 'F' &&
+            int.TryParse(name.AsSpan(1), out var functionKey) &&
+            functionKey is >= 1 and <= 24)
+        {
+            return name;
+        }
+
+        if (name.StartsWith("NumPad", StringComparison.Ordinal))
+        {
+            return name;
+        }
+
+        return key switch
+        {
+            Key.Escape => "Esc",
+            Key.Space => "Space",
+            Key.Tab => "Tab",
+            Key.Enter => "Enter",
+            Key.Back => "Backspace",
+            Key.Delete => "Delete",
+            Key.Insert => "Insert",
+            Key.Home => "Home",
+            Key.End => "End",
+            Key.PageUp => "PageUp",
+            Key.PageDown => "PageDown",
+            Key.Up => "Up",
+            Key.Down => "Down",
+            Key.Left => "Left",
+            Key.Right => "Right",
+            Key.Snapshot => "PrintScreen",
+            Key.Multiply => "Multiply",
+            Key.Add => "Add",
+            Key.Subtract => "Subtract",
+            Key.Decimal => "Decimal",
+            Key.Divide => "Divide",
+            _ => null
+        };
+    }
+
     private static string Normalize(string text)
     {
         var parts = text.Split('+', StringSplitOptions.RemoveEmptyEntries)

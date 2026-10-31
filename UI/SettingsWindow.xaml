@@ -28,17 +28,29 @@
 
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="截图" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="CaptureHotkeyBox" Style="{StaticResource InputBox}" />
+                        <TextBox x:Name="CaptureHotkeyBox" Style="{StaticResource InputBox}"
+                                 IsReadOnly="True" Cursor="Hand"
+                                 GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
+                                 PreviewKeyDown="HotkeyBox_PreviewKeyDown"
+                                 ToolTip="点击后直接按下组合键；Backspace 清除，Esc 取消" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="2">
                         <TextBlock Text="贴图剪贴板" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="PinHotkeyBox" Style="{StaticResource InputBox}" />
+                        <TextBox x:Name="PinHotkeyBox" Style="{StaticResource InputBox}"
+                                 IsReadOnly="True" Cursor="Hand"
+                                 GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
+                                 PreviewKeyDown="HotkeyBox_PreviewKeyDown"
+                                 ToolTip="点击后直接按下组合键；Backspace 清除，Esc 取消" />
                     </StackPanel>
                 </Grid>
 
-                <TextBlock Text="格式示例：F1、Ctrl+1、Ctrl+Shift+S。保存后立即生效。"
-                           Foreground="#8A8A8A" FontSize="12" Margin="0,8,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <CheckBox x:Name="ManualHotkeyCheck" Content="手动输入" Foreground="#8A8A8A" FontSize="12"
+                              VerticalAlignment="Center" Checked="ManualHotkey_Changed" Unchecked="ManualHotkey_Changed" />
+                    <TextBlock Text="  点击输入框后直接按下组合键；Backspace 清除，Esc 取消。捕获不到时可勾选左侧手动键入。"
+                               Foreground="#8A8A8A" FontSize="12" VerticalAlignment="Center" />
+                </StackPanel>
 
                 <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
 

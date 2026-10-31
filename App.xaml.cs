@@ -272,12 +272,23 @@ public partial class App : Application
     public void ShowSettings()
     {
         var dialog = new SettingsWindow(Config);
-        if (dialog.ShowDialog() == true)
+
+        // Suspend global hotkeys so pressing F1 inside the recorder updates the
+        // field instead of opening the capture overlay.
+        _hotkeys?.UnregisterAll();
+
+        try
         {
-            Config.Save();
+            if (dialog.ShowDialog() == true)
+            {
+                Config.Save();
+                _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {Config.PinHotkey} 贴图");
+                _tray?.ShowBalloon("设置已保存", "快捷键与翻译配置已更新。");
+            }
+        }
+        finally
+        {
             ApplyHotkeys();
-            _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {Config.PinHotkey} 贴图");
-            _tray?.ShowBalloon("设置已保存", "快捷键与翻译配置已更新。");
         }
     }
 

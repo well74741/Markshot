@@ -26,8 +26,128 @@ public partial class SettingsWindow : Window
         TargetBox.Text = config.Translation.TargetLanguage;
         TimeoutBox.Text = config.Translation.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
 
+        Loaded += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            CaptureHotkeyBox.Focus();
+            CaptureHotkeyBox.SelectAll();
+        }), DispatcherPriority.Input);
+
         OcrHintText.Text =
             "内置 PP-OCRv5 模型，本地识别中英混排。留空使用中文模型；填 en 切换到英文专用模型。";
+    }
+
+    private void HotkeyBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is TextBox box && ManualHotkeyCheck.IsChecked != true)
+        {
+            box.Tag = box.Text;
+            box.SelectAll();
+        }
+    }
+
+    private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (ManualHotkeyCheck.IsChecked == true)
+        {
+            return;
+        }
+
+        if (sender is not TextBox box)
+        {
+            return;
+        }
+
+        // Alt combinations arrive as Key.System; the real key is in SystemKey.
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        e.Handled = HandleHotkeyKey(box, key, Keyboard.Modifiers);
+    }
+
+    private bool HandleHotkeyKey(TextBox box, Key key, ModifierKeys modifiers)
+    {
+        if (IsModifierKey(key))
+        {
+            box.Text = FormatModifierPreview(modifiers);
+            return true;
+        }
+
+        if (key == Key.Escape)
+        {
+            box.Text = box.Tag as string ?? box.Text;
+            return true;
+        }
+
+        if (key is Key.Back or Key.Delete)
+        {
+            box.Text = string.Empty;
+            return true;
+        }
+
+        // Let Tab navigate and let a bare Enter trigger the default Save button.
+        if (key == Key.Tab && modifiers == ModifierKeys.None)
+        {
+            return false;
+        }
+
+        if (key == Key.Enter && modifiers == ModifierKeys.None)
+        {
+            return false;
+        }
+
+        if (HotkeyGesture.TryFormat(key, modifiers, out var text))
+        {
+            box.Text = text;
+            box.CaretIndex = text.Length;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ManualHotkey_Changed(object sender, RoutedEventArgs e)
+    {
+        var manual = ManualHotkeyCheck.IsChecked == true;
+        CaptureHotkeyBox.IsReadOnly = !manual;
+        PinHotkeyBox.IsReadOnly = !manual;
+        CaptureHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
+        PinHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
+
+        if (manual)
+        {
+            CaptureHotkeyBox.Focus();
+            CaptureHotkeyBox.SelectAll();
+        }
+    }
+
+    private static bool IsModifierKey(Key key) => key is
+        Key.LeftCtrl or Key.RightCtrl or
+        Key.LeftAlt or Key.RightAlt or
+        Key.LeftShift or Key.RightShift or
+        Key.LWin or Key.RWin;
+
+    private static string FormatModifierPreview(ModifierKeys modifiers)
+    {
+        var parts = new List<string>();
+        if ((modifiers & ModifierKeys.Control) != 0)
+        {
+            parts.Add("Ctrl");
+        }
+
+        if ((modifiers & ModifierKeys.Alt) != 0)
+        {
+            parts.Add("Alt");
+        }
+
+        if ((modifiers & ModifierKeys.Shift) != 0)
+        {
+            parts.Add("Shift");
+        }
+
+        if ((modifiers & ModifierKeys.Windows) != 0)
+        {
+            parts.Add("Win");
+        }
+
+        return parts.Count == 0 ? "…" : string.Join("+", parts) + "+…";
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
