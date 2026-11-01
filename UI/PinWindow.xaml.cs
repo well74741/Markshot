@@ -46,6 +46,7 @@ public partial class PinWindow : Window
     private readonly BitmapSource _originalImage;
     private bool _suppressContextMenu;
     private bool _spaceAnnotation;
+    private bool _spaceExitGuard;
     private Point _spaceAnnotationAnchor;
     private Point _spaceAnnotationDelta;
     private bool _creatingRotate;
@@ -715,6 +716,11 @@ public partial class PinWindow : Window
             return;
         }
 
+        if (_active != null)
+        {
+            CommitAnnotation();
+        }
+
         CommitText();
         if (apply)
         {
@@ -859,6 +865,12 @@ public partial class PinWindow : Window
                 e.Handled = true;
                 break;
             case Key.Space:
+                if (_spaceExitGuard)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
                 EnterEditMode();
                 e.Handled = true;
                 break;
@@ -867,6 +879,11 @@ public partial class PinWindow : Window
 
     private void OnPreviewKeyUp(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Space)
+        {
+            _spaceExitGuard = false;
+        }
+
         if (e.Key == Key.Space && _spaceAnnotation)
         {
             _spaceAnnotation = false;
@@ -936,6 +953,12 @@ public partial class PinWindow : Window
 
         if (e.Key == Key.Space)
         {
+            _spaceExitGuard = true;
+            if (_active != null)
+            {
+                CommitAnnotation();
+            }
+
             ExitEditMode(true);
             e.Handled = true;
             return;

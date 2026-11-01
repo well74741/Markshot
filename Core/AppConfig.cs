@@ -85,8 +85,32 @@ public sealed class AppConfig
     public static string ConfigDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Markshot");
 
-    public static string ConfigPath =>
-        File.Exists(PortableConfigPath) ? PortableConfigPath : RoamingConfigPath;
+    public static string ConfigPath
+    {
+        get
+        {
+            if (File.Exists(PortableConfigPath))
+            {
+                return PortableConfigPath;
+            }
+
+            // During development the executable lives under bin/...; also look
+            // for the published portable config in a nearby publish folder.
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            for (var i = 0; i < 5 && directory != null; i++)
+            {
+                var candidate = Path.Combine(directory.FullName, "publish", "config.json");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                directory = directory.Parent;
+            }
+
+            return RoamingConfigPath;
+        }
+    }
 
     public static string PortableConfigPath => Path.Combine(AppContext.BaseDirectory, "config.json");
 
