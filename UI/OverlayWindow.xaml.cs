@@ -16,6 +16,8 @@ public enum CaptureAction
 
 public partial class OverlayWindow : Window
 {
+    private Annotation? _freshSelection;
+
     private enum DragMode
     {
         None,
@@ -622,7 +624,7 @@ public partial class OverlayWindow : Window
         // handles/edges resize, the band outside the corners rotates.
         if (_selectedAnnotation != null && _hasSelection)
         {
-            var frame = AnnotationEditor.HitFrame(_selectedAnnotation, point, _scale);
+            var frame = AnnotationOps.SelectionHit(_selectedAnnotation, IsFreshSelection, _tool, point, _scale);
             if (frame.IsHandle || frame.Rotate)
             {
                 TryBeginAnnotationTransform(point);
@@ -1343,6 +1345,8 @@ public partial class OverlayWindow : Window
 
         replacement.Fill = _fill;
         replacement.CornerRadius = _corner;
+        replacement.Opacity = old.Opacity;
+        replacement.Rotation = old.Rotation;
         var index = Editor.Items.IndexOf(old);
         if (index < 0)
         {
@@ -1408,6 +1412,7 @@ public partial class OverlayWindow : Window
 
     private void ClearAnnotationSelection()
     {
+        _freshSelection = null;
         if (_selectedAnnotation == null && Editor.Selected == null)
         {
             return;
@@ -1646,7 +1651,11 @@ public partial class OverlayWindow : Window
         UpdateUndoButtons();
         // The new element stays selected (wheel / Ctrl+wheel / frame adjust it right away).
         SelectQuietly(annotation);
+        _freshSelection = annotation;
     }
+
+    /// <summary>The selection is the element just created (see AnnotationOps.SelectionHit).</summary>
+    private bool IsFreshSelection => _freshSelection != null && ReferenceEquals(_freshSelection, _selectedAnnotation);
 
     private void BeginTextEdit(TextAnnotation text, bool isNew, Point? caretAt, bool selectAll = false)
     {
@@ -2216,7 +2225,7 @@ public partial class OverlayWindow : Window
             return false;
         }
 
-        var hit = AnnotationEditor.HitFrame(_selectedAnnotation, point, _scale);
+        var hit = AnnotationOps.SelectionHit(_selectedAnnotation, IsFreshSelection, _tool, point, _scale);
         if (hit.IsHandle)
         {
             InputLayer.Cursor = AnnotationEditor.ResizeCursor(hit.Handle, _selectedAnnotation.Rotation);
@@ -2229,7 +2238,7 @@ public partial class OverlayWindow : Window
             return true;
         }
 
-        if (hit.Inside && AnnotationOps.InsideMoves(_selectedAnnotation, _tool, point, 7 * _scale))
+        if (hit.Inside && _tool is AnnotationTool.None or AnnotationTool.Select)
         {
             InputLayer.Cursor = Cursors.SizeAll;
             return true;
@@ -2274,7 +2283,7 @@ public partial class OverlayWindow : Window
             else
             {
                 _selectedAnnotation.Opacity = AnnotationOps.WheelOpacity(_selectedAnnotation.Opacity, delta);
-                Toolbar.SetOpacity(_selectedAnnotation.Opacity, remember: false);
+                Toolbar.SetOpacity(_selectedAnnotation.Opacity);
             }
         }
         else if (AnnotationOps.WheelSize(_selectedAnnotation, delta, EffectiveScreen) is { } size)

@@ -12,6 +12,14 @@ public partial class PinWindow : Window
 {
     private bool _fadingOut;
     private bool _fadedOut;
+    private Annotation? _freshSelection;
+
+    /// <summary>Closes right away, skipping the fade-out (pin limit, app exit).</summary>
+    public void CloseImmediately()
+    {
+        _fadedOut = true;
+        Close();
+    }
 
     private readonly AnnotationHistory _history = new();
     private readonly InlineTextEditor _textEditor;
@@ -371,6 +379,8 @@ public partial class PinWindow : Window
 
         replacement.Fill = _fill;
         replacement.CornerRadius = _corner;
+        replacement.Opacity = old.Opacity;
+        replacement.Rotation = old.Rotation;
         var index = Editor.Items.IndexOf(old);
         if (index < 0)
         {
@@ -1473,7 +1483,7 @@ public partial class PinWindow : Window
 
         if (_selected != null)
         {
-            var frame = AnnotationEditor.HitFrame(_selected, point, 1 / _zoom);
+            var frame = AnnotationOps.SelectionHit(_selected, IsFreshSelection, _tool, point, 1 / _zoom);
             if (frame.IsHandle || frame.Rotate || (frame.Inside && _selected is TextAnnotation && _tool == AnnotationTool.Text))
             {
                 TryBeginAnnotationTransform(point);
@@ -1751,7 +1761,11 @@ public partial class PinWindow : Window
         UpdateUndoButtons();
         // The new element stays selected (wheel / Ctrl+wheel / frame adjust it right away).
         SelectQuietly(annotation);
+        _freshSelection = annotation;
     }
+
+    /// <summary>The selection is the element just created (see AnnotationOps.SelectionHit).</summary>
+    private bool IsFreshSelection => _freshSelection != null && ReferenceEquals(_freshSelection, _selected);
 
     private void BeginTextEdit(TextAnnotation text, bool isNew, Point? caretAt, bool selectAll = false)
     {
@@ -1989,6 +2003,7 @@ public partial class PinWindow : Window
 
     private void ClearSelection()
     {
+        _freshSelection = null;
         _selected = null;
         Editor.Selected = null;
         _resizingAnnotation = false;
@@ -2074,7 +2089,7 @@ public partial class PinWindow : Window
             return false;
         }
 
-        var hit = AnnotationEditor.HitFrame(_selected, point, 1 / _zoom);
+        var hit = AnnotationOps.SelectionHit(_selected, IsFreshSelection, _tool, point, 1 / _zoom);
         if (hit.IsHandle)
         {
             ImageHost.Cursor = AnnotationEditor.ResizeCursor(hit.Handle, _selected.Rotation);
@@ -2087,7 +2102,7 @@ public partial class PinWindow : Window
             return true;
         }
 
-        if (hit.Inside && AnnotationOps.InsideMoves(_selected, _tool, point, 7 / _zoom))
+        if (hit.Inside && _tool is AnnotationTool.None or AnnotationTool.Select)
         {
             ImageHost.Cursor = Cursors.SizeAll;
             return true;
@@ -2132,7 +2147,7 @@ public partial class PinWindow : Window
             else
             {
                 _selected.Opacity = AnnotationOps.WheelOpacity(_selected.Opacity, delta);
-                Toolbar.SetOpacity(_selected.Opacity, remember: false);
+                Toolbar.SetOpacity(_selected.Opacity);
             }
         }
         else if (AnnotationOps.WheelSize(_selected, delta, _baseImage) is { } size)

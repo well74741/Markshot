@@ -273,7 +273,7 @@ public sealed class AnnotationEditor : FrameworkElement
     /// handles and the frame edges resize, a band just outside the corners
     /// rotates, the inside moves. <paramref name="unit"/> = image px per DIP.
     /// </summary>
-    public static FrameHit HitFrame(Annotation annotation, Point point, double unit)
+    public static FrameHit HitFrame(Annotation annotation, Point point, double unit, bool handlesOnly = false)
     {
         if (annotation is WatermarkAnnotation)
         {
@@ -291,6 +291,11 @@ public sealed class AnnotationEditor : FrameworkElement
             {
                 return new FrameHit(i, false, false);
             }
+        }
+
+        if (handlesOnly)
+        {
+            return FrameHit.None;
         }
 
         var edge = 5 * unit;

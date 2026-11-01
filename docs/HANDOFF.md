@@ -1,8 +1,8 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.01`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.02`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
-> `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式 0.8.1.0。
+> `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
 
 ## 1. 项目目标
@@ -126,7 +126,9 @@ dotnet run --project Markshot.csproj -- --demo
   共用实现 `AnnotationOps.WheelSize / WheelOpacity`，撤销按 ("wheel"|"opacity", 对象) 合并；
 - 激活工具且无选中：滚轮预设粗细，`Ctrl+滚轮` 预设透明度（`AnnotationToolbar.NudgeOpacity`，按工具记忆在 `_toolOpacity`；水印改它自己的透明度滑条）；
 - 透明度：`Annotation.Opacity`，`DrawItem` 里统一 `PushOpacity`（水印自己处理）；`AnnotationOps.Create` / `AnnotationStyler.Apply` 写入；
-- 新建完成的元素 `SelectQuietly`（不切工具）；为了能接着在刚画的笔迹上继续画，`AnnotationOps.InsideMoves`：
+- 新建完成的元素 `SelectQuietly`（不切工具）并记为 `_freshSelection`：绘图工具仍激活时它只响应**手柄方块**
+  （边线带、旋转带、框内都继续画），序号/画笔/荧光笔/画笔马赛克/橡皮工具下完全不响应（`AnnotationOps.SelectionHit`），
+  方便紧挨着画下一个；滚轮/Ctrl+滚轮照常调它；用选择工具或单击选中后恢复完整调整框；为了能接着在刚画的笔迹上继续画，`AnnotationOps.InsideMoves`：
   画笔/荧光笔/画笔马赛克/橡皮工具，或任意绘图工具对直线/箭头/笔迹类选中对象，框内只有点在元素本身上才移动；
 - 序号缩放保持圆心不动（以前圆心跟着手柄走，看起来整体滑动）；画笔/画笔马赛克缩放按比例映射点；
 - 同类型悬停高亮并可选；
@@ -329,7 +331,8 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
   `FadeOnShow`：译文层、贴图状态提示。`EnterPage`：设置页切换淡入 + 8 DIP 横移。
 - App.xaml：按钮悬停改为底板淡入淡出（`Hl` 层 Opacity 160 ms），分段按钮（类型/语言）选中底板交叉淡化；
   ContextMenu 打开弹入；MenuItem 为紧凑模板（18 DIP 勾选列 + 文本 + 快捷键，无图标槽），分隔线 `MenuItem.SeparatorStyleKey`。
-- 贴图：出现时淡入；关闭时先取消 Closing、淡出 160 ms 后再真正关闭（应用退出时不拦）。取色面板：弹入，关闭前弹出。
+- 贴图：出现时淡入；关闭时先取消 Closing、淡出 160 ms 后再真正关闭。超出贴图上限和退出程序时用
+  `PinWindow.CloseImmediately()`（不走淡出：`CreatePin` 的循环会阻塞 UI 线程，等不到淡出计时器）。取色面板：弹入，关闭前弹出。
 - 前景色（图标变蓝）不做颜色动画：样式里的画刷是冻结的，Storyboard 克隆后会变成本地值盖掉选中态触发器。
 
 ## 9. 常用调试

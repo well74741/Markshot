@@ -118,6 +118,29 @@ internal static class AnnotationOps
         return !(freehand || (drawing && open)) || selected.HitTest(point, tolerance);
     }
 
+    /// <summary>
+    /// Frame hit for the selection. An element that is selected only because it was just created
+    /// (with a drawing tool still active) answers to its handle squares alone — the edges, the
+    /// rotation band and the inside keep drawing — and not at all for click / freehand tools, so
+    /// the next element can be drawn right next to it.
+    /// </summary>
+    public static FrameHit SelectionHit(Annotation selected, bool fresh, AnnotationTool tool, Point point, double unit)
+    {
+        var drawing = tool is not AnnotationTool.None and not AnnotationTool.Select;
+        if (!fresh || !drawing)
+        {
+            return AnnotationEditor.HitFrame(selected, point, unit);
+        }
+
+        if (tool is AnnotationTool.Number or AnnotationTool.Pen or AnnotationTool.Highlighter
+            or AnnotationTool.MosaicBrush or AnnotationTool.Eraser)
+        {
+            return FrameHit.None;
+        }
+
+        return AnnotationEditor.HitFrame(selected, point, unit, handlesOnly: true);
+    }
+
     /// <summary>Ctrl+wheel opacity step: 5 % per notch, never fully invisible.</summary>
     public static double WheelOpacity(double opacity, int delta) =>
         Math.Clamp(Math.Round(opacity + Math.Sign(delta) * 0.05, 2), 0.05, 1);
@@ -264,7 +287,9 @@ internal static class AnnotationOps
             }
             case NumberAnnotation number:
                 // A number badge grows / shrinks around its own centre (it used to slide with the handle).
-                number.Radius = Math.Clamp(Math.Max(target.Width, target.Height) / 2, 8, 200);
+                var dw = Math.Abs(target.Width - source.Width);
+                var dh = Math.Abs(target.Height - source.Height);
+                number.Radius = Math.Clamp((dw >= dh ? target.Width : target.Height) / 2, 8, 80);
                 break;
             case PenAnnotation pen:
                 ScalePoints(pen.Points, source, target);

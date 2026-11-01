@@ -563,7 +563,7 @@ public partial class AnnotationToolbar : UserControl
         _strokeWidth = annotation switch
         {
             TextAnnotation text => text.StrokeThickness,
-            _ => 0
+            _ => _strokeWidth // only text has an outline; keep the setting
         };
 
         if (annotation is MosaicAnnotation box)

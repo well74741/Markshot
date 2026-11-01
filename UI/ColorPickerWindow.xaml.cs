@@ -356,6 +356,7 @@ public partial class ColorPickerWindow : Window
                     Finish(true, true);
                 }
             };
+            LostMouseCapture += (_, _) => _pressed = false;
             MouseRightButtonDown += (_, e) =>
             {
                 e.Handled = true;

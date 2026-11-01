@@ -226,7 +226,10 @@ public partial class App : Application
     {
         while (_pins.Count >= MaxPins)
         {
-            _pins[0].Close();
+            // Not the animated close: it is deferred and this loop would never end.
+            var oldest = _pins[0];
+            oldest.CloseImmediately();
+            _pins.Remove(oldest);
         }
 
         var pin = new PinWindow(image, screenX, screenY, baseImage, annotations);
@@ -322,7 +325,7 @@ public partial class App : Application
     {
         foreach (var pin in _pins.ToArray())
         {
-            pin.Close();
+            pin.CloseImmediately();
         }
     }
 
