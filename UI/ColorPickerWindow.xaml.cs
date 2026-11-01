@@ -8,8 +8,6 @@ public partial class ColorPickerWindow : Window
 {
     private bool _updating;
     private bool _draggingSv;
-    private DispatcherTimer? _pickTimer;
-    private bool _pickWaitRelease = true;
     private double _hue;
     private double _saturation;
     private double _value;
@@ -210,65 +208,165 @@ public partial class ColorPickerWindow : Window
 
     private void AlphaBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ParseAlphaPercent();
 
-    private void Title_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    /// <summary>Dragging any empty part of the panel (not a control) moves the window.</summary>
+    private void Panel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed && !TitleCloseButton.IsMouseOver)
+        if (e.Handled || IsInteractive(e.OriginalSource as DependencyObject))
         {
-            try
-            {
-                DragMove();
-            }
-            catch
-            {
-                // The window can be activated by the time DragMove is called.
-            }
-
-            e.Handled = true;
+            return;
         }
+
+        try
+        {
+            DragMove();
+        }
+        catch
+        {
+            // DragMove throws if the button was already released.
+        }
+
+        e.Handled = true;
     }
 
+    private bool IsInteractive(DependencyObject? element)
+    {
+        while (element != null && !ReferenceEquals(element, this))
+        {
+            if (element is System.Windows.Controls.Primitives.ButtonBase or TextBox or Slider ||
+                ReferenceEquals(element, SvHost))
+            {
+                return true;
+            }
+
+            element = VisualTreeHelper.GetParent(element);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Eyedropper: the panel stays visible; a nearly transparent layer over all
+    /// screens samples the colour under the pointer live and takes the click, so
+    /// picking a colour never selects an annotation in the pin or capture window.
+    /// </summary>
     private void Eyedropper_Click(object sender, RoutedEventArgs e)
     {
-        Hide();
-        _pickWaitRelease = true;
-        Mouse.OverrideCursor = Cursors.Cross;
-        _pickTimer?.Stop();
-        _pickTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(35) };
-        _pickTimer.Tick += (_, _) =>
+        if (_shield != null)
         {
-            var down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
-            if (_pickWaitRelease)
-            {
-                if (!down)
-                {
-                    _pickWaitRelease = false;
-                }
+            return;
+        }
 
-                return;
+        var original = CurrentColor;
+        _shield = new EyedropperShield();
+        _shield.Sampled += color => SetFromColor(Color.FromArgb((byte)Math.Round(_alpha * 255), color.R, color.G, color.B));
+        _shield.Finished += picked =>
+        {
+            _shield = null;
+            if (!picked)
+            {
+                SetFromColor(original);
             }
 
-            if (!GetCursorPos(out var point))
-            {
-                return;
-            }
-
-            if (TryReadScreenColor(point.X, point.Y, out var liveColor))
-            {
-                SetFromColor(liveColor);
-            }
-
-            if (!down)
-            {
-                return;
-            }
-
-            _pickTimer?.Stop();
-            _pickTimer = null;
-            Mouse.OverrideCursor = null;
-            Show();
             Activate();
         };
-        _pickTimer.Start();
+        _shield.Show();
+
+        // Keep the panel above the layer so it stays visible.
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        Native.SetWindowPos(handle, Native.HWND_TOPMOST, 0, 0, 0, 0,
+            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+    }
+
+    private EyedropperShield? _shield;
+
+    /// <summary>Full-virtual-screen, almost transparent layer used by the eyedropper.</summary>
+    private sealed class EyedropperShield : Window
+    {
+        private bool _done;
+
+        public event Action<Color>? Sampled;
+
+        public event Action<bool>? Finished;
+
+        public EyedropperShield()
+        {
+            WindowStyle = WindowStyle.None;
+            AllowsTransparency = true;
+            // Alpha 1 so the layer receives mouse input while the screen stays visible
+            // (GetPixel then differs from the real pixel by at most one level).
+            Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+            ShowInTaskbar = false;
+            Topmost = true;
+            ResizeMode = ResizeMode.NoResize;
+            Cursor = Cursors.Cross;
+            Focusable = true;
+            SourceInitialized += (_, _) =>
+            {
+                var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                Native.SetWindowPos(handle, Native.HWND_TOPMOST,
+                    Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN),
+                    Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN),
+                    Native.GetSystemMetrics(Native.SM_CXVIRTUALSCREEN),
+                    Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN),
+                    Native.SWP_SHOWWINDOW);
+            };
+            Loaded += (_, _) =>
+            {
+                Activate();
+                Keyboard.Focus(this);
+            };
+            MouseMove += (_, _) => Sample();
+            MouseLeftButtonDown += (_, e) =>
+            {
+                Sample();
+                e.Handled = true;
+                Finish(true);
+            };
+            MouseRightButtonDown += (_, e) =>
+            {
+                e.Handled = true;
+                Finish(false);
+            };
+            KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Escape)
+                {
+                    Finish(false);
+                }
+                else if (e.Key == Key.Enter)
+                {
+                    Finish(true);
+                }
+            };
+            Deactivated += (_, _) =>
+            {
+                // Alt+Tab or clicking the panel's own controls ends picking, keeping the live colour.
+                if (!_done && IsLoaded)
+                {
+                    Finish(true);
+                }
+            };
+        }
+
+        private void Sample()
+        {
+            if (GetCursorPos(out var point) && TryReadScreenColor(point.X, point.Y, out var color))
+            {
+                Sampled?.Invoke(color);
+            }
+        }
+
+        private void Finish(bool picked)
+        {
+            if (_done)
+            {
+                return;
+            }
+
+            _done = true;
+            Close();
+            Finished?.Invoke(picked);
+        }
     }
 
     private static bool TryReadScreenColor(int x, int y, out Color color)
@@ -371,9 +469,8 @@ public partial class ColorPickerWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        _pickTimer?.Stop();
-        _pickTimer = null;
-        Mouse.OverrideCursor = null;
+        _shield?.Close();
+        _shield = null;
         base.OnClosed(e);
     }
 }

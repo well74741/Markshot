@@ -63,16 +63,27 @@
 
             <ui:AnnotationToolbar x:Name="Toolbar" Visibility="Collapsed" />
 
-            <Border x:Name="TranslateStatus" Visibility="Collapsed" Background="#E61C1C1C"
-                    BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6" Padding="10,4,4,4">
+            <!-- Chrome-style translate bar: [source | target] switch plus progress / error. -->
+            <Border x:Name="TranslateStatus" Visibility="Collapsed" Background="#F01C1C1C"
+                    BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="7" Padding="4">
                 <StackPanel Orientation="Horizontal">
                     <Ellipse x:Name="TranslateDot" Width="7" Height="7" Fill="{StaticResource Accent}"
-                             VerticalAlignment="Center" Margin="0,0,7,0" />
-                    <TextBlock x:Name="TranslateStatusText" Foreground="#EDEDED" FontSize="12"
-                               VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis" />
-                    <Button x:Name="TranslateSwitch" Style="{StaticResource ToolButton}" Padding="8,2"
-                            Margin="6,0,0,0" Foreground="{StaticResource Accent}" Visibility="Collapsed"
-                            Click="TranslateSwitch_Click" />
+                             VerticalAlignment="Center" Margin="6,0,6,0" />
+                    <Border x:Name="LanguageSwitch" Background="#FF2A2A2A" CornerRadius="5" Padding="2"
+                            Visibility="Collapsed" Margin="0,0,2,0">
+                        <StackPanel Orientation="Horizontal">
+                            <ToggleButton x:Name="SourceLanguageButton" Style="{StaticResource LanguageSegment}"
+                                          Click="SourceLanguage_Click" ToolTip="显示原文" />
+                            <ToggleButton x:Name="TargetLanguageButton" Style="{StaticResource LanguageSegment}"
+                                          Click="TargetLanguage_Click" ToolTip="显示译文" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock x:Name="TranslateStatusText" Foreground="#D8D8D8" FontSize="12"
+                               VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis"
+                               Margin="6,0,6,0" />
+                    <Button x:Name="TranslateRetry" Style="{StaticResource ToolButton}" Padding="8,2"
+                            Foreground="{StaticResource Accent}" Visibility="Collapsed" Content="重试"
+                            Click="TranslateRetry_Click" />
                 </StackPanel>
             </Border>
         </Canvas>

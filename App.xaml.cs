@@ -197,7 +197,8 @@ public partial class App : Application
             switch (result)
             {
                 case CaptureAction.Pin:
-                    CreatePin(output, (int)overlay.SelectionScreenRect.X, (int)overlay.SelectionScreenRect.Y);
+                    CreatePin(output, (int)overlay.SelectionScreenRect.X, (int)overlay.SelectionScreenRect.Y,
+                        overlay.PinBaseImage, overlay.PinAnnotations);
                     break;
                 case CaptureAction.Translate:
                     ShowTranslation(output);
@@ -220,14 +221,15 @@ public partial class App : Application
         }
     }
 
-    public PinWindow CreatePin(BitmapSource image, int screenX, int screenY)
+    public PinWindow CreatePin(BitmapSource image, int screenX, int screenY,
+        BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null)
     {
         while (_pins.Count >= MaxPins)
         {
             _pins[0].Close();
         }
 
-        var pin = new PinWindow(image, screenX, screenY);
+        var pin = new PinWindow(image, screenX, screenY, baseImage, annotations);
 
         pin.Closed += (_, _) =>
         {
@@ -330,27 +332,43 @@ public partial class App : Application
         target?.SetClickThrough(!target.IsClickThrough);
     }
 
+    private SettingsWindow? _settings;
+
+    /// <summary>
+    /// Opens settings as an ordinary window (not modal), so pins stay usable
+    /// while it is open. A second request just brings it to the front.
+    /// </summary>
     public void ShowSettings()
     {
-        var dialog = new SettingsWindow(Config);
+        if (_settings != null)
+        {
+            _settings.Activate();
+            return;
+        }
 
         // Suspend global hotkeys so pressing F1 inside the recorder updates the
         // field instead of opening the capture overlay.
         _hotkeys?.UnregisterAll();
 
-        try
+        _settings = new SettingsWindow(Config);
+        _settings.Closed += (_, _) =>
         {
-            if (dialog.ShowDialog() == true)
+            var saved = _settings?.Saved == true;
+            _settings = null;
+            if (saved)
             {
                 Config.Save();
                 _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {PinHotkeyLabel}");
                 _tray?.ShowBalloon("设置已保存", "快捷键与翻译配置已更新。");
             }
-        }
-        finally
-        {
-            ApplyHotkeys();
-        }
+
+            if (!_shuttingDown)
+            {
+                ApplyHotkeys();
+            }
+        };
+        _settings.Show();
+        _settings.Activate();
     }
 
     public void ApplyHotkeys()

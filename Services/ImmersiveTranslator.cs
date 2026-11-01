@@ -41,7 +41,34 @@ public static class ImmersiveTranslator
             : (Lines[^1].InkBottom - Lines[0].InkBottom) / (Lines.Count - 1);
     }
 
-    public sealed record Update(BitmapSource Image, string Status, bool Done, int Translated, int Total);
+    /// <param name="Source">Detected language of the screenshot text ("中文", "English", …), null before OCR.</param>
+    /// <param name="Target">Language actually translated into.</param>
+    public sealed record Update(BitmapSource Image, string Status, bool Done, int Translated, int Total,
+        string? Source = null, string? Target = null);
+
+    /// <summary>Short display name of a language ("中文", "English", "日本語", "한국어").</summary>
+    public static string LanguageLabel(string language)
+    {
+        var t = language.ToLowerInvariant();
+        if (t.Contains("中") || t.Contains("汉") || t.Contains("chinese") || t.StartsWith("zh")) return "中文";
+        if (t.Contains("英") || t.Contains("english") || t.StartsWith("en")) return "English";
+        if (t.Contains("日") || t.Contains("japan") || t.StartsWith("ja")) return "日本語";
+        if (t.Contains("韩") || t.Contains("한") || t.Contains("korean") || t.StartsWith("ko")) return "한국어";
+        return language;
+    }
+
+    /// <summary>Majority script of the recognised text.</summary>
+    public static string DetectLanguage(string text)
+    {
+        var kana = text.Count(c => c is >= '぀' and <= 'ヿ');
+        var hangul = text.Count(c => c is >= '가' and <= '힯');
+        var han = text.Count(c => c is >= '一' and <= '鿿');
+        var latin = text.Count(c => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z');
+        if (kana > 0 && kana * 4 >= han) return "日本語";
+        if (hangul > Math.Max(han, latin / 2)) return "한국어";
+        // One Chinese character carries about as much as a word of 4–5 Latin letters.
+        return han * 3 >= latin ? "中文" : "English";
+    }
 
     /// <summary>
     /// Translates <paramref name="image"/> in place. Every intermediate image is
@@ -49,10 +76,17 @@ public static class ImmersiveTranslator
     /// Call from the UI thread: OCR and HTTP run in the background, but the
     /// repaint uses WPF visuals and therefore resumes on the caller's thread.
     /// </summary>
+    /// <param name="target">Language to translate into; null = the configured target.</param>
+    /// <param name="switchWhenSame">
+    /// When the text already is in the target language, translate it into the
+    /// other common language instead (中文 ↔ English), so the toggle always does something.
+    /// </param>
     public static async Task<BitmapSource> TranslateAsync(
         BitmapSource image,
         IProgress<Update>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? target = null,
+        bool switchWhenSame = true)
     {
         if (image.CanFreeze && !image.IsFrozen)
         {
@@ -63,9 +97,16 @@ public static class ImmersiveTranslator
         var blocks = await OcrService.RecognizeBlocksAsync(image, App.Config.OcrLanguage);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var target = string.IsNullOrWhiteSpace(App.Config.Translation.TargetLanguage)
+        target ??= string.IsNullOrWhiteSpace(App.Config.Translation.TargetLanguage)
             ? "简体中文"
             : App.Config.Translation.TargetLanguage.Trim();
+        var source = DetectLanguage(string.Concat(blocks.Select(b => b.Text)));
+        if (switchWhenSame && LanguageLabel(target) == source)
+        {
+            target = source == "中文" ? "English" : "简体中文";
+        }
+
+        var targetLabel = LanguageLabel(target);
 
         var pixels = ReadPixels(image);
         var paragraphs = GroupParagraphs(blocks.Select(b => Measure(pixels, b)).ToList())
@@ -73,8 +114,8 @@ public static class ImmersiveTranslator
             .ToList();
         if (paragraphs.Count == 0)
         {
-            var status = blocks.Count == 0 ? "未识别到文字" : $"内容已是{target}";
-            progress?.Report(new Update(image, status, true, 0, 0));
+            var status = blocks.Count == 0 ? "未识别到文字" : $"内容已是{targetLabel}";
+            progress?.Report(new Update(image, status, true, 0, 0, blocks.Count == 0 ? null : source, targetLabel));
             return image;
         }
 
@@ -97,7 +138,7 @@ public static class ImmersiveTranslator
         var total = paragraphs.Count;
         var done = total - pending.Count;
         var current = done > 0 ? Render(image, pixels, paragraphs, translations) : image;
-        progress?.Report(new Update(current, $"正在翻译 {done}/{total}…", false, done, total));
+        progress?.Report(new Update(current, $"正在翻译 {done}/{total}…", false, done, total, source, targetLabel));
 
         var provider = TranslationService.Create(App.Config.Translation);
         var gate = new SemaphoreSlim(Parallel);
@@ -131,7 +172,7 @@ public static class ImmersiveTranslator
                     snapshot = Render(image, pixels, paragraphs, translations);
                 }
 
-                progress?.Report(new Update(snapshot, $"正在翻译 {count}/{total}…", false, count, total));
+                progress?.Report(new Update(snapshot, $"正在翻译 {count}/{total}…", false, count, total, source, targetLabel));
             }
             catch (OperationCanceledException)
             {
@@ -159,9 +200,9 @@ public static class ImmersiveTranslator
 
         var final = Render(image, pixels, paragraphs, translations);
         var finalStatus = firstError == null
-            ? $"已翻译为{target}"
+            ? $"已翻译为{targetLabel}"
             : $"部分翻译失败（{translatedCount}/{total}）：{firstError.Message}";
-        progress?.Report(new Update(final, finalStatus, true, translatedCount, total));
+        progress?.Report(new Update(final, finalStatus, true, translatedCount, total, source, targetLabel));
         return final;
     }
 

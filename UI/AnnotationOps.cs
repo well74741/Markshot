@@ -268,6 +268,30 @@ internal static class AnnotationOps
         return new Rect(center.X - width / 2, center.Y - height / 2, width, height);
     }
 
+    /// <summary>Keeps bound eraser holes in place when the pin image is flipped ('H', 'V') or turned ('R').</summary>
+    public static void ReorientMasks(Annotation annotation, char op)
+    {
+        if (annotation.EraseMasks is not { Count: > 0 } masks || annotation is TextAnnotation)
+        {
+            return;
+        }
+
+        for (var i = 0; i < masks.Count; i++)
+        {
+            var m = masks[i];
+            var w = m.RecordedSize.Width;
+            var h = m.RecordedSize.Height;
+            masks[i] = op switch
+            {
+                'H' => new EraseStroke(m.Points.Select(p => new Point(w - p.X, p.Y)).ToList(), m.Width, m.RecordedSize),
+                'V' => new EraseStroke(m.Points.Select(p => new Point(p.X, h - p.Y)).ToList(), m.Width, m.RecordedSize),
+                _ => new EraseStroke(m.Points.Select(p => new Point(p.Y, w - p.X)).ToList(), m.Width, new Size(h, w))
+            };
+        }
+
+        annotation.MaskCache = null;
+    }
+
     public static Rect ScaleAround(Rect rect, Point center, double factor)
     {
         var width = Math.Max(4, rect.Width * factor);

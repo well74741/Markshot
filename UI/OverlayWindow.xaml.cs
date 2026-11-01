@@ -56,6 +56,10 @@ public partial class OverlayWindow : Window
 
     // Text tool press on an existing text: a click edits it, a drag moves it.
     private TextAnnotation? _textPress;
+
+    // Press inside an already selected text: a click (no drag) opens it for editing.
+    private bool _pendingTextClick;
+    private bool _dragMoved;
     private Point _textPressPoint;
     private bool _textPressMoved;
 
@@ -100,6 +104,10 @@ public partial class OverlayWindow : Window
     private Rect _translatedRect = Rect.Empty;
     private Rect _translatingRect = Rect.Empty;
     private bool _showOriginal;
+    // Languages shown in the translate bar: detected source and the target
+    // (the configured one, or English when the text already is Chinese).
+    private string? _sourceLabel;
+    private string? _targetLabel;
     private BitmapSource? _effectiveScreen;
 
     public CaptureAction Result { get; private set; } = CaptureAction.None;
@@ -107,6 +115,12 @@ public partial class OverlayWindow : Window
     public BitmapSource? OutputImage { get; private set; }
 
     public Rect SelectionScreenRect { get; private set; }
+
+    /// <summary>For pins: the selection without annotations (translation included).</summary>
+    public BitmapSource? PinBaseImage { get; private set; }
+
+    /// <summary>For pins: the annotations in pin coordinates, still editable there.</summary>
+    public List<Annotation>? PinAnnotations { get; private set; }
 
     public OverlayWindow(BitmapSource screen, Int32Rect bounds, bool demo = false)
     {
@@ -555,9 +569,20 @@ public partial class OverlayWindow : Window
 
         if (_textEditor.Target is { } editingText)
         {
-            // A click outside the text being typed only finishes it — unless the
-            // text tool is pointed at another text, which then opens for editing.
-            _textEditor.Commit();
+            var frame = AnnotationEditor.HitFrame(editingText, point, _scale);
+            _textEditor.Commit(); // a non-empty text stays selected (OnTextEditEnded)
+            if ((frame.IsHandle || frame.Rotate) && ReferenceEquals(_selectedAnnotation, editingText))
+            {
+                // Grabbing a handle / edge / corner of the text being typed adjusts it like a shape.
+                TryBeginAnnotationTransform(point);
+                _history.Arm(Editor.Items);
+                InputLayer.CaptureMouse();
+                e.Handled = true;
+                return;
+            }
+
+            // A click elsewhere only finishes typing — unless the text tool is
+            // pointed at another text, which then opens for editing.
             if (!(_tool == AnnotationTool.Text && HitAnnotation(point) is TextAnnotation other &&
                   !ReferenceEquals(other, editingText)))
             {
@@ -588,6 +613,34 @@ public partial class OverlayWindow : Window
             BeginTextEdit(doubleClicked, isNew: false, caretAt: point);
             e.Handled = true;
             return;
+        }
+
+        // The adjustment frame of the selected element works with any tool:
+        // handles/edges resize, the band outside the corners rotates.
+        if (_selectedAnnotation != null && _hasSelection)
+        {
+            var frame = AnnotationEditor.HitFrame(_selectedAnnotation, point, _scale);
+            if (frame.IsHandle || frame.Rotate)
+            {
+                TryBeginAnnotationTransform(point);
+                _history.Arm(Editor.Items);
+                InputLayer.CaptureMouse();
+                e.Handled = true;
+                return;
+            }
+
+            if (frame.Inside && _selectedAnnotation is TextAnnotation &&
+                _tool is AnnotationTool.Select or AnnotationTool.None or AnnotationTool.Text)
+            {
+                // Drag moves the selected text; a plain click opens it for editing.
+                TryBeginAnnotationTransform(point);
+                _pendingTextClick = true;
+                _dragMoved = false;
+                _history.Arm(Editor.Items);
+                InputLayer.CaptureMouse();
+                e.Handled = true;
+                return;
+            }
         }
 
         if (_tool == AnnotationTool.Text && _hasSelection)
@@ -663,6 +716,8 @@ public partial class OverlayWindow : Window
             {
                 SelectAnnotation(hit);
                 _draggingAnnotation = true;
+                _dragMoved = false;
+                _pendingTextClick = false;
                 _lastAnnotationPoint = point;
                 _annotationStartBounds = hit.Bounds;
                 _annotationScaleStartPoint = point;
@@ -819,6 +874,7 @@ public partial class OverlayWindow : Window
                 _textPressMoved = true;
                 _history.CommitArmed();
                 UpdateUndoButtons();
+                SelectQuietly(_textPress);
                 InputLayer.Cursor = Cursors.SizeAll;
             }
 
@@ -875,6 +931,13 @@ public partial class OverlayWindow : Window
             var dy = point.Y - _lastAnnotationPoint.Y;
             if (Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01)
             {
+                if (!_dragMoved && (point - _dragStart).Length < 3 * _scale)
+                {
+                    return; // a click on a selected text should not nudge it
+                }
+
+                _dragMoved = true;
+                ClearAnnotationHover();
                 _selectedAnnotation.Translate(dx, dy);
                 _lastAnnotationPoint = point;
                 Editor.InvalidateVisual();
@@ -1047,6 +1110,15 @@ public partial class OverlayWindow : Window
         {
             _draggingAnnotation = false;
             _mode = DragMode.None;
+            var clicked = _pendingTextClick && !_dragMoved;
+            _pendingTextClick = false;
+            _dragMoved = false;
+            if (clicked && _selectedAnnotation is TextAnnotation selectedText)
+            {
+                BeginTextEdit(selectedText, isNew: false, caretAt: ToPixels(e.GetPosition(InputLayer)));
+                return;
+            }
+
             UpdateSelectionVisuals();
             UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
             return;
@@ -1588,12 +1660,28 @@ public partial class OverlayWindow : Window
         }
 
         UpdateUndoButtons();
+        if (!removed && Editor.Items.Contains(text))
+        {
+            // Keep the finished text selected so its frame can be adjusted right away.
+            SelectQuietly(text);
+        }
+
         if (!_closed)
         {
             Focus();
             Keyboard.Focus(this);
             UpdateCursorToPointer();
         }
+    }
+
+    /// <summary>Selects an element without switching tools (the text tool keeps working).</summary>
+    private void SelectQuietly(Annotation annotation)
+    {
+        _selectedAnnotation = annotation;
+        Editor.Selected = annotation;
+        Toolbar.SyncFrom(annotation);
+        ClearAnnotationHover();
+        Editor.InvalidateVisual();
     }
 
     private void BeginWatermarkEdit(WatermarkAnnotation watermark)
@@ -2408,7 +2496,9 @@ public partial class OverlayWindow : Window
 
     private void Redo_Click(object sender, RoutedEventArgs e) => Redo();
 
-    private BitmapSource Compose()
+    private BitmapSource Compose() => Compose(includeAnnotations: true);
+
+    private BitmapSource Compose(bool includeAnnotations)
     {
         var rect = ClampToScreen(_selection);
         var x = (int)Math.Round(rect.X);
@@ -2417,7 +2507,7 @@ public partial class OverlayWindow : Window
         var height = Math.Max(1, (int)Math.Round(rect.Height));
 
         var translation = VisibleTranslation();
-        if (Editor.Items.Count == 0 && translation == null)
+        if ((!includeAnnotations || Editor.Items.Count == 0) && translation == null)
         {
             var cropped = new CroppedBitmap(_screen, new Int32Rect(x, y, width, height));
             cropped.Freeze();
@@ -2436,9 +2526,12 @@ public partial class OverlayWindow : Window
                 dc.DrawImage(translation, _translatedRect);
             }
 
-            foreach (var annotation in Editor.Items)
+            if (includeAnnotations)
             {
-                AnnotationEditor.DrawItem(dc, annotation);
+                foreach (var annotation in Editor.Items)
+                {
+                    AnnotationEditor.DrawItem(dc, annotation);
+                }
             }
 
             dc.Pop();
@@ -2559,6 +2652,11 @@ public partial class OverlayWindow : Window
         }
 
         CommitPendingText();
+        // Hand the pin the clean selection plus the annotations so they stay editable there.
+        var rect = ClampToScreen(_selection);
+        var origin = new Point(Math.Round(rect.X), Math.Round(rect.Y));
+        PinBaseImage = Compose(includeAnnotations: false);
+        PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, origin, PinBaseImage);
         CloseWith(CaptureAction.Pin, Compose());
     }
 
@@ -2642,7 +2740,7 @@ public partial class OverlayWindow : Window
             (int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height));
         cropped.Freeze();
 
-        ShowTranslateStatus("正在识别文字…", busy: true, switchText: null);
+        ShowTranslateStatus("正在识别文字…", busy: true);
         var progress = new Progress<ImmersiveTranslator.Update>(update =>
         {
             if (cts.IsCancellationRequested || _closed)
@@ -2654,9 +2752,12 @@ public partial class OverlayWindow : Window
             _translated = update.Image;
             _translatedRect = rect;
             _effectiveScreen = null;
+            _sourceLabel = update.Source ?? _sourceLabel;
+            _targetLabel = update.Target ?? _targetLabel;
             UpdateTranslationVisuals();
-            ShowTranslateStatus(update.Status, busy: !update.Done,
-                switchText: update.Done && update.Translated > 0 ? "显示原文" : null);
+            var partial = update.Done && update.Translated < update.Total;
+            ShowTranslateStatus(update.Done && !partial && update.Translated > 0 ? null : update.Status,
+                busy: !update.Done, error: partial, retry: partial);
         });
 
         try
@@ -2672,7 +2773,7 @@ public partial class OverlayWindow : Window
             Log.Error("原位翻译失败", ex);
             if (!cts.IsCancellationRequested && !_closed)
             {
-                ShowTranslateStatus("翻译失败：" + ex.Message, busy: false, switchText: "重试", error: true);
+                ShowTranslateStatus("翻译失败：" + ex.Message, busy: false, error: true, retry: true);
             }
         }
         finally
@@ -2729,18 +2830,36 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private void ShowTranslateStatus(string text, bool busy, string? switchText, bool error = false)
+    /// <summary>Updates the translate bar; <paramref name="text"/> null hides the status (only the switch shows).</summary>
+    private void ShowTranslateStatus(string? text, bool busy, bool error = false, bool retry = false)
     {
-        TranslateStatusText.Text = text;
+        TranslateStatusText.Text = text ?? string.Empty;
+        TranslateStatusText.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
         TranslateDot.Fill = error
             ? new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B))
             : busy
                 ? (Brush)FindResource("Accent")
                 : new SolidColorBrush(Color.FromRgb(0x4C, 0xC3, 0x8A));
-        TranslateSwitch.Content = switchText;
-        TranslateSwitch.Visibility = switchText == null ? Visibility.Collapsed : Visibility.Visible;
+        TranslateRetry.Visibility = retry ? Visibility.Visible : Visibility.Collapsed;
+        UpdateLanguageSwitch();
         TranslateStatus.Visibility = _autoTranslate && _hasSelection ? Visibility.Visible : Visibility.Collapsed;
         PositionTranslateStatus();
+    }
+
+    /// <summary>[source | target]: the highlighted half is the language currently shown.</summary>
+    private void UpdateLanguageSwitch()
+    {
+        var known = _sourceLabel != null && _targetLabel != null && _sourceLabel != _targetLabel;
+        LanguageSwitch.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
+        if (!known)
+        {
+            return;
+        }
+
+        SourceLanguageButton.Content = _sourceLabel;
+        TargetLanguageButton.Content = _targetLabel;
+        SourceLanguageButton.IsChecked = _showOriginal;
+        TargetLanguageButton.IsChecked = !_showOriginal;
     }
 
     private void PositionTranslateStatus()
@@ -2766,19 +2885,29 @@ public partial class OverlayWindow : Window
         Canvas.SetTop(TranslateStatus, top);
     }
 
-    private void TranslateSwitch_Click(object sender, RoutedEventArgs e)
+    private void SourceLanguage_Click(object sender, RoutedEventArgs e)
     {
-        if (TranslateSwitch.Content as string == "重试")
-        {
-            _translatedRect = Rect.Empty;
-            StartTranslation();
-            return;
-        }
-
-        _showOriginal = !_showOriginal;
+        // Show the original text.
+        _showOriginal = true;
         _effectiveScreen = null;
-        TranslateSwitch.Content = _showOriginal ? "显示译文" : "显示原文";
+        UpdateLanguageSwitch();
         UpdateTranslationVisuals();
+        Focus();
+    }
+
+    private void TargetLanguage_Click(object sender, RoutedEventArgs e)
+    {
+        _showOriginal = false;
+        _effectiveScreen = null;
+        UpdateLanguageSwitch();
+        UpdateTranslationVisuals();
+        Focus();
+    }
+
+    private void TranslateRetry_Click(object sender, RoutedEventArgs e)
+    {
+        _translatedRect = Rect.Empty;
+        StartTranslation();
         Focus();
     }
 

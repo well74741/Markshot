@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.7.0`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.0`，WPF + .NET 8，Windows 专用。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
 
 ## 1. 项目目标
@@ -82,7 +82,9 @@ dotnet run --project Markshot.csproj -- --demo
 | `UI/OverlayWindow.xaml(.cs)` | 截图框选、放大镜、批注画布、截图工具栏 |
 | `UI/PinWindow.xaml(.cs)` | 贴图窗口、内联批注、缩放/拖动/穿透/历史 |
 | `UI/AnnotationToolbar.xaml(.cs)` | 截图/贴图共用工具栏、工具、色板、副栏 |
-| `UI/ColorPickerWindow.xaml(.cs)` | HSV 自选色板、色相/透明度、吸管、Hex/百分比 |
+| `UI/ColorPickerWindow.xaml(.cs)` | HSV 自选色板、色相/透明度、吸管（全屏取色层）、Hex/百分比；拖空白处移动 |
+| `UI/PinTextLayer.cs` | 贴图图片文字层：OCR 行框 → 按字宽估算字符框，拖选/双击选行/复制 |
+| `tools/make_icon.py` | 生成 `Assets/markshot.ico`（16~256 全尺寸，小尺寸按像素对齐单独绘制） |
 | `UI/SettingsWindow.xaml(.cs)` | 全局热键、工具键、保存、OCR、翻译、工具栏顺序数据 |
 | `UI/TranslationWindow.xaml(.cs)` | 普通 OCR / 文本翻译窗口 |
 | `UI/InlineTextEditor.cs` | 截图/贴图共用的原位文字编辑器（透明字形 TextBox 叠在实时渲染的文字上） |
@@ -141,6 +143,16 @@ dotnet run --project Markshot.csproj -- --demo
 - 截图/贴图窗口关闭 IME（只给文字框开），否则中文输入法把空格、字母快捷键变成 `ImeProcessed`，
   表现为“拖拽时按空格移动选区失效”；按键统一走 `AnnotationOps.RealKey`。
 
+### 选择 / 调整框（0.8 起）
+
+- `AnnotationEditor.HitFrame`：8 个手柄**和整条边框**都是缩放，框外角落 24px 内是旋转，框内是移动；
+  任何工具下只要有选中元素，手柄/边框/旋转区都优先生效。
+- 缩放光标 `ResizeCursor` 按元素旋转角取最近的双向箭头；旋转光标为程序生成的浅色弯箭头。
+- `AnnotationOps.ResizeFromHandle` 在元素自身（旋转后）坐标系里算，对边/对角固定；Shift 拖角等比。
+- 画笔/荧光笔/橡皮光标：白色亮环 + 淡暗边，画笔内圈为当前颜色，直径等于实际笔宽（荧光笔 4×、橡皮 2×）。
+- 滑条 `SliderDragBehavior`：点击轨道先跳值，再把这次按下转交给 Thumb（`RaiseEvent(MouseLeftButtonDown)`），
+  由 WPF 原生拖动接管，同一次按下可继续拖（工具栏和取色面板的所有滑条）。
+
 ### 文字
 
 参考 `Sketchplayer/docs/技术文档_批注工具.md` §4.4、§6：
@@ -151,8 +163,10 @@ dotnet run --project Markshot.csproj -- --demo
   `InlineTextEditor.TextBoxInsetDip` 补偿后 125% 缩放下包围盒误差 0px；
   行高两边都用 `LineHeight = 字号 × 1.3` + `BlockLineHeight`。
 - 文字工具：单击空白新建（第一行垂直居中在点击处）；单击已有文字 → 光标落在点击位置编辑；
-  按住拖动 → 移动（≥3 DIP 才算拖动）。选择工具：单击选中（手柄可缩放/旋转），双击或 `F2` 编辑。
-- 贴图保留原约定：未选工具时单击文字进入编辑并全选；拖动文字可移动；按住辅助键（默认 Alt）拖动贴图。
+  按住拖动 → 移动（≥3 DIP 才算拖动）。选择工具（贴图里即未选工具）：单击选中，再单击已选中的文字进入编辑，
+  双击或 `F2` 直接编辑，拖动移动。
+- 输入结束后文字保持选中；输入中拖调整框的手柄/边框/角外 → 结束输入并像形状一样缩放/旋转。
+- 拖动开始时清掉悬停高亮框（以前高亮框留在原地，看起来“外圈分离”）。
 - `Enter` 完成，`Shift/Ctrl+Enter` 换行，`Esc` 完成（不再丢弃输入），清空内容即删除；`Ctrl+B` 粗体，滚轮改字号。
 - 点击工具栏（滑条已设 `Focusable=False`）不会结束输入，样式实时作用到正在编辑的文字。
 - 工具栏按工具分别记忆大小（文字默认 20，不再继承画笔的 3px 变成 8px 字）。
@@ -168,13 +182,22 @@ dotnet run --project Markshot.csproj -- --demo
 - 右键菜单：复制、另存为、翻译、编辑、设置、关闭所有贴图、置顶、锁定、穿透；
 - 默认快捷键：`Ctrl+Alt+M` 鼠标穿透，`Ctrl+Alt+Z` 返回上一贴图；
 - Q/W/E/F 贴图翻转/逆时针旋转/还原（可在设置改键；E 与橡皮工具键存在默认冲突，工具键优先）；
-- 贴图支持滚轮缩放、Ctrl+滚轮透明度、中键重置视图。
+- 贴图滚轮缩放、Ctrl+滚轮透明度：只要没激活绘图工具，编辑模式里也生效（激活工具时滚轮调工具/选中元素大小）；
+  按住中键拖动移动贴图，中键单击（未移动）重置视图。
+- `F`：只撤销大小/透明度和记录在 `_orientation` 里的翻转/旋转（逐个逆操作），**不清批注**；
+  翻转/旋转作用在 `_baseImage` 上再重新合成（以前作用在已合成图上，再编辑会重影），擦痕随 `ReorientMasks` 镜像/转向。
+- 右键“清除批注内容”（编辑模式下可撤销）。
+- 图片文字层 `PinTextLayer`：贴图显示、应用编辑、翻转、原位翻译后在后台 OCR；查看模式下文字上为 IBeam，
+  拖动选中（蓝色高亮）、双击选整行、Ctrl+A 全选、Ctrl+C / 右键复制；空白处拖动移动贴图；按住辅助键（默认 Alt）无视文字。
+- 截图时画的批注：`PinAndClose` 把不含批注的底图和 `AnnotationOps.ToPinSpace` 转换后的批注一起交给贴图，
+  进入编辑后可继续修改（马赛克图案按贴图底图重建，水印铺满贴图）。
 
 ### 颜色
 
 - 工具栏色板：自定义（彩色外环 + 内色）+ 红/黄/绿/蓝/黑/白圆形；
 - 自定义窗口：HSV 色板、彩虹色相、棋盘格透明度、圆形滑点、Hex、百分比、吸管、确认/取消；
-- 吸管：隐藏窗口、十字光标、实时采样，再点一次完成；
+- 吸管：面板不隐藏；铺一层 alpha=1 的全屏取色层接住点击（不会点到贴图/截图里的批注），移动实时取色，单击确定，Esc/右键取消；
+- 面板高度随内容（`SizeToContent`），拖动任意空白处移动面板；
 - 颜色窗口标题栏可拖动；
 - `ColorPickerWindow` 不使用 `DialogResult`，通过 `Accepted` 属性 + `Close()` 关闭，避免非对话框状态异常。
 
@@ -209,7 +232,7 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 1. **空格退出仍可能丢最后一步**：已加入 `CommitAnnotation()` 和 `_spaceExitGuard`，但需要在真实贴图上复测“绘制→松手→空格退出→再空格进入”的完整链路；重点检查 `ExitEditMode(true)` 的合成时机。
 2. **滑条点击后继续拖动**：`SliderDragBehavior` 已直接挂到三个工具栏滑条和颜色窗口滑条，需实机确认点击轨道后不松手拖动值连续变化。
 3. **原位翻译**：需要用真实 Key 在多种网页/应用截图上实测段落合并阈值与配色；复杂背景考虑真正的 inpainting。
-4. **贴图文字拖选**：目前是批注文字；PNG 内烘焙文字需要 OCR 文本层，尚未实现。
+4. **贴图文字拖选**：OCR 只给行框，字符位置按字宽比例估算，长英文行的选区边界可能偏一两个字符。
 5. **像素橡皮**：`EraserAnnotation` 用原图对应区域绘制，能遮挡局部像素，但不是真正的透明蒙版；撤销/再次编辑行为需要验证。
 6. **设置面板**：已重做为左侧导航（快捷键 / 翻译 / 保存与识别）；手动输入、工具栏排序界面已删除，
    `CaptureToolOrder` 等配置项仍由工具栏读取，只能改 `config.json`。
@@ -241,14 +264,16 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - [ ] 按 B/T/S/L/V/E 能打开批注栏并激活工具；
 - [ ] 贴图外圈阴影，激活蓝色；
 - [ ] 编辑后空格收起，再次空格进入，批注仍在；
-- [ ] 贴图文字 IBeam、拖选、Alt 拖动贴图；
+- [ ] 贴图图片文字 IBeam、拖选、双击选行、Ctrl+C；空白处拖动贴图；Alt 拖动无视文字；
+- [ ] 截图批注 → 贴图后进入编辑仍可修改；F 不清批注；滚轮/中键在编辑模式下也缩放/移动；
+- [ ] 打开设置时贴图仍可操作；
 - [ ] Q/W/E/F 翻转/旋转/还原（注意 E 工具键冲突）。
 
 ### 颜色
 
 - [ ] 自定义圆环色块打开 HSV 窗口；
 - [ ] 标题栏可拖动；
-- [ ] 吸管：窗口隐藏、十字光标、实时采样、点击完成；
+- [ ] 吸管：面板不消失、实时取色、点击完成且不选中批注、Esc 取消；拖空白处移动面板；
 - [ ] 色相/透明度点击轨道后不松手可继续拖动；
 - [ ] 确认/取消/右上角关闭都不报 `DialogResult` 错误。
 
@@ -268,6 +293,16 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
   `D:\Practice\AItest\Github_projects\Sketchplayer\docs\技术文档_批注工具.md`
 - OCR 模型：`Markshot/models/v5`（PP-OCRv5）。
 - 用户偏好：PixPin 风格、暗色圆角、无白色系统控件、中文 UI、不复制 PixPin 专有素材。
+
+## 8.1 设置 / 翻译条 / 图标（0.8 起）
+
+- 设置窗口改为非模态（`App.ShowSettings` 用 `Show()`，`SettingsWindow.Saved` 代替 `DialogResult`），打开时贴图可继续操作；
+  打开期间全局热键仍暂停（录制快捷键需要），关闭后恢复。
+- 截图翻译条：`[原文语言 | 译文语言]` 两段切换（高亮=当前显示），像 Chrome 翻译栏；内容本来就是中文时自动译成英文
+  （`ImmersiveTranslator.TranslateAsync(..., switchWhenSame: true)`），语言判断 `DetectLanguage` 按“1 个汉字 ≈ 3 个拉丁字母”加权。
+- 工具栏翻译按钮激活后只变色，不再追加文字。
+- Logo：`Assets/markshot.ico`（exe `ApplicationIcon`：任务栏、资源管理器、任务管理器；托盘从资源加载小尺寸；
+  设置/翻译窗口 `Icon`）。修改样式改 `tools/make_icon.py` 后重新运行。
 
 ## 9. 常用调试
 

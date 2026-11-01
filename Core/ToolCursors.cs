@@ -44,179 +44,137 @@ public static class ToolCursors
         return cursor;
     }
 
-    private static Cursor? BuildRotationCursorFromAsset()
-    {
-        try
-        {
-            var resource = System.Windows.Application.GetResourceStream(
-                new Uri("pack://application:,,,/Markshot;component/Assets/Icons/rotation.png"));
-            if (resource == null)
-            {
-                return null;
-            }
-
-            using var imageStream = resource.Stream;
-            var decoder = BitmapDecoder.Create(
-                imageStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            var frame = decoder.Frames[0];
-            var transformed = new TransformedBitmap(frame, new ScaleTransform(32.0 / frame.PixelWidth, 32.0 / frame.PixelHeight));
-            transformed.Freeze();
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(transformed));
-            using var png = new MemoryStream();
-            encoder.Save(png);
-            var payload = png.ToArray();
-            using var cur = new MemoryStream();
-            using (var writer = new BinaryWriter(cur, Encoding.UTF8, leaveOpen: true))
-            {
-                writer.Write((ushort)0);
-                writer.Write((ushort)2);
-                writer.Write((ushort)1);
-                writer.Write((byte)32);
-                writer.Write((byte)32);
-                writer.Write((byte)0);
-                writer.Write((byte)0);
-                writer.Write((ushort)16);
-                writer.Write((ushort)16);
-                writer.Write((uint)payload.Length);
-                writer.Write((uint)22);
-            }
-
-            cur.Write(payload, 0, payload.Length);
-            var directory = Path.Combine(AppContext.BaseDirectory, "cursors");
-            try
-            {
-                Directory.CreateDirectory(directory);
-            }
-            catch
-            {
-                directory = Path.Combine(Path.GetTempPath(), "MarkshotCursors");
-                Directory.CreateDirectory(directory);
-            }
-
-            var file = Path.Combine(directory, "rotate-icon.cur");
-            File.WriteAllBytes(file, cur.ToArray());
-            var handle = LoadCursorFromFile(file);
-            if (handle == IntPtr.Zero)
-            {
-                return null;
-            }
-
-            var safeHandle = new CursorHandle(handle);
-            Handles.Add(safeHandle);
-            return CursorInteropHelper.Create(safeHandle);
-        }
-        catch (Exception ex)
-        {
-            Log.Error("创建旋转图标光标失败", ex);
-            return null;
-        }
-    }
-
+    /// <summary>
+    /// Light curved double arrow (white with a thin dark halo, like the system
+    /// cursors) so it reads on both dark and light screenshots.
+    /// </summary>
     private static Cursor? BuildRotationCursor(bool clockwise)
     {
-        var assetCursor = BuildRotationCursorFromAsset();
-        if (assetCursor != null)
-        {
-            return assetCursor;
-        }
-
+        _ = clockwise; // one symmetric cursor for both directions
         try
         {
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
             {
                 const double cx = 16;
-                const double cy = 16;
+                const double cy = 17;
                 const double radius = 9;
-                var start = Polar(cx, cy, radius, clockwise ? 210 : -30);
-                var end = Polar(cx, cy, radius, clockwise ? -30 : 210);
-                var geometry = new StreamGeometry();
-                using (var context = geometry.Open())
+                const double from = 205;
+                const double to = 335;
+                var start = Polar(cx, cy, radius, from);
+                var end = Polar(cx, cy, radius, to);
+                var arc = new StreamGeometry();
+                using (var context = arc.Open())
                 {
                     context.BeginFigure(start, false, false);
-                    context.ArcTo(end, new Size(radius, radius), 0, true,
-                        clockwise ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,
-                        true, false);
+                    context.ArcTo(end, new Size(radius, radius), 0, false, SweepDirection.Clockwise, true, false);
                 }
 
-                geometry.Freeze();
-                var outline = new Pen(new SolidColorBrush(Color.FromArgb(235, 0, 0, 0)), 3.2);
-                var line = new Pen(new SolidColorBrush(Color.FromRgb(245, 245, 245)), 1.5);
-                dc.DrawGeometry(null, outline, geometry);
-                dc.DrawGeometry(null, line, geometry);
-
-                var angle = clockwise ? -30 : 210;
-                var tangent = clockwise ? angle + 90 : angle - 90;
-                var tip = Polar(cx, cy, radius, angle);
-                var back = Polar(cx, cy, radius, angle - (clockwise ? 18 : -18));
-                var perpendicular = new Vector(
-                    Math.Cos((tangent + 90) * Math.PI / 180),
-                    Math.Sin((tangent + 90) * Math.PI / 180));
-                var head = new StreamGeometry();
-                using (var context = head.Open())
+                arc.Freeze();
+                var halo = new Pen(new SolidColorBrush(Color.FromArgb(200, 20, 20, 20)), 4.4)
                 {
-                    context.BeginFigure(tip, true, true);
-                    context.LineTo(back + perpendicular * 2.8, true, false);
-                    context.LineTo(back - perpendicular * 2.8, true, false);
+                    StartLineCap = PenLineCap.Round,
+                    EndLineCap = PenLineCap.Round
+                };
+                var line = new Pen(new SolidColorBrush(Color.FromRgb(250, 250, 250)), 2.0)
+                {
+                    StartLineCap = PenLineCap.Round,
+                    EndLineCap = PenLineCap.Round
+                };
+
+                var heads = new[] { ArrowHead(cx, cy, radius, from, -1), ArrowHead(cx, cy, radius, to, 1) };
+                dc.DrawGeometry(null, halo, arc);
+                foreach (var head in heads)
+                {
+                    dc.DrawGeometry(null, new Pen(halo.Brush, 2.4) { LineJoin = PenLineJoin.Round }, head);
                 }
 
-                head.Freeze();
-                dc.DrawGeometry(new SolidColorBrush(Color.FromRgb(245, 245, 245)), outline, head);
+                dc.DrawGeometry(null, line, arc);
+                foreach (var head in heads)
+                {
+                    dc.DrawGeometry(line.Brush, null, head);
+                }
+
+                // Small centre dot marks the hot spot.
+                dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(200, 20, 20, 20)), null, new Point(16, 16), 2.2, 2.2);
+                dc.DrawEllipse(line.Brush, null, new Point(16, 16), 1.2, 1.2);
             }
 
-            var bitmap = new RenderTargetBitmap(32, 32, 96, 96, PixelFormats.Pbgra32);
-            bitmap.Render(visual);
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using var png = new MemoryStream();
-            encoder.Save(png);
-            var payload = png.ToArray();
-            using var cur = new MemoryStream();
-            using (var writer = new BinaryWriter(cur, Encoding.UTF8, leaveOpen: true))
-            {
-                writer.Write((ushort)0);
-                writer.Write((ushort)2);
-                writer.Write((ushort)1);
-                writer.Write((byte)32);
-                writer.Write((byte)32);
-                writer.Write((byte)0);
-                writer.Write((byte)0);
-                writer.Write((ushort)16);
-                writer.Write((ushort)16);
-                writer.Write((uint)payload.Length);
-                writer.Write((uint)22);
-            }
-
-            cur.Write(payload, 0, payload.Length);
-            var directory = Path.Combine(AppContext.BaseDirectory, "cursors");
-            try
-            {
-                Directory.CreateDirectory(directory);
-            }
-            catch
-            {
-                directory = Path.Combine(Path.GetTempPath(), "MarkshotCursors");
-                Directory.CreateDirectory(directory);
-            }
-
-            var file = Path.Combine(directory, clockwise ? "rotate-cw.cur" : "rotate-ccw.cur");
-            File.WriteAllBytes(file, cur.ToArray());
-            var handle = LoadCursorFromFile(file);
-            if (handle == IntPtr.Zero)
-            {
-                return null;
-            }
-
-            var safeHandle = new CursorHandle(handle);
-            Handles.Add(safeHandle);
-            return CursorInteropHelper.Create(safeHandle);
+            return SaveCursor(visual, 32, 16, 16, "rotate-light.cur");
         }
         catch (Exception ex)
         {
             Log.Error("创建旋转光标失败", ex);
             return null;
         }
+    }
+
+    /// <summary>A filled triangle pointing along the arc's tangent at <paramref name="angle"/>.</summary>
+    private static Geometry ArrowHead(double cx, double cy, double radius, double angle, int direction)
+    {
+        var tip = Polar(cx, cy, radius, angle + direction * 14);
+        var baseCenter = Polar(cx, cy, radius, angle);
+        var outward = new Vector(Math.Cos(angle * Math.PI / 180), Math.Sin(angle * Math.PI / 180));
+        var head = new StreamGeometry();
+        using (var context = head.Open())
+        {
+            context.BeginFigure(tip, true, true);
+            context.LineTo(baseCenter + outward * 3.6, true, false);
+            context.LineTo(baseCenter - outward * 3.6, true, false);
+        }
+
+        head.Freeze();
+        return head;
+    }
+
+    private static Cursor? SaveCursor(Visual visual, int size, int hotX, int hotY, string fileName)
+    {
+        var bitmap = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var png = new MemoryStream();
+        encoder.Save(png);
+        var payload = png.ToArray();
+        using var cur = new MemoryStream();
+        using (var writer = new BinaryWriter(cur, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write((ushort)0);
+            writer.Write((ushort)2);
+            writer.Write((ushort)1);
+            writer.Write((byte)(size >= 256 ? 0 : size));
+            writer.Write((byte)(size >= 256 ? 0 : size));
+            writer.Write((byte)0);
+            writer.Write((byte)0);
+            writer.Write((ushort)hotX);
+            writer.Write((ushort)hotY);
+            writer.Write((uint)payload.Length);
+            writer.Write((uint)22);
+        }
+
+        cur.Write(payload, 0, payload.Length);
+        var directory = Path.Combine(AppContext.BaseDirectory, "cursors");
+        try
+        {
+            Directory.CreateDirectory(directory);
+        }
+        catch
+        {
+            directory = Path.Combine(Path.GetTempPath(), "MarkshotCursors");
+            Directory.CreateDirectory(directory);
+        }
+
+        var file = Path.Combine(directory, fileName);
+        File.WriteAllBytes(file, cur.ToArray());
+        var handle = LoadCursorFromFile(file);
+        if (handle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var safeHandle = new CursorHandle(handle);
+        Handles.Add(safeHandle);
+        return CursorInteropHelper.Create(safeHandle);
     }
 
     private static Point Polar(double cx, double cy, double radius, double degrees)
@@ -243,9 +201,16 @@ public static class ToolCursors
             return Cursors.Cross;
         }
 
-        var diameter = Math.Clamp((int)Math.Round(thickness * 2), 6, 48);
+        // The ring matches what the brush paints: eraser 2x (EraserWidth), highlighter 4x (PenAnnotation).
+        var width = tool switch
+        {
+            AnnotationTool.Eraser => Math.Max(8, thickness * 2),
+            AnnotationTool.Highlighter => thickness * 4,
+            _ => thickness
+        };
+        var diameter = Math.Clamp((int)Math.Round(width), 6, 60);
         var ink = tool == AnnotationTool.Eraser
-            ? Color.FromRgb(0xFF, 0x6B, 0x6B)
+            ? Colors.White
             : color ?? Color.FromRgb(0xF5, 0xF5, 0xF5);
         var key = $"{tool}-{diameter}-{ink.R:X2}{ink.G:X2}{ink.B:X2}";
         if (Cache.TryGetValue(key, out var cached))
@@ -258,70 +223,36 @@ public static class ToolCursors
         return cursor;
     }
 
+    /// <summary>
+    /// Brush ring: a bright white ring with a soft dark halo (visible on any
+    /// background), the tool colour as an inner ring for the pen, a light
+    /// translucent fill for the eraser, and a centre dot.
+    /// </summary>
     private static Cursor? Build(int diameter, Color ink, string key)
     {
         try
         {
+            var eraser = key.StartsWith(nameof(AnnotationTool.Eraser), StringComparison.Ordinal);
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
             {
-                var outline = new Pen(new SolidColorBrush(Color.FromArgb(235, 0, 0, 0)), 3.0);
-                var line = new Pen(new SolidColorBrush(ink), 1.5);
+                var center = new Point(32, 32);
                 var radius = diameter / 2.0;
-                dc.DrawEllipse(null, outline, new Point(32, 32), radius, radius);
-                dc.DrawEllipse(null, line, new Point(32, 32), radius, radius);
+                var halo = new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 3.2);
+                var ring = new Pen(new SolidColorBrush(Color.FromRgb(255, 255, 255)), 1.6);
+                var fill = eraser ? new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)) : null;
+                dc.DrawEllipse(fill, halo, center, radius, radius);
+                dc.DrawEllipse(null, ring, center, radius, radius);
+                if (!eraser && radius > 4)
+                {
+                    dc.DrawEllipse(null, new Pen(new SolidColorBrush(ink), 1.3), center, radius - 1.8, radius - 1.8);
+                }
+
+                dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)), null, center, 1.8, 1.8);
+                dc.DrawEllipse(Brushes.White, null, center, 0.9, 0.9);
             }
 
-            var bitmap = new RenderTargetBitmap(64, 64, 96, 96, PixelFormats.Pbgra32);
-            bitmap.Render(visual);
-
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using var png = new MemoryStream();
-            encoder.Save(png);
-            var payload = png.ToArray();
-
-            using var cur = new MemoryStream();
-            using (var writer = new BinaryWriter(cur, Encoding.UTF8, leaveOpen: true))
-            {
-                writer.Write((ushort)0);
-                writer.Write((ushort)2);
-                writer.Write((ushort)1);
-                writer.Write((byte)64);
-                writer.Write((byte)64);
-                writer.Write((byte)0);
-                writer.Write((byte)0);
-                writer.Write((ushort)32);
-                writer.Write((ushort)32);
-                writer.Write((uint)payload.Length);
-                writer.Write((uint)22);
-            }
-
-            cur.Write(payload, 0, payload.Length);
-
-            var directory = Path.Combine(AppContext.BaseDirectory, "cursors");
-            try
-            {
-                Directory.CreateDirectory(directory);
-            }
-            catch
-            {
-                directory = Path.Combine(Path.GetTempPath(), "MarkshotCursors");
-                Directory.CreateDirectory(directory);
-            }
-
-            var file = Path.Combine(directory, $"cursor-{key}.cur");
-            File.WriteAllBytes(file, cur.ToArray());
-
-            var handle = LoadCursorFromFile(file);
-            if (handle == IntPtr.Zero)
-            {
-                return null;
-            }
-
-            var safeHandle = new CursorHandle(handle);
-            Handles.Add(safeHandle);
-            return CursorInteropHelper.Create(safeHandle);
+            return SaveCursor(visual, 64, 32, 32, $"cursor-{key}.cur");
         }
         catch (Exception ex)
         {

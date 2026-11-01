@@ -2,12 +2,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace Markshot.Core;
 
 /// <summary>
-/// Lets a slider jump to the clicked track position and continue dragging in
-/// the same mouse press, without releasing the thumb first.
+/// Lets a slider jump to the clicked track position and keep dragging in the
+/// same press. The click sets the value, then the press is handed to the
+/// slider's own Thumb, so WPF's native thumb drag takes over from there.
 /// </summary>
 public static class SliderDragBehavior
 {
@@ -17,13 +19,6 @@ public static class SliderDragBehavior
             typeof(bool),
             typeof(SliderDragBehavior),
             new PropertyMetadata(false, OnEnabledChanged));
-
-    private static readonly DependencyProperty DraggingProperty =
-        DependencyProperty.RegisterAttached(
-            "Dragging",
-            typeof(bool),
-            typeof(SliderDragBehavior),
-            new PropertyMetadata(false));
 
     public static void SetEnabled(DependencyObject element, bool value) =>
         element.SetValue(EnabledProperty, value);
@@ -49,85 +44,54 @@ public static class SliderDragBehavior
         if ((bool)e.NewValue)
         {
             slider.PreviewMouseLeftButtonDown += OnMouseDown;
-            slider.PreviewMouseMove += OnMouseMove;
-            slider.PreviewMouseLeftButtonUp += OnMouseUp;
-            slider.LostMouseCapture += OnLostCapture;
         }
         else
         {
             slider.PreviewMouseLeftButtonDown -= OnMouseDown;
-            slider.PreviewMouseMove -= OnMouseMove;
-            slider.PreviewMouseLeftButtonUp -= OnMouseUp;
-            slider.LostMouseCapture -= OnLostCapture;
         }
     }
 
     private static void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not Slider slider || e.OriginalSource is Thumb)
+        if (sender is not Slider slider || !slider.IsEnabled)
         {
             return;
         }
 
-        SetValueFromPoint(slider, e.GetPosition(slider));
-        slider.SetValue(DraggingProperty, true);
-        slider.CaptureMouse();
+        var track = slider.Template?.FindName("PART_Track", slider) as Track;
+        var thumb = track?.Thumb;
+        if (track == null || thumb == null || IsWithin(e.OriginalSource as DependencyObject, thumb))
+        {
+            return; // pressing the thumb itself already drags natively
+        }
+
+        slider.Value = Math.Clamp(track.ValueFromPoint(e.GetPosition(track)), slider.Minimum, slider.Maximum);
+        slider.UpdateLayout();
+
+        // Hand this press to the thumb: it captures the mouse and raises
+        // DragDelta for the rest of the gesture, exactly as if it was grabbed.
+        thumb.RaiseEvent(new MouseButtonEventArgs(e.MouseDevice, e.Timestamp, MouseButton.Left)
+        {
+            RoutedEvent = UIElement.MouseLeftButtonDownEvent,
+            Source = thumb
+        });
         e.Handled = true;
     }
 
-    private static void OnMouseMove(object sender, MouseEventArgs e)
+    private static bool IsWithin(DependencyObject? element, DependencyObject ancestor)
     {
-        if (sender is not Slider slider || !(bool)slider.GetValue(DraggingProperty))
+        while (element != null)
         {
-            return;
+            if (ReferenceEquals(element, ancestor))
+            {
+                return true;
+            }
+
+            element = element is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(element)
+                : LogicalTreeHelper.GetParent(element);
         }
 
-        SetValueFromPoint(slider, e.GetPosition(slider));
-        e.Handled = true;
-    }
-
-    private static void OnMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is not Slider slider)
-        {
-            return;
-        }
-
-        slider.SetValue(DraggingProperty, false);
-        if (slider.IsMouseCaptured)
-        {
-            slider.ReleaseMouseCapture();
-        }
-    }
-
-    private static void OnLostCapture(object sender, MouseEventArgs e)
-    {
-        if (sender is Slider slider)
-        {
-            slider.SetValue(DraggingProperty, false);
-        }
-    }
-
-    private static void SetValueFromPoint(Slider slider, Point point)
-    {
-        var range = slider.Maximum - slider.Minimum;
-        if (range <= 0)
-        {
-            return;
-        }
-
-        double ratio;
-        if (slider.Orientation == Orientation.Vertical)
-        {
-            var height = Math.Max(1, slider.ActualHeight - 12);
-            ratio = 1 - (point.Y - 6) / height;
-        }
-        else
-        {
-            var width = Math.Max(1, slider.ActualWidth - 12);
-            ratio = (point.X - 6) / width;
-        }
-
-        slider.Value = slider.Minimum + Math.Clamp(ratio, 0, 1) * range;
+        return false;
     }
 }

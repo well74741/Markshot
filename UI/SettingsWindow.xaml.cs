@@ -343,10 +343,14 @@ public partial class SettingsWindow : Window
                 ? Math.Clamp(timeout, 10, 300)
                 : 60;
 
-        DialogResult = true;
+        Saved = true;
+        Close();
     }
 
-    private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>True when the window was closed with “保存”.</summary>
+    public bool Saved { get; private set; }
 
     private void Browse_Click(object sender, RoutedEventArgs e)
     {
