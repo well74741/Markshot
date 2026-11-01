@@ -201,6 +201,25 @@ public partial class PinWindow : Window
 
     public bool IsClickThrough => _clickThrough;
 
+    /// <summary>Everything needed to reopen this pin exactly as it was (image, editable annotations, place, zoom, opacity).</summary>
+    public PinSnapshot Snapshot() => new(
+        SourceImage,
+        _baseImage,
+        Editor.Items.Select(item => item.Clone()).ToList(),
+        _left,
+        _top,
+        _zoom,
+        _opacity);
+
+    /// <summary>Re-applies the zoom and opacity of a snapshot (position comes from the constructor).</summary>
+    public void RestoreView(double zoom, double opacity)
+    {
+        _zoom = Math.Clamp(zoom, 0.1, 8.0);
+        _opacity = Math.Clamp(opacity, 0.2, 1.0);
+        Img.Opacity = _opacity;
+        ApplyBounds();
+    }
+
     public void ReplaceImage(BitmapSource image)
     {
         SourceImage = image;
@@ -564,15 +583,17 @@ public partial class PinWindow : Window
             }
             else
             {
-                if (_textEditor.Target is { } editingText)
+                if (_textEditor.Target is not null)
                 {
-                    var editFrame = AnnotationEditor.HitFrame(editingText, point, 1 / _zoom);
-                    _textEditor.Commit();
-                    if (!((editFrame.IsHandle || editFrame.Rotate) && ReferenceEquals(_selected, editingText)))
+                    if (_textEditor.TryBeginFrameDrag(point))
                     {
                         e.Handled = true;
                         return;
                     }
+
+                    _textEditor.Commit();
+                    e.Handled = true;
+                    return;
                 }
 
                 if (e.ClickCount == 2 && HitAnnotation(point) is TextAnnotation doubleClicked)
@@ -629,6 +650,13 @@ public partial class PinWindow : Window
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
+        if (_editMode && e.LeftButton == MouseButtonState.Released &&
+            _textEditor.FrameCursorAt(ToPixels(e.GetPosition(ImageHost))) is { } frameCursor)
+        {
+            ImageHost.Cursor = frameCursor; // frame of the text being typed
+            return;
+        }
+
         if (_middleDragging)
         {
             var middleCursor = Native.CursorPosition();
@@ -1462,16 +1490,14 @@ public partial class PinWindow : Window
         var point = ToPixels(e.GetPosition(InputLayer));
         if (_textEditor.Target is { } editingText)
         {
-            var editFrame = AnnotationEditor.HitFrame(editingText, point, 1 / _zoom);
-            _textEditor.Commit();
-            if ((editFrame.IsHandle || editFrame.Rotate) && ReferenceEquals(_selected, editingText))
+            // The frame of the text being typed moves / resizes / rotates it; typing continues.
+            if (_textEditor.TryBeginFrameDrag(point))
             {
-                TryBeginAnnotationTransform(point);
-                _history.Arm(Editor.Items);
-                InputLayer.CaptureMouse();
                 e.Handled = true;
                 return;
             }
+
+            _textEditor.Commit();
 
             if (!(_tool == AnnotationTool.Text && HitAnnotation(point) is TextAnnotation other &&
                   !ReferenceEquals(other, editingText)))
@@ -1586,6 +1612,12 @@ public partial class PinWindow : Window
         var point = ToPixels(e.GetPosition(InputLayer));
         if (UpdateTextPress(point))
         {
+            return;
+        }
+
+        if (e.LeftButton == MouseButtonState.Released && _textEditor.FrameCursorAt(point) is { } frameCursor)
+        {
+            InputLayer.Cursor = frameCursor; // frame of the text being typed
             return;
         }
 
@@ -1759,9 +1791,17 @@ public partial class PinWindow : Window
         _history.Checkpoint(Editor.Items);
         Editor.Items.Add(annotation);
         UpdateUndoButtons();
-        // The new element stays selected (wheel / Ctrl+wheel / frame adjust it right away).
-        SelectQuietly(annotation);
-        _freshSelection = annotation;
+        // The new element stays selected (wheel / Ctrl+wheel / frame adjust it right away);
+        // freehand strokes don't — the next stroke usually follows immediately.
+        if (annotation is not PenAnnotation and not MosaicBrushAnnotation)
+        {
+            SelectQuietly(annotation);
+            _freshSelection = annotation;
+        }
+        else
+        {
+            Editor.InvalidateVisual();
+        }
     }
 
     /// <summary>The selection is the element just created (see AnnotationOps.SelectionHit).</summary>
@@ -2653,3 +2693,13 @@ public partial class PinWindow : Window
         }
     }
 }
+
+/// <summary>A closed pin, kept in memory so it can be restored exactly.</summary>
+public sealed record PinSnapshot(
+    BitmapSource Image,
+    BitmapSource BaseImage,
+    List<Annotation> Annotations,
+    int Left,
+    int Top,
+    double Zoom,
+    double Opacity);

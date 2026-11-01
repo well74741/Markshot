@@ -17,6 +17,15 @@ public partial class TranslationWindow : Window
         _image = image;
         _autoTranslate = autoTranslate;
         TargetBox.Text = App.Config.Translation.TargetLanguage;
+        if (!autoTranslate)
+        {
+            Title = "Markshot 文字识别";
+            HeaderTitle.Text = "文字识别";
+            HeaderSubtitle.Text = "本地 OCR · 可编辑后复制或翻译";
+        }
+
+        SourceBox.TextChanged += (_, _) => UpdateMeta();
+        ResultBox.TextChanged += (_, _) => UpdateMeta();
         Loaded += OnLoaded;
         SourceInitialized += (_, _) =>
             Native.EnableDarkTitleBar(new WindowInteropHelper(this).Handle);
@@ -29,17 +38,68 @@ public partial class TranslationWindow : Window
             Close();
             e.Handled = true;
         }
+        else if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            _ = TranslateAsync();
+            e.Handled = true;
+        }
+    }
+
+    private enum StatusKind
+    {
+        Idle,
+        Busy,
+        Done,
+        Error
+    }
+
+    private void SetStatus(string text, StatusKind kind)
+    {
+        StatusText.Text = text;
+        StatusDot.Fill = kind switch
+        {
+            StatusKind.Busy => (Brush)FindResource("Accent"),
+            StatusKind.Done => new SolidColorBrush(Color.FromRgb(0x52, 0xC4, 0x1A)),
+            StatusKind.Error => new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F)),
+            _ => new SolidColorBrush(Color.FromRgb(0x5E, 0x5E, 0x5E))
+        };
+    }
+
+    private void UpdateMeta()
+    {
+        var source = SourceBox.Text.Trim();
+        SourceMeta.Text = source.Length == 0 ? "识别结果，可编辑" : $"{source.Length} 字 · 可编辑";
+        var result = ResultBox.Text.Trim();
+        ResultMeta.Text = result.Length == 0 ? "" : $"{result.Length} 字";
+        ResultPlaceholder.Visibility = result.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void CopySource_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(SourceBox.Text))
+        {
+            return;
+        }
+
+        if (ClipboardService.CopyText(SourceBox.Text))
+        {
+            SetStatus("原文已复制", StatusKind.Done);
+        }
+        else
+        {
+            SetStatus("复制失败：剪贴板被占用", StatusKind.Error);
+        }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (_image == null)
         {
-            StatusText.Text = "可直接输入文本后点击“翻译”。";
+            SetStatus("可直接输入文本后点击“翻译”。", StatusKind.Idle);
             return;
         }
 
-        StatusText.Text = "正在识别文字…";
+        SetStatus("正在识别文字…", StatusKind.Busy);
 
         try
         {
@@ -53,7 +113,7 @@ public partial class TranslationWindow : Window
 
             if (string.IsNullOrWhiteSpace(text))
             {
-                StatusText.Text = "未识别到文字，可手动输入后翻译。";
+                SetStatus("未识别到文字，可手动输入后翻译。", StatusKind.Idle);
                 return;
             }
 
@@ -63,7 +123,7 @@ public partial class TranslationWindow : Window
             }
             else
             {
-                StatusText.Text = "识别完成，可点击“翻译”。";
+                SetStatus("识别完成，可编辑、复制或翻译。", StatusKind.Done);
             }
         }
         catch (Exception ex)
@@ -71,7 +131,7 @@ public partial class TranslationWindow : Window
             Log.Error("OCR 识别失败", ex);
             if (!_closed)
             {
-                StatusText.Text = "识别失败：" + ex.Message;
+                SetStatus("识别失败：" + ex.Message, StatusKind.Error);
             }
         }
     }
@@ -86,13 +146,13 @@ public partial class TranslationWindow : Window
         var text = SourceBox.Text.Trim();
         if (text.Length == 0)
         {
-            StatusText.Text = "没有可翻译的文本。";
+            SetStatus("没有可翻译的文本。", StatusKind.Idle);
             return;
         }
 
         _busy = true;
         TranslateButton.IsEnabled = false;
-        StatusText.Text = "正在翻译…";
+        SetStatus("正在翻译…", StatusKind.Busy);
 
         try
         {
@@ -109,13 +169,13 @@ public partial class TranslationWindow : Window
             }
 
             ResultBox.Text = result;
-            StatusText.Text = result.Length == 0 ? "翻译结果为空。" : "翻译完成";
+            SetStatus(result.Length == 0 ? "翻译结果为空。" : "翻译完成", result.Length == 0 ? StatusKind.Idle : StatusKind.Done);
         }
         catch (OperationCanceledException)
         {
             if (!_closed)
             {
-                StatusText.Text = "已取消";
+                SetStatus("已取消", StatusKind.Idle);
             }
         }
         catch (Exception ex)
@@ -123,7 +183,7 @@ public partial class TranslationWindow : Window
             Log.Error("翻译失败", ex);
             if (!_closed)
             {
-                StatusText.Text = "翻译失败：" + ex.Message;
+                SetStatus("翻译失败：" + ex.Message, StatusKind.Error);
             }
         }
         finally
@@ -142,21 +202,31 @@ public partial class TranslationWindow : Window
             return;
         }
 
-        StatusText.Text = ClipboardService.CopyText(ResultBox.Text) ? "译文已复制" : "复制失败：剪贴板被占用";
+        if (ClipboardService.CopyText(ResultBox.Text))
+        {
+            SetStatus("译文已复制", StatusKind.Done);
+        }
+        else
+        {
+            SetStatus("复制失败：剪贴板被占用", StatusKind.Error);
+        }
     }
 
     private void Pin_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(ResultBox.Text))
+        // The translation when there is one, otherwise the recognised text.
+        var translated = !string.IsNullOrWhiteSpace(ResultBox.Text);
+        var text = translated ? ResultBox.Text : SourceBox.Text;
+        if (string.IsNullOrWhiteSpace(text))
         {
-            StatusText.Text = "没有可贴图的译文。";
+            SetStatus("没有可贴图的文字。", StatusKind.Idle);
             return;
         }
 
         var target = string.IsNullOrWhiteSpace(TargetBox.Text) ? "译文" : TargetBox.Text.Trim();
-        var card = TextCardRenderer.Render($"译文 · {target}", ResultBox.Text);
+        var card = TextCardRenderer.Render(translated ? $"译文 · {target}" : "识别文字", text);
         ((App)Application.Current).CreatePinAtCursor(card);
-        StatusText.Text = "译文已贴到屏幕";
+        SetStatus(translated ? "译文已贴到屏幕" : "原文已贴到屏幕", StatusKind.Done);
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

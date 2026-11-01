@@ -17,6 +17,10 @@ public partial class App : Application
 
     private const int MaxPins = 20;
 
+    // Pins closed in this session, newest last: restore reopens them exactly (place, zoom,
+    // editable annotations). The disk history covers pins closed in earlier sessions.
+    private readonly List<(PinSnapshot Snapshot, PinEntry Entry)> _closedPins = new();
+
     private Mutex? _mutex;
     private HotkeyManager? _hotkeys;
     private TrayService? _tray;
@@ -242,6 +246,11 @@ public partial class App : Application
                 var entry = new PinEntry { Image = pin.SourceImage };
                 History.Add(entry);
                 PinStore.Save(entry, pin.SourceImage);
+                _closedPins.Add((pin.Snapshot(), entry));
+                if (_closedPins.Count > 10)
+                {
+                    _closedPins.RemoveAt(0);
+                }
             }
         };
 
@@ -300,16 +309,32 @@ public partial class App : Application
         ShowTranslation(image);
     }
 
+    /// <summary>
+    /// Reopens the most recently closed pin where it was, with its zoom, opacity and editable
+    /// annotations. Each call steps one pin further back (it never pins the clipboard).
+    /// </summary>
     public void RestoreLastPin()
     {
-        var entry = History.Last;
-        var image = entry?.LoadImage();
-        if (entry == null || image == null)
+        if (_closedPins.Count > 0)
         {
-            _tray?.ShowBalloon("没有历史贴图", "关闭过的贴图会保留在这里，可随时恢复。");
+            var (snapshot, entry) = _closedPins[^1];
+            _closedPins.RemoveAt(_closedPins.Count - 1);
+            History.Remove(entry);
+            var restored = CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
+                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null);
+            restored.RestoreView(snapshot.Zoom, snapshot.Opacity);
             return;
         }
 
+        var last = History.Last;
+        var image = last?.LoadImage();
+        if (last == null || image == null)
+        {
+            _tray?.ShowBalloon("没有可恢复的贴图", "关闭过的贴图会保留在这里，可随时恢复。");
+            return;
+        }
+
+        History.Remove(last);
         CreatePinAtCursor(image);
     }
 

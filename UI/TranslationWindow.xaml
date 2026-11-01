@@ -3,67 +3,171 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Icon="pack://application:,,,/Markshot;component/Assets/markshot.ico"
         Title="Markshot 翻译"
-        Width="1000" Height="620" MinWidth="780" MinHeight="480"
-        Background="#FF1C1C1C"
+        Width="980" Height="600" MinWidth="720" MinHeight="420"
+        Background="#FF1A1A1A"
         WindowStartupLocation="CenterScreen"
         Topmost="True"
         PreviewKeyDown="OnPreviewKeyDown"
-        FontFamily="Microsoft YaHei UI">
+        FontFamily="Microsoft YaHei UI"
+        UseLayoutRounding="True">
 
-    <Grid Margin="18">
+    <Window.Resources>
+        <!-- Card holding one text pane: header row (title + actions) and a borderless editor. -->
+        <Style x:Key="Pane" TargetType="Border">
+            <Setter Property="Background" Value="#FF222222" />
+            <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+
+        <Style x:Key="PaneTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E6E6E6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="PaneMeta" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#8A8A8A" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="8,1,0,0" />
+        </Style>
+
+        <!-- Small text action inside a pane header. -->
+        <Style x:Key="PaneAction" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="Foreground" Value="#C8C8C8" />
+            <Setter Property="Padding" Value="9,3" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style x:Key="PaneEditor" TargetType="TextBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#F0F0F0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="SelectionBrush" Value="{StaticResource Accent}" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Padding" Value="12,10,6,12" />
+            <Setter Property="TextBlock.LineHeight" Value="22" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <!-- TextBox applies Padding inside the content host itself. -->
+                        <ScrollViewer x:Name="PART_ContentHost" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Slim dark scrollbar (the system one is white). -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="MinWidth" Value="8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border CornerRadius="4" Background="#44FFFFFF" Margin="1,2" />
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,14">
+        <!-- Header: title on the left, target language + translate on the right. -->
+        <Grid Grid.Row="0" Margin="20,16,20,12">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="截图翻译" FontSize="18" Foreground="#F5F5F5" FontWeight="SemiBold" />
-                <TextBlock Text="OCR + AI 翻译" FontSize="12" Foreground="#8A8A8A"
-                           VerticalAlignment="Bottom" Margin="8,0,0,2" />
+                <TextBlock x:Name="HeaderTitle" Text="截图翻译" FontSize="17" Foreground="#F5F5F5" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+                <TextBlock x:Name="HeaderSubtitle" Text="本地 OCR + AI 翻译" FontSize="12" Foreground="#8A8A8A"
+                           VerticalAlignment="Center" Margin="10,2,0,0" />
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <TextBlock Text="目标语言" Foreground="#9A9A9A" FontSize="12"
-                           VerticalAlignment="Center" Margin="0,0,8,0" />
-                <TextBox x:Name="TargetBox" Style="{StaticResource InputBox}" Width="120" Text="简体中文" />
-                <Button x:Name="TranslateButton" Style="{StaticResource AccentButton}" Content="翻译"
-                        Click="Translate_Click" Margin="8,0,0,0" />
+                <TextBlock Text="译成" Foreground="#9A9A9A" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox x:Name="TargetBox" Style="{StaticResource InputBox}" Width="128" Padding="4,3"
+                         VerticalAlignment="Center" Text="简体中文" />
+                <Button x:Name="TranslateButton" Style="{StaticResource PrimaryButton}" Content="翻译"
+                        Click="Translate_Click" Margin="8,0,0,0" ToolTip="翻译左侧原文（Ctrl+Enter）" />
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="1">
+        <!-- Two panes of equal width. -->
+        <Grid Grid.Row="1" Margin="20,0,20,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="12" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <DockPanel Grid.Column="0">
-                <TextBlock DockPanel.Dock="Top" Text="原文（识别结果，可编辑）" Style="{StaticResource FieldLabel}" />
-                <TextBox x:Name="SourceBox" Style="{StaticResource InputBox}"
-                         AcceptsReturn="True" TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                         FontSize="14" Padding="10" />
-            </DockPanel>
+            <Border Grid.Column="0" Style="{StaticResource Pane}">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" Margin="14,10,8,0" Height="28">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="原文" Style="{StaticResource PaneTitle}" />
+                            <TextBlock x:Name="SourceMeta" Text="识别结果，可编辑" Style="{StaticResource PaneMeta}" />
+                        </StackPanel>
+                        <Button Content="复制" Style="{StaticResource PaneAction}" HorizontalAlignment="Right"
+                                Click="CopySource_Click" ToolTip="复制原文" />
+                    </Grid>
+                    <Border DockPanel.Dock="Top" Height="1" Background="#14FFFFFF" Margin="14,8,14,0" />
+                    <TextBox x:Name="SourceBox" Style="{StaticResource PaneEditor}" />
+                </DockPanel>
+            </Border>
 
-            <DockPanel Grid.Column="2">
-                <TextBlock DockPanel.Dock="Top" Text="译文" Style="{StaticResource FieldLabel}" />
-                <TextBox x:Name="ResultBox" Style="{StaticResource InputBox}" IsReadOnly="True"
-                         AcceptsReturn="True" TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                         FontSize="14" Padding="10" />
-            </DockPanel>
+            <Border Grid.Column="2" Style="{StaticResource Pane}">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" Margin="14,10,8,0" Height="28">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="译文" Style="{StaticResource PaneTitle}" />
+                            <TextBlock x:Name="ResultMeta" Text="" Style="{StaticResource PaneMeta}" />
+                        </StackPanel>
+                        <Button Content="复制" Style="{StaticResource PaneAction}" HorizontalAlignment="Right"
+                                Click="Copy_Click" ToolTip="复制译文" />
+                    </Grid>
+                    <Border DockPanel.Dock="Top" Height="1" Background="#14FFFFFF" Margin="14,8,14,0" />
+                    <Grid>
+                        <TextBox x:Name="ResultBox" Style="{StaticResource PaneEditor}" IsReadOnly="True" />
+                        <TextBlock x:Name="ResultPlaceholder" Text="点击右上角“翻译”生成译文" Foreground="#5E5E5E" FontSize="13"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+                    </Grid>
+                </DockPanel>
+            </Border>
         </Grid>
 
-        <Grid Grid.Row="2" Margin="0,14,0,0">
-            <TextBlock x:Name="StatusText" Foreground="#9A9A9A" FontSize="12"
-                       VerticalAlignment="Center" Text="准备就绪" />
+        <!-- Footer: status on the left, actions on the right. -->
+        <Grid Grid.Row="2" Margin="20,12,20,16">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="#5E5E5E" VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusText" Foreground="#9A9A9A" FontSize="12" Margin="8,0,0,0"
+                           VerticalAlignment="Center" Text="准备就绪" />
+            </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="复制译文" Style="{StaticResource ToolButton}" Click="Copy_Click" />
-                <Button Content="贴图" Style="{StaticResource AccentButton}" Click="Pin_Click" Margin="8,0,0,0" />
-                <Button Content="关闭" Style="{StaticResource ToolButton}" Click="Close_Click" Margin="8,0,0,0" />
+                <Button Content="贴到屏幕" Style="{StaticResource FooterButton}" Click="Pin_Click"
+                        ToolTip="把译文（没有译文时为原文）做成贴图" />
+                <Button Content="关闭" Style="{StaticResource FooterButton}" Click="Close_Click" Margin="8,0,0,0" />
             </StackPanel>
         </Grid>
     </Grid>

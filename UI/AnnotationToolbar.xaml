@@ -1,6 +1,7 @@
 <UserControl x:Class="Markshot.UI.AnnotationToolbar"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:Markshot.Core"
              Focusable="False">
 
     <Border Background="#F21E1E1E" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="9" Padding="5,3">
@@ -54,12 +55,17 @@
                 </RadioButton>
 
                 <RadioButton x:Name="ToolMosaic" Style="{StaticResource IconToolRadio}"
-                             Tag="Mosaic" GroupName="Tool" Click="Tool_Click" ToolTip="马赛克/水印">
+                             Tag="Mosaic" GroupName="Tool" Click="Tool_Click" ToolTip="马赛克（区域 / 画笔）">
                     <Border Style="{StaticResource IconMosaicMask}" />
                 </RadioButton>
                 <Button Style="{StaticResource ChevronButton}" Click="MosaicMenu_Click" ToolTip="马赛克样式" x:Name="MosaicChevron">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
                 </Button>
+
+                <RadioButton x:Name="ToolWatermark" Style="{StaticResource IconToolRadio}"
+                             Tag="Watermark" GroupName="Tool" Click="Tool_Click" ToolTip="水印：铺满画面的文字（双击文字编辑）">
+                    <Border Style="{StaticResource IconWatermarkMask}" />
+                </RadioButton>
 
                 <RadioButton x:Name="ToolEraser" Style="{StaticResource IconToolRadio}"
                              Tag="Eraser" GroupName="Tool" Click="Tool_Click" ToolTip="橡皮擦 (E)">
@@ -70,7 +76,7 @@
                 <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
                 <Button x:Name="UndoButton" Style="{StaticResource IconToolButton}" Click="Undo_Click" ToolTip="撤销 (Ctrl+Z)">
-                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconUndo}" />
+                    <Border Style="{StaticResource IconUndoMask}" />
                 </Button>
 
                 <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
@@ -107,7 +113,9 @@
                     </Button>
                 </StackPanel>
             </StackPanel>
-            <Border x:Name="SettingsBar" Visibility="Collapsed" BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0"
+            <!-- The settings row slides open / closed and eases its width (SizeTransitionHost). -->
+            <core:SizeTransitionHost x:Name="SettingsHost">
+            <Border x:Name="SettingsBar" BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0"
                     Margin="0,3,0,0" Padding="2,3,0,0">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <StackPanel x:Name="RectVariants" Orientation="Horizontal" Visibility="Collapsed">
@@ -145,8 +153,6 @@
                                              Checked="Variant_Checked" Content="区域" ToolTip="框选区域打码" />
                                 <RadioButton x:Name="VariantMosaicBrush" Style="{StaticResource SegmentRadio}" Tag="MosaicBrush" GroupName="Variant"
                                              Checked="Variant_Checked" Content="画笔" ToolTip="涂抹打码（Shift 画直线）" />
-                                <RadioButton x:Name="VariantWatermark" Style="{StaticResource SegmentRadio}" Tag="Watermark" GroupName="Variant"
-                                             Checked="Variant_Checked" Content="水印" ToolTip="铺满画面的文字水印（双击文字编辑）" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -260,6 +266,7 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+            </core:SizeTransitionHost>
         </StackPanel>
     </Border>
 </UserControl>

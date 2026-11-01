@@ -22,11 +22,11 @@ public sealed class AppConfig
 
     public string PinResetHotkey { get; set; } = "F";
 
-    public string CaptureToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Eraser";
+    public string CaptureToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Watermark,Eraser";
 
     public string CaptureToolHidden { get; set; } = "";
 
-    public string PinToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Eraser";
+    public string PinToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Watermark,Eraser";
 
     public string PinToolHidden { get; set; } = "";
 

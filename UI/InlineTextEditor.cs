@@ -10,6 +10,11 @@ namespace Markshot.UI;
 /// TextBox with transparent glyphs sits on top in the same font, size and line
 /// height; it only supplies the caret, selection and IME.
 ///
+/// While typing, the text has a normal adjustment frame: the band around the
+/// text moves it, handles resize, the corner grips rotate. Typing continues
+/// and the box follows (the drag captures the mouse on the TextBox itself, so
+/// it also works where the box overlaps the frame).
+///
 /// Keys: Enter = finish, Shift/Ctrl+Enter = new line, Esc = finish.
 /// Clicking toolbar controls does not end editing; the host calls
 /// <see cref="Refresh"/> after restyling and focus returns to the box.
@@ -26,6 +31,15 @@ public sealed class InlineTextEditor
     private bool _syncing;
     private string _originalText = string.Empty;
 
+    // Frame drag while typing.
+    private FrameHit _dragHit;
+    private bool _framing;
+    private Rect _dragStartBounds;
+    private Point _dragCenter;
+    private Point _dragLast;
+    private double _dragStartRotation;
+    private double _dragStartAngle;
+
     public InlineTextEditor(TextBox box, AnnotationEditor canvas)
     {
         _box = box;
@@ -41,6 +55,144 @@ public sealed class InlineTextEditor
                 e.Handled = true;
             }
         };
+        _box.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (TryBeginFrameDrag(PixelOf(e)))
+            {
+                e.Handled = true;
+            }
+        };
+        _box.PreviewMouseMove += (_, e) =>
+        {
+            if (_framing)
+            {
+                DragFrame(PixelOf(e));
+                e.Handled = true;
+                return;
+            }
+
+            _box.Cursor = FrameCursorAt(PixelOf(e)) ?? Cursors.IBeam;
+        };
+        _box.PreviewMouseLeftButtonUp += (_, e) =>
+        {
+            if (_framing)
+            {
+                EndFrameDrag();
+                e.Handled = true;
+            }
+        };
+        _box.LostMouseCapture += (_, _) => _framing = false;
+    }
+
+    /// <summary>True while the frame of the text being typed is dragged.</summary>
+    public bool IsFraming => _framing;
+
+    /// <summary>Cursor for the editing frame at a point, or null when the point is not on it.</summary>
+    public Cursor? FrameCursorAt(Point pixel)
+    {
+        if (Target is not { } target)
+        {
+            return null;
+        }
+
+        var hit = AnnotationEditor.HitEditFrame(target, pixel, Unit);
+        if (hit.IsHandle)
+        {
+            return AnnotationEditor.ResizeCursor(hit.Handle, target.Rotation);
+        }
+
+        if (hit.Rotate)
+        {
+            return ToolCursors.GetRotationCursor(true);
+        }
+
+        return hit.Inside ? Cursors.SizeAll : null;
+    }
+
+    /// <summary>
+    /// Starts moving / resizing / rotating the text being typed when <paramref name="pixel"/>
+    /// is on its frame. Hosts call this for presses that land outside the TextBox.
+    /// </summary>
+    public bool TryBeginFrameDrag(Point pixel)
+    {
+        if (Target is not { } target)
+        {
+            return false;
+        }
+
+        var hit = AnnotationEditor.HitEditFrame(target, pixel, Unit);
+        if (!hit.Any)
+        {
+            return false;
+        }
+
+        _dragHit = hit;
+        _dragStartBounds = target.Bounds;
+        _dragCenter = new Point(_dragStartBounds.X + _dragStartBounds.Width / 2, _dragStartBounds.Y + _dragStartBounds.Height / 2);
+        _dragLast = pixel;
+        _dragStartRotation = target.Rotation;
+        _dragStartAngle = Math.Atan2(pixel.Y - _dragCenter.Y, pixel.X - _dragCenter.X) * 180 / Math.PI;
+        _framing = _box.CaptureMouse();
+        if (_framing)
+        {
+            _box.Cursor = FrameCursorAt(pixel) ?? Cursors.SizeAll;
+        }
+
+        return _framing;
+    }
+
+    private void DragFrame(Point pixel)
+    {
+        if (Target is not { } target)
+        {
+            return;
+        }
+
+        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+        if (_dragHit.Rotate)
+        {
+            var angle = Math.Atan2(pixel.Y - _dragCenter.Y, pixel.X - _dragCenter.X) * 180 / Math.PI;
+            var rotation = _dragStartRotation + angle - _dragStartAngle;
+            if (shift)
+            {
+                rotation = Math.Round(rotation / 15) * 15;
+            }
+
+            target.Rotation = ((rotation + 180) % 360 + 360) % 360 - 180;
+        }
+        else if (_dragHit.IsHandle)
+        {
+            var rect = AnnotationOps.ResizeFromHandle(_dragStartBounds, target.Rotation, _dragHit.Handle, pixel, shift);
+            AnnotationOps.Resize(target, rect, _dragHit.Handle);
+            StyleChanged?.Invoke(target); // the toolbar's size follows
+        }
+        else
+        {
+            target.Translate(pixel.X - _dragLast.X, pixel.Y - _dragLast.Y);
+            _dragLast = pixel;
+        }
+
+        Dirty = true;
+        Refresh();
+    }
+
+    private void EndFrameDrag()
+    {
+        _framing = false;
+        _box.ReleaseMouseCapture();
+        _box.Focus();
+        Keyboard.Focus(_box);
+        _canvas.InvalidateVisual();
+    }
+
+    private double Unit => 1 / (_canvas.Scale <= 0 ? 1 : _canvas.Scale);
+
+    /// <summary>Pointer position in image pixels (the canvas draws pixels at Scale DIP each).</summary>
+    private Point PixelOf(MouseEventArgs e)
+    {
+        var dip = e.GetPosition(_canvas);
+        var scale = _canvas.Scale <= 0 ? 1 : _canvas.Scale;
+        return new Point(dip.X / scale, dip.Y / scale);
     }
 
     public TextAnnotation? Target { get; private set; }
@@ -190,6 +342,12 @@ public sealed class InlineTextEditor
         if (target.Text != _originalText)
         {
             Dirty = true;
+        }
+
+        if (_framing)
+        {
+            _framing = false;
+            _box.ReleaseMouseCapture();
         }
 
         Target = null;

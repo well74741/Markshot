@@ -75,5 +75,8 @@ public sealed class PinHistory
         Add(new PinEntry { Image = image, Group = group });
     }
 
+    /// <summary>Takes an entry out once it was restored, so the next restore goes one further back.</summary>
+    public void Remove(PinEntry entry) => _items.Remove(entry);
+
     public void Clear() => _items.Clear();
 }

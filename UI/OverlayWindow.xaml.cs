@@ -574,17 +574,14 @@ public partial class OverlayWindow : Window
 
         if (_textEditor.Target is { } editingText)
         {
-            var frame = AnnotationEditor.HitFrame(editingText, point, _scale);
-            _textEditor.Commit(); // a non-empty text stays selected (OnTextEditEnded)
-            if ((frame.IsHandle || frame.Rotate) && ReferenceEquals(_selectedAnnotation, editingText))
+            // The frame of the text being typed moves / resizes / rotates it; typing continues.
+            if (_textEditor.TryBeginFrameDrag(point))
             {
-                // Grabbing a handle / edge / corner of the text being typed adjusts it like a shape.
-                TryBeginAnnotationTransform(point);
-                _history.Arm(Editor.Items);
-                InputLayer.CaptureMouse();
                 e.Handled = true;
                 return;
             }
+
+            _textEditor.Commit(); // a non-empty text stays selected (OnTextEditEnded)
 
             // A click elsewhere only finishes typing — unless the text tool is
             // pointed at another text, which then opens for editing.
@@ -1649,9 +1646,17 @@ public partial class OverlayWindow : Window
         _history.Checkpoint(Editor.Items);
         Editor.Items.Add(annotation);
         UpdateUndoButtons();
-        // The new element stays selected (wheel / Ctrl+wheel / frame adjust it right away).
-        SelectQuietly(annotation);
-        _freshSelection = annotation;
+        // The new element stays selected (wheel / Ctrl+wheel / frame adjust it right away);
+        // freehand strokes don't — the next stroke usually follows immediately.
+        if (annotation is not PenAnnotation and not MosaicBrushAnnotation)
+        {
+            SelectQuietly(annotation);
+            _freshSelection = annotation;
+        }
+        else
+        {
+            Editor.InvalidateVisual();
+        }
     }
 
     /// <summary>The selection is the element just created (see AnnotationOps.SelectionHit).</summary>
@@ -2329,6 +2334,12 @@ public partial class OverlayWindow : Window
 
     private void UpdateCursor(Point point)
     {
+        if (_textEditor.FrameCursorAt(point) is { } frameCursor)
+        {
+            InputLayer.Cursor = frameCursor; // frame of the text being typed
+            return;
+        }
+
         if (_hasSelection)
         {
             var frameHandle = HitHandle(point);

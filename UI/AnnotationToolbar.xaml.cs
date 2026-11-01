@@ -28,6 +28,7 @@ public partial class AnnotationToolbar : UserControl
         Line,
         Pen,
         Mosaic,
+        Watermark,
         Text,
         Number,
         Eraser
@@ -93,7 +94,9 @@ public partial class AnnotationToolbar : UserControl
     public AnnotationToolbar()
     {
         InitializeComponent();
-        Motion.PopOnShow(SettingsBar);
+        // Presses on the bar's own background stay here (a pin window would take them as a click
+        // on empty canvas and drop the selection, closing this row).
+        MouseDown += (_, e) => e.Handled = true;
         SliderDragBehavior.Enable(WidthSlider);
         SliderDragBehavior.Enable(CornerSlider);
         SliderDragBehavior.Enable(StrokeSlider);
@@ -197,9 +200,10 @@ public partial class AnnotationToolbar : UserControl
             ["Text"] = new FrameworkElement[] { ToolText, TextChevron },
             ["Number"] = new FrameworkElement[] { ToolNumber },
             ["Mosaic"] = new FrameworkElement[] { ToolMosaic, MosaicChevron },
+            ["Watermark"] = new FrameworkElement[] { ToolWatermark },
             ["Eraser"] = new FrameworkElement[] { ToolEraser }
         };
-        var defaults = new[] { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
+        var defaults = new[] { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Watermark", "Eraser" };
         var keys = (order ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(groups.ContainsKey)
@@ -209,7 +213,17 @@ public partial class AnnotationToolbar : UserControl
         {
             if (!keys.Contains(key))
             {
-                keys.Add(key);
+                // A tool missing from an older saved order goes next to its default neighbour.
+                var before = Array.IndexOf(defaults, key) - 1;
+                var at = before >= 0 ? keys.IndexOf(defaults[before]) : -1;
+                if (at >= 0)
+                {
+                    keys.Insert(at + 1, key);
+                }
+                else
+                {
+                    keys.Add(key);
+                }
             }
         }
 
@@ -252,8 +266,9 @@ public partial class AnnotationToolbar : UserControl
         ToolText.IsChecked = false;
         ToolNumber.IsChecked = false;
         ToolMosaic.IsChecked = false;
+        ToolWatermark.IsChecked = false;
         ToolEraser.IsChecked = false;
-        SettingsBar.Visibility = Visibility.Collapsed;
+        SettingsHost.IsOpen = false;
         _configuring = false;
         ToolChanged?.Invoke(AnnotationTool.None);
     }
@@ -266,7 +281,7 @@ public partial class AnnotationToolbar : UserControl
         {
             if (annotation == null)
             {
-                SettingsBar.Visibility = Visibility.Collapsed;
+                SettingsHost.IsOpen = false;
             }
             else
             {
@@ -398,6 +413,7 @@ public partial class AnnotationToolbar : UserControl
         ToolText.IsChecked = family == ToolFamily.Text;
         ToolNumber.IsChecked = family == ToolFamily.Number;
         ToolMosaic.IsChecked = family == ToolFamily.Mosaic;
+        ToolWatermark.IsChecked = family == ToolFamily.Watermark;
         ToolEraser.IsChecked = family == ToolFamily.Eraser;
     }
 
@@ -409,8 +425,14 @@ public partial class AnnotationToolbar : UserControl
             family = FamilyOf(annotation);
         }
 
+        if (family is ToolFamily.None or ToolFamily.Eraser or ToolFamily.Select)
+        {
+            SettingsHost.IsOpen = false; // slides closed with its current content
+            return;
+        }
+
         HideVariants();
-        SettingsBar.Visibility = Visibility.Visible;
+        SettingsHost.IsOpen = true;
         WidthGroup.Visibility = Visibility.Visible;
         ColorSection.Visibility = Visibility.Visible;
         StrokeGroup.Visibility = Visibility.Collapsed;
@@ -429,7 +451,7 @@ public partial class AnnotationToolbar : UserControl
             case ToolFamily.None:
             case ToolFamily.Eraser:
             case ToolFamily.Select:
-                SettingsBar.Visibility = Visibility.Collapsed;
+                SettingsHost.IsOpen = false;
                 return;
 
             case ToolFamily.Shape:
@@ -454,18 +476,18 @@ public partial class AnnotationToolbar : UserControl
                 StrokeGroup.Visibility = Visibility.Visible;
                 break;
 
+            case ToolFamily.Watermark:
+                // Watermark: size, tilt, opacity and colour.
+                WidthLabel.Text = "大小";
+                WidthSlider.Minimum = 10;
+                WidthSlider.Maximum = 120;
+                AngleGroup.Visibility = Visibility.Visible;
+                OpacityGroup.Visibility = Visibility.Visible;
+                break;
+
             case ToolFamily.Mosaic:
                 MosaicVariants.Visibility = Visibility.Visible;
-                if (tool == AnnotationTool.Watermark || annotation is WatermarkAnnotation)
-                {
-                    // Watermark: size, tilt, opacity and colour.
-                    WidthLabel.Text = "大小";
-                    WidthSlider.Minimum = 10;
-                    WidthSlider.Maximum = 120;
-                    AngleGroup.Visibility = Visibility.Visible;
-                    OpacityGroup.Visibility = Visibility.Visible;
-                }
-                else if (tool == AnnotationTool.MosaicBrush || annotation is MosaicBrushAnnotation)
+                if (tool == AnnotationTool.MosaicBrush || annotation is MosaicBrushAnnotation)
                 {
                     WidthLabel.Text = "粗细";
                     WidthSlider.Minimum = 4;
@@ -539,7 +561,6 @@ public partial class AnnotationToolbar : UserControl
         VariantHighlighter.IsChecked = tool == AnnotationTool.Highlighter;
         VariantMosaic.IsChecked = tool == AnnotationTool.Mosaic;
         VariantMosaicBrush.IsChecked = tool == AnnotationTool.MosaicBrush;
-        VariantWatermark.IsChecked = tool == AnnotationTool.Watermark;
         _configuring = false;
     }
 
@@ -627,9 +648,6 @@ public partial class AnnotationToolbar : UserControl
             case MosaicBrushAnnotation:
                 VariantMosaicBrush.IsChecked = true;
                 break;
-            case WatermarkAnnotation:
-                VariantWatermark.IsChecked = true;
-                break;
         }
 
         WidthSlider.Value = Math.Clamp(_thickness, WidthSlider.Minimum, WidthSlider.Maximum);
@@ -650,7 +668,8 @@ public partial class AnnotationToolbar : UserControl
         AnnotationTool.Rectangle or AnnotationTool.Ellipse => ToolFamily.Shape,
         AnnotationTool.Line or AnnotationTool.Arrow => ToolFamily.Line,
         AnnotationTool.Pen or AnnotationTool.Highlighter => ToolFamily.Pen,
-        AnnotationTool.Mosaic or AnnotationTool.MosaicBrush or AnnotationTool.Watermark => ToolFamily.Mosaic,
+        AnnotationTool.Mosaic or AnnotationTool.MosaicBrush => ToolFamily.Mosaic,
+        AnnotationTool.Watermark => ToolFamily.Watermark,
         AnnotationTool.Text => ToolFamily.Text,
         AnnotationTool.Number => ToolFamily.Number,
         AnnotationTool.Eraser => ToolFamily.Eraser,
@@ -662,7 +681,8 @@ public partial class AnnotationToolbar : UserControl
         RectAnnotation or EllipseAnnotation => ToolFamily.Shape,
         LineAnnotation or ArrowAnnotation => ToolFamily.Line,
         PenAnnotation => ToolFamily.Pen,
-        MosaicAnnotation or MosaicBrushAnnotation or WatermarkAnnotation => ToolFamily.Mosaic,
+        MosaicAnnotation or MosaicBrushAnnotation => ToolFamily.Mosaic,
+        WatermarkAnnotation => ToolFamily.Watermark,
         TextAnnotation => ToolFamily.Text,
         NumberAnnotation => ToolFamily.Number,
         _ => ToolFamily.None
@@ -695,8 +715,7 @@ public partial class AnnotationToolbar : UserControl
         ShowVariantMenu((Button)sender, ("箭头", AnnotationTool.Arrow), ("直线", AnnotationTool.Line));
 
     private void MosaicMenu_Click(object sender, RoutedEventArgs e) =>
-        ShowVariantMenu((Button)sender, ("框选马赛克", AnnotationTool.Mosaic), ("笔刷马赛克", AnnotationTool.MosaicBrush),
-            ("水印", AnnotationTool.Watermark));
+        ShowVariantMenu((Button)sender, ("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush));
 
     private void TextMenu_Click(object sender, RoutedEventArgs e)
     {

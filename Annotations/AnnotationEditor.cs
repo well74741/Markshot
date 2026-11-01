@@ -265,7 +265,90 @@ public sealed class AnnotationEditor : FrameworkElement
                 new Rect(point.X - handle / 2, point.Y - handle / 2, handle, handle));
         }
 
+        // Rotation grips: a curved double arrow hugging each corner handle from outside.
+        var grip = RotateGripGeometry(frame, unit);
+        dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 3.4 * unit)
+        {
+            StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round
+        }, grip);
+        dc.DrawGeometry(null, new Pen(Brushes.White, 1.6 * unit)
+        {
+            StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round
+        }, grip);
+
         dc.Pop();
+    }
+
+    private const double GripRadius = 13;     // DIP, arc radius around the corner
+    private const double GripSweep = 34;      // degrees either side of the diagonal
+    private const double GripHitRadius = 9;   // DIP around the arc's middle
+
+    private static readonly (double X, double Y)[] CornerDirections = { (-1, -1), (1, -1), (1, 1), (-1, 1) };
+
+    /// <summary>
+    /// Frame of a text being typed: handles resize, grips rotate and the band around the
+    /// text (inside and just outside the dashed line) moves it; the text itself is left to
+    /// the caret.
+    /// </summary>
+    public static FrameHit HitEditFrame(Annotation annotation, Point point, double unit)
+    {
+        var hit = HitFrame(annotation, point, unit, handlesOnly: true);
+        if (hit.Any)
+        {
+            return hit;
+        }
+
+        var bounds = annotation.Bounds;
+        var frame = SelectionFrame(bounds, unit);
+        var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
+        var local = RotatePoint(point, center, -annotation.Rotation);
+        var outer = frame;
+        outer.Inflate(6 * unit, 6 * unit);
+        return outer.Contains(local) && !bounds.Contains(local) ? new FrameHit(-1, false, true) : FrameHit.None;
+    }
+
+    /// <summary>Middle points of the four rotation grips (frame-local coordinates).</summary>
+    public static Point[] RotateGripCenters(Rect frame, double unit)
+    {
+        var corners = new[] { frame.TopLeft, frame.TopRight, frame.BottomRight, frame.BottomLeft };
+        var distance = GripRadius * unit / Math.Sqrt(2);
+        return corners.Select((c, i) => new Point(c.X + CornerDirections[i].X * distance, c.Y + CornerDirections[i].Y * distance)).ToArray();
+    }
+
+    private static Geometry RotateGripGeometry(Rect frame, double unit)
+    {
+        var corners = new[] { frame.TopLeft, frame.TopRight, frame.BottomRight, frame.BottomLeft };
+        var radius = GripRadius * unit;
+        var head = 3.6 * unit;
+        var group = new GeometryGroup();
+        for (var i = 0; i < 4; i++)
+        {
+            var c = corners[i];
+            var middle = Math.Atan2(CornerDirections[i].Y, CornerDirections[i].X);
+            var a1 = middle - GripSweep * Math.PI / 180;
+            var a2 = middle + GripSweep * Math.PI / 180;
+            Point At(double a) => new(c.X + radius * Math.Cos(a), c.Y + radius * Math.Sin(a));
+            var start = At(a1);
+            var end = At(a2);
+            var figure = new PathFigure { StartPoint = start, IsClosed = false };
+            figure.Segments.Add(new ArcSegment(end, new Size(radius, radius), 0, false, SweepDirection.Clockwise, true));
+            group.Children.Add(new PathGeometry(new[] { figure }));
+
+            // Arrowheads point along the arc, away from its middle.
+            foreach (var (tip, angle, sign) in new[] { (start, a1, -1.0), (end, a2, 1.0) })
+            {
+                var tangent = new Vector(-Math.Sin(angle) * sign, Math.Cos(angle) * sign);
+                var normal = new Vector(Math.Cos(angle), Math.Sin(angle));
+                var back = tip - tangent * head;
+                var heads = new PathFigure { StartPoint = back + normal * head * 0.75, IsClosed = false };
+                heads.Segments.Add(new LineSegment(tip, true));
+                heads.Segments.Add(new LineSegment(back - normal * head * 0.75, true));
+                group.Children.Add(new PathGeometry(new[] { heads }));
+            }
+        }
+
+        group.Freeze();
+        return group;
     }
 
     /// <summary>
@@ -290,6 +373,15 @@ public sealed class AnnotationEditor : FrameworkElement
             if ((local - handles[i]).Length <= 8 * unit)
             {
                 return new FrameHit(i, false, false);
+            }
+        }
+
+        // The rotation grips outside the corner handles.
+        foreach (var grip in RotateGripCenters(frame, unit))
+        {
+            if ((local - grip).Length <= GripHitRadius * unit)
+            {
+                return new FrameHit(-1, true, false);
             }
         }
 

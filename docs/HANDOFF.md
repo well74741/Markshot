@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.02`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.03`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -126,7 +126,7 @@ dotnet run --project Markshot.csproj -- --demo
   共用实现 `AnnotationOps.WheelSize / WheelOpacity`，撤销按 ("wheel"|"opacity", 对象) 合并；
 - 激活工具且无选中：滚轮预设粗细，`Ctrl+滚轮` 预设透明度（`AnnotationToolbar.NudgeOpacity`，按工具记忆在 `_toolOpacity`；水印改它自己的透明度滑条）；
 - 透明度：`Annotation.Opacity`，`DrawItem` 里统一 `PushOpacity`（水印自己处理）；`AnnotationOps.Create` / `AnnotationStyler.Apply` 写入；
-- 新建完成的元素 `SelectQuietly`（不切工具）并记为 `_freshSelection`：绘图工具仍激活时它只响应**手柄方块**
+- 画笔/荧光笔/画笔马赛克画完**不**进入选中（连续书写）；其余新建完成的元素 `SelectQuietly`（不切工具）并记为 `_freshSelection`：绘图工具仍激活时它只响应**手柄方块**
   （边线带、旋转带、框内都继续画），序号/画笔/荧光笔/画笔马赛克/橡皮工具下完全不响应（`AnnotationOps.SelectionHit`），
   方便紧挨着画下一个；滚轮/Ctrl+滚轮照常调它；用选择工具或单击选中后恢复完整调整框；为了能接着在刚画的笔迹上继续画，`AnnotationOps.InsideMoves`：
   画笔/荧光笔/画笔马赛克/橡皮工具，或任意绘图工具对直线/箭头/笔迹类选中对象，框内只有点在元素本身上才移动；
@@ -321,6 +321,22 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 工具栏翻译按钮激活后只变色，不再追加文字。
 - Logo：`Assets/markshot.ico`（exe `ApplicationIcon`：任务栏、资源管理器、任务管理器；托盘从资源加载小尺寸；
   设置/翻译窗口 `Icon`）。修改样式改 `tools/make_icon.py` 后重新运行。
+
+## 8.1.1 0.8.03 变更
+
+- 旋转：调整框四角手柄外侧画弯曲双向箭头（`AnnotationEditor.RotateGripGeometry`，半径 13 DIP、±34°），
+  命中 `RotateGripCenters` 9 DIP 内即旋转；对刚画完的元素（只响应手柄）也有效。原来的“角外 24 DIP 旋转带”仍保留在完整调整框里。
+- 文字输入中的调整框：`InlineTextEditor` 自己处理——`AnnotationEditor.HitEditFrame`（手柄缩放、弯箭头旋转、文字外 4~10 DIP 的框带移动，文字本身留给光标）；
+  拖动在 TextBox 上 `CaptureMouse`，宿主窗口在 TextBox 外按下时调用 `TryBeginFrameDrag`；不再结束输入，旧框不会留在原地。
+- 水印从马赛克里拆成独立工具按钮（`ToolWatermark`，图标 watermark.png，`ToolFamily.Watermark`）；工具顺序配置新增 `Watermark`，
+  旧配置缺它时插在 Mosaic 后面。
+- 副批注栏（设置行）放进 `Core/SizeTransitionHost`：尺寸从当前值按统一曲线 240 ms 过渡到目标，内容贴着移动的下边一起滑出/滑回；
+  宽度变化同样过渡。工具栏吃掉自己背景上的 MouseDown（以前贴图窗口把它当成点空白处 → 取消选中 → 设置行收起）。
+- 恢复贴图：本次运行关闭的贴图存 `PinSnapshot`（原图、底图、可编辑批注、位置、缩放、透明度），`RestoreLastPin` 按栈逐个恢复到原位置；
+  更早的（磁盘历史）恢复为图片。恢复过的条目从历史移除，下一次恢复更早的一个。
+- 图标：`tools/make_toolbar_icons.py` 生成 arrow.png（加粗、与其它图标同框同笔宽）和 undo.png（参考图：左箭头 + U 形回弯），撤销按钮改用 `IconUndoMask`。
+- 文字识别窗口重排：标题区、两张卡片（原文/译文，各带复制）、底部状态点 + 按钮；`FooterButton/PrimaryButton` 移到 App.xaml 共用；
+  Ctrl+Enter 翻译；“贴到屏幕”没有译文时贴原文。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 
