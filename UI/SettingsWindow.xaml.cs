@@ -41,7 +41,7 @@ public partial class SettingsWindow : Window
         TimeoutBox.Text = config.Translation.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
         ImmersiveSwitch.IsChecked = config.ImmersiveTranslate;
 
-        VersionText.Text = "版本 " + (typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "");
+        VersionText.Text = "版本 " + AppVersion.Display;
         ConfigPathText.Text = AppConfig.ConfigPath;
         ConfigPathText.ToolTip = AppConfig.ConfigPath;
         if (!config.Translation.IsConfigured)
@@ -60,6 +60,12 @@ public partial class SettingsWindow : Window
         PageHotkeys.Visibility = page == "Hotkeys" ? Visibility.Visible : Visibility.Collapsed;
         PageTranslate.Visibility = page == "Translate" ? Visibility.Visible : Visibility.Collapsed;
         PageGeneral.Visibility = page == "General" ? Visibility.Visible : Visibility.Collapsed;
+        Motion.EnterPage(page switch
+        {
+            "Translate" => PageTranslate,
+            "General" => PageGeneral,
+            _ => PageHotkeys
+        });
     }
 
     /// <summary>Opens the window on a given page ("Hotkeys", "Translate", "General").</summary>

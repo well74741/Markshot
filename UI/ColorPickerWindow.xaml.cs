@@ -27,6 +27,12 @@ public partial class ColorPickerWindow : Window
         SetFromColor(color);
         Loaded += (_, _) =>
         {
+            if (Content is FrameworkElement root)
+            {
+                root.Opacity = 0;
+                Motion.PopIn(root, fromAbove: false);
+            }
+
             UpdateUi();
             Dispatcher.BeginInvoke(new Action(UpdateUi), DispatcherPriority.Loaded);
         };
@@ -259,16 +265,29 @@ public partial class ColorPickerWindow : Window
         var original = CurrentColor;
         _shield = new EyedropperShield();
         _shield.Sampled += color => SetFromColor(Color.FromArgb((byte)Math.Round(_alpha * 255), color.R, color.G, color.B));
-        _shield.Finished += picked =>
+        _shield.Finished += (picked, clicked) =>
         {
             _shield = null;
+            Mouse.OverrideCursor = null;
+            EyedropperButton.ClearValue(BackgroundProperty);
             if (!picked)
             {
                 SetFromColor(original);
             }
 
+            if (clicked)
+            {
+                // A click on the screen confirms the colour (same as OK).
+                Ok_Click(this, new RoutedEventArgs());
+                return;
+            }
+
             Activate();
         };
+
+        // Active state: the button lights up and the pointer is a cross everywhere.
+        EyedropperButton.Background = (Brush)FindResource("Accent");
+        Mouse.OverrideCursor = Cursors.Cross;
         _shield.Show();
 
         // Keep the panel above the layer so it stays visible.
@@ -283,10 +302,12 @@ public partial class ColorPickerWindow : Window
     private sealed class EyedropperShield : Window
     {
         private bool _done;
+        private bool _pressed;
 
         public event Action<Color>? Sampled;
 
-        public event Action<bool>? Finished;
+        /// <summary>(picked, confirmedByClick)</summary>
+        public event Action<bool, bool>? Finished;
 
         public EyedropperShield()
         {
@@ -316,11 +337,24 @@ public partial class ColorPickerWindow : Window
                 Keyboard.Focus(this);
             };
             MouseMove += (_, _) => Sample();
+            // The layer keeps the whole click (down and up), so the window underneath never
+            // sees it; the colour is taken on release.
             MouseLeftButtonDown += (_, e) =>
             {
                 Sample();
+                _pressed = true;
+                CaptureMouse();
                 e.Handled = true;
-                Finish(true);
+            };
+            MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                if (_pressed)
+                {
+                    _pressed = false;
+                    ReleaseMouseCapture();
+                    Finish(true, true);
+                }
             };
             MouseRightButtonDown += (_, e) =>
             {
@@ -335,13 +369,13 @@ public partial class ColorPickerWindow : Window
                 }
                 else if (e.Key == Key.Enter)
                 {
-                    Finish(true);
+                    Finish(true, true);
                 }
             };
             Deactivated += (_, _) =>
             {
                 // Alt+Tab or clicking the panel's own controls ends picking, keeping the live colour.
-                if (!_done && IsLoaded)
+                if (!_done && IsLoaded && !_pressed)
                 {
                     Finish(true);
                 }
@@ -356,7 +390,7 @@ public partial class ColorPickerWindow : Window
             }
         }
 
-        private void Finish(bool picked)
+        private void Finish(bool picked, bool clicked = false)
         {
             if (_done)
             {
@@ -365,7 +399,7 @@ public partial class ColorPickerWindow : Window
 
             _done = true;
             Close();
-            Finished?.Invoke(picked);
+            Finished?.Invoke(picked, clicked);
         }
     }
 
@@ -467,10 +501,28 @@ public partial class ColorPickerWindow : Window
                 (byte)Math.Round((b + m) * 255));
     }
 
+    private bool _closeAnimated;
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_closeAnimated && Content is FrameworkElement root && IsLoaded && !Dispatcher.HasShutdownStarted)
+        {
+            // Exit animation plays before the window goes away.
+            e.Cancel = true;
+            _closeAnimated = true;
+            IsHitTestVisible = false;
+            Motion.PopOut(root, towardsAbove: false, completed: () => Dispatcher.BeginInvoke(new Action(Close)));
+            return;
+        }
+
+        base.OnClosing(e);
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         _shield?.Close();
         _shield = null;
+        Mouse.OverrideCursor = null;
         base.OnClosed(e);
     }
 }

@@ -9,6 +9,11 @@ internal static class AnnotationStyler
     public static void Apply(Annotation annotation, AnnotationToolbar toolbar, BitmapSource? mosaicSource)
     {
         var stroke = toolbar.StrokeEnabled ? toolbar.StrokeWidth : 0;
+        if (annotation is not WatermarkAnnotation)
+        {
+            annotation.Opacity = toolbar.ElementOpacity;
+        }
+
         switch (annotation)
         {
             case TextAnnotation text:
@@ -25,6 +30,7 @@ internal static class AnnotationStyler
                 watermark.Color = toolbar.Color;
                 watermark.FontSize = Math.Max(10, toolbar.Thickness);
                 watermark.Opacity = toolbar.WatermarkOpacity;
+                watermark.Angle = toolbar.WatermarkAngle;
                 break;
 
             case NumberAnnotation number:
@@ -114,7 +120,8 @@ internal static class AnnotationStyler
             Italic = toolbar.TextItalic,
             Fill = toolbar.TextBackground,
             StrokeColor = toolbar.StrokeColor,
-            StrokeThickness = toolbar.StrokeEnabled ? toolbar.StrokeWidth : 0
+            StrokeThickness = toolbar.StrokeEnabled ? toolbar.StrokeWidth : 0,
+            Opacity = toolbar.ElementOpacity
         };
         text.Position = new Point(click.X, click.Y - text.LineHeight / 2);
         return text;

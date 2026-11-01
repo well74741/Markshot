@@ -140,6 +140,13 @@ public sealed class AnnotationEditor : FrameworkElement
             pops++;
         }
 
+        // Every element has its own opacity (the watermark applies it to its glyphs itself).
+        if (annotation is not WatermarkAnnotation && annotation.Opacity < 0.999)
+        {
+            dc.PushOpacity(Math.Clamp(annotation.Opacity, 0.05, 1));
+            pops++;
+        }
+
         if (annotation is WatermarkAnnotation watermark)
         {
             watermark.Draw(dc, highlight);

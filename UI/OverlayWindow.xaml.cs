@@ -125,6 +125,9 @@ public partial class OverlayWindow : Window
     public OverlayWindow(BitmapSource screen, Int32Rect bounds, bool demo = false)
     {
         InitializeComponent();
+        Motion.PopOnShow(Toolbar);
+        Motion.PopOnShow(TranslateStatus);
+        Motion.FadeOnShow(TranslatedImage);
 
         _screen = screen;
         _bounds = bounds;
@@ -1177,14 +1180,25 @@ public partial class OverlayWindow : Window
 
         if (_hasSelection || _active != null || _closed)
         {
+            // Selected element first: wheel = thickness / size, Ctrl+wheel = its opacity.
+            // Otherwise with a tool active: the same for the tool's next element.
+            var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
             if (_selectedAnnotation != null)
             {
-                AdjustSelectedByWheel(e.Delta);
+                AdjustSelectedByWheel(e.Delta, ctrl);
                 e.Handled = true;
             }
             else if (_active == null && _tool is not AnnotationTool.None and not AnnotationTool.Select)
             {
-                AdjustActiveToolByWheel(e.Delta);
+                if (ctrl)
+                {
+                    Toolbar.NudgeOpacity(e.Delta);
+                }
+                else
+                {
+                    AdjustActiveToolByWheel(e.Delta);
+                }
+
                 e.Handled = true;
             }
 
@@ -1381,7 +1395,7 @@ public partial class OverlayWindow : Window
             return true;
         }
 
-        if (hit.Inside)
+        if (hit.Inside && AnnotationOps.InsideMoves(_selectedAnnotation, _tool, point, 7 * _scale))
         {
             _draggingAnnotation = true;
             return true;
@@ -1596,6 +1610,7 @@ public partial class OverlayWindow : Window
     private void StartAnnotation(Point point)
     {
         _mode = DragMode.None;
+        ClearAnnotationSelection();
         _active = AnnotationOps.Create(_tool, point, Toolbar, _numberCounter, EffectiveScreen);
         if (_active == null)
         {
@@ -1629,7 +1644,8 @@ public partial class OverlayWindow : Window
         _history.Checkpoint(Editor.Items);
         Editor.Items.Add(annotation);
         UpdateUndoButtons();
-        Editor.InvalidateVisual();
+        // The new element stays selected (wheel / Ctrl+wheel / frame adjust it right away).
+        SelectQuietly(annotation);
     }
 
     private void BeginTextEdit(TextAnnotation text, bool isNew, Point? caretAt, bool selectAll = false)
@@ -2213,7 +2229,7 @@ public partial class OverlayWindow : Window
             return true;
         }
 
-        if (hit.Inside)
+        if (hit.Inside && AnnotationOps.InsideMoves(_selectedAnnotation, _tool, point, 7 * _scale))
         {
             InputLayer.Cursor = Cursors.SizeAll;
             return true;
@@ -2239,39 +2255,36 @@ public partial class OverlayWindow : Window
         UpdateCursorToPointer();
     }
 
-    private void AdjustSelectedByWheel(int delta)
+    private void AdjustSelectedByWheel(int delta, bool opacity)
     {
         if (_selectedAnnotation == null)
         {
             return;
         }
 
-        var step = Math.Sign(delta);
-        _history.CheckpointCoalesced(Editor.Items, ("wheel", _selectedAnnotation));
+        _history.CheckpointCoalesced(Editor.Items, (opacity ? "opacity" : "wheel", _selectedAnnotation));
         UpdateUndoButtons();
-        switch (_selectedAnnotation)
+        if (opacity)
         {
-            case TextAnnotation text:
-                text.FontSize = Math.Clamp(text.FontSize + step * 2, 8, 120);
-                Toolbar.SetThickness(text.FontSize);
-                _thickness = text.FontSize;
-                break;
-            case NumberAnnotation number:
-                number.Radius = Math.Clamp(number.Radius + step * 2, 8, 80);
-                Toolbar.SetThickness(number.Radius);
-                _thickness = number.Radius;
-                break;
-            case MosaicAnnotation mosaic:
-                // Wheel changes the mosaic strength.
-                mosaic.BlockSize = Math.Clamp(mosaic.BlockSize + step * 2, 4, 40);
-                MosaicBuilder.Rebuild(mosaic, EffectiveScreen);
-                Toolbar.SyncFrom(mosaic);
-                break;
-            default:
-                _selectedAnnotation.Thickness = Math.Clamp(_selectedAnnotation.Thickness + step * 0.5, 1, 24);
-                _thickness = _selectedAnnotation.Thickness;
-                Toolbar.SetThickness(_thickness);
-                break;
+            if (_selectedAnnotation is WatermarkAnnotation)
+            {
+                _selectedAnnotation.Opacity = Math.Clamp(Math.Round(_selectedAnnotation.Opacity + Math.Sign(delta) * 0.05, 2), 0.05, 1);
+                Toolbar.SyncFrom(_selectedAnnotation);
+            }
+            else
+            {
+                _selectedAnnotation.Opacity = AnnotationOps.WheelOpacity(_selectedAnnotation.Opacity, delta);
+                Toolbar.SetOpacity(_selectedAnnotation.Opacity, remember: false);
+            }
+        }
+        else if (AnnotationOps.WheelSize(_selectedAnnotation, delta, EffectiveScreen) is { } size)
+        {
+            _thickness = size;
+            Toolbar.SetThickness(size);
+        }
+        else
+        {
+            Toolbar.SyncFrom(_selectedAnnotation);
         }
 
         Editor.InvalidateVisual();

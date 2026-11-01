@@ -138,19 +138,17 @@
                     </StackPanel>
 
                     <StackPanel x:Name="MosaicVariants" Orientation="Horizontal" Visibility="Collapsed">
-                        <RadioButton x:Name="VariantMosaic" Style="{StaticResource IconToolRadio}" Tag="Mosaic" GroupName="Variant" Checked="Variant_Checked" ToolTip="框选马赛克">
-                            <Border Style="{StaticResource IconMosaicMask}" />
-                        </RadioButton>
-                        <RadioButton x:Name="VariantMosaicBrush" Style="{StaticResource IconToolRadio}" Tag="MosaicBrush" GroupName="Variant" Checked="Variant_Checked" ToolTip="笔刷马赛克（Shift 画直线）">
-                            <Grid Width="18" Height="18">
-                                <Border Style="{StaticResource IconMosaicMask}" Width="13" Height="13" HorizontalAlignment="Left" VerticalAlignment="Top" />
-                                <Ellipse Width="7" Height="7" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
-                                         HorizontalAlignment="Right" VerticalAlignment="Bottom" />
-                            </Grid>
-                        </RadioButton>
-                        <RadioButton x:Name="VariantWatermark" Style="{StaticResource IconToolRadio}" Tag="Watermark" GroupName="Variant" Checked="Variant_Checked" ToolTip="水印">
-                            <Border Style="{StaticResource IconWatermarkMask}" />
-                        </RadioButton>
+                        <TextBlock Text="类型" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" Margin="4,0,6,0" />
+                        <Border Background="#FF2A2A2A" CornerRadius="5" Padding="2" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="VariantMosaic" Style="{StaticResource SegmentRadio}" Tag="Mosaic" GroupName="Variant"
+                                             Checked="Variant_Checked" Content="区域" ToolTip="框选区域打码" />
+                                <RadioButton x:Name="VariantMosaicBrush" Style="{StaticResource SegmentRadio}" Tag="MosaicBrush" GroupName="Variant"
+                                             Checked="Variant_Checked" Content="画笔" ToolTip="涂抹打码（Shift 画直线）" />
+                                <RadioButton x:Name="VariantWatermark" Style="{StaticResource SegmentRadio}" Tag="Watermark" GroupName="Variant"
+                                             Checked="Variant_Checked" Content="水印" ToolTip="铺满画面的文字水印（双击文字编辑）" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                     <ToggleButton x:Name="FillToggle" Style="{StaticResource ToolToggle}" Content="填充"
@@ -180,6 +178,15 @@
                         <Slider x:Name="LevelSlider" Focusable="False" IsMoveToPointEnabled="True" Width="86" Minimum="4" Maximum="40" Value="12"
                                 ValueChanged="Level_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
                         <TextBlock x:Name="LevelValue" Text="12" Foreground="#C8C8C8" FontSize="11" Width="20"
+                                   TextAlignment="Center" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="AngleGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <TextBlock Text="倾斜" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
+                        <Slider x:Name="AngleSlider" Focusable="False" IsMoveToPointEnabled="True" Width="80" Minimum="-60" Maximum="60" Value="-24"
+                                ValueChanged="Angle_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
+                        <TextBlock x:Name="AngleValue" Text="-24°" Foreground="#C8C8C8" FontSize="11" Width="30"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
@@ -240,11 +247,15 @@
                                         </Ellipse.Fill>
                                     </Ellipse>
                                     <Ellipse Width="22" Height="22" Fill="#FF1E1E1E" />
+                                    <!-- Checkerboard under the preview shows the current opacity. -->
+                                    <Ellipse Width="20" Height="20" Fill="{StaticResource SmallCheckerBrush}" />
                                     <Ellipse x:Name="CustomColorInner" Width="20" Height="20"
                                              Stroke="#5AFFFFFF" StrokeThickness="1" />
                                 </Grid>
                             </Button>
                             <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />
+                            <TextBlock x:Name="OpacityHint" Foreground="#C8C8C8" FontSize="11" VerticalAlignment="Center"
+                                       Margin="4,0,2,0" Visibility="Collapsed" ToolTip="透明度：Ctrl+滚轮调整" />
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>

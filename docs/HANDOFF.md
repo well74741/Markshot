@@ -1,6 +1,8 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.0`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.01`，WPF + .NET 8，Windows 专用。
+> 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
+> `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式 0.8.1.0。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
 
 ## 1. 项目目标
@@ -120,7 +122,13 @@ dotnet run --project Markshot.csproj -- --demo
 - 选中对象后 8 手柄缩放；**虚线边框**（非手柄）旋转光标，绕中心旋转；
 - 顶部独立旋转圆环已删除；
 - `R` 整体缩放选中对象，`E` 绘制中旋转，`Ctrl` 矩形圆角，右键取消；
-- 选中对象滚轮调粗细/字号/马赛克程度；
+- 选中对象滚轮调粗细/字号/序号半径/水印大小（区域马赛克调程度），`Ctrl+滚轮` 调该对象透明度（5%/格，最低 5%）；
+  共用实现 `AnnotationOps.WheelSize / WheelOpacity`，撤销按 ("wheel"|"opacity", 对象) 合并；
+- 激活工具且无选中：滚轮预设粗细，`Ctrl+滚轮` 预设透明度（`AnnotationToolbar.NudgeOpacity`，按工具记忆在 `_toolOpacity`；水印改它自己的透明度滑条）；
+- 透明度：`Annotation.Opacity`，`DrawItem` 里统一 `PushOpacity`（水印自己处理）；`AnnotationOps.Create` / `AnnotationStyler.Apply` 写入；
+- 新建完成的元素 `SelectQuietly`（不切工具）；为了能接着在刚画的笔迹上继续画，`AnnotationOps.InsideMoves`：
+  画笔/荧光笔/画笔马赛克/橡皮工具，或任意绘图工具对直线/箭头/笔迹类选中对象，框内只有点在元素本身上才移动；
+- 序号缩放保持圆心不动（以前圆心跟着手柄走，看起来整体滑动）；画笔/画笔马赛克缩放按比例映射点；
 - 同类型悬停高亮并可选；
 - 画笔/荧光笔不参与选择；橡皮为像素盖回原图；
 - 矩形/椭圆支持填充；马赛克按块采样；水印为可编辑重复文字；
@@ -196,7 +204,9 @@ dotnet run --project Markshot.csproj -- --demo
 
 - 工具栏色板：自定义（彩色外环 + 内色）+ 红/黄/绿/蓝/黑/白圆形；
 - 自定义窗口：HSV 色板、彩虹色相、棋盘格透明度、圆形滑点、Hex、百分比、吸管、确认/取消；
-- 吸管：面板不隐藏；铺一层 alpha=1 的全屏取色层接住点击（不会点到贴图/截图里的批注），移动实时取色，单击确定，Esc/右键取消；
+- 吸管：面板不隐藏；吸管按钮激活时为强调色、全局 `Mouse.OverrideCursor = Cross`；铺一层 alpha=1 的全屏取色层，
+  移动实时取色；按下+松开都由取色层吃掉（松开时才确定，避免松开事件落到下面的窗口），单击 = 确认颜色并关闭面板；Esc/右键取消；
+- 自选色板的 alpha 即元素透明度（水印工具下即水印透明度）；
 - 面板高度随内容（`SizeToContent`），拖动任意空白处移动面板；
 - 颜色窗口标题栏可拖动；
 - `ColorPickerWindow` 不使用 `DialogResult`，通过 `Accepted` 属性 + `Close()` 关闭，避免非对话框状态异常。
@@ -256,6 +266,12 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - [ ] 撤销/重做：移动、缩放、改样式、改文字、删除各占一步；
 - [ ] 原位翻译：开关后选区内文字被替换，状态条显示进度，可切换原文；移动选区后自动重译；复制结果含译文；
 - [ ] 无 Key 时状态条显示明确错误与“重试”。
+- [ ] 画完元素即为选中；滚轮调粗细、Ctrl+滚轮调透明度；激活工具后 Ctrl+滚轮预设透明度，颜色预览与百分比同步；
+- [ ] 刚画完的笔迹框内继续画笔不会拖动它；序号缩放圆心不动；
+- [ ] 马赛克：类型 区域/画笔/水印 + 程度；水印：大小/倾斜/透明度/颜色；
+- [ ] 所有滑条：点击轨道跳到该处后不松手继续拖；
+- [ ] 吸管：按钮高亮、十字光标、实时取色、单击即确认并关闭、下方窗口不受点击影响；
+- [ ] 下拉小菜单紧凑；菜单/工具栏/状态条弹入，按钮悬停渐变。
 
 ### 贴图
 
@@ -303,6 +319,18 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 工具栏翻译按钮激活后只变色，不再追加文字。
 - Logo：`Assets/markshot.ico`（exe `ApplicationIcon`：任务栏、资源管理器、任务管理器；托盘从资源加载小尺寸；
   设置/翻译窗口 `Icon`）。修改样式改 `tools/make_icon.py` 后重新运行。
+
+## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
+
+- `Core/Motion.cs`：唯一曲线 `StandardEase` = cubic-bezier(0.4,0,0.2,1)（XAML 里 `<core:StandardEase />`），
+  时长 `Fast 160 / Base 240 / Slow 320`，滑动 220；只动 Opacity / RenderTransform；不写 From 的动画从当前值接着走。
+- `PopIn / PopOut`：透明度 + 6 DIP 位移 + 0.97 缩放，160 ms；`PopOut` 播完再 Collapse（中途又显示则作废）。
+- `PopOnShow`：元素每次变为可见时弹入（可见性本身立即生效，布局不等动画）——截图工具栏、工具栏设置行、翻译状态条、贴图编辑工具栏。
+  `FadeOnShow`：译文层、贴图状态提示。`EnterPage`：设置页切换淡入 + 8 DIP 横移。
+- App.xaml：按钮悬停改为底板淡入淡出（`Hl` 层 Opacity 160 ms），分段按钮（类型/语言）选中底板交叉淡化；
+  ContextMenu 打开弹入；MenuItem 为紧凑模板（18 DIP 勾选列 + 文本 + 快捷键，无图标槽），分隔线 `MenuItem.SeparatorStyleKey`。
+- 贴图：出现时淡入；关闭时先取消 Closing、淡出 160 ms 后再真正关闭（应用退出时不拦）。取色面板：弹入，关闭前弹出。
+- 前景色（图标变蓝）不做颜色动画：样式里的画刷是冻结的，Storyboard 克隆后会变成本地值盖掉选中态触发器。
 
 ## 9. 常用调试
 

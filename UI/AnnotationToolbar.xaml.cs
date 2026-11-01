@@ -48,6 +48,11 @@ public partial class AnnotationToolbar : UserControl
     private bool _textItalic;
     private double _mosaicLevel = 12;
     private double _watermarkOpacity = 0.25;
+    private double _watermarkAngle = -24;
+    private double _opacity = 1;
+
+    // Each tool remembers its own opacity too (Ctrl+wheel presets it).
+    private readonly Dictionary<AnnotationTool, double> _toolOpacity = new();
     private bool _textBackground;
     private bool _dragging;
     private Point _dragStart;
@@ -88,11 +93,13 @@ public partial class AnnotationToolbar : UserControl
     public AnnotationToolbar()
     {
         InitializeComponent();
+        Motion.PopOnShow(SettingsBar);
         SliderDragBehavior.Enable(WidthSlider);
         SliderDragBehavior.Enable(CornerSlider);
         SliderDragBehavior.Enable(StrokeSlider);
         SliderDragBehavior.Enable(LevelSlider);
         SliderDragBehavior.Enable(OpacitySlider);
+        SliderDragBehavior.Enable(AngleSlider);
         InitPalette();
         SetTool(AnnotationTool.Select, notify: false);
         SetMode(AnnotationToolbarMode.Capture);
@@ -124,6 +131,38 @@ public partial class AnnotationToolbar : UserControl
     public double MosaicLevel => _mosaicLevel;
 
     public double WatermarkOpacity => _watermarkOpacity;
+
+    public double WatermarkAngle => _watermarkAngle;
+
+    /// <summary>Opacity of new / selected elements (0.05–1).</summary>
+    public double ElementOpacity => _opacity;
+
+    /// <summary>The watermark keeps its own 透明度 slider.</summary>
+    private bool WatermarkActive => _selection is WatermarkAnnotation || (_selection == null && _tool == AnnotationTool.Watermark);
+
+    /// <summary>Ctrl+wheel with a tool active: presets the next element's opacity (5 % a notch).</summary>
+    public void NudgeOpacity(int delta)
+    {
+        if (WatermarkActive)
+        {
+            OpacitySlider.Value = Math.Clamp(Math.Round(_watermarkOpacity * 100) + Math.Sign(delta) * 5, OpacitySlider.Minimum, OpacitySlider.Maximum);
+            return;
+        }
+
+        SetOpacity(_opacity + Math.Sign(delta) * 0.05);
+    }
+
+    /// <summary>Sets the opacity (Ctrl+wheel); remembered for the current tool or follows the selection.</summary>
+    public void SetOpacity(double opacity, bool remember = true)
+    {
+        _opacity = Math.Clamp(Math.Round(opacity, 2), 0.05, 1);
+        if (remember && _selection == null && _tool is not AnnotationTool.None and not AnnotationTool.Select)
+        {
+            _toolOpacity[_tool] = _opacity;
+        }
+
+        UpdateSwatches();
+    }
 
     public bool TextBackground => _textBackground;
 
@@ -339,9 +378,13 @@ public partial class AnnotationToolbar : UserControl
                 : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
         }
 
-        // The custom button always previews the current colour.
+        // The custom button always previews the current colour at the current opacity.
         var custom = !Palette.Contains(_color);
-        CustomColorInner.Fill = new SolidColorBrush(_color);
+        CustomColorInner.Fill = new SolidColorBrush(Color.FromArgb((byte)Math.Round(_opacity * 255), _color.R, _color.G, _color.B));
+        var percent = (int)Math.Round(_opacity * 100);
+        OpacityHint.Text = $"{percent}%";
+        OpacityHint.Visibility = percent < 100 ? Visibility.Visible : Visibility.Collapsed;
+        CustomColorButton.ToolTip = $"自定义颜色 #{_color.R:X2}{_color.G:X2}{_color.B:X2} · 透明度 {percent}%（Ctrl+滚轮）";
         CustomColorInner.Stroke = custom ? Brushes.White : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
         CustomColorInner.StrokeThickness = custom ? 2 : 1;
     }
@@ -374,6 +417,7 @@ public partial class AnnotationToolbar : UserControl
         TextStyleGroup.Visibility = Visibility.Collapsed;
         LevelGroup.Visibility = Visibility.Collapsed;
         OpacityGroup.Visibility = Visibility.Collapsed;
+        AngleGroup.Visibility = Visibility.Collapsed;
         FillToggle.Visibility = Visibility.Collapsed;
         CornerGroup.Visibility = Visibility.Collapsed;
         WidthLabel.Text = "粗细";
@@ -414,10 +458,11 @@ public partial class AnnotationToolbar : UserControl
                 MosaicVariants.Visibility = Visibility.Visible;
                 if (tool == AnnotationTool.Watermark || annotation is WatermarkAnnotation)
                 {
-                    // Watermark: size, opacity and colour only.
+                    // Watermark: size, tilt, opacity and colour.
                     WidthLabel.Text = "大小";
                     WidthSlider.Minimum = 10;
                     WidthSlider.Maximum = 120;
+                    AngleGroup.Visibility = Visibility.Visible;
                     OpacityGroup.Visibility = Visibility.Visible;
                 }
                 else if (tool == AnnotationTool.MosaicBrush || annotation is MosaicBrushAnnotation)
@@ -454,6 +499,8 @@ public partial class AnnotationToolbar : UserControl
                 _thickness = remembered;
             }
 
+            _opacity = _toolOpacity.TryGetValue(tool, out var opacity) ? opacity : 1;
+
             SyncVariant(tool);
             BoldToggle.IsChecked = _textBold;
             ItalicToggle.IsChecked = _textItalic;
@@ -462,6 +509,8 @@ public partial class AnnotationToolbar : UserControl
             LevelValue.Text = ((int)Math.Round(_mosaicLevel)).ToString(CultureInfo.InvariantCulture);
             OpacitySlider.Value = Math.Round(_watermarkOpacity * 100);
             OpacityValue.Text = $"{Math.Round(_watermarkOpacity * 100)}%";
+            AngleSlider.Value = _watermarkAngle;
+            AngleValue.Text = $"{Math.Round(_watermarkAngle)}°";
             WidthSlider.Value = Math.Clamp(_thickness, WidthSlider.Minimum, WidthSlider.Maximum);
             WidthValue.Text = ((int)Math.Round(WidthSlider.Value)).ToString(CultureInfo.InvariantCulture);
             CornerSlider.Value = Math.Clamp(_corner, 0, 40);
@@ -528,7 +577,16 @@ public partial class AnnotationToolbar : UserControl
         else if (annotation is WatermarkAnnotation mark)
         {
             _watermarkOpacity = mark.Opacity;
+            _watermarkAngle = mark.Angle;
         }
+
+        if (annotation is not WatermarkAnnotation)
+        {
+            _opacity = annotation.Opacity;
+        }
+
+        AngleSlider.Value = _watermarkAngle;
+        AngleValue.Text = $"{Math.Round(_watermarkAngle)}°";
 
         LevelSlider.Value = Math.Clamp(_mosaicLevel, LevelSlider.Minimum, LevelSlider.Maximum);
         LevelValue.Text = ((int)Math.Round(_mosaicLevel)).ToString(CultureInfo.InvariantCulture);
@@ -764,6 +822,18 @@ public partial class AnnotationToolbar : UserControl
         SettingsChanged?.Invoke();
     }
 
+    private void Angle_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_configuring || AngleValue == null)
+        {
+            return;
+        }
+
+        _watermarkAngle = Math.Round(e.NewValue);
+        AngleValue.Text = $"{_watermarkAngle}°";
+        SettingsChanged?.Invoke();
+    }
+
     private void Opacity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_configuring || OpacityValue == null)
@@ -851,7 +921,9 @@ public partial class AnnotationToolbar : UserControl
     private void CustomColor_Click(object sender, RoutedEventArgs e)
     {
         var owner = Window.GetWindow(this);
-        var picker = new ColorPickerWindow(_color);
+        // The picker's alpha channel is the element opacity.
+        var alpha = WatermarkActive ? _watermarkOpacity : _opacity;
+        var picker = new ColorPickerWindow(Color.FromArgb((byte)Math.Round(alpha * 255), _color.R, _color.G, _color.B));
         if (owner != null)
         {
             picker.Owner = owner;
@@ -860,8 +932,18 @@ public partial class AnnotationToolbar : UserControl
         picker.ShowDialog();
         if (picker.Accepted)
         {
-            _customColor = picker.SelectedColor;
+            var chosen = picker.SelectedColor;
+            _customColor = Color.FromRgb(chosen.R, chosen.G, chosen.B);
             _color = _customColor;
+            if (WatermarkActive)
+            {
+                OpacitySlider.Value = Math.Clamp(Math.Round(chosen.A / 2.55), OpacitySlider.Minimum, OpacitySlider.Maximum);
+            }
+            else
+            {
+                SetOpacity(chosen.A / 255.0);
+            }
+
             UpdateSwatches();
             SettingsChanged?.Invoke();
         }

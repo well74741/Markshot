@@ -51,6 +51,11 @@ internal static class AnnotationOps
             _ => null
         };
 
+        if (created != null)
+        {
+            created.Opacity = toolbar.ElementOpacity;
+        }
+
         switch (created)
         {
             case PenAnnotation pen:
@@ -69,6 +74,54 @@ internal static class AnnotationOps
     }
 
     /// <summary>True for an accidental click that produced no usable element.</summary>
+    /// <summary>
+    /// Plain wheel on a selected element: its thickness / size (a mosaic area has no stroke, so its strength).
+    /// Returns the new size for the toolbar, or null when the toolbar size is unaffected.
+    /// </summary>
+    public static double? WheelSize(Annotation annotation, int delta, BitmapSource source)
+    {
+        var step = Math.Sign(delta);
+        switch (annotation)
+        {
+            case TextAnnotation text:
+                text.FontSize = Math.Clamp(text.FontSize + step * 2, 8, 120);
+                return text.FontSize;
+            case NumberAnnotation number:
+                number.Radius = Math.Clamp(number.Radius + step * 2, 8, 80);
+                return number.Radius;
+            case WatermarkAnnotation watermark:
+                watermark.FontSize = Math.Clamp(watermark.FontSize + step * 2, 10, 120);
+                return watermark.FontSize;
+            case MosaicAnnotation mosaic:
+                mosaic.BlockSize = Math.Clamp(mosaic.BlockSize + step * 2, 4, 40);
+                MosaicBuilder.Rebuild(mosaic, source);
+                return null;
+            case MosaicBrushAnnotation brush:
+                brush.Thickness = Math.Clamp(brush.Thickness + step * 2, 4, 80);
+                return brush.Thickness;
+            default:
+                annotation.Thickness = Math.Clamp(annotation.Thickness + step * 0.5, 1, 24);
+                return annotation.Thickness;
+        }
+    }
+
+    /// <summary>
+    /// Whether a press inside the selection frame moves the element. With a freehand tool (or a
+    /// drawing tool on a line-like element) only a press on the element itself does, so drawing
+    /// over a freshly created (still selected) stroke keeps drawing.
+    /// </summary>
+    public static bool InsideMoves(Annotation selected, AnnotationTool tool, Point point, double tolerance)
+    {
+        var freehand = tool is AnnotationTool.Pen or AnnotationTool.Highlighter or AnnotationTool.MosaicBrush or AnnotationTool.Eraser;
+        var drawing = tool is not AnnotationTool.None and not AnnotationTool.Select;
+        var open = selected is PenAnnotation or LineAnnotation or ArrowAnnotation or MosaicBrushAnnotation;
+        return !(freehand || (drawing && open)) || selected.HitTest(point, tolerance);
+    }
+
+    /// <summary>Ctrl+wheel opacity step: 5 % per notch, never fully invisible.</summary>
+    public static double WheelOpacity(double opacity, int delta) =>
+        Math.Clamp(Math.Round(opacity + Math.Sign(delta) * 0.05, 2), 0.05, 1);
+
     public static bool IsTooSmall(Annotation annotation) => annotation switch
     {
         RectAnnotation rect => rect.Rect.Width < 2 && rect.Rect.Height < 2,
@@ -165,7 +218,8 @@ internal static class AnnotationOps
             Rect = canvas,
             Color = toolbar.Color,
             FontSize = Math.Max(10, toolbar.Thickness),
-            Opacity = toolbar.WatermarkOpacity
+            Opacity = toolbar.WatermarkOpacity,
+            Angle = toolbar.WatermarkAngle
         };
         items.Insert(0, watermark);
         return watermark;
@@ -209,9 +263,25 @@ internal static class AnnotationOps
                 break;
             }
             case NumberAnnotation number:
-                number.Radius = Math.Max(8, Math.Min(target.Width, target.Height) / 2);
-                number.Center = new Point(target.X + target.Width / 2, target.Y + target.Height / 2);
+                // A number badge grows / shrinks around its own centre (it used to slide with the handle).
+                number.Radius = Math.Clamp(Math.Max(target.Width, target.Height) / 2, 8, 200);
                 break;
+            case PenAnnotation pen:
+                ScalePoints(pen.Points, source, target);
+                break;
+            case MosaicBrushAnnotation brush:
+                ScalePoints(brush.Points, source, target);
+                break;
+        }
+    }
+
+    private static void ScalePoints(List<Point> points, Rect source, Rect target)
+    {
+        var sx = source.Width > 1 ? target.Width / source.Width : 1;
+        var sy = source.Height > 1 ? target.Height / source.Height : 1;
+        for (var i = 0; i < points.Count; i++)
+        {
+            points[i] = new Point(target.X + (points[i].X - source.X) * sx, target.Y + (points[i].Y - source.Y) * sy);
         }
     }
 

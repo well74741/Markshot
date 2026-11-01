@@ -471,7 +471,8 @@ public sealed class WatermarkAnnotation : Annotation
 
     public double FontSize { get; set; } = 24;
 
-    public const double Angle = -24;
+    /// <summary>Tilt of the repeated text in degrees.</summary>
+    public double Angle { get; set; } = -24;
 
     public override bool Erasable => false;
 

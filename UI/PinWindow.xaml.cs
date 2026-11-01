@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows.Interop;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Animation;
 using Markshot.Annotations;
 using Markshot.Services;
 using Microsoft.Win32;
@@ -9,6 +10,9 @@ namespace Markshot.UI;
 
 public partial class PinWindow : Window
 {
+    private bool _fadingOut;
+    private bool _fadedOut;
+
     private readonly AnnotationHistory _history = new();
     private readonly InlineTextEditor _textEditor;
     private BitmapSource _baseImage;
@@ -123,6 +127,8 @@ public partial class PinWindow : Window
         _top = screenY;
 
         Loaded += OnLoaded;
+        Motion.PopOnShow(Toolbar, fromAbove: true);
+        Motion.FadeOnShow(PinStatus);
         SourceInitialized += (_, _) => ApplyBounds();
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(new Action(ApplyBounds));
         Activated += (_, _) => UpdateFrame();
@@ -131,8 +137,30 @@ public partial class PinWindow : Window
             UpdateFrame();
             _textEditor.Commit();
         };
-        Closing += (_, _) =>
+        Closing += (_, e) =>
         {
+            // Exit animation first: fade out (160 ms), then really close.
+            if (!_fadedOut && !Dispatcher.HasShutdownStarted && IsLoaded)
+            {
+                e.Cancel = true;
+                if (!_fadingOut)
+                {
+                    _fadingOut = true;
+                    IsHitTestVisible = false;
+                    BeginAnimation(OpacityProperty, new DoubleAnimation(0, Motion.Fast) { EasingFunction = Motion.Ease });
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(170) };
+                    timer.Tick += (_, _) =>
+                    {
+                        timer.Stop();
+                        _fadedOut = true;
+                        Close();
+                    };
+                    timer.Start();
+                }
+
+                return;
+            }
+
             _translateCts?.Cancel();
             if (_editMode)
             {
@@ -375,6 +403,7 @@ public partial class PinWindow : Window
 
         ApplyBounds();
         Dispatcher.BeginInvoke(new Action(ApplyBounds), DispatcherPriority.Loaded);
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Motion.Fast) { EasingFunction = Motion.Ease });
         RefreshTextLayer();
     }
 
@@ -800,19 +829,29 @@ public partial class PinWindow : Window
             return;
         }
 
-        // With a drawing tool active the wheel sizes the selection / the tool;
-        // otherwise (edit mode or not) it zooms the pin and Ctrl+wheel sets opacity.
+        // A selected element takes the wheel (size; Ctrl = its opacity), then an active drawing
+        // tool (presets for the next element); otherwise the wheel zooms the pin and Ctrl+wheel
+        // sets the pin's opacity.
+        var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var toolActive = _editMode && _tool is not AnnotationTool.None and not AnnotationTool.Select;
-        if (toolActive && _selected != null)
+        if (_editMode && _selected != null)
         {
-            AdjustSelectedByWheel(e.Delta);
+            AdjustSelectedByWheel(e.Delta, ctrl);
             e.Handled = true;
             return;
         }
 
         if (toolActive && _active == null)
         {
-            AdjustActiveToolByWheel(e.Delta);
+            if (ctrl)
+            {
+                Toolbar.NudgeOpacity(e.Delta);
+            }
+            else
+            {
+                AdjustActiveToolByWheel(e.Delta);
+            }
+
             e.Handled = true;
             return;
         }
@@ -1676,6 +1715,7 @@ public partial class PinWindow : Window
 
     private void StartAnnotation(Point point)
     {
+        ClearSelection();
         _active = AnnotationOps.Create(_tool, point, Toolbar, _number, _baseImage);
         if (_active == null)
         {
@@ -1709,7 +1749,8 @@ public partial class PinWindow : Window
         _history.Checkpoint(Editor.Items);
         Editor.Items.Add(annotation);
         UpdateUndoButtons();
-        Editor.InvalidateVisual();
+        // The new element stays selected (wheel / Ctrl+wheel / frame adjust it right away).
+        SelectQuietly(annotation);
     }
 
     private void BeginTextEdit(TextAnnotation text, bool isNew, Point? caretAt, bool selectAll = false)
@@ -1937,7 +1978,7 @@ public partial class PinWindow : Window
             return true;
         }
 
-        if (hit.Inside)
+        if (hit.Inside && AnnotationOps.InsideMoves(_selected, _tool, point, 7 / _zoom))
         {
             _movingSelected = true;
             return true;
@@ -2046,7 +2087,7 @@ public partial class PinWindow : Window
             return true;
         }
 
-        if (hit.Inside)
+        if (hit.Inside && AnnotationOps.InsideMoves(_selected, _tool, point, 7 / _zoom))
         {
             ImageHost.Cursor = Cursors.SizeAll;
             return true;
@@ -2072,39 +2113,36 @@ public partial class PinWindow : Window
         InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
     }
 
-    private void AdjustSelectedByWheel(int delta)
+    private void AdjustSelectedByWheel(int delta, bool opacity)
     {
         if (_selected == null)
         {
             return;
         }
 
-        var step = Math.Sign(delta);
-        _history.CheckpointCoalesced(Editor.Items, ("wheel", _selected));
+        _history.CheckpointCoalesced(Editor.Items, (opacity ? "opacity" : "wheel", _selected));
         UpdateUndoButtons();
-        switch (_selected)
+        if (opacity)
         {
-            case TextAnnotation text:
-                text.FontSize = Math.Clamp(text.FontSize + step * 2, 8, 120);
-                Toolbar.SetThickness(text.FontSize);
-                _thickness = text.FontSize;
-                break;
-            case NumberAnnotation number:
-                number.Radius = Math.Clamp(number.Radius + step * 2, 8, 80);
-                Toolbar.SetThickness(number.Radius);
-                _thickness = number.Radius;
-                break;
-            case MosaicAnnotation mosaic:
-                // Wheel changes the mosaic strength.
-                mosaic.BlockSize = Math.Clamp(mosaic.BlockSize + step * 2, 4, 40);
-                MosaicBuilder.Rebuild(mosaic, _baseImage);
-                Toolbar.SyncFrom(mosaic);
-                break;
-            default:
-                _selected.Thickness = Math.Clamp(_selected.Thickness + step * 0.5, 1, 24);
-                _thickness = _selected.Thickness;
-                Toolbar.SetThickness(_thickness);
-                break;
+            if (_selected is WatermarkAnnotation)
+            {
+                _selected.Opacity = Math.Clamp(Math.Round(_selected.Opacity + Math.Sign(delta) * 0.05, 2), 0.05, 1);
+                Toolbar.SyncFrom(_selected);
+            }
+            else
+            {
+                _selected.Opacity = AnnotationOps.WheelOpacity(_selected.Opacity, delta);
+                Toolbar.SetOpacity(_selected.Opacity, remember: false);
+            }
+        }
+        else if (AnnotationOps.WheelSize(_selected, delta, _baseImage) is { } size)
+        {
+            _thickness = size;
+            Toolbar.SetThickness(size);
+        }
+        else
+        {
+            Toolbar.SyncFrom(_selected);
         }
 
         Editor.InvalidateVisual();

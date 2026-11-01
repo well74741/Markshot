@@ -10,7 +10,14 @@ namespace Markshot.Core;
 /// Lets a slider jump to the clicked track position and keep dragging in the
 /// same press. The click sets the value, then the press is handed to the
 /// slider's own Thumb, so WPF's native thumb drag takes over from there.
+/// If the thumb does not pick it up, the slider captures the mouse and tracks
+/// it itself until release.
 /// </summary>
+/// <remarks>
+/// The handler is registered with handledEventsToo: with IsMoveToPointEnabled
+/// the Slider's own class handler marks the press handled first, which used to
+/// swallow it before the hand-off.
+/// </remarks>
 public static class SliderDragBehavior
 {
     public static readonly DependencyProperty EnabledProperty =
@@ -19,6 +26,11 @@ public static class SliderDragBehavior
             typeof(bool),
             typeof(SliderDragBehavior),
             new PropertyMetadata(false, OnEnabledChanged));
+
+    private static readonly MouseButtonEventHandler DownHandler = OnMouseDown;
+    private static readonly MouseEventHandler MoveHandler = OnMouseMove;
+    private static readonly MouseButtonEventHandler UpHandler = OnMouseUp;
+    private static Slider? _tracking;
 
     public static void SetEnabled(DependencyObject element, bool value) =>
         element.SetValue(EnabledProperty, value);
@@ -43,11 +55,22 @@ public static class SliderDragBehavior
 
         if ((bool)e.NewValue)
         {
-            slider.PreviewMouseLeftButtonDown += OnMouseDown;
+            slider.AddHandler(UIElement.PreviewMouseLeftButtonDownEvent, DownHandler, true);
+            slider.AddHandler(UIElement.PreviewMouseMoveEvent, MoveHandler, true);
+            slider.AddHandler(UIElement.PreviewMouseLeftButtonUpEvent, UpHandler, true);
+            slider.LostMouseCapture += (_, _) =>
+            {
+                if (ReferenceEquals(_tracking, slider))
+                {
+                    _tracking = null;
+                }
+            };
         }
         else
         {
-            slider.PreviewMouseLeftButtonDown -= OnMouseDown;
+            slider.RemoveHandler(UIElement.PreviewMouseLeftButtonDownEvent, DownHandler);
+            slider.RemoveHandler(UIElement.PreviewMouseMoveEvent, MoveHandler);
+            slider.RemoveHandler(UIElement.PreviewMouseLeftButtonUpEvent, UpHandler);
         }
     }
 
@@ -65,17 +88,66 @@ public static class SliderDragBehavior
             return; // pressing the thumb itself already drags natively
         }
 
-        slider.Value = Math.Clamp(track.ValueFromPoint(e.GetPosition(track)), slider.Minimum, slider.Maximum);
+        SetFromPointer(slider, track, e);
         slider.UpdateLayout();
 
         // Hand this press to the thumb: it captures the mouse and raises
         // DragDelta for the rest of the gesture, exactly as if it was grabbed.
-        thumb.RaiseEvent(new MouseButtonEventArgs(e.MouseDevice, e.Timestamp, MouseButton.Left)
+        if (!thumb.IsDragging)
         {
-            RoutedEvent = UIElement.MouseLeftButtonDownEvent,
-            Source = thumb
-        });
+            thumb.RaiseEvent(new MouseButtonEventArgs(e.MouseDevice, e.Timestamp, MouseButton.Left)
+            {
+                RoutedEvent = UIElement.MouseLeftButtonDownEvent,
+                Source = thumb
+            });
+        }
+
+        if (!thumb.IsDragging && slider.CaptureMouse())
+        {
+            _tracking = slider; // fallback: follow the pointer ourselves
+        }
+
         e.Handled = true;
+    }
+
+    private static void OnMouseMove(object sender, MouseEventArgs e)
+    {
+        if (sender is not Slider slider || !ReferenceEquals(_tracking, slider))
+        {
+            return;
+        }
+
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            slider.ReleaseMouseCapture();
+            return;
+        }
+
+        if (slider.Template?.FindName("PART_Track", slider) is Track track)
+        {
+            SetFromPointer(slider, track, e);
+        }
+
+        e.Handled = true;
+    }
+
+    private static void OnMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Slider slider && ReferenceEquals(_tracking, slider))
+        {
+            _tracking = null;
+            slider.ReleaseMouseCapture();
+            e.Handled = true;
+        }
+    }
+
+    private static void SetFromPointer(Slider slider, Track track, MouseEventArgs e)
+    {
+        var value = track.ValueFromPoint(e.GetPosition(track));
+        if (double.IsFinite(value))
+        {
+            slider.Value = Math.Clamp(value, slider.Minimum, slider.Maximum);
+        }
     }
 
     private static bool IsWithin(DependencyObject? element, DependencyObject ancestor)
