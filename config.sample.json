@@ -18,6 +18,7 @@
   "ToolTextHotkey": "T",
   "ToolNumberHotkey": "S",
   "ToolLineHotkey": "L",
+  "ImmersiveTranslate": false,
   "SaveDirectory": "",
   "OcrLanguage": "",
   "RecentRegions": [],

@@ -2,258 +2,571 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Markshot 设置"
-        Width="820" Height="920" MinWidth="640" MinHeight="620"
-        Background="#FF1C1C1C"
+        Width="760" Height="560" MinWidth="680" MinHeight="480"
+        Background="#FF1A1A1A"
         WindowStartupLocation="CenterScreen"
         Topmost="True"
-        FontFamily="Microsoft YaHei UI">
+        FontFamily="Microsoft YaHei UI"
+        UseLayoutRounding="True">
 
-    <Grid Margin="22">
+    <Window.Resources>
+        <!-- Left navigation item -->
+        <Style x:Key="NavItem" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#B8B8B8" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Padding="12,8">
+                            <Grid>
+                                <Border x:Name="Bar" Width="3" Height="14" CornerRadius="1.5" HorizontalAlignment="Left"
+                                        Margin="-8,0,0,0" Background="{StaticResource Accent}" Visibility="Hidden" />
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#14FFFFFF" />
+                                <Setter Property="Foreground" Value="#F0F0F0" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#22FFFFFF" />
+                                <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PageTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#F5F5F5" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#FF222222" />
+            <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16,11,16,13" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <Style x:Key="CardTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E6E6E6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,9" />
+        </Style>
+
+        <Style x:Key="RowLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#A8A8A8" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#7E7E7E" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="Field" TargetType="TextBox" BasedOn="{StaticResource InputBox}">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="HotkeyField" TargetType="TextBox" BasedOn="{StaticResource Field}">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTip" Value="点击后直接按下组合键；Backspace 清除，Esc 还原" />
+        </Style>
+
+        <Style x:Key="KeyField" TargetType="TextBox" BasedOn="{StaticResource Field}">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="MaxLength" Value="1" />
+            <Setter Property="CharacterCasing" Value="Upper" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <Style x:Key="PasswordField" TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource InputBackground}" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="BorderBrush" Value="#2EFFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="SelectionBrush" Value="{StaticResource Accent}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="PasswordBox">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Pill switch -->
+        <Style x:Key="Switch" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid Background="Transparent">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="Track" Width="36" Height="20" CornerRadius="10" Background="#4A4A4A"
+                                    VerticalAlignment="Center">
+                                <Ellipse x:Name="Knob" Width="14" Height="14" Fill="#F2F2F2"
+                                         HorizontalAlignment="Left" Margin="3,0" />
+                            </Border>
+                            <ContentPresenter Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
+                                              TextElement.Foreground="#E0E0E0" TextElement.FontSize="12.5" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{StaticResource Accent}" />
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="Chip" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="Padding" Value="9,3" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Foreground" Value="#C8C8C8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="#2C2C2C" BorderBrush="#26FFFFFF" BorderThickness="1"
+                                CornerRadius="11" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"
+                                              TextElement.FontSize="11.5" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FooterButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="MinWidth" Value="76" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="#2C2C2C" BorderBrush="#26FFFFFF" BorderThickness="1"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#363636" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource FooterButton}">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{StaticResource Accent}" CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="White" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Slim dark scrollbar (the system one is white). -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="MinWidth" Value="8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border CornerRadius="4" Background="#44FFFFFF" Margin="1,2" />
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Background="#FF1A1A1A">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="168" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-
-                <TextBlock Text="快捷键" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
-
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="截图" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="CaptureHotkeyBox" Style="{StaticResource InputBox}" Width="170" HorizontalAlignment="Left"
-                                 IsReadOnly="True" Cursor="Hand"
-                                 GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
-                                 PreviewKeyDown="HotkeyBox_PreviewKeyDown"
-                                 ToolTip="点击后直接按下组合键；Backspace 清除，Esc 取消" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="2">
-                        <TextBlock Text="贴图剪贴板（可留空）" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="PinHotkeyBox" Style="{StaticResource InputBox}" Width="170" HorizontalAlignment="Left"
-                                 IsReadOnly="True" Cursor="Hand"
-                                 GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
-                                 PreviewKeyDown="HotkeyBox_PreviewKeyDown"
-                                 ToolTip="点击后直接按下组合键；Backspace 清除，Esc 取消" />
-                    </StackPanel>
-                </Grid>
-
-                <Grid Margin="0,8,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="鼠标穿透" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="MouseThroughHotkeyBox" Style="{StaticResource InputBox}" Width="170" HorizontalAlignment="Left"
-                                 IsReadOnly="True" Cursor="Hand"
-                                 GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
-                                 PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2">
-                        <TextBlock Text="返回上一贴图" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="RestorePinHotkeyBox" Style="{StaticResource InputBox}" Width="170" HorizontalAlignment="Left"
-                                 IsReadOnly="True" Cursor="Hand"
-                                 GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
-                                 PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
-                    </StackPanel>
-                </Grid>
-
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
-                    <CheckBox x:Name="ManualHotkeyCheck" Content="手动输入" Foreground="#8A8A8A" FontSize="12"
-                              VerticalAlignment="Center" Checked="ManualHotkey_Changed" Unchecked="ManualHotkey_Changed" />
-                    <TextBlock Text="  点击输入框后直接按下组合键；Backspace 清除，Esc 取消。捕获不到时可勾选左侧手动键入。"
-                               Foreground="#8A8A8A" FontSize="12" VerticalAlignment="Center" />
-                </StackPanel>
-
-                <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
-
-                <TextBlock Text="标注工具快捷键（单字母）" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
-
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Grid.Row="0" Grid.Column="0">
-                        <TextBlock Text="画笔" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="PenKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="0" Grid.Column="2">
-                        <TextBlock Text="选择" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="SelectKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="0" Grid.Column="4">
-                        <TextBlock Text="橡皮擦" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="EraserKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,8,0,0">
-                        <TextBlock Text="文字" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="TextKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
-                        <TextBlock Text="序号" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="NumberKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="4" Margin="0,8,0,0">
-                        <TextBlock Text="直线 / 箭头" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="LineKeyBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                </Grid>
-
-                <StackPanel Margin="0,10,0,0" Width="220" HorizontalAlignment="Left">
-                    <TextBlock Text="文字选择辅助键（按住拖动贴图）" Style="{StaticResource FieldLabel}" />
-                    <TextBox x:Name="TextBypassBox" Style="{StaticResource InputBox}" MaxLength="12" />
-                </StackPanel>
-
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <StackPanel Width="72" Margin="0,0,8,0">
-                        <TextBlock Text="左右对称" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="PinFlipHBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                    <StackPanel Width="72" Margin="0,0,8,0">
-                        <TextBlock Text="上下对称" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="PinFlipVBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                    <StackPanel Width="72" Margin="0,0,8,0">
-                        <TextBlock Text="逆时针90°" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="PinRotateBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                    <StackPanel Width="72">
-                        <TextBlock Text="还原" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="PinResetBox" Style="{StaticResource InputBox}" MaxLength="1" CharacterCasing="Upper" />
-                    </StackPanel>
-                </StackPanel>
-
-                <TextBlock Text="批注栏按钮（拖动排序，勾选显示）" FontSize="15" Foreground="#F5F5F5"
-                           FontWeight="SemiBold" Margin="0,18,0,8" Visibility="Collapsed" />
-                <Grid Visibility="Collapsed">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="截图模式" Style="{StaticResource FieldLabel}" />
-                        <ListBox x:Name="CaptureOrderList" Height="150" AllowDrop="True"
-                                 Background="#FF262626" BorderBrush="#33FFFFFF" Foreground="#FFF0F0F0"
-                                 PreviewMouseLeftButtonDown="OrderList_PreviewMouseLeftButtonDown"
-                                 PreviewMouseMove="OrderList_PreviewMouseMove"
-                                 DragOver="OrderList_DragOver" Drop="OrderList_Drop">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <CheckBox IsChecked="{Binding Visible, Mode=TwoWay}" VerticalAlignment="Center"
-                                                  Margin="0,0,8,0" />
-                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </StackPanel>
-                    <StackPanel Grid.Column="2">
-                        <TextBlock Text="贴图模式" Style="{StaticResource FieldLabel}" />
-                        <ListBox x:Name="PinOrderList" Height="150" AllowDrop="True"
-                                 Background="#FF262626" BorderBrush="#33FFFFFF" Foreground="#FFF0F0F0"
-                                 PreviewMouseLeftButtonDown="OrderList_PreviewMouseLeftButtonDown"
-                                 PreviewMouseMove="OrderList_PreviewMouseMove"
-                                 DragOver="OrderList_DragOver" Drop="OrderList_Drop">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <CheckBox IsChecked="{Binding Visible, Mode=TwoWay}" VerticalAlignment="Center"
-                                                  Margin="0,0,8,0" />
-                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </StackPanel>
-                </Grid>
-
-                <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
-
-                <TextBlock Text="保存" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
-
-                <TextBlock Text="保存目录" Style="{StaticResource FieldLabel}" />
-                <DockPanel>
-                    <Button DockPanel.Dock="Right" Content="浏览…" Style="{StaticResource ToolButton}"
-                            Click="Browse_Click" Margin="8,0,0,0" />
-                    <TextBox x:Name="SaveDirBox" Style="{StaticResource InputBox}" />
-                </DockPanel>
-                <TextBlock Text="留空则保存到 图片\Markshot。" Foreground="#8A8A8A" FontSize="12" Margin="0,6,0,0" />
-
-                <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
-
-                <TextBlock Text="文字识别" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
-
-                <TextBlock Text="OCR 模型（留空 = 中文）" Style="{StaticResource FieldLabel}" />
-                <TextBox x:Name="OcrLanguageBox" Style="{StaticResource InputBox}" />
-                <TextBlock x:Name="OcrHintText" Foreground="#8A8A8A" FontSize="12" Margin="0,6,0,0"
-                           TextWrapping="Wrap" />
-
-                <Border Height="1" Background="#2AFFFFFF" Margin="0,20" />
-
-                <TextBlock Text="翻译服务" FontSize="15" Foreground="#F5F5F5" FontWeight="SemiBold" Margin="0,0,0,10" />
-
-                <TextBlock Text="Base URL（OpenAI 兼容）" Style="{StaticResource FieldLabel}" />
-                <TextBox x:Name="BaseUrlBox" Style="{StaticResource InputBox}" />
-
-                <TextBlock Text="API Key" Style="{StaticResource FieldLabel}" Margin="0,10,0,4" />
-                <TextBox x:Name="ApiKeyBox" Style="{StaticResource InputBox}" />
-
-                <TextBlock Text="模型" Style="{StaticResource FieldLabel}" Margin="0,10,0,4" />
-                <TextBox x:Name="ModelBox" Style="{StaticResource InputBox}" />
-
-                <Grid Margin="0,10,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="160" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="默认目标语言" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="TargetBox" Style="{StaticResource InputBox}" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="2">
-                        <TextBlock Text="超时（秒）" Style="{StaticResource FieldLabel}" />
-                        <TextBox x:Name="TimeoutBox" Style="{StaticResource InputBox}" />
-                    </StackPanel>
-                </Grid>
-
-                <TextBlock Text="支持 DeepSeek、OpenAI、Moonshot、SiliconFlow、Ollama、LM Studio 等兼容 /chat/completions 的服务。"
-                           Foreground="#8A8A8A" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+        <!-- Navigation -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#FF151515" BorderBrush="#14FFFFFF" BorderThickness="0,0,1,0">
+            <StackPanel Margin="12,18,12,12">
+                <TextBlock Text="Markshot" Foreground="#F5F5F5" FontSize="15" FontWeight="SemiBold" Margin="8,0,0,2" />
+                <TextBlock x:Name="VersionText" Foreground="#6E6E6E" FontSize="11" Margin="8,0,0,18" />
+                <RadioButton x:Name="NavHotkeys" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Hotkeys"
+                             Content="快捷键" IsChecked="True" Checked="Nav_Checked" />
+                <RadioButton x:Name="NavTranslate" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Translate"
+                             Content="翻译" Checked="Nav_Checked" />
+                <RadioButton x:Name="NavGeneral" Style="{StaticResource NavItem}" GroupName="Nav" Tag="General"
+                             Content="保存与识别" Checked="Nav_Checked" />
             </StackPanel>
-        </ScrollViewer>
+        </Border>
 
-        <Grid Grid.Row="1" Margin="0,16,0,0">
-            <TextBlock x:Name="StatusText" Foreground="#9A9A9A" FontSize="12"
-                       VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360" HorizontalAlignment="Left" />
+        <!-- Pages -->
+        <Grid Grid.Column="1" Grid.Row="0">
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="TestButton" Content="测试翻译" Style="{StaticResource ToolButton}" Click="Test_Click" />
-                <Button Content="取消" Style="{StaticResource ToolButton}" Click="Cancel_Click" Margin="8,0,0,0" IsCancel="True" />
-                <Button Content="保存" Style="{StaticResource AccentButton}" Click="Save_Click" Margin="8,0,0,0" IsDefault="True" />
-            </StackPanel>
+            <!-- ===== Hotkeys ===== -->
+            <ScrollViewer x:Name="PageHotkeys" VerticalScrollBarVisibility="Auto" Padding="24,18,20,6">
+                <StackPanel>
+                    <TextBlock Text="快捷键" Style="{StaticResource PageTitle}" />
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="全局快捷键" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="24" />
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="截图" Style="{StaticResource RowLabel}" />
+                                <TextBox Grid.Row="0" Grid.Column="1" x:Name="CaptureHotkeyBox" Style="{StaticResource HotkeyField}"
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+                                <TextBlock Grid.Row="0" Grid.Column="3" Text="贴剪贴板" Style="{StaticResource RowLabel}" />
+                                <TextBox Grid.Row="0" Grid.Column="4" x:Name="PinHotkeyBox" Style="{StaticResource HotkeyField}"
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="鼠标穿透" Style="{StaticResource RowLabel}" />
+                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="MouseThroughHotkeyBox" Style="{StaticResource HotkeyField}"
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+                                <TextBlock Grid.Row="2" Grid.Column="3" Text="恢复贴图" Style="{StaticResource RowLabel}"
+                                           ToolTip="重新打开最近关闭的贴图" />
+                                <TextBox Grid.Row="2" Grid.Column="4" x:Name="RestorePinHotkeyBox" Style="{StaticResource HotkeyField}"
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+                            </Grid>
+                            <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"
+                                       Text="点击输入框后直接按组合键；Backspace 清除，Esc 还原；除截图外都可留空。" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="批注工具（单个字母，截图和贴图编辑时生效）" Style="{StaticResource CardTitle}" />
+                            <UniformGrid Columns="6">
+                                <StackPanel>
+                                    <TextBlock Text="画笔" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="PenKeyBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="直线/箭头" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="LineKeyBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="文字" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="TextKeyBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="序号" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="NumberKeyBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="橡皮擦" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="EraserKeyBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="选择" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="SelectKeyBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="贴图窗口" Style="{StaticResource CardTitle}" />
+                            <!-- Same 6-column grid as the tool keys above so the cells line up. -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="左右翻转" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="PinFlipHBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="上下翻转" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="PinFlipVBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="逆时针 90°" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="PinRotateBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="3">
+                                    <TextBlock Text="还原" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="PinResetBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="4" Grid.ColumnSpan="2">
+                                    <TextBlock Text="拖动贴图辅助键" Style="{StaticResource RowLabel}" Margin="0,0,0,5"
+                                               ToolTip="贴图上有文字批注时，按住此键（Alt / Ctrl / Shift）可直接拖动贴图而不进入文字编辑" />
+                                    <TextBox x:Name="TextBypassBox" Style="{StaticResource Field}" MaxLength="12" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== Translation ===== -->
+            <ScrollViewer x:Name="PageTranslate" VerticalScrollBarVisibility="Auto" Padding="24,18,20,6"
+                          Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="翻译" Style="{StaticResource PageTitle}" />
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="原位翻译" Style="{StaticResource CardTitle}" />
+                            <ToggleButton x:Name="ImmersiveSwitch" Style="{StaticResource Switch}"
+                                          Content="截图时自动把选区内的文字替换成译文（同工具栏的翻译开关）" />
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="目标语言" Style="{StaticResource RowLabel}" />
+                                <DockPanel Grid.Column="1">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="10,0,0,0"
+                                                VerticalAlignment="Center">
+                                        <Button Style="{StaticResource Chip}" Content="简体中文" Click="Language_Click" />
+                                        <Button Style="{StaticResource Chip}" Content="English" Click="Language_Click" />
+                                        <Button Style="{StaticResource Chip}" Content="日本語" Click="Language_Click" />
+                                        <Button Style="{StaticResource Chip}" Content="繁體中文" Click="Language_Click" Margin="0" />
+                                    </StackPanel>
+                                    <TextBox x:Name="TargetBox" Style="{StaticResource Field}" />
+                                </DockPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="翻译服务（OpenAI 兼容接口）" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Text="Base URL" Style="{StaticResource RowLabel}" />
+                                <TextBox Grid.Row="0" Grid.Column="1" x:Name="BaseUrlBox" Style="{StaticResource Field}" />
+
+                                <TextBlock Grid.Row="2" Text="API Key" Style="{StaticResource RowLabel}" />
+                                <Grid Grid.Row="2" Grid.Column="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <PasswordBox x:Name="ApiKeyPassword" Style="{StaticResource PasswordField}"
+                                                 PasswordChanged="ApiKeyPassword_PasswordChanged" />
+                                    <TextBox x:Name="ApiKeyBox" Style="{StaticResource Field}" Visibility="Collapsed"
+                                             TextChanged="ApiKeyBox_TextChanged" />
+                                    <Button Grid.Column="1" x:Name="ApiKeyReveal" Style="{StaticResource ToolButton}"
+                                            Content="显示" Margin="6,0,0,0" Click="ApiKeyReveal_Click" />
+                                </Grid>
+
+                                <TextBlock Grid.Row="4" Text="模型" Style="{StaticResource RowLabel}" />
+                                <Grid Grid.Row="4" Grid.Column="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="24" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="72" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="ModelBox" Style="{StaticResource Field}" />
+                                    <TextBlock Grid.Column="2" Text="超时（秒）" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                    <TextBox Grid.Column="3" x:Name="TimeoutBox" Style="{StaticResource Field}"
+                                             HorizontalContentAlignment="Center" />
+                                </Grid>
+                            </Grid>
+
+                            <DockPanel Margin="84,12,0,0">
+                                <Button DockPanel.Dock="Left" x:Name="TestButton" Style="{StaticResource FooterButton}"
+                                        Content="测试连接" Click="Test_Click" />
+                                <TextBlock x:Name="TestStatusText" Style="{StaticResource Hint}" Margin="12,0,0,0"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                            </DockPanel>
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,10,0,0"
+                                       Text="支持 DeepSeek、OpenAI、Moonshot、SiliconFlow、Ollama、LM Studio 等提供 /chat/completions 的服务；本机地址可不填 Key。" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== General ===== -->
+            <ScrollViewer x:Name="PageGeneral" VerticalScrollBarVisibility="Auto" Padding="24,18,20,6"
+                          Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="保存与识别" Style="{StaticResource PageTitle}" />
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="保存" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="保存目录" Style="{StaticResource RowLabel}" />
+                                <TextBox Grid.Column="1" x:Name="SaveDirBox" Style="{StaticResource Field}" />
+                                <Button Grid.Column="2" Content="浏览…" Style="{StaticResource FooterButton}"
+                                        Click="Browse_Click" Margin="8,0,0,0" />
+                            </Grid>
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0"
+                                       Text="留空则保存到 图片\Markshot；Ctrl+Shift+S 直接存到这里不弹窗。" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="文字识别（本地 PP-OCRv5）" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="识别模型" Style="{StaticResource RowLabel}" />
+                                <TextBox Grid.Column="1" x:Name="OcrLanguageBox" Style="{StaticResource Field}" />
+                                <TextBlock Grid.Column="2" Style="{StaticResource Hint}" Margin="12,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="留空 = 中英日混排模型；填 en = 英文/拉丁专用模型" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="配置文件" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="ConfigPathText" Style="{StaticResource Hint}" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                <Button Grid.Column="1" Content="打开所在文件夹" Style="{StaticResource FooterButton}"
+                                        Click="OpenConfigFolder_Click" Margin="12,0,0,0" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
+
+        <!-- Footer -->
+        <Border Grid.Column="1" Grid.Row="1" BorderBrush="#14FFFFFF" BorderThickness="0,1,0,0" Padding="24,12,20,14">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="取消" Style="{StaticResource FooterButton}" Click="Cancel_Click" IsCancel="True" />
+                    <Button Content="保存" Style="{StaticResource PrimaryButton}" Click="Save_Click" Margin="8,0,0,0"
+                            IsDefault="True" />
+                </StackPanel>
+                <TextBlock x:Name="StatusText" Style="{StaticResource Hint}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+            </DockPanel>
+        </Border>
     </Grid>
 </Window>

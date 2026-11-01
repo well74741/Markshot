@@ -1,5 +1,6 @@
 using System.Windows.Interop;
 using Markshot.Annotations;
+using Markshot.Services;
 using Microsoft.Win32;
 
 namespace Markshot.UI;
@@ -27,7 +28,8 @@ public partial class OverlayWindow : Window
     private readonly Int32Rect _bounds;
     private readonly bool _demo;
 
-    private readonly Stack<Annotation> _redo = new();
+    private readonly AnnotationHistory _history = new();
+    private readonly InlineTextEditor _textEditor;
 
     private double _scale = 1.0;
     private Rect _selection = Rect.Empty;
@@ -51,9 +53,12 @@ public partial class OverlayWindow : Window
     private double _corner;
     private bool _autoTranslate;
 
-    private bool _textActive;
-    private Point _textPosition;
     private WatermarkAnnotation? _editingWatermark;
+
+    // Text tool press on an existing text: a click edits it, a drag moves it.
+    private TextAnnotation? _textPress;
+    private Point _textPressPoint;
+    private bool _textPressMoved;
 
     private readonly byte[] _pixelBuffer = new byte[4];
     private WindowTarget? _hoverTarget;
@@ -89,6 +94,15 @@ public partial class OverlayWindow : Window
     private double _creatingRotateStartAngle;
     private bool _suppressContextMenu;
 
+    // In-place translation of the selection (Chrome-style).
+    private readonly DispatcherTimer _translateDebounce;
+    private CancellationTokenSource? _translateCts;
+    private BitmapSource? _translated;
+    private Rect _translatedRect = Rect.Empty;
+    private Rect _translatingRect = Rect.Empty;
+    private bool _showOriginal;
+    private BitmapSource? _effectiveScreen;
+
     public CaptureAction Result { get; private set; } = CaptureAction.None;
 
     public BitmapSource? OutputImage { get; private set; }
@@ -118,6 +132,13 @@ public partial class OverlayWindow : Window
             }
         };
 
+        _translateDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+        _translateDebounce.Tick += (_, _) =>
+        {
+            _translateDebounce.Stop();
+            StartTranslation();
+        };
+
         _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.4) };
         _noticeTimer.Tick += (_, _) =>
         {
@@ -133,11 +154,14 @@ public partial class OverlayWindow : Window
             UpdateScale();
             UpdateSelectionVisuals();
         };
-        TextEditor.LostKeyboardFocus += (_, _) =>
+        _textEditor = new InlineTextEditor(TextEditor, Editor);
+        _textEditor.Ended += OnTextEditEnded;
+        _textEditor.StyleChanged += text => Toolbar.SyncFrom(text);
+        WatermarkEditor.LostKeyboardFocus += (_, _) =>
         {
-            if (_textActive && !_closed)
+            if (_editingWatermark != null && !_closed)
             {
-                CommitText();
+                CommitWatermark();
             }
         };
     }
@@ -155,12 +179,22 @@ public partial class OverlayWindow : Window
         Toolbar.PinRequested += PinAndClose;
         Toolbar.TranslateRequested += TranslateAndClose;
         Toolbar.OcrRequested += OcrAndClose;
+        _autoTranslate = App.Config.ImmersiveTranslate;
+        Toolbar.SetTranslateEnabled(_autoTranslate);
         Toolbar.TranslateToggled += enabled =>
         {
             _autoTranslate = enabled;
-            if (enabled && _hasSelection)
+            _showOriginal = false;
+            App.Config.ImmersiveTranslate = enabled;
+            App.Config.Save();
+            if (enabled)
             {
-                BeginAutoTranslateSelection();
+                StartTranslation();
+            }
+            else
+            {
+                CancelTranslation();
+                UpdateTranslationVisuals();
             }
         };
         Toolbar.CloseRequested += Close;
@@ -179,7 +213,9 @@ public partial class OverlayWindow : Window
 
     private void OnToolbarToolChanged(AnnotationTool tool)
     {
+        _textEditor.Commit();
         _tool = tool;
+        _thickness = Toolbar.Thickness;
         ClearAnnotationSelection();
         ClearAnnotationHover();
         Toolbar.SetSelection(null);
@@ -206,37 +242,22 @@ public partial class OverlayWindow : Window
         _corner = Toolbar.CornerRadius;
         UpdateCursorToPointer();
 
+        if (_textEditor.Target is { } editing)
+        {
+            AnnotationStyler.Apply(editing, Toolbar, EffectiveScreen);
+            _textEditor.MarkDirty();
+            _textEditor.Refresh();
+            return;
+        }
+
         if (_selectedAnnotation == null)
         {
             return;
         }
 
-        _selectedAnnotation.Color = _color;
-        if (_selectedAnnotation is NumberAnnotation number)
-        {
-            number.Radius = Math.Max(8, _thickness);
-            number.Thickness = 1.5;
-        }
-        else
-        {
-            _selectedAnnotation.Thickness = _thickness;
-        }
-
-        _selectedAnnotation.Fill = _fill;
-        _selectedAnnotation.CornerRadius = _corner;
-        if (_selectedAnnotation is TextAnnotation textAnnotation)
-        {
-            textAnnotation.FontSize = Math.Max(8, _thickness);
-            textAnnotation.StrokeColor = Toolbar.StrokeColor;
-            textAnnotation.StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0;
-        }
-        else if (_selectedAnnotation is WatermarkAnnotation watermarkAnnotation)
-        {
-            watermarkAnnotation.FontSize = Math.Max(10, _thickness);
-            watermarkAnnotation.StrokeColor = Toolbar.StrokeColor;
-            watermarkAnnotation.StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0;
-        }
-
+        _history.CheckpointCoalesced(Editor.Items, _selectedAnnotation);
+        AnnotationStyler.Apply(_selectedAnnotation, Toolbar, EffectiveScreen);
+        UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
 
@@ -338,6 +359,8 @@ public partial class OverlayWindow : Window
 
         if (!_hasSelection || _selection.Width <= 0 || _selection.Height <= 0)
         {
+            CancelTranslation();
+            UpdateTranslationVisuals();
             BrightClip.Rect = new Rect(0, 0, 0, 0);
             Editor.Selection = Rect.Empty;
             Editor.ShowSelectionChrome = false;
@@ -357,6 +380,13 @@ public partial class OverlayWindow : Window
         Editor.Selection = _selection;
         Editor.ShowSelectionChrome = true;
         Editor.InvalidateVisual();
+        UpdateTranslationVisuals();
+        if (_autoTranslate && !SelectionDragging && SnapRect(_selection) != _translatedRect &&
+            SnapRect(_selection) != _translatingRect)
+        {
+            _translateDebounce.Stop();
+            _translateDebounce.Start();
+        }
 
         Hint.Visibility = Visibility.Collapsed;
         if (_mode is DragMode.Moving or DragMode.Resizing && _dragging)
@@ -461,7 +491,7 @@ public partial class OverlayWindow : Window
 
         var mosaicRect = new Rect(inner.Left, inner.Bottom + 84, 260, 78);
         var mosaic = new MosaicAnnotation { Rect = mosaicRect, Color = Color.FromRgb(0x00, 0xE5, 0xE5), Thickness = 3 };
-        mosaic.Pattern = MosaicBuilder.Build(_screen, mosaicRect, 12);
+        mosaic.Pattern = MosaicBuilder.Build(EffectiveScreen, mosaicRect, 12);
         if (mosaic.Pattern != null)
         {
             Editor.Items.Add(mosaic);
@@ -487,18 +517,81 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        Focus();
+        var point = ToPixels(e.GetPosition(InputLayer));
 
-        if (TextEditor.Visibility == Visibility.Visible)
+        if (_textEditor.Target is { } editingText)
         {
-            CommitText();
+            // A click outside the text being typed only finishes it — unless the
+            // text tool is pointed at another text, which then opens for editing.
+            _textEditor.Commit();
+            if (!(_tool == AnnotationTool.Text && HitAnnotation(point) is TextAnnotation other &&
+                  !ReferenceEquals(other, editingText)))
+            {
+                e.Handled = true;
+                return;
+            }
         }
 
-        var point = ToPixels(e.GetPosition(InputLayer));
+        Focus();
+
+        if (_editingWatermark != null)
+        {
+            CommitWatermark();
+        }
+
         _dragStart = point;
         _dragOrigin = _selection;
         _dragging = true;
         _pendingWindow = Rect.Empty;
+
+        if (e.ClickCount == 2 &&
+            (_tool == AnnotationTool.None || _tool == AnnotationTool.Select) &&
+            HitAnnotation(point) is TextAnnotation doubleClicked)
+        {
+            _dragging = false;
+            _draggingAnnotation = false;
+            InputLayer.ReleaseMouseCapture();
+            BeginTextEdit(doubleClicked, isNew: false, caretAt: point);
+            e.Handled = true;
+            return;
+        }
+
+        if (_tool == AnnotationTool.Text && _hasSelection)
+        {
+            if (HitAnnotation(point) is TextAnnotation pressed)
+            {
+                _textPress = pressed;
+                _textPressPoint = point;
+                _textPressMoved = false;
+                _lastAnnotationPoint = point;
+                _history.Arm(Editor.Items);
+                InputLayer.CaptureMouse();
+                e.Handled = true;
+                return;
+            }
+
+            if (_selection.Contains(point))
+            {
+                // The mouse-up lands on the new text box, not on this layer.
+                _dragging = false;
+                BeginTextEdit(AnnotationStyler.NewText(point, Toolbar), isNew: true, caretAt: null);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Before "double-click = copy": a double-click on a watermark edits its text.
+        if (e.ClickCount == 2 &&
+            (_tool == AnnotationTool.Watermark || _tool == AnnotationTool.Select || _tool == AnnotationTool.None) &&
+            HitAnnotation(point) is WatermarkAnnotation watermark)
+        {
+            _dragging = false;
+            _draggingAnnotation = false;
+            InputLayer.ReleaseMouseCapture();
+            BeginWatermarkEdit(watermark);
+            e.Handled = true;
+            return;
+        }
 
         if (e.ClickCount == 2 &&
             (_tool == AnnotationTool.None || _tool == AnnotationTool.Select) &&
@@ -507,17 +600,6 @@ public partial class OverlayWindow : Window
             CopyAndClose();
             e.Handled = true;
             return;
-        }
-
-        if (e.ClickCount == 2 &&
-            (_tool == AnnotationTool.Watermark || _tool == AnnotationTool.Select || _tool == AnnotationTool.None))
-        {
-            if (HitAnnotation(ToPixels(e.GetPosition(InputLayer))) is WatermarkAnnotation watermark)
-            {
-                BeginWatermarkEdit(watermark);
-                e.Handled = true;
-                return;
-            }
         }
 
         if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
@@ -535,6 +617,7 @@ public partial class OverlayWindow : Window
         if (_selectedAnnotation != null && (_tool == AnnotationTool.Select || _tool == AnnotationTool.None) &&
             TryBeginAnnotationTransform(point))
         {
+            _history.Arm(Editor.Items);
             InputLayer.CaptureMouse();
             e.Handled = true;
             return;
@@ -550,6 +633,7 @@ public partial class OverlayWindow : Window
                 _lastAnnotationPoint = point;
                 _annotationStartBounds = hit.Bounds;
                 _annotationScaleStartPoint = point;
+                _history.Arm(Editor.Items);
                 InputLayer.CaptureMouse();
                 e.Handled = true;
                 return;
@@ -560,9 +644,11 @@ public partial class OverlayWindow : Window
 
         if (_tool == AnnotationTool.Eraser)
         {
+            _history.Checkpoint(Editor.Items);
+            UpdateUndoButtons();
             _eraserStroke = new EraserAnnotation
             {
-                Source = _screen,
+                Source = EffectiveScreen,
                 Thickness = Math.Max(8, _thickness * 2)
             };
             _eraserStroke.Points.Add(point);
@@ -570,12 +656,6 @@ public partial class OverlayWindow : Window
             _erasing = true;
             Editor.InvalidateVisual();
             InputLayer.CaptureMouse();
-            e.Handled = true;
-            return;
-        }
-
-        if (_tool == AnnotationTool.Text && e.ClickCount < 2)
-        {
             e.Handled = true;
             return;
         }
@@ -624,7 +704,7 @@ public partial class OverlayWindow : Window
             _hasSelection = false;
             _recentRegionIndex = -1;
             Editor.Items.Clear();
-            _redo.Clear();
+            _history.Clear();
             ClearHover();
             UpdateUndoButtons();
             UpdateSelectionVisuals();
@@ -640,7 +720,7 @@ public partial class OverlayWindow : Window
         _selection = new Rect(point, point);
         _hasSelection = false;
         Editor.Items.Clear();
-        _redo.Clear();
+        _history.Clear();
         ClearHover();
         UpdateUndoButtons();
         UpdateSelectionVisuals();
@@ -710,11 +790,38 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (_textPress != null)
+        {
+            if (!_textPressMoved && (point - _textPressPoint).Length * 1 / _scale < 3)
+            {
+                return;
+            }
+
+            if (!_textPressMoved)
+            {
+                _textPressMoved = true;
+                _history.CommitArmed();
+                UpdateUndoButtons();
+                InputLayer.Cursor = Cursors.SizeAll;
+            }
+
+            _textPress.Translate(point.X - _lastAnnotationPoint.X, point.Y - _lastAnnotationPoint.Y);
+            _lastAnnotationPoint = point;
+            Editor.InvalidateVisual();
+            return;
+        }
+
         if (_erasing)
         {
             _eraserStroke?.Points.Add(point);
             Editor.InvalidateVisual();
             return;
+        }
+
+        if ((_rotatingAnnotation || _resizingAnnotation || _draggingAnnotation) && _selectedAnnotation != null)
+        {
+            _history.CommitArmed();
+            UpdateUndoButtons();
         }
 
         if (_rotatingAnnotation && _selectedAnnotation != null)
@@ -866,6 +973,29 @@ public partial class OverlayWindow : Window
         _resizingAnnotation = false;
         _rotatingAnnotation = false;
 
+        if (_textPress != null)
+        {
+            var pressed = _textPress;
+            _textPress = null;
+            _mode = DragMode.None;
+            if (_textPressMoved)
+            {
+                UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
+            }
+            else
+            {
+                _history.Disarm();
+                BeginTextEdit(pressed, isNew: false, caretAt: ToPixels(e.GetPosition(InputLayer)));
+            }
+
+            return;
+        }
+
+        if (_resizingAnnotation || _rotatingAnnotation || _draggingAnnotation)
+        {
+            _history.Disarm();
+        }
+
         if (_erasing)
         {
             _erasing = false;
@@ -929,6 +1059,13 @@ public partial class OverlayWindow : Window
 
     private void Input_MouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (_textEditor.IsActive)
+        {
+            _textEditor.AdjustSize(e.Delta);
+            e.Handled = true;
+            return;
+        }
+
         if (_hasSelection || _active != null || _closed)
         {
             if (_selectedAnnotation != null)
@@ -1098,7 +1235,7 @@ public partial class OverlayWindow : Window
                 {
                     Rect = watermark.Rect, Color = watermark.Color, Thickness = watermark.Thickness
                 };
-                newMosaic.Pattern = MosaicBuilder.Build(_screen, newMosaic.Rect);
+                newMosaic.Pattern = MosaicBuilder.Build(EffectiveScreen, newMosaic.Rect);
                 replacement = newMosaic;
                 break;
         }
@@ -1115,6 +1252,9 @@ public partial class OverlayWindow : Window
         {
             return;
         }
+
+        _history.Checkpoint(Editor.Items);
+        UpdateUndoButtons();
 
         Editor.Items[index] = replacement;
         _selectedAnnotation = replacement;
@@ -1290,11 +1430,11 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        _history.Checkpoint(Editor.Items);
         Editor.Items.Remove(_selectedAnnotation);
         _selectedAnnotation = null;
         Editor.Selected = null;
         Toolbar?.SetSelection(null);
-        _redo.Clear();
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
@@ -1307,13 +1447,13 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        _history.Checkpoint(Editor.Items);
         Editor.Items.Remove(hit);
         if (ReferenceEquals(_selectedAnnotation, hit))
         {
             ClearAnnotationSelection();
         }
 
-        _redo.Clear();
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
@@ -1477,7 +1617,7 @@ public partial class OverlayWindow : Window
         _mode = DragMode.None;
         ClearHover();
         Editor.Items.Clear();
-        _redo.Clear();
+        _history.Clear();
         ClearAnnotationSelection();
         UpdateUndoButtons();
         UpdateSelectionVisuals();
@@ -1567,10 +1707,6 @@ public partial class OverlayWindow : Window
                     Opacity = 0.22
                 };
                 break;
-
-            case AnnotationTool.Text:
-                BeginText(point);
-                return;
 
             case AnnotationTool.Number:
                 _active = new NumberAnnotation
@@ -1697,7 +1833,7 @@ public partial class OverlayWindow : Window
                 return;
             }
 
-            mosaic.Pattern = MosaicBuilder.Build(_screen, mosaic.Rect, Math.Clamp((int)Math.Round(mosaic.Thickness), 8, 40));
+            mosaic.Pattern = MosaicBuilder.Build(EffectiveScreen, mosaic.Rect, Math.Clamp((int)Math.Round(mosaic.Thickness), 8, 40));
             if (mosaic.Pattern == null)
             {
                 Editor.InvalidateVisual();
@@ -1710,121 +1846,110 @@ public partial class OverlayWindow : Window
             _numberCounter++;
         }
 
+        _history.Checkpoint(Editor.Items);
         Editor.Items.Add(annotation);
-        _redo.Clear();
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
 
-    private void BeginText(Point point)
+    private void BeginTextEdit(TextAnnotation text, bool isNew, Point? caretAt, bool selectAll = false)
     {
-        _editingWatermark = null;
-        _textActive = true;
-        _textPosition = point;
-        TextEditor.Text = string.Empty;
-        TextEditor.Visibility = Visibility.Visible;
-        Canvas.SetLeft(TextEditor, point.X / _scale + 4);
-        Canvas.SetTop(TextEditor, point.Y / _scale + 4);
-        TextEditor.Focus();
-        Keyboard.Focus(TextEditor);
+        ClearAnnotationSelection();
+        ClearAnnotationHover();
+        _history.Arm(Editor.Items);
+        if (isNew)
+        {
+            Editor.Items.Add(text);
+        }
+
+        _tool = AnnotationTool.Text;
+        Toolbar.SetTool(AnnotationTool.Text);
+        Toolbar.SyncFrom(text);
+        _textEditor.Begin(text, isNew, caretAt, selectAll);
+    }
+
+    private void OnTextEditEnded(TextAnnotation text, bool removed)
+    {
+        if (_textEditor.Dirty && !(removed && _textEditor.IsNew))
+        {
+            _history.CommitArmed();
+        }
+        else
+        {
+            _history.Disarm();
+        }
+
+        UpdateUndoButtons();
+        if (!_closed)
+        {
+            Focus();
+            Keyboard.Focus(this);
+            UpdateCursorToPointer();
+        }
     }
 
     private void BeginWatermarkEdit(WatermarkAnnotation watermark)
     {
         _editingWatermark = watermark;
-        _textActive = true;
-        _textPosition = new Point(watermark.Rect.X, watermark.Rect.Y);
-        TextEditor.Text = watermark.Text;
-        TextEditor.Visibility = Visibility.Visible;
-        Canvas.SetLeft(TextEditor, watermark.Rect.X / _scale + 4);
-        Canvas.SetTop(TextEditor, watermark.Rect.Y / _scale + 4);
-        TextEditor.Focus();
-        Keyboard.Focus(TextEditor);
+        WatermarkEditor.Text = watermark.Text;
+        WatermarkEditor.Visibility = Visibility.Visible;
+        Canvas.SetLeft(WatermarkEditor, watermark.Rect.X / _scale + 4);
+        Canvas.SetTop(WatermarkEditor, watermark.Rect.Y / _scale + 4);
+        WatermarkEditor.Focus();
+        Keyboard.Focus(WatermarkEditor);
+        WatermarkEditor.SelectAll();
     }
 
-    private void CommitText()
+    private void CommitWatermark()
     {
-        if (!_textActive)
+        if (_editingWatermark is not { } watermark)
         {
             return;
         }
 
-        _textActive = false;
-        var text = TextEditor.Text.Trim();
-        TextEditor.Visibility = Visibility.Collapsed;
-
-        if (_editingWatermark != null)
+        _editingWatermark = null;
+        var text = WatermarkEditor.Text.Trim();
+        WatermarkEditor.Visibility = Visibility.Collapsed;
+        if (text.Length > 0 && text != watermark.Text)
         {
-            if (text.Length > 0)
-            {
-                _editingWatermark.Text = text;
-                Editor.InvalidateVisual();
-            }
-
-            _editingWatermark = null;
-            Focus();
-            Keyboard.Focus(this);
-            return;
-        }
-
-        if (text.Length > 0 && !_closed)
-        {
-            Editor.Items.Add(new TextAnnotation
-            {
-                Position = _textPosition,
-                Text = text,
-                Color = _color,
-                Thickness = _thickness,
-                FontSize = Math.Max(8, _thickness),
-                StrokeColor = Toolbar.StrokeColor,
-                StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0
-            });
-            _redo.Clear();
+            _history.Checkpoint(Editor.Items);
+            watermark.Text = text;
             UpdateUndoButtons();
             Editor.InvalidateVisual();
         }
 
-        Focus();
-        Keyboard.Focus(this);
+        if (!_closed)
+        {
+            Focus();
+            Keyboard.Focus(this);
+        }
     }
 
-    private void CancelText()
+    private void CancelWatermark()
     {
-        _textActive = false;
         _editingWatermark = null;
-        TextEditor.Text = string.Empty;
-        TextEditor.Visibility = Visibility.Collapsed;
+        WatermarkEditor.Visibility = Visibility.Collapsed;
         Focus();
         Keyboard.Focus(this);
     }
 
-    private void TextEditor_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void WatermarkEditor_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
-            CancelText();
+            CancelWatermark();
             e.Handled = true;
         }
         else if (e.Key == Key.Enter)
         {
-            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0)
-            {
-                var caret = TextEditor.CaretIndex;
-                TextEditor.Text = TextEditor.Text.Insert(caret, Environment.NewLine);
-                TextEditor.CaretIndex = caret + Environment.NewLine.Length;
-            }
-            else
-            {
-                CommitText();
-            }
-
+            CommitWatermark();
             e.Handled = true;
         }
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (_closed || _textActive || TextEditor.IsKeyboardFocusWithin)
+        if (_closed || _textEditor.IsActive || _editingWatermark != null || WatermarkEditor.IsKeyboardFocusWithin)
         {
             return;
         }
@@ -1976,6 +2101,20 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (control && e.Key == Key.B && _selectedAnnotation is TextAnnotation)
+        {
+            Toolbar.ToggleBold();
+            e.Handled = true;
+            return;
+        }
+
+        if (_selectedAnnotation is TextAnnotation enterText && e.Key == Key.F2)
+        {
+            BeginTextEdit(enterText, isNew: false, caretAt: null, selectAll: true);
+            e.Handled = true;
+            return;
+        }
+
         if (_selectedAnnotation != null && e.Key is Key.Delete or Key.Back)
         {
             RemoveSelectedAnnotation();
@@ -1989,7 +2128,9 @@ public partial class OverlayWindow : Window
             var amount = shift ? 10.0 : 1.0;
             var dx = e.Key == Key.Left ? -amount : e.Key == Key.Right ? amount : 0;
             var dy = e.Key == Key.Up ? -amount : e.Key == Key.Down ? amount : 0;
+            _history.CheckpointCoalesced(Editor.Items, ("nudge", _selectedAnnotation));
             _selectedAnnotation.Translate(dx, dy);
+            UpdateUndoButtons();
             Editor.InvalidateVisual();
             e.Handled = true;
             return;
@@ -2139,6 +2280,7 @@ public partial class OverlayWindow : Window
 
     private void SetTool(AnnotationTool tool)
     {
+        _textEditor.Commit();
         _tool = tool;
         Toolbar.SetTool(tool);
         if (tool != AnnotationTool.Select)
@@ -2161,9 +2303,9 @@ public partial class OverlayWindow : Window
             var bounds = hit.Bounds;
             bounds.Inflate(4 / _scale, 4 / _scale);
             Editor.HoverBounds = bounds;
-            Editor.HoverLabel = "点击选中并继续编辑";
+            Editor.HoverLabel = _tool == AnnotationTool.Text ? "单击编辑 · 拖动移动" : "点击选中并继续编辑";
             Editor.ShowHover = true;
-            InputLayer.Cursor = Cursors.Hand;
+            InputLayer.Cursor = _tool == AnnotationTool.Text ? Cursors.IBeam : Cursors.Hand;
             Editor.InvalidateVisual();
             return;
         }
@@ -2272,6 +2414,8 @@ public partial class OverlayWindow : Window
         }
 
         var step = Math.Sign(delta);
+        _history.CheckpointCoalesced(Editor.Items, ("wheel", _selectedAnnotation));
+        UpdateUndoButtons();
         switch (_selectedAnnotation)
         {
             case TextAnnotation text:
@@ -2499,31 +2643,24 @@ public partial class OverlayWindow : Window
 
     private void UpdateUndoButtons()
     {
-        Toolbar.RefreshUndo(Editor.Items.Count > 0, _redo.Count > 0);
+        Toolbar.RefreshUndo(_history.CanUndo, _history.CanRedo);
     }
 
-    private void Undo()
+    private void Undo() => ApplyHistory(_history.Undo);
+
+    private void Redo() => ApplyHistory(_history.Redo);
+
+    private void ApplyHistory(Func<List<Annotation>, bool> step)
     {
-        if (Editor.Items.Count == 0)
+        _textEditor.Commit();
+        ClearAnnotationSelection();
+        if (!step(Editor.Items))
         {
             return;
         }
 
-        var last = Editor.Items[^1];
-        Editor.Items.RemoveAt(Editor.Items.Count - 1);
-        _redo.Push(last);
-        UpdateUndoButtons();
-        Editor.InvalidateVisual();
-    }
-
-    private void Redo()
-    {
-        if (_redo.Count == 0)
-        {
-            return;
-        }
-
-        Editor.Items.Add(_redo.Pop());
+        // Restored items are copies; references held for the selection are stale.
+        _numberCounter = Editor.Items.OfType<NumberAnnotation>().Select(n => n.Number).DefaultIfEmpty(0).Max() + 1;
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
@@ -2540,7 +2677,8 @@ public partial class OverlayWindow : Window
         var width = Math.Max(1, (int)Math.Round(rect.Width));
         var height = Math.Max(1, (int)Math.Round(rect.Height));
 
-        if (Editor.Items.Count == 0)
+        var translation = VisibleTranslation();
+        if (Editor.Items.Count == 0 && translation == null)
         {
             var cropped = new CroppedBitmap(_screen, new Int32Rect(x, y, width, height));
             cropped.Freeze();
@@ -2554,6 +2692,11 @@ public partial class OverlayWindow : Window
             dc.PushTransform(new TranslateTransform(-x, -y));
             dc.PushClip(new RectangleGeometry(new Rect(x, y, width, height)));
             dc.DrawImage(_screen, new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight));
+            if (translation != null)
+            {
+                dc.DrawImage(translation, _translatedRect);
+            }
+
             foreach (var annotation in Editor.Items)
             {
                 annotation.Draw(dc);
@@ -2571,10 +2714,8 @@ public partial class OverlayWindow : Window
 
     private void CommitPendingText()
     {
-        if (_textActive)
-        {
-            CommitText();
-        }
+        _textEditor.Commit();
+        CommitWatermark();
     }
 
     private void CopyAndClose()
@@ -2682,24 +2823,224 @@ public partial class OverlayWindow : Window
         CloseWith(CaptureAction.Pin, Compose());
     }
 
-    private void BeginAutoTranslateSelection()
+    /// <summary>True while the selection itself is being drawn, moved or resized.</summary>
+    private bool SelectionDragging =>
+        _dragging && (_mode is DragMode.Creating or DragMode.Moving or DragMode.Resizing || _pendingWindow != Rect.Empty);
+
+    /// <summary>Selection snapped to whole pixels: the unit translation results are keyed by.</summary>
+    private Rect SnapRect(Rect rect)
     {
-        if (!_hasSelection || _closed)
+        var clamped = ClampToScreen(rect);
+        return new Rect(
+            Math.Round(clamped.X), Math.Round(clamped.Y),
+            Math.Max(1, Math.Round(clamped.Width)), Math.Max(1, Math.Round(clamped.Height)));
+    }
+
+    /// <summary>The translated pixels when they match the current selection and are not toggled off.</summary>
+    private BitmapSource? VisibleTranslation() =>
+        _autoTranslate && !_showOriginal && _translated != null && _hasSelection &&
+        SnapRect(_selection) == _translatedRect
+            ? _translated
+            : null;
+
+    /// <summary>
+    /// The screen as currently shown (with the translation), used as the pixel
+    /// source for the eraser and mosaic so they act on what the user sees.
+    /// </summary>
+    private BitmapSource EffectiveScreen
+    {
+        get
+        {
+            var translation = VisibleTranslation();
+            if (translation == null)
+            {
+                return _screen;
+            }
+
+            if (_effectiveScreen == null)
+            {
+                var visual = new DrawingVisual();
+                using (var dc = visual.RenderOpen())
+                {
+                    dc.DrawImage(_screen, new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight));
+                    dc.DrawImage(translation, _translatedRect);
+                }
+
+                var bitmap = new RenderTargetBitmap(_screen.PixelWidth, _screen.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(visual);
+                bitmap.Freeze();
+                _effectiveScreen = bitmap;
+            }
+
+            return _effectiveScreen;
+        }
+    }
+
+    private async void StartTranslation()
+    {
+        if (!_autoTranslate || !_hasSelection || _closed || SelectionDragging)
         {
             return;
         }
 
-        CommitPendingText();
-        var rect = ClampToScreen(_selection);
-        var cropped = new CroppedBitmap(
-            _screen,
-            new Int32Rect(
-                (int)Math.Round(rect.X),
-                (int)Math.Round(rect.Y),
-                Math.Max(1, (int)Math.Round(rect.Width)),
-                Math.Max(1, (int)Math.Round(rect.Height))));
+        var rect = SnapRect(_selection);
+        if (rect == _translatedRect && _translated != null)
+        {
+            UpdateTranslationVisuals();
+            return;
+        }
+
+        CancelTranslation();
+        var cts = new CancellationTokenSource();
+        _translateCts = cts;
+        _translatingRect = rect;
+        _translated = null;
+        _translatedRect = Rect.Empty;
+        _effectiveScreen = null;
+        _showOriginal = false;
+
+        var cropped = new CroppedBitmap(_screen, new Int32Rect(
+            (int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height));
         cropped.Freeze();
-        ((App)Application.Current).ShowAutoTranslation(cropped);
+
+        ShowTranslateStatus("正在识别文字…", busy: true, switchText: null);
+        var progress = new Progress<ImmersiveTranslator.Update>(update =>
+        {
+            if (cts.IsCancellationRequested || _closed)
+            {
+                return;
+            }
+
+            // Show partial results as they arrive, like a browser filling in a page.
+            _translated = update.Image;
+            _translatedRect = rect;
+            _effectiveScreen = null;
+            UpdateTranslationVisuals();
+            ShowTranslateStatus(update.Status, busy: !update.Done,
+                switchText: update.Done && update.Translated > 0 ? "显示原文" : null);
+        });
+
+        try
+        {
+            Log.Info($"原位翻译开始：{rect.Width}x{rect.Height}");
+            await ImmersiveTranslator.TranslateAsync(cropped, progress, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error("原位翻译失败", ex);
+            if (!cts.IsCancellationRequested && !_closed)
+            {
+                ShowTranslateStatus("翻译失败：" + ex.Message, busy: false, switchText: "重试", error: true);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_translateCts, cts))
+            {
+                _translatingRect = Rect.Empty;
+            }
+        }
+    }
+
+    private void CancelTranslation()
+    {
+        _translateDebounce.Stop();
+        if (_translateCts != null)
+        {
+            _translateCts.Cancel();
+            _translateCts.Dispose();
+            _translateCts = null;
+        }
+
+        _translatingRect = Rect.Empty;
+    }
+
+    private void UpdateTranslationVisuals()
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        var translation = VisibleTranslation();
+        if (translation == null || SelectionDragging)
+        {
+            TranslatedImage.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            TranslatedImage.Source = translation;
+            Canvas.SetLeft(TranslatedImage, _translatedRect.X / _scale);
+            Canvas.SetTop(TranslatedImage, _translatedRect.Y / _scale);
+            TranslatedImage.Width = _translatedRect.Width / _scale;
+            TranslatedImage.Height = _translatedRect.Height / _scale;
+            TranslatedImage.Visibility = Visibility.Visible;
+        }
+
+        if (!_autoTranslate || !_hasSelection)
+        {
+            TranslateStatus.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            PositionTranslateStatus();
+        }
+    }
+
+    private void ShowTranslateStatus(string text, bool busy, string? switchText, bool error = false)
+    {
+        TranslateStatusText.Text = text;
+        TranslateDot.Fill = error
+            ? new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B))
+            : busy
+                ? (Brush)FindResource("Accent")
+                : new SolidColorBrush(Color.FromRgb(0x4C, 0xC3, 0x8A));
+        TranslateSwitch.Content = switchText;
+        TranslateSwitch.Visibility = switchText == null ? Visibility.Collapsed : Visibility.Visible;
+        TranslateStatus.Visibility = _autoTranslate && _hasSelection ? Visibility.Visible : Visibility.Collapsed;
+        PositionTranslateStatus();
+    }
+
+    private void PositionTranslateStatus()
+    {
+        if (TranslateStatus.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        TranslateStatus.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = TranslateStatus.DesiredSize;
+        var selection = new Rect(_selection.X / _scale, _selection.Y / _scale,
+            _selection.Width / _scale, _selection.Height / _scale);
+        // Top-right corner above the selection; inside it when there is no room.
+        var left = Math.Clamp(selection.Right - size.Width, 4, Math.Max(4, ActualWidth - size.Width - 4));
+        var top = selection.Top - size.Height - 6;
+        if (top < 4)
+        {
+            top = selection.Top + 6;
+        }
+
+        Canvas.SetLeft(TranslateStatus, left);
+        Canvas.SetTop(TranslateStatus, top);
+    }
+
+    private void TranslateSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        if (TranslateSwitch.Content as string == "重试")
+        {
+            _translatedRect = Rect.Empty;
+            StartTranslation();
+            return;
+        }
+
+        _showOriginal = !_showOriginal;
+        _effectiveScreen = null;
+        TranslateSwitch.Content = _showOriginal ? "显示译文" : "显示原文";
+        UpdateTranslationVisuals();
+        Focus();
     }
 
     private void TranslateAndClose()
@@ -2756,11 +3097,6 @@ public partial class OverlayWindow : Window
             _bounds.Y + _selection.Y,
             _selection.Width,
             _selection.Height);
-        if (_autoTranslate && action is CaptureAction.Copy or CaptureAction.Save or CaptureAction.Pin)
-        {
-            Dispatcher.BeginInvoke(new Action(() => ((App)Application.Current).ShowAutoTranslation(image)));
-        }
-
         Close();
     }
 
@@ -2778,8 +3114,8 @@ public partial class OverlayWindow : Window
     {
         _closed = true;
         _noticeTimer.Stop();
+        CancelTranslation();
         _active = null;
-        _textActive = false;
         Editor.Preview = null;
         Editor.Items.Clear();
         Editor.Source = null;

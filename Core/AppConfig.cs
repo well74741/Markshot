@@ -42,6 +42,9 @@ public sealed class AppConfig
 
     public string ToolLineHotkey { get; set; } = "L";
 
+    /// <summary>Translate every capture selection in place (the toolbar's translate toggle remembers it).</summary>
+    public bool ImmersiveTranslate { get; set; }
+
     /// <summary>Empty means Pictures\Markshot.</summary>
     public string SaveDirectory { get; set; } = "";
 

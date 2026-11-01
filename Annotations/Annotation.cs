@@ -33,6 +33,9 @@ public abstract class Annotation
 
     public abstract void Draw(DrawingContext dc);
 
+    /// <summary>Copy used by undo snapshots. Frozen bitmaps are shared.</summary>
+    public virtual Annotation Clone() => (Annotation)MemberwiseClone();
+
     public virtual Rect Bounds => Rect.Empty;
 
     public virtual void Translate(double dx, double dy)
@@ -196,7 +199,14 @@ public sealed class LineAnnotation : Annotation
 
 public sealed class PenAnnotation : Annotation
 {
-    public List<Point> Points { get; } = new();
+    public List<Point> Points { get; private set; } = new();
+
+    public override Annotation Clone()
+    {
+        var copy = (PenAnnotation)MemberwiseClone();
+        copy.Points = new List<Point>(Points);
+        return copy;
+    }
 
     public bool Highlight { get; set; }
 
@@ -287,7 +297,14 @@ public sealed class PenAnnotation : Annotation
 
 public sealed class EraserAnnotation : Annotation
 {
-    public List<Point> Points { get; } = new();
+    public List<Point> Points { get; private set; } = new();
+
+    public override Annotation Clone()
+    {
+        var copy = (EraserAnnotation)MemberwiseClone();
+        copy.Points = new List<Point>(Points);
+        return copy;
+    }
 
     public BitmapSource? Source { get; set; }
 
@@ -452,42 +469,63 @@ public sealed class WatermarkAnnotation : Annotation
 
 public sealed class TextAnnotation : Annotation
 {
+    public const string FontFamilyName = "Microsoft YaHei UI";
+
+    /// <summary>Line height as a multiple of the font size; the inline editor uses the same value.</summary>
+    public const double LineSpacing = 1.3;
+
+    private static readonly FontFamily Family = new(FontFamilyName);
+
+    /// <summary>Top-left corner of the first line of text (excluding the background padding).</summary>
     public Point Position { get; set; }
 
     public string Text { get; set; } = string.Empty;
 
-    public double FontSize { get; set; } = 18;
+    public double FontSize { get; set; } = 20;
+
+    public bool Bold { get; set; }
 
     public Color StrokeColor { get; set; } = Color.FromRgb(0x20, 0x20, 0x20);
 
     public double StrokeThickness { get; set; }
 
+    public double LineHeight => FontSize * LineSpacing;
+
+    /// <summary>With <see cref="Annotation.Fill"/> the text sits on a rounded label in <see cref="Annotation.Color"/>.</summary>
+    public double Padding => Fill ? Math.Round(FontSize * 0.3, 1) : 0;
+
+    public Color TextColor => Fill ? ContrastOn(Color) : Color;
+
+    public static Typeface TypefaceFor(bool bold) =>
+        new(Family, FontStyles.Normal, bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
+
     public override void Draw(DrawingContext dc)
     {
+        if (Fill)
+        {
+            var box = Bounds;
+            if (!box.IsEmpty)
+            {
+                var radius = Math.Min(FontSize * 0.22, box.Height / 2);
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color), null, box, radius, radius);
+            }
+        }
+
         if (string.IsNullOrEmpty(Text))
         {
             return;
         }
 
-        var formatted = new FormattedText(
-            Text,
-            CultureInfo.CurrentUICulture,
-            FlowDirection.LeftToRight,
-            new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
-            FontSize,
-            new SolidColorBrush(Color),
-            1.0)
-        {
-            MaxTextWidth = 2400
-        };
-
+        var formatted = Format(Text, new SolidColorBrush(TextColor));
         if (StrokeThickness > 0)
         {
             var geometry = formatted.BuildGeometry(Position);
-            dc.DrawGeometry(
-                new SolidColorBrush(Color),
-                new Pen(new SolidColorBrush(StrokeColor), StrokeThickness),
-                geometry);
+            // Stroke first and fill on top so the outline sits outside the glyphs.
+            dc.DrawGeometry(null, new Pen(new SolidColorBrush(StrokeColor), StrokeThickness * 2)
+            {
+                LineJoin = PenLineJoin.Round
+            }, geometry);
+            dc.DrawGeometry(new SolidColorBrush(TextColor), null, geometry);
         }
         else
         {
@@ -499,14 +537,36 @@ public sealed class TextAnnotation : Annotation
     {
         get
         {
-            if (string.IsNullOrEmpty(Text))
-            {
-                return Rect.Empty;
-            }
-
-            var measured = Measure();
-            return new Rect(Position.X - 4, Position.Y - 4, measured.Width + 8, measured.Height + 8);
+            var size = MeasureText();
+            var padding = Padding;
+            return new Rect(
+                Position.X - padding,
+                Position.Y - padding,
+                size.Width + padding * 2,
+                size.Height + padding * 2);
         }
+    }
+
+    /// <summary>Size of the laid-out text. An empty string still measures one caret-wide line.</summary>
+    public Size MeasureText()
+    {
+        if (string.IsNullOrEmpty(Text))
+        {
+            return new Size(FontSize * 0.5, LineHeight);
+        }
+
+        var formatted = Format(Text, Brushes.Black);
+        var lines = Text.Split('\n').Length;
+        return new Size(
+            Math.Max(FontSize * 0.5, formatted.WidthIncludingTrailingWhitespace),
+            Math.Max(formatted.Height, lines * LineHeight));
+    }
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        var bounds = Bounds;
+        bounds.Inflate(tolerance + 2, tolerance + 2);
+        return bounds.Contains(point);
     }
 
     public override void Translate(double dx, double dy)
@@ -514,19 +574,25 @@ public sealed class TextAnnotation : Annotation
         Position = new Point(Position.X + dx, Position.Y + dy);
     }
 
-    private FormattedText Measure()
+    public FormattedText Format(string text, Brush brush)
     {
         return new FormattedText(
-            Text,
+            text,
             CultureInfo.CurrentUICulture,
             FlowDirection.LeftToRight,
-            new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
+            TypefaceFor(Bold),
             FontSize,
-            new SolidColorBrush(Color),
+            brush,
             1.0)
         {
-            MaxTextWidth = 2400
+            LineHeight = LineHeight
         };
+    }
+
+    public static Color ContrastOn(Color background)
+    {
+        var luminance = (0.299 * background.R + 0.587 * background.G + 0.114 * background.B) / 255;
+        return luminance > 0.6 ? Color.FromRgb(0x1E, 0x1E, 0x1E) : Colors.White;
     }
 }
 

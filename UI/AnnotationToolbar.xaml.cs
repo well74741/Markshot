@@ -44,11 +44,28 @@ public partial class AnnotationToolbar : UserControl
     private bool _fill;
     private Color _strokeColor = Color.FromRgb(0x20, 0x20, 0x20);
     private double _strokeWidth;
+    private bool _textBold;
+    private bool _textBackground;
     private bool _dragging;
     private Point _dragStart;
     private double _dragLeft;
     private double _dragTop;
     private AnnotationToolbarMode _mode = AnnotationToolbarMode.Capture;
+
+    // Each tool remembers its own size: a 3px pen must not turn new text into 8px text.
+    private readonly Dictionary<AnnotationTool, double> _toolSizes = new()
+    {
+        [AnnotationTool.Rectangle] = 3,
+        [AnnotationTool.Ellipse] = 3,
+        [AnnotationTool.Line] = 3,
+        [AnnotationTool.Arrow] = 4,
+        [AnnotationTool.Pen] = 3,
+        [AnnotationTool.Highlighter] = 4,
+        [AnnotationTool.Text] = 20,
+        [AnnotationTool.Number] = 14,
+        [AnnotationTool.Mosaic] = 12,
+        [AnnotationTool.Watermark] = 24
+    };
 
     public event Action<AnnotationTool>? ToolChanged;
     public event Action<AnnotationTool>? VariantChanged;
@@ -92,6 +109,10 @@ public partial class AnnotationToolbar : UserControl
     public Color StrokeColor => _strokeColor;
 
     public double StrokeWidth => _strokeWidth;
+
+    public bool TextBold => _textBold;
+
+    public bool TextBackground => _textBackground;
 
     public void SetMode(AnnotationToolbarMode mode)
     {
@@ -210,10 +231,19 @@ public partial class AnnotationToolbar : UserControl
         UpdateSwatches();
     }
 
+    /// <summary>Shows an annotation's style (size, colour, bold…) without raising SettingsChanged.</summary>
+    public void SyncFrom(Annotation annotation)
+    {
+        _configuring = true;
+        SyncFromAnnotation(annotation);
+        _configuring = false;
+    }
+
     public void SetThickness(double thickness)
     {
         _configuring = true;
         _thickness = thickness;
+        RememberSize();
         WidthSlider.Value = Math.Clamp(thickness, WidthSlider.Minimum, WidthSlider.Maximum);
         WidthValue.Text = ((int)Math.Round(_thickness)).ToString(CultureInfo.InvariantCulture);
         _configuring = false;
@@ -327,6 +357,7 @@ public partial class AnnotationToolbar : UserControl
         WidthGroup.Visibility = Visibility.Visible;
         ColorSection.Visibility = Visibility.Visible;
         StrokeGroup.Visibility = Visibility.Collapsed;
+        TextStyleGroup.Visibility = Visibility.Collapsed;
         FillToggle.Visibility = Visibility.Collapsed;
         CornerGroup.Visibility = Visibility.Collapsed;
         WidthLabel.Text = "粗细";
@@ -357,8 +388,9 @@ public partial class AnnotationToolbar : UserControl
 
             case ToolFamily.Text:
                 WidthLabel.Text = "字号";
-                WidthSlider.Minimum = 8;
-                WidthSlider.Maximum = 64;
+                WidthSlider.Minimum = 10;
+                WidthSlider.Maximum = 96;
+                TextStyleGroup.Visibility = Visibility.Visible;
                 StrokeGroup.Visibility = Visibility.Visible;
                 break;
 
@@ -392,7 +424,14 @@ public partial class AnnotationToolbar : UserControl
         }
         else
         {
+            if (_toolSizes.TryGetValue(tool, out var remembered))
+            {
+                _thickness = remembered;
+            }
+
             SyncVariant(tool);
+            BoldToggle.IsChecked = _textBold;
+            BackgroundToggle.IsChecked = _textBackground;
             WidthSlider.Value = Math.Clamp(_thickness, WidthSlider.Minimum, WidthSlider.Maximum);
             WidthValue.Text = ((int)Math.Round(WidthSlider.Value)).ToString(CultureInfo.InvariantCulture);
             CornerSlider.Value = Math.Clamp(_corner, 0, 40);
@@ -448,6 +487,14 @@ public partial class AnnotationToolbar : UserControl
             WatermarkAnnotation watermark => watermark.StrokeThickness,
             _ => 0
         };
+
+        if (annotation is TextAnnotation textAnnotation)
+        {
+            _textBold = textAnnotation.Bold;
+            _textBackground = textAnnotation.Fill;
+            BoldToggle.IsChecked = textAnnotation.Bold;
+            BackgroundToggle.IsChecked = textAnnotation.Fill;
+        }
 
         switch (annotation)
         {
@@ -543,7 +590,7 @@ public partial class AnnotationToolbar : UserControl
     private void TextMenu_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = (Button)sender };
-        foreach (var (label, size) in new[] { ("小号 16", 16.0), ("中号 24", 24.0), ("大号 36", 36.0) })
+        foreach (var (label, size) in new[] { ("小 16", 16.0), ("中 20", 20.0), ("大 28", 28.0), ("特大 40", 40.0), ("标题 56", 56.0) })
         {
             var item = new MenuItem { Header = label, IsChecked = Math.Abs(_thickness - size) < 0.1 };
             var value = size;
@@ -602,8 +649,52 @@ public partial class AnnotationToolbar : UserControl
         }
 
         _thickness = e.NewValue;
+        RememberSize();
         WidthValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
         SettingsChanged?.Invoke();
+    }
+
+    private void RememberSize()
+    {
+        var tool = _selection != null ? ToolOf(_selection) : _tool;
+        if (_toolSizes.ContainsKey(tool))
+        {
+            _toolSizes[tool] = _thickness;
+        }
+    }
+
+    private static AnnotationTool ToolOf(Annotation annotation) => annotation switch
+    {
+        RectAnnotation => AnnotationTool.Rectangle,
+        EllipseAnnotation => AnnotationTool.Ellipse,
+        LineAnnotation => AnnotationTool.Line,
+        ArrowAnnotation => AnnotationTool.Arrow,
+        PenAnnotation { Highlight: true } => AnnotationTool.Highlighter,
+        PenAnnotation => AnnotationTool.Pen,
+        TextAnnotation => AnnotationTool.Text,
+        NumberAnnotation => AnnotationTool.Number,
+        MosaicAnnotation => AnnotationTool.Mosaic,
+        WatermarkAnnotation => AnnotationTool.Watermark,
+        _ => AnnotationTool.None
+    };
+
+    private void TextStyle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_configuring)
+        {
+            return;
+        }
+
+        _textBold = BoldToggle.IsChecked == true;
+        _textBackground = BackgroundToggle.IsChecked == true;
+        SettingsChanged?.Invoke();
+    }
+
+    /// <summary>Ctrl+B while typing or with a text selected.</summary>
+    public void ToggleBold()
+    {
+        BoldToggle.IsChecked = BoldToggle.IsChecked != true;
+        TextStyle_Click(BoldToggle, new RoutedEventArgs());
     }
 
     private void Corner_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -703,6 +794,13 @@ public partial class AnnotationToolbar : UserControl
     private void Translate_Click(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke();
 
     private void Ocr_Click(object sender, RoutedEventArgs e) => OcrRequested?.Invoke();
+
+    /// <summary>Sets the translate toggle without raising <see cref="TranslateToggled"/>.</summary>
+    public void SetTranslateEnabled(bool enabled)
+    {
+        TranslateToggle.IsChecked = enabled;
+        TranslateHint.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void TranslateToggle_Click(object sender, RoutedEventArgs e)
     {

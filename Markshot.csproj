@@ -32,12 +32,16 @@
 
   <ItemGroup>
     <!-- PP-OCRv5 Chinese recognizer + dictionary (Apache-2.0). The detector,
-         classifier and Latin recognizer come from the RapidOcrNet package. -->
+         classifier and Latin recognizer come from the RapidOcrNet package.
+         OcrService loads models from <exe dir>\models\v5, so they must stay
+         out of the single-file bundle. -->
     <Content Include="models\v5\ch_PP-OCRv5_rec_mobile.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
     <Content Include="models\v5\ppocrv5_dict.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
   </ItemGroup>
 

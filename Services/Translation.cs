@@ -3,6 +3,10 @@ namespace Markshot.Services;
 public interface ITranslationProvider
 {
     Task<string> TranslateAsync(string text, string targetLanguage, CancellationToken cancellationToken);
+
+    /// <summary>Translates several independent segments; the result has the same length and order.</summary>
+    Task<IReadOnlyList<string>> TranslateBatchAsync(
+        IReadOnlyList<string> segments, string targetLanguage, CancellationToken cancellationToken);
 }
 
 public static class TranslationService
@@ -35,6 +39,83 @@ public sealed class OpenAiCompatibleProvider : ITranslationProvider
             return string.Empty;
         }
 
+        var target = string.IsNullOrWhiteSpace(targetLanguage) ? _config.TargetLanguage : targetLanguage;
+        var systemPrompt = string.IsNullOrWhiteSpace(_config.SystemPrompt)
+            ? $"You are a professional translator. Translate the user's text into {target}. " +
+              "Preserve line breaks, punctuation style and formatting. " +
+              "Output only the translation, without quotes or explanations."
+            : _config.SystemPrompt.Replace("{target}", target, StringComparison.OrdinalIgnoreCase);
+        return await CompleteAsync(systemPrompt, text, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<string>> TranslateBatchAsync(
+        IReadOnlyList<string> segments, string targetLanguage, CancellationToken cancellationToken)
+    {
+        if (segments.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var target = string.IsNullOrWhiteSpace(targetLanguage) ? _config.TargetLanguage : targetLanguage;
+        var systemPrompt =
+            $"You translate text extracted from a screenshot into {target}. " +
+            "The user sends a JSON array of strings; each string is an independent paragraph or UI label. " +
+            "Reply with ONLY a JSON array of strings: the same length, the same order, one translation per item. " +
+            "Never merge, split, drop or explain items. Keep numbers, URLs, code, file names and product names as they are. " +
+            $"If an item is already in {target} or cannot be translated, return it unchanged.";
+        var reply = await CompleteAsync(
+            systemPrompt, JsonSerializer.Serialize(segments, BatchJson), cancellationToken);
+
+        if (TryParseArray(reply, segments.Count, out var parsed))
+        {
+            return parsed;
+        }
+
+        // The model broke the format: fall back to one request per segment.
+        Log.Info($"批量翻译返回格式不符，逐条重试（{segments.Count} 条）");
+        var results = new string[segments.Count];
+        for (var i = 0; i < segments.Count; i++)
+        {
+            results[i] = await TranslateAsync(segments[i], target, cancellationToken);
+        }
+
+        return results;
+    }
+
+    private static readonly JsonSerializerOptions BatchJson = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
+    private static bool TryParseArray(string reply, int expected, out IReadOnlyList<string> result)
+    {
+        result = Array.Empty<string>();
+        var start = reply.IndexOf('[');
+        var end = reply.LastIndexOf(']');
+        if (start < 0 || end <= start)
+        {
+            return false;
+        }
+
+        try
+        {
+            var items = JsonSerializer.Deserialize<string[]>(reply[start..(end + 1)]);
+            if (items == null || items.Length != expected)
+            {
+                return false;
+            }
+
+            result = items;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private async Task<string> CompleteAsync(string systemPrompt, string userContent, CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(_config.BaseUrl))
         {
             throw new InvalidOperationException("尚未配置翻译服务地址，请打开“设置”填写 Base URL。");
@@ -48,13 +129,6 @@ public sealed class OpenAiCompatibleProvider : ITranslationProvider
             throw new InvalidOperationException("尚未配置翻译 API Key，请打开“设置”填写。");
         }
 
-        var target = string.IsNullOrWhiteSpace(targetLanguage) ? _config.TargetLanguage : targetLanguage;
-        var systemPrompt = string.IsNullOrWhiteSpace(_config.SystemPrompt)
-            ? $"You are a professional translator. Translate the user's text into {target}. " +
-              "Preserve line breaks, punctuation style and formatting. " +
-              "Output only the translation, without quotes or explanations."
-            : _config.SystemPrompt.Replace("{target}", target, StringComparison.OrdinalIgnoreCase);
-
         var payload = new
         {
             model = _config.Model,
@@ -62,7 +136,7 @@ public sealed class OpenAiCompatibleProvider : ITranslationProvider
             messages = new object[]
             {
                 new { role = "system", content = systemPrompt },
-                new { role = "user", content = text }
+                new { role = "user", content = userContent }
             }
         };
 

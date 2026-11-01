@@ -2,13 +2,15 @@ using System.Globalization;
 using System.Windows.Interop;
 using System.Windows.Media.Effects;
 using Markshot.Annotations;
+using Markshot.Services;
 using Microsoft.Win32;
 
 namespace Markshot.UI;
 
 public partial class PinWindow : Window
 {
-    private readonly Stack<Annotation> _redo = new();
+    private readonly AnnotationHistory _history = new();
+    private readonly InlineTextEditor _textEditor;
     private BitmapSource _baseImage;
 
     private int _pixelWidth;
@@ -44,6 +46,11 @@ public partial class PinWindow : Window
     private double _annotationStartRotation;
     private double _annotationRotateStartAngle;
     private readonly BitmapSource _originalImage;
+
+    // In-place translation: the base image before translating, null when showing the original.
+    private BitmapSource? _untranslatedBase;
+    private CancellationTokenSource? _translateCts;
+    private DispatcherTimer? _statusTimer;
     private bool _suppressContextMenu;
     private bool _spaceAnnotation;
     private bool _spaceExitGuard;
@@ -52,10 +59,13 @@ public partial class PinWindow : Window
     private bool _creatingRotate;
     private Point _creatingRotateCenter;
     private double _creatingRotateStartAngle;
-    private bool _textActive;
-    private Point _textPosition;
     private WatermarkAnnotation? _editingWatermark;
-    private TextAnnotation? _editingText;
+
+    // Press on an existing text: a click edits it, a drag moves it.
+    private TextAnnotation? _textPress;
+    private Point _textPressPoint;
+    private bool _textPressMoved;
+    private UIElement? _textPressCapture;
     private int _number = 1;
     private double _thickness = 3;
     private Color _color = Color.FromRgb(0xFF, 0x33, 0x00);
@@ -67,6 +77,11 @@ public partial class PinWindow : Window
     public PinWindow(BitmapSource image, int screenX, int screenY)
     {
         InitializeComponent();
+
+        _textEditor = new InlineTextEditor(TextEditor, Editor);
+        _textEditor.Ended += OnTextEditEnded;
+        _textEditor.StyleChanged += text => Toolbar.SyncFrom(text);
+        WatermarkEditor.LostKeyboardFocus += (_, _) => CommitWatermark();
 
         SourceImage = image;
         _baseImage = image;
@@ -81,9 +96,14 @@ public partial class PinWindow : Window
         SourceInitialized += (_, _) => ApplyBounds();
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(new Action(ApplyBounds));
         Activated += (_, _) => UpdateFrame();
-        Deactivated += (_, _) => UpdateFrame();
+        Deactivated += (_, _) =>
+        {
+            UpdateFrame();
+            _textEditor.Commit();
+        };
         Closing += (_, _) =>
         {
+            _translateCts?.Cancel();
             if (_editMode)
             {
                 ExitEditMode(true);
@@ -154,7 +174,9 @@ public partial class PinWindow : Window
 
     private void OnToolbarToolChanged(AnnotationTool tool)
     {
+        _textEditor.Commit();
         _tool = tool;
+        _thickness = Toolbar.Thickness;
         ClearSelection();
         ClearAnnotationHover();
         Toolbar.SetSelection(null);
@@ -189,37 +211,22 @@ public partial class PinWindow : Window
             InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
         }
 
+        if (_textEditor.Target is { } editing)
+        {
+            AnnotationStyler.Apply(editing, Toolbar, _baseImage);
+            _textEditor.MarkDirty();
+            _textEditor.Refresh();
+            return;
+        }
+
         if (_selected == null)
         {
             return;
         }
 
-        _selected.Color = _color;
-        if (_selected is NumberAnnotation number)
-        {
-            number.Radius = Math.Max(8, _thickness);
-            number.Thickness = 1.5;
-        }
-        else
-        {
-            _selected.Thickness = _thickness;
-        }
-
-        _selected.Fill = _fill;
-        _selected.CornerRadius = _corner;
-        if (_selected is TextAnnotation textAnnotation)
-        {
-            textAnnotation.FontSize = Math.Max(8, _thickness);
-            textAnnotation.StrokeColor = Toolbar.StrokeColor;
-            textAnnotation.StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0;
-        }
-        else if (_selected is WatermarkAnnotation watermarkAnnotation)
-        {
-            watermarkAnnotation.FontSize = Math.Max(10, _thickness);
-            watermarkAnnotation.StrokeColor = Toolbar.StrokeColor;
-            watermarkAnnotation.StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0;
-        }
-
+        _history.CheckpointCoalesced(Editor.Items, _selected);
+        AnnotationStyler.Apply(_selected, Toolbar, _baseImage);
+        UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
 
@@ -297,6 +304,9 @@ public partial class PinWindow : Window
         {
             return;
         }
+
+        _history.Checkpoint(Editor.Items);
+        UpdateUndoButtons();
 
         Editor.Items[index] = replacement;
         _selected = replacement;
@@ -422,9 +432,9 @@ public partial class PinWindow : Window
             }
             else
             {
-                if (e.ClickCount == 2 && HitAnnotation(point) is TextAnnotation textAnnotation)
+                if (_textEditor.IsActive)
                 {
-                    BeginTextEdit(textAnnotation);
+                    _textEditor.Commit();
                     e.Handled = true;
                     return;
                 }
@@ -436,16 +446,19 @@ public partial class PinWindow : Window
                     return;
                 }
 
-                if (HitAnnotation(point) is TextAnnotation directText)
+                if (_selected != null && TryBeginAnnotationTransform(point))
                 {
-                    BeginTextEdit(directText);
+                    _history.Arm(Editor.Items);
+                    CaptureMouse();
                     e.Handled = true;
                     return;
                 }
 
-                if (_selected != null && TryBeginAnnotationTransform(point))
+                // Text in a pin reads like a document: a click opens it for
+                // editing with everything selected, a drag moves it.
+                if (HitAnnotation(point) is TextAnnotation pressedText)
                 {
-                    CaptureMouse();
+                    BeginTextPress(pressedText, point, this);
                     e.Handled = true;
                     return;
                 }
@@ -458,6 +471,7 @@ public partial class PinWindow : Window
                     _lastPoint = point;
                     _annotationStartBounds = hit.Bounds;
                     _annotationScaleStartPoint = point;
+                    _history.Arm(Editor.Items);
                     CaptureMouse();
                     e.Handled = true;
                     return;
@@ -479,6 +493,17 @@ public partial class PinWindow : Window
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
+        if (UpdateTextPress(ToPixels(e.GetPosition(ImageHost))))
+        {
+            return;
+        }
+
+        if ((_rotatingAnnotation || _resizingAnnotation || _movingSelected) && _selected != null)
+        {
+            _history.CommitArmed();
+            UpdateUndoButtons();
+        }
+
         if (_rotatingAnnotation && _selected != null)
         {
             var point = ToPixels(e.GetPosition(ImageHost));
@@ -560,6 +585,17 @@ public partial class PinWindow : Window
 
     private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (EndTextPress(ToPixels(e.GetPosition(ImageHost)), selectAll: true))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (_resizingAnnotation || _rotatingAnnotation || _movingSelected)
+        {
+            _history.Disarm();
+        }
+
         _resizingAnnotation = false;
         _rotatingAnnotation = false;
         if (_movingSelected)
@@ -611,6 +647,13 @@ public partial class PinWindow : Window
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (_textEditor.IsActive)
+        {
+            _textEditor.AdjustSize(e.Delta);
+            e.Handled = true;
+            return;
+        }
+
         if (_editMode && _selected != null)
         {
             AdjustSelectedByWheel(e.Delta);
@@ -692,8 +735,6 @@ public partial class PinWindow : Window
         _editMode = true;
         _active = null;
         _selected = null;
-        _textActive = false;
-        TextEditor.Visibility = Visibility.Collapsed;
         Editor.Preview = null;
         Editor.Selected = null;
         Editor.Source = _baseImage;
@@ -721,7 +762,8 @@ public partial class PinWindow : Window
             CommitAnnotation();
         }
 
-        CommitText();
+        _textEditor.Commit();
+        CommitWatermark();
         if (apply)
         {
             var edited = ComposeEditedImage();
@@ -734,14 +776,12 @@ public partial class PinWindow : Window
         _editMode = false;
         _active = null;
         _selected = null;
-        _textActive = false;
-        TextEditor.Visibility = Visibility.Collapsed;
         Editor.Preview = null;
         Editor.Selected = null;
         Editor.Visibility = Visibility.Collapsed;
         InputLayer.Visibility = Visibility.Collapsed;
         Toolbar.Visibility = Visibility.Collapsed;
-        _redo.Clear();
+        _history.Clear();
         UpdateUndoButtons();
         ApplyBounds();
     }
@@ -779,7 +819,7 @@ public partial class PinWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (_textActive || TextEditor.IsKeyboardFocusWithin)
+        if (_textEditor.IsActive || _editingWatermark != null)
         {
             return;
         }
@@ -1011,8 +1051,16 @@ public partial class PinWindow : Window
             return;
         }
 
+        if (control && e.Key == Key.B && _selected is TextAnnotation)
+        {
+            Toolbar.ToggleBold();
+            e.Handled = true;
+            return;
+        }
+
         if (_selected != null && e.Key is Key.Delete or Key.Back)
         {
+            _history.Checkpoint(Editor.Items);
             Editor.Items.Remove(_selected);
             ClearSelection();
             UpdateUndoButtons();
@@ -1025,7 +1073,9 @@ public partial class PinWindow : Window
             var amount = shift ? 10.0 : 1.0;
             var dx = e.Key == Key.Left ? -amount : e.Key == Key.Right ? amount : 0;
             var dy = e.Key == Key.Up ? -amount : e.Key == Key.Down ? amount : 0;
+            _history.CheckpointCoalesced(Editor.Items, ("nudge", _selected));
             _selected.Translate(dx, dy);
+            UpdateUndoButtons();
             Editor.InvalidateVisual();
             e.Handled = true;
         }
@@ -1033,6 +1083,7 @@ public partial class PinWindow : Window
 
     private void SetTool(AnnotationTool tool)
     {
+        _textEditor.Commit();
         _tool = tool;
         Toolbar.SetTool(tool);
         if (tool != AnnotationTool.Select && tool != AnnotationTool.None)
@@ -1050,48 +1101,48 @@ public partial class PinWindow : Window
         ClearAnnotationHover();
     }
 
-    private void Undo()
+    private void Undo() => ApplyHistory(_history.Undo);
+
+    private void Redo() => ApplyHistory(_history.Redo);
+
+    private void ApplyHistory(Func<List<Annotation>, bool> step)
     {
-        if (Editor.Items.Count == 0)
+        _textEditor.Commit();
+        ClearSelection();
+        if (!step(Editor.Items))
         {
             return;
         }
 
-        var last = Editor.Items[^1];
-        Editor.Items.RemoveAt(Editor.Items.Count - 1);
-        _redo.Push(last);
-        UpdateUndoButtons();
-        Editor.InvalidateVisual();
-    }
-
-    private void Redo()
-    {
-        if (_redo.Count == 0)
-        {
-            return;
-        }
-
-        Editor.Items.Add(_redo.Pop());
+        _number = Editor.Items.OfType<NumberAnnotation>().Select(n => n.Number).DefaultIfEmpty(0).Max() + 1;
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
 
     private void UpdateUndoButtons()
     {
-        Toolbar.RefreshUndo(Editor.Items.Count > 0, _redo.Count > 0);
+        Toolbar.RefreshUndo(_history.CanUndo, _history.CanRedo);
     }
 
     private Point ToPixels(Point dip) => new(dip.X / _zoom, dip.Y / _zoom);
 
     private void Input_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        Focus();
-        if (TextEditor.Visibility == Visibility.Visible)
+        var point = ToPixels(e.GetPosition(InputLayer));
+        if (_textEditor.Target is { } editingText)
         {
-            CommitText();
+            _textEditor.Commit();
+            if (!(_tool == AnnotationTool.Text && HitAnnotation(point) is TextAnnotation other &&
+                  !ReferenceEquals(other, editingText)))
+            {
+                e.Handled = true;
+                return;
+            }
         }
 
-        var point = ToPixels(e.GetPosition(InputLayer));
+        Focus();
+        CommitWatermark();
+
         _annotationStart = point;
         _lastPoint = point;
 
@@ -1105,6 +1156,21 @@ public partial class PinWindow : Window
             }
         }
 
+        if (_tool == AnnotationTool.Text)
+        {
+            if (HitAnnotation(point) is TextAnnotation pressed)
+            {
+                BeginTextPress(pressed, point, InputLayer);
+            }
+            else
+            {
+                BeginTextEdit(AnnotationStyler.NewText(point, Toolbar), isNew: true, caretAt: null);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
         {
             var candidate = HitAnnotation(point);
@@ -1113,6 +1179,7 @@ public partial class PinWindow : Window
                 SelectAnnotation(candidate);
                 _movingSelected = true;
                 _lastPoint = point;
+                _history.Arm(Editor.Items);
                 CaptureMouse();
                 e.Handled = true;
                 return;
@@ -1126,6 +1193,7 @@ public partial class PinWindow : Window
             {
                 SelectAnnotation(hit);
                 _movingSelected = true;
+                _history.Arm(Editor.Items);
                 InputLayer.CaptureMouse();
                 e.Handled = true;
                 return;
@@ -1137,6 +1205,8 @@ public partial class PinWindow : Window
 
         if (_tool == AnnotationTool.Eraser)
         {
+            _history.Checkpoint(Editor.Items);
+            UpdateUndoButtons();
             _eraserStroke = new EraserAnnotation
             {
                 Source = _baseImage,
@@ -1151,12 +1221,6 @@ public partial class PinWindow : Window
             return;
         }
 
-        if (_tool == AnnotationTool.Text && e.ClickCount < 2)
-        {
-            e.Handled = true;
-            return;
-        }
-
         StartAnnotation(point);
         InputLayer.CaptureMouse();
         e.Handled = true;
@@ -1165,6 +1229,10 @@ public partial class PinWindow : Window
     private void Input_MouseMove(object sender, MouseEventArgs e)
     {
         var point = ToPixels(e.GetPosition(InputLayer));
+        if (UpdateTextPress(point))
+        {
+            return;
+        }
 
         if (_creatingRotate && _active != null)
         {
@@ -1199,6 +1267,8 @@ public partial class PinWindow : Window
             var dy = point.Y - _lastPoint.Y;
             if (Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01)
             {
+                _history.CommitArmed();
+                UpdateUndoButtons();
                 _selected.Translate(dx, dy);
                 _lastPoint = point;
                 Editor.InvalidateVisual();
@@ -1236,6 +1306,11 @@ public partial class PinWindow : Window
 
     private void Input_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (EndTextPress(ToPixels(e.GetPosition(InputLayer)), selectAll: false))
+        {
+            return;
+        }
+
         InputLayer.ReleaseMouseCapture();
         _spaceAnnotation = false;
 
@@ -1249,6 +1324,7 @@ public partial class PinWindow : Window
         if (_movingSelected)
         {
             _movingSelected = false;
+            _history.Disarm();
             return;
         }
 
@@ -1298,12 +1374,6 @@ public partial class PinWindow : Window
             },
             _ => null
         };
-
-        if (_tool == AnnotationTool.Text)
-        {
-            BeginText(point);
-            return;
-        }
 
         if (_tool is AnnotationTool.Pen or AnnotationTool.Highlighter)
         {
@@ -1400,104 +1470,130 @@ public partial class PinWindow : Window
             _number++;
         }
 
+        _history.Checkpoint(Editor.Items);
         Editor.Items.Add(annotation);
-        _redo.Clear();
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
 
-    private void BeginText(Point point)
+    private void BeginTextEdit(TextAnnotation text, bool isNew, Point? caretAt, bool selectAll = false)
     {
-        _editingWatermark = null;
-        _editingText = null;
-        _textActive = true;
-        _textPosition = point;
-        TextEditor.Text = string.Empty;
-        TextEditor.Visibility = Visibility.Visible;
-        Canvas.SetLeft(TextEditor, point.X / _zoom + 4);
-        Canvas.SetTop(TextEditor, point.Y / _zoom + 4);
-        TextEditor.Focus();
-        Keyboard.Focus(TextEditor);
+        ClearSelection();
+        ClearAnnotationHover();
+        _history.Arm(Editor.Items);
+        if (isNew)
+        {
+            Editor.Items.Add(text);
+        }
+
+        Toolbar.SetTool(AnnotationTool.Text);
+        Toolbar.SyncFrom(text);
+        _tool = AnnotationTool.Text;
+        InputLayer.IsHitTestVisible = true;
+        InputLayer.Cursor = ToolCursors.Get(AnnotationTool.Text, _thickness, _color);
+        _textEditor.Begin(text, isNew, caretAt, selectAll);
     }
 
-    private void BeginTextEdit(TextAnnotation text)
+    private void OnTextEditEnded(TextAnnotation text, bool removed)
     {
-        _editingWatermark = null;
-        _editingText = text;
-        _textActive = true;
-        _textPosition = text.Position;
-        TextEditor.Text = text.Text;
-        TextEditor.Visibility = Visibility.Visible;
-        Canvas.SetLeft(TextEditor, text.Position.X / _zoom + 4);
-        Canvas.SetTop(TextEditor, text.Position.Y / _zoom + 4);
-        TextEditor.Focus();
-        Keyboard.Focus(TextEditor);
-        TextEditor.SelectAll();
+        if (_textEditor.Dirty && !(removed && _textEditor.IsNew))
+        {
+            _history.CommitArmed();
+        }
+        else
+        {
+            _history.Disarm();
+        }
+
+        UpdateUndoButtons();
+        if (_editMode)
+        {
+            InputLayer.Focus();
+        }
+    }
+
+    private void BeginTextPress(TextAnnotation text, Point point, UIElement capture)
+    {
+        _textPress = text;
+        _textPressPoint = point;
+        _textPressMoved = false;
+        _lastPoint = point;
+        _textPressCapture = capture;
+        _history.Arm(Editor.Items);
+        capture.CaptureMouse();
+    }
+
+    /// <returns>True while a text press is in progress (the move is consumed).</returns>
+    private bool UpdateTextPress(Point point)
+    {
+        if (_textPress == null)
+        {
+            return false;
+        }
+
+        if (!_textPressMoved && (point - _textPressPoint).Length * _zoom < 3)
+        {
+            return true;
+        }
+
+        if (!_textPressMoved)
+        {
+            _textPressMoved = true;
+            _history.CommitArmed();
+            UpdateUndoButtons();
+        }
+
+        _textPress.Translate(point.X - _lastPoint.X, point.Y - _lastPoint.Y);
+        _lastPoint = point;
+        Editor.InvalidateVisual();
+        return true;
+    }
+
+    private bool EndTextPress(Point point, bool selectAll)
+    {
+        if (_textPress is not { } pressed)
+        {
+            return false;
+        }
+
+        _textPress = null;
+        _textPressCapture?.ReleaseMouseCapture();
+        _textPressCapture = null;
+        if (!_textPressMoved)
+        {
+            _history.Disarm();
+            BeginTextEdit(pressed, isNew: false, caretAt: selectAll ? null : point, selectAll: selectAll);
+        }
+
+        return true;
     }
 
     private void BeginWatermarkEdit(WatermarkAnnotation watermark)
     {
         _editingWatermark = watermark;
-        _textActive = true;
-        _textPosition = new Point(watermark.Rect.X, watermark.Rect.Y);
-        TextEditor.Text = watermark.Text;
-        TextEditor.Visibility = Visibility.Visible;
-        Canvas.SetLeft(TextEditor, watermark.Rect.X / _zoom + 4);
-        Canvas.SetTop(TextEditor, watermark.Rect.Y / _zoom + 4);
-        TextEditor.Focus();
-        Keyboard.Focus(TextEditor);
+        WatermarkEditor.Text = watermark.Text;
+        WatermarkEditor.Visibility = Visibility.Visible;
+        Canvas.SetLeft(WatermarkEditor, watermark.Rect.X * _zoom + 4);
+        Canvas.SetTop(WatermarkEditor, watermark.Rect.Y * _zoom + 4);
+        WatermarkEditor.Focus();
+        Keyboard.Focus(WatermarkEditor);
+        WatermarkEditor.SelectAll();
     }
 
-    private void CommitText()
+    private void CommitWatermark()
     {
-        if (!_textActive)
+        if (_editingWatermark is not { } watermark)
         {
             return;
         }
 
-        _textActive = false;
-        var text = TextEditor.Text.Trim();
-        TextEditor.Visibility = Visibility.Collapsed;
-
-        if (_editingWatermark != null)
+        _editingWatermark = null;
+        var text = WatermarkEditor.Text.Trim();
+        WatermarkEditor.Visibility = Visibility.Collapsed;
+        if (text.Length > 0 && text != watermark.Text)
         {
-            if (text.Length > 0)
-            {
-                _editingWatermark.Text = text;
-                Editor.InvalidateVisual();
-            }
-
-            _editingWatermark = null;
-            InputLayer.Focus();
-            return;
-        }
-
-        if (_editingText != null)
-        {
-            if (text.Length > 0)
-            {
-                _editingText.Text = text;
-                Editor.InvalidateVisual();
-            }
-
-            _editingText = null;
-            InputLayer.Focus();
-            return;
-        }
-
-        if (text.Length > 0)
-        {
-            Editor.Items.Add(new TextAnnotation
-            {
-                Position = _textPosition,
-                Text = text,
-                Color = _color,
-                Thickness = _thickness,
-                FontSize = Math.Max(8, _thickness),
-                StrokeColor = Toolbar.StrokeColor,
-                StrokeThickness = Toolbar.StrokeEnabled ? Toolbar.StrokeWidth : 0
-            });
-            _redo.Clear();
+            _history.Checkpoint(Editor.Items);
+            watermark.Text = text;
             UpdateUndoButtons();
             Editor.InvalidateVisual();
         }
@@ -1505,36 +1601,18 @@ public partial class PinWindow : Window
         InputLayer.Focus();
     }
 
-    private void CancelText()
-    {
-        _textActive = false;
-        _editingWatermark = null;
-        _editingText = null;
-        TextEditor.Text = string.Empty;
-        TextEditor.Visibility = Visibility.Collapsed;
-        InputLayer.Focus();
-    }
-
-    private void TextEditor_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void WatermarkEditor_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
-            CancelText();
+            _editingWatermark = null;
+            WatermarkEditor.Visibility = Visibility.Collapsed;
+            InputLayer.Focus();
             e.Handled = true;
         }
         else if (e.Key == Key.Enter)
         {
-            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0)
-            {
-                var caret = TextEditor.CaretIndex;
-                TextEditor.Text = TextEditor.Text.Insert(caret, Environment.NewLine);
-                TextEditor.CaretIndex = caret + Environment.NewLine.Length;
-            }
-            else
-            {
-                CommitText();
-            }
-
+            CommitWatermark();
             e.Handled = true;
         }
     }
@@ -1764,13 +1842,13 @@ public partial class PinWindow : Window
             return;
         }
 
+        _history.Checkpoint(Editor.Items);
         Editor.Items.Remove(hit);
         if (ReferenceEquals(hit, _selected))
         {
             ClearSelection();
         }
 
-        _redo.Clear();
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
@@ -1801,9 +1879,9 @@ public partial class PinWindow : Window
             var bounds = hit.Bounds;
             bounds.Inflate(4 / (1.0 / _zoom), 4 / (1.0 / _zoom));
             Editor.HoverBounds = bounds;
-            Editor.HoverLabel = "点击选中并继续编辑";
+            Editor.HoverLabel = _tool == AnnotationTool.Text ? "单击编辑 · 拖动移动" : "点击选中并继续编辑";
             Editor.ShowHover = true;
-            InputLayer.Cursor = Cursors.Hand;
+            InputLayer.Cursor = _tool == AnnotationTool.Text ? Cursors.IBeam : Cursors.Hand;
             Editor.InvalidateVisual();
             return;
         }
@@ -1907,6 +1985,8 @@ public partial class PinWindow : Window
         }
 
         var step = Math.Sign(delta);
+        _history.CheckpointCoalesced(Editor.Items, ("wheel", _selected));
+        UpdateUndoButtons();
         switch (_selected)
         {
             case TextAnnotation text:
@@ -1972,8 +2052,122 @@ public partial class PinWindow : Window
         ApplyPinImageTransform(transform, Map, oldHeight, oldWidth);
     }
 
+    private async void TranslateInPlace()
+    {
+        if (_translateCts != null)
+        {
+            return;
+        }
+
+        if (_editMode)
+        {
+            ExitEditMode(true);
+        }
+
+        var original = _baseImage;
+        var cts = new CancellationTokenSource();
+        _translateCts = cts;
+        ShowPinStatus("正在识别文字…", hideAfter: null);
+        var progress = new Progress<ImmersiveTranslator.Update>(update =>
+        {
+            if (cts.IsCancellationRequested || !ReferenceEquals(_translateCts, cts))
+            {
+                return;
+            }
+
+            if (update.Translated > 0)
+            {
+                _untranslatedBase ??= original;
+                SetBaseImage(update.Image);
+            }
+
+            ShowPinStatus(update.Status, hideAfter: update.Done ? TimeSpan.FromSeconds(2.5) : null);
+        });
+
+        try
+        {
+            await ImmersiveTranslator.TranslateAsync(original, progress, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error("贴图原位翻译失败", ex);
+            if (ReferenceEquals(_translateCts, cts))
+            {
+                ShowPinStatus("翻译失败：" + ex.Message, hideAfter: TimeSpan.FromSeconds(5));
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_translateCts, cts))
+            {
+                _translateCts = null;
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private void ShowOriginal()
+    {
+        if (_untranslatedBase == null)
+        {
+            return;
+        }
+
+        if (_editMode)
+        {
+            ExitEditMode(true);
+        }
+
+        SetBaseImage(_untranslatedBase);
+        _untranslatedBase = null;
+        ShowPinStatus("已显示原文", hideAfter: TimeSpan.FromSeconds(1.5));
+    }
+
+    private void CancelInPlaceTranslation()
+    {
+        _translateCts?.Cancel();
+        _translateCts = null;
+        _untranslatedBase = null;
+    }
+
+    /// <summary>Swaps the image under the annotations and re-composes what the pin shows.</summary>
+    private void SetBaseImage(BitmapSource image)
+    {
+        _baseImage = image;
+        Editor.Source = image;
+        var composed = ComposeEditedImage();
+        SourceImage = composed;
+        Img.Source = composed;
+    }
+
+    private void ShowPinStatus(string text, TimeSpan? hideAfter)
+    {
+        PinStatusText.Text = text;
+        PinStatus.Visibility = Visibility.Visible;
+        _statusTimer?.Stop();
+        if (hideAfter is { } delay)
+        {
+            _statusTimer ??= new DispatcherTimer();
+            _statusTimer.Interval = delay;
+            _statusTimer.Tick -= HidePinStatus;
+            _statusTimer.Tick += HidePinStatus;
+            _statusTimer.Start();
+        }
+    }
+
+    private void HidePinStatus(object? sender, EventArgs e)
+    {
+        _statusTimer?.Stop();
+        PinStatus.Visibility = Visibility.Collapsed;
+    }
+
     private void ResetPinImageTransform()
     {
+        CancelInPlaceTranslation();
         _baseImage = _originalImage;
         SourceImage = _originalImage;
         _pixelWidth = _originalImage.PixelWidth;
@@ -1982,6 +2176,7 @@ public partial class PinWindow : Window
         _opacity = 1.0;
         Img.Opacity = 1.0;
         Editor.Items.Clear();
+        _history.Clear();
         Editor.Selected = null;
         _selected = null;
         Editor.Source = _baseImage;
@@ -1993,6 +2188,7 @@ public partial class PinWindow : Window
 
     private void ApplyPinImageTransform(Transform transform, Func<Point, Point> map, int newWidth, int newHeight)
     {
+        CancelInPlaceTranslation();
         var transformed = new TransformedBitmap(SourceImage, transform);
         transformed.Freeze();
 
@@ -2129,7 +2325,25 @@ public partial class PinWindow : Window
         save.Click += (_, _) => Save();
         menu.Items.Add(save);
 
-        var translate = new MenuItem { Header = "翻译" };
+        var inPlace = new MenuItem
+        {
+            Header = _translateCts != null ? "正在原位翻译…" : _untranslatedBase != null ? "显示原文" : "原位翻译",
+            IsEnabled = _translateCts == null
+        };
+        inPlace.Click += (_, _) =>
+        {
+            if (_untranslatedBase != null)
+            {
+                ShowOriginal();
+            }
+            else
+            {
+                TranslateInPlace();
+            }
+        };
+        menu.Items.Add(inPlace);
+
+        var translate = new MenuItem { Header = "识别并翻译文字…" };
         translate.Click += (_, _) => ((App)Application.Current).TranslateImage(CurrentImage, this);
         menu.Items.Add(translate);
 

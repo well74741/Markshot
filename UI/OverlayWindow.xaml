@@ -28,6 +28,12 @@
             </Image.Clip>
         </Image>
 
+        <!-- In-place translation of the selection, between the screenshot and the annotations. -->
+        <Canvas x:Name="TranslateLayer" IsHitTestVisible="False">
+            <Image x:Name="TranslatedImage" Stretch="Fill" Visibility="Collapsed"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+        </Canvas>
+
         <annotations:AnnotationEditor x:Name="Editor" />
 
         <Rectangle x:Name="InputLayer" Fill="Transparent" Cursor="Cross"
@@ -47,13 +53,28 @@
 
             <ui:MagnifierLayer x:Name="Magnifier" Width="200" Height="176" Visibility="Collapsed" />
 
+            <TextBox x:Name="TextEditor" Style="{StaticResource InlineTextBox}" Visibility="Collapsed" />
+
+            <TextBox x:Name="WatermarkEditor" Style="{StaticResource InputBox}"
+                     Width="280" MinHeight="36" FontSize="14" Visibility="Collapsed"
+                     Background="#E6101010" BorderBrush="#FF4C8DFF"
+                     ToolTip="水印文字：Enter 确定，Esc 取消"
+                     PreviewKeyDown="WatermarkEditor_PreviewKeyDown" />
+
             <ui:AnnotationToolbar x:Name="Toolbar" Visibility="Collapsed" />
 
-            <TextBox x:Name="TextEditor" Style="{StaticResource InputBox}"
-                     Width="280" MinHeight="36" FontSize="16" Visibility="Collapsed"
-                     AcceptsReturn="True" TextWrapping="Wrap"
-                     Background="#E6101010" BorderBrush="#FF4C8DFF"
-                     PreviewKeyDown="TextEditor_PreviewKeyDown" />
+            <Border x:Name="TranslateStatus" Visibility="Collapsed" Background="#E61C1C1C"
+                    BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6" Padding="10,4,4,4">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse x:Name="TranslateDot" Width="7" Height="7" Fill="{StaticResource Accent}"
+                             VerticalAlignment="Center" Margin="0,0,7,0" />
+                    <TextBlock x:Name="TranslateStatusText" Foreground="#EDEDED" FontSize="12"
+                               VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis" />
+                    <Button x:Name="TranslateSwitch" Style="{StaticResource ToolButton}" Padding="8,2"
+                            Margin="6,0,0,0" Foreground="{StaticResource Accent}" Visibility="Collapsed"
+                            Click="TranslateSwitch_Click" />
+                </StackPanel>
+            </Border>
         </Canvas>
     </Grid>
 </Window>

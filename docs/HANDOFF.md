@@ -72,7 +72,7 @@ dotnet run --project Markshot.csproj -- --demo
 }
 ```
 
-> 如果自动翻译提示“尚未配置翻译 API Key”，先确认运行目录的 `config.json` 和 exe 在一起，或在设置里重新填写保存。发布/复制 exe 时只复制 exe 不带配置就会读不到 Key。
+> 如果原位翻译状态条提示“尚未配置翻译 API Key”，先确认运行目录的 `config.json` 和 exe 在一起，或在设置里重新填写保存。发布/复制 exe 时只复制 exe 不带配置就会读不到 Key。
 
 ## 4. 代码地图
 
@@ -85,11 +85,13 @@ dotnet run --project Markshot.csproj -- --demo
 | `UI/ColorPickerWindow.xaml(.cs)` | HSV 自选色板、色相/透明度、吸管、Hex/百分比 |
 | `UI/SettingsWindow.xaml(.cs)` | 全局热键、工具键、保存、OCR、翻译、工具栏顺序数据 |
 | `UI/TranslationWindow.xaml(.cs)` | 普通 OCR / 文本翻译窗口 |
-| `UI/AutoTranslateWindow.xaml(.cs)` | 自动翻译进度 + 替换后图片预览/复制/保存/贴图 |
+| `UI/InlineTextEditor.cs` | 截图/贴图共用的原位文字编辑器（透明字形 TextBox 叠在实时渲染的文字上） |
+| `UI/AnnotationStyler.cs` | 工具栏样式 ↔ 批注对象的映射（两个窗口共用） |
+| `Annotations/AnnotationHistory.cs` | 整体快照撤销/重做（克隆批注，位图共享），含 Arm/CommitArmed 与合并检查点 |
 | `Annotations/Annotation.cs` | 所有批注模型和绘制：矩形、椭圆、线、箭、画笔、橡皮、马赛克、水印、文字、序号 |
 | `Annotations/AnnotationEditor.cs` | 批注画布、选择框、8 手柄、旋转、坐标变换 |
 | `Services/OcrService.cs` | RapidOcrNet；`RecognizeBlocksAsync` 返回文字框 |
-| `Services/AutoTranslateService.cs` | OCR 分块 + 批量翻译 + 原位背景/文字渲染 |
+| `Services/ImmersiveTranslator.cs` | 原位翻译：OCR 行测量 → 段落合并 → 跳过已是目标语言 → 并行批量翻译（缓存）→ 逐批重绘 |
 | `Services/Translation.cs` | OpenAI 兼容 `/chat/completions` provider |
 | `Core/AppConfig.cs` | 配置、路径、保存 |
 | `Core/ToolCursors.cs` | 十字/IBeam/圆形画笔/旋转光标 |
@@ -120,16 +122,23 @@ dotnet run --project Markshot.csproj -- --demo
 - 矩形/椭圆支持填充；马赛克按块采样；水印为可编辑重复文字；
 - 文字/水印支持描边颜色、粗细；水印双击改文字。
 
-### 文字（文档约定）
+### 文字
 
-参考 `D:\Practice\AItest\Github_projects\Sketchplayer\docs\技术文档_批注工具.md`：
+参考 `Sketchplayer/docs/技术文档_批注工具.md` §4.4、§6：
 
-- 文字工具双击空白开始输入；
-- `Enter` 完成；
-- `Shift+Enter`、`Ctrl+Enter` 换行；
-- `Esc` 结束；
-- 文字编辑器带暗色背景和蓝色边框，落地后成为文字批注对象；
-- 贴图内文字批注单击进入编辑并全选，之后可拖选；`Alt` 可无视文字拖动贴图。
+- **所见即所得**：编辑时文字由 `TextAnnotation.Draw` 实时绘制（与合成输出同一函数），
+  上面叠一个字形透明的 `TextBox`（样式 `InlineTextBox`）只负责光标、选区和输入法。
+  两者对齐经离屏实测：TextBox 字形比 `FormattedText` 右移 2 DIP、垂直 0，
+  `InlineTextEditor.TextBoxInsetDip` 补偿后 125% 缩放下包围盒误差 0px；
+  行高两边都用 `LineHeight = 字号 × 1.3` + `BlockLineHeight`。
+- 文字工具：单击空白新建（第一行垂直居中在点击处）；单击已有文字 → 光标落在点击位置编辑；
+  按住拖动 → 移动（≥3 DIP 才算拖动）。选择工具：单击选中（手柄可缩放/旋转），双击或 `F2` 编辑。
+- 贴图保留原约定：未选工具时单击文字进入编辑并全选；拖动文字可移动；按住辅助键（默认 Alt）拖动贴图。
+- `Enter` 完成，`Shift/Ctrl+Enter` 换行，`Esc` 完成（不再丢弃输入），清空内容即删除；`Ctrl+B` 粗体，滚轮改字号。
+- 点击工具栏（滑条已设 `Focusable=False`）不会结束输入，样式实时作用到正在编辑的文字。
+- 工具栏按工具分别记忆大小（文字默认 20，不再继承画笔的 3px 变成 8px 字）。
+- 字段：`Bold`、`Fill`（=背景标签，文字自动取反差色）、描边先画外圈再填字，细描边不吃字形。
+- 撤销：开始编辑时 `Arm` 快照，结束时只有内容/样式变了才 `CommitArmed`；空的新文字不占步数。
 
 ### 贴图
 
@@ -150,31 +159,41 @@ dotnet run --project Markshot.csproj -- --demo
 - 颜色窗口标题栏可拖动；
 - `ColorPickerWindow` 不使用 `DialogResult`，通过 `Accepted` 属性 + `Close()` 关闭，避免非对话框状态异常。
 
-### 自动翻译
+### 原位翻译（Chrome 式）
 
-流程：
+入口：截图工具栏翻译开关（状态存 `ImmersiveTranslate`，设置页同一开关）；贴图右键“原位翻译 / 显示原文”。
 
-1. `OcrService.RecognizeBlocksAsync` 得到 `OcrTextBlock`（文字 + 像素框）；
-2. `AutoTranslateService` 去重，按 30 行一批调用翻译；
-3. 用 `[[MarkshotSeg]]` 分隔符还原每一行；分隔失败时回退逐行；
-4. 按原文字框绘制译文，背景从文字框左右两侧逐行采样，文字颜色从框内高对比像素取，字号按框高/框宽收缩；
-5. `AutoTranslateWindow` 显示进度和最终图片，可复制/保存/贴图。
+1. `OcrService.RecognizeBlocksAsync` 得到行框；
+2. `ImmersiveTranslator.Measure` 逐行量像素：外圈背景色（中位数）及是否纯色、墨色、
+   **墨迹的垂直范围**（只取与框中心相连的墨迹行，PP-OCR 的框约为字高 2 倍且会压到上下行）、
+   由墨迹高度按字形推算的字号（CJK ÷0.88；拉丁按有无大写/升部、降部估算）；
+3. `GroupParagraphs`：上下紧邻、左对齐、字号相近、墨色相同、同文种、且上一行“写满”（换行）才合并成段；
+   菜单/列表等短行保持独立；
+4. `NeedsTranslation` 跳过数字/符号和已是目标语言的文字（不重绘）；
+5. 按 24 条 / 2400 字一批，最多 3 批并发；`TranslateBatchAsync` 发送 JSON 数组、要求等长 JSON 数组返回，
+   格式不符时逐条回退；结果按（目标语言, 原文）缓存；
+6. 每批返回立即重绘整图并通过 `IProgress` 上报，截图选区上方的状态条显示进度，可“显示原文/显示译文”；
+7. 绘制：纯色背景整块填充，渐变/照片按行左右插值；单行标签居中并可向右略扩，段落首行对齐原位置向下重排；
+   原文较粗时用 SemiBold。
 
-已知限制：
+覆盖层：`TranslateLayer` 在截图与批注之间；`Compose()` 把译文像素合成进复制/保存/贴图结果；
+橡皮/马赛克取色源为 `EffectiveScreen`（含译文）。选区移动/缩放后 350ms 自动重译（同一选区命中缓存）。
+WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`，OCR/HTTP 本身在后台。
 
-- 复杂照片背景是水平插值，不是真正 inpainting；
-- 远程 API 有延迟，不是 Chrome 本地即时翻译；
-- 文字排版未完全复刻参考文档的 letter-spacing/line-height；
-- 开启自动翻译后，复制/保存/贴图会打开替换结果窗口，而不是直接在原截图窗口内替换。
+本地验证可运行 `python tools/mock_llm.py`，Base URL 填 `http://127.0.0.1:8123/v1`（本机地址免 Key），
+它支持批量 JSON 数组格式并做小词典伪翻译。
+
+已知限制：复杂照片背景是行内插值，不是真正的 inpainting；竖排文字、旋转文字不处理。
 
 ## 6. 已知问题 / 下一步优先级
 
 1. **空格退出仍可能丢最后一步**：已加入 `CommitAnnotation()` 和 `_spaceExitGuard`，但需要在真实贴图上复测“绘制→松手→空格退出→再空格进入”的完整链路；重点检查 `ExitEditMode(true)` 的合成时机。
 2. **滑条点击后继续拖动**：`SliderDragBehavior` 已直接挂到三个工具栏滑条和颜色窗口滑条，需实机确认点击轨道后不松手拖动值连续变化。
-3. **自动翻译**：批量分隔符可能被模型改写；建议增加“逐行回退”进度和失败提示，或改为一次整段翻译 + 按行对齐。
+3. **原位翻译**：需要用真实 Key 在多种网页/应用截图上实测段落合并阈值与配色；复杂背景考虑真正的 inpainting。
 4. **贴图文字拖选**：目前是批注文字；PNG 内烘焙文字需要 OCR 文本层，尚未实现。
 5. **像素橡皮**：`EraserAnnotation` 用原图对应区域绘制，能遮挡局部像素，但不是真正的透明蒙版；撤销/再次编辑行为需要验证。
-6. **设置面板**：手动输入已隐藏、工具栏排序区域已隐藏，但相关代码/配置仍保留；后续可彻底删除。
+6. **设置面板**：已重做为左侧导航（快捷键 / 翻译 / 保存与识别）；手动输入、工具栏排序界面已删除，
+   `CaptureToolOrder` 等配置项仍由工具栏读取，只能改 `config.json`。
 7. **按钮排序**：截图/贴图工具栏的七个工具顺序/显隐已由 `CaptureToolOrder`/`PinToolHidden` 等配置驱动；右侧动作按钮（撤销/OCR/保存等）未纳入。
 8. **图标**：新素材已归一化到 64×64，但 `矩形/圆形/吸管/旋转` 等来自 `图标/` 的额外素材需要保留在 `Assets/Icons`；不要直接用 200×200 原图，否则视觉尺寸不一致。
 
@@ -190,8 +209,11 @@ dotnet run --project Markshot.csproj -- --demo
 - [ ] 画笔单击落点；画笔/橡皮光标随粗细改变；
 - [ ] 橡皮擦掉局部像素，撤销恢复；
 - [ ] 箭头柄粗细、燕尾形状；
-- [ ] 文字工具双击创建、Enter 完成、Shift/Ctrl+Enter 换行、Esc 退出；
-- [ ] 自动翻译：Key 配置正确时先显示进度，再显示替换图；无 Key 时应显示明确错误。
+- [ ] 文字工具单击创建、单击已有文字编辑、拖动移动；Enter 完成、Shift/Ctrl+Enter 换行、Esc 完成；
+- [ ] 中文输入法输入文字（组合串应实时显示）；编辑中改颜色/字号/粗体/背景/描边、滚轮改字号；
+- [ ] 撤销/重做：移动、缩放、改样式、改文字、删除各占一步；
+- [ ] 原位翻译：开关后选区内文字被替换，状态条显示进度，可切换原文；移动选区后自动重译；复制结果含译文；
+- [ ] 无 Key 时状态条显示明确错误与“重试”。
 
 ### 贴图
 
@@ -214,9 +236,9 @@ dotnet run --project Markshot.csproj -- --demo
 ### 设置
 
 - [ ] 全局热键录制；
-- [ ] 无“手动输入”选项；
-- [ ] 无工具栏排序区域；
-- [ ] 输入框宽度一致。
+- [ ] 三个页面都不出现白色系统控件，快捷键页无需滚动；
+- [ ] API Key 默认掩码、可显示；测试连接结果显示在按钮旁；
+- [ ] 原位翻译开关与截图工具栏开关同步。
 
 ## 8. 参考资料与素材
 
@@ -229,6 +251,11 @@ dotnet run --project Markshot.csproj -- --demo
 - 用户偏好：PixPin 风格、暗色圆角、无白色系统控件、中文 UI、不复制 PixPin 专有素材。
 
 ## 9. 常用调试
+
+离屏验证（不动桌面、不抢鼠标）：可以建一个引用 `Markshot.csproj` 的临时 WPF 控制台项目，
+用普通 `Application` 加载 `App.xaml` 的资源字典（**不要** `new App()`：它会排队执行真实的
+`OnStartup`，注册托盘和全局热键并读取用户配置），再用 `RenderTargetBitmap` 渲染控件/窗口检查布局和文字对齐。
+
 
 日志：
 

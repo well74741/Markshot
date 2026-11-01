@@ -1,7 +1,5 @@
 using Markshot.Services;
 using Microsoft.Win32;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Windows.Interop;
 
 namespace Markshot.UI;
@@ -9,9 +7,7 @@ namespace Markshot.UI;
 public partial class SettingsWindow : Window
 {
     private readonly AppConfig _config;
-
-    private Point _orderDragStart;
-    private ToolOrderItem? _orderDragItem;
+    private bool _syncingKey;
 
     public SettingsWindow(AppConfig config)
     {
@@ -39,26 +35,120 @@ public partial class SettingsWindow : Window
         SaveDirBox.Text = config.SaveDirectory;
         OcrLanguageBox.Text = config.OcrLanguage;
         BaseUrlBox.Text = config.Translation.BaseUrl;
-        ApiKeyBox.Text = config.Translation.ApiKey;
+        ApiKeyPassword.Password = config.Translation.ApiKey;
         ModelBox.Text = config.Translation.Model;
         TargetBox.Text = config.Translation.TargetLanguage;
         TimeoutBox.Text = config.Translation.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
-        LoadToolOrder(CaptureOrderList, config.CaptureToolOrder, config.CaptureToolHidden);
-        LoadToolOrder(PinOrderList, config.PinToolOrder, config.PinToolHidden);
+        ImmersiveSwitch.IsChecked = config.ImmersiveTranslate;
 
-        Loaded += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        VersionText.Text = "版本 " + (typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "");
+        ConfigPathText.Text = AppConfig.ConfigPath;
+        ConfigPathText.ToolTip = AppConfig.ConfigPath;
+        if (!config.Translation.IsConfigured)
         {
-            CaptureHotkeyBox.Focus();
-            CaptureHotkeyBox.SelectAll();
-        }), DispatcherPriority.Input);
+            StatusText.Text = "提示：还没有填写翻译 API Key，原位翻译和文字翻译需要它（见“翻译”页）。";
+        }
+    }
 
-        OcrHintText.Text =
-            "内置 PP-OCRv5 模型，本地识别中英混排。留空使用中文模型；填 en 切换到英文专用模型。";
+    private void Nav_Checked(object sender, RoutedEventArgs e)
+    {
+        if (PageHotkeys == null || sender is not RadioButton { Tag: string page })
+        {
+            return;
+        }
+
+        PageHotkeys.Visibility = page == "Hotkeys" ? Visibility.Visible : Visibility.Collapsed;
+        PageTranslate.Visibility = page == "Translate" ? Visibility.Visible : Visibility.Collapsed;
+        PageGeneral.Visibility = page == "General" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Opens the window on a given page ("Hotkeys", "Translate", "General").</summary>
+    public void ShowPage(string page)
+    {
+        switch (page)
+        {
+            case "Translate":
+                NavTranslate.IsChecked = true;
+                break;
+            case "General":
+                NavGeneral.IsChecked = true;
+                break;
+            default:
+                NavHotkeys.IsChecked = true;
+                break;
+        }
+    }
+
+    private string ApiKey => ApiKeyBox.Visibility == Visibility.Visible ? ApiKeyBox.Text : ApiKeyPassword.Password;
+
+    private void ApiKeyReveal_Click(object sender, RoutedEventArgs e)
+    {
+        var reveal = ApiKeyBox.Visibility != Visibility.Visible;
+        _syncingKey = true;
+        if (reveal)
+        {
+            ApiKeyBox.Text = ApiKeyPassword.Password;
+        }
+        else
+        {
+            ApiKeyPassword.Password = ApiKeyBox.Text;
+        }
+
+        _syncingKey = false;
+        ApiKeyBox.Visibility = reveal ? Visibility.Visible : Visibility.Collapsed;
+        ApiKeyPassword.Visibility = reveal ? Visibility.Collapsed : Visibility.Visible;
+        ApiKeyReveal.Content = reveal ? "隐藏" : "显示";
+    }
+
+    private void ApiKeyPassword_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_syncingKey && TestStatusText != null)
+        {
+            TestStatusText.Text = string.Empty;
+        }
+    }
+
+    private void ApiKeyBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!_syncingKey && TestStatusText != null)
+        {
+            TestStatusText.Text = string.Empty;
+        }
+    }
+
+    private void Language_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Content: string language })
+        {
+            TargetBox.Text = language;
+        }
+    }
+
+    private void OpenConfigFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = AppConfig.ConfigPath;
+            if (File.Exists(path))
+            {
+                Process.Start("explorer.exe", $"/select,\"{path}\"");
+            }
+            else
+            {
+                var directory = Path.GetDirectoryName(path)!;
+                Directory.CreateDirectory(directory);
+                Process.Start("explorer.exe", $"\"{directory}\"");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "无法打开文件夹：" + ex.Message;
+        }
     }
 
     private void HotkeyBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
-        if (sender is TextBox box && ManualHotkeyCheck.IsChecked != true)
+        if (sender is TextBox box)
         {
             box.Tag = box.Text;
             box.SelectAll();
@@ -67,11 +157,6 @@ public partial class SettingsWindow : Window
 
     private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (ManualHotkeyCheck.IsChecked == true)
-        {
-            return;
-        }
-
         if (sender is not TextBox box)
         {
             return;
@@ -121,25 +206,6 @@ public partial class SettingsWindow : Window
         }
 
         return false;
-    }
-
-    private void ManualHotkey_Changed(object sender, RoutedEventArgs e)
-    {
-        var manual = ManualHotkeyCheck.IsChecked == true;
-        CaptureHotkeyBox.IsReadOnly = !manual;
-        PinHotkeyBox.IsReadOnly = !manual;
-        MouseThroughHotkeyBox.IsReadOnly = !manual;
-        RestorePinHotkeyBox.IsReadOnly = !manual;
-        CaptureHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
-        PinHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
-        MouseThroughHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
-        RestorePinHotkeyBox.Cursor = manual ? Cursors.IBeam : Cursors.Hand;
-
-        if (manual)
-        {
-            CaptureHotkeyBox.Focus();
-            CaptureHotkeyBox.SelectAll();
-        }
     }
 
     private static bool IsModifierKey(Key key) => key is
@@ -241,10 +307,6 @@ public partial class SettingsWindow : Window
         _config.PinFlipVerticalHotkey = string.IsNullOrWhiteSpace(PinFlipVBox.Text) ? "W" : PinFlipVBox.Text.Trim();
         _config.PinRotateHotkey = string.IsNullOrWhiteSpace(PinRotateBox.Text) ? "E" : PinRotateBox.Text.Trim();
         _config.PinResetHotkey = string.IsNullOrWhiteSpace(PinResetBox.Text) ? "F" : PinResetBox.Text.Trim();
-        _config.CaptureToolOrder = OrderString(CaptureOrderList);
-        _config.CaptureToolHidden = HiddenString(CaptureOrderList);
-        _config.PinToolOrder = OrderString(PinOrderList);
-        _config.PinToolHidden = HiddenString(PinOrderList);
 
         var penKey = NormalizeToolKey(PenKeyBox.Text, "B");
         var selectKey = NormalizeToolKey(SelectKeyBox.Text, "V");
@@ -271,9 +333,10 @@ public partial class SettingsWindow : Window
         _config.OcrLanguage = OcrLanguageBox.Text.Trim();
 
         _config.Translation.BaseUrl = BaseUrlBox.Text.Trim();
-        _config.Translation.ApiKey = ApiKeyBox.Text.Trim();
+        _config.Translation.ApiKey = ApiKey.Trim();
         _config.Translation.Model = ModelBox.Text.Trim();
         _config.Translation.TargetLanguage = TargetBox.Text.Trim();
+        _config.ImmersiveTranslate = ImmersiveSwitch.IsChecked == true;
 
         _config.Translation.TimeoutSeconds =
             int.TryParse(TimeoutBox.Text.Trim(), out var timeout)
@@ -302,14 +365,16 @@ public partial class SettingsWindow : Window
     private async void Test_Click(object sender, RoutedEventArgs e)
     {
         TestButton.IsEnabled = false;
-        StatusText.Text = "测试中…";
+        TestStatusText.Foreground = (Brush)FindResource("TextSecondary");
+        TestStatusText.Text = "测试中…";
 
         try
         {
             var testConfig = new TranslationConfig
             {
                 BaseUrl = BaseUrlBox.Text.Trim(),
-                ApiKey = ApiKeyBox.Text.Trim(),
+                ApiKey = ApiKey.Trim(),
+                TimeoutSeconds = int.TryParse(TimeoutBox.Text.Trim(), out var seconds) ? seconds : 30,
                 Model = ModelBox.Text.Trim(),
                 TargetLanguage = TargetBox.Text.Trim()
             };
@@ -318,177 +383,19 @@ public partial class SettingsWindow : Window
             var result = await provider.TranslateAsync(
                 "Hello, Markshot!", TargetBox.Text.Trim(), CancellationToken.None);
 
-            StatusText.Text = "连接成功：" + result;
+            TestStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x4C, 0xC3, 0x8A));
+            TestStatusText.Text = "连接成功：" + result;
+            TestStatusText.ToolTip = result;
         }
         catch (Exception ex)
         {
-            StatusText.Text = "测试失败：" + ex.Message;
+            TestStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x7A, 0x7A));
+            TestStatusText.Text = "测试失败：" + ex.Message;
+            TestStatusText.ToolTip = ex.Message;
         }
         finally
         {
             TestButton.IsEnabled = true;
         }
-    }
-
-    private static readonly (string Key, string Name)[] ToolDefinitions =
-    {
-        ("Shape", "图形"),
-        ("Pen", "画笔/荧光笔"),
-        ("Arrow", "箭头/直线"),
-        ("Text", "文字"),
-        ("Number", "序号"),
-        ("Mosaic", "马赛克/水印"),
-        ("Eraser", "橡皮擦")
-    };
-
-    private static void LoadToolOrder(ListBox list, string? order, string? hidden)
-    {
-        var hiddenSet = new HashSet<string>(
-            (hidden ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-            StringComparer.OrdinalIgnoreCase);
-        var keys = (order ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
-        foreach (var (key, _) in ToolDefinitions)
-        {
-            if (!keys.Contains(key, StringComparer.OrdinalIgnoreCase))
-            {
-                keys.Add(key);
-            }
-        }
-
-        var items = new ObservableCollection<ToolOrderItem>();
-        foreach (var key in keys)
-        {
-            var definition = ToolDefinitions.FirstOrDefault(t =>
-                string.Equals(t.Key, key, StringComparison.OrdinalIgnoreCase));
-            if (definition.Key == null)
-            {
-                continue;
-            }
-
-            items.Add(new ToolOrderItem
-            {
-                Key = definition.Key,
-                Name = definition.Name,
-                Visible = !hiddenSet.Contains(definition.Key)
-            });
-        }
-
-        list.ItemsSource = items;
-    }
-
-    private static string OrderString(ListBox list) =>
-        string.Join(",", (list.ItemsSource as ObservableCollection<ToolOrderItem> ?? new())
-            .Select(item => item.Key));
-
-    private static string HiddenString(ListBox list) =>
-        string.Join(",", (list.ItemsSource as ObservableCollection<ToolOrderItem> ?? new())
-            .Where(item => !item.Visible)
-            .Select(item => item.Key));
-
-    private void OrderList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is not ListBox list || e.OriginalSource is CheckBox)
-        {
-            return;
-        }
-
-        _orderDragStart = e.GetPosition(list);
-        _orderDragItem = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?
-            .DataContext as ToolOrderItem;
-    }
-
-    private void OrderList_PreviewMouseMove(object sender, MouseEventArgs e)
-    {
-        if (e.LeftButton != MouseButtonState.Pressed || _orderDragItem == null || sender is not ListBox list)
-        {
-            return;
-        }
-
-        var current = e.GetPosition(list);
-        if (Math.Abs(current.X - _orderDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(current.Y - _orderDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
-        {
-            return;
-        }
-
-        DragDrop.DoDragDrop(list, _orderDragItem, DragDropEffects.Move);
-        _orderDragItem = null;
-    }
-
-    private void OrderList_DragOver(object sender, DragEventArgs e)
-    {
-        e.Effects = e.Data.GetDataPresent(typeof(ToolOrderItem)) ? DragDropEffects.Move : DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    private void OrderList_Drop(object sender, DragEventArgs e)
-    {
-        if (sender is not ListBox list ||
-            !e.Data.GetDataPresent(typeof(ToolOrderItem)) ||
-            list.ItemsSource is not ObservableCollection<ToolOrderItem> items)
-        {
-            return;
-        }
-
-        var dragged = (ToolOrderItem)e.Data.GetData(typeof(ToolOrderItem))!;
-        var target = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as ToolOrderItem;
-        var oldIndex = items.IndexOf(dragged);
-        if (oldIndex < 0)
-        {
-            return;
-        }
-
-        items.RemoveAt(oldIndex);
-        var newIndex = target == null ? items.Count : items.IndexOf(target);
-        if (newIndex < 0)
-        {
-            newIndex = items.Count;
-        }
-
-        items.Insert(newIndex, dragged);
-        e.Handled = true;
-    }
-
-    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
-    {
-        while (current != null)
-        {
-            if (current is T typed)
-            {
-                return typed;
-            }
-
-            current = VisualTreeHelper.GetParent(current);
-        }
-
-        return null;
-    }
-
-    public sealed class ToolOrderItem : INotifyPropertyChanged
-    {
-        public string Key { get; set; } = string.Empty;
-
-        public string Name { get; set; } = string.Empty;
-
-        private bool _visible = true;
-
-        public bool Visible
-        {
-            get => _visible;
-            set
-            {
-                if (_visible == value)
-                {
-                    return;
-                }
-
-                _visible = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Visible)));
-            }
-        }
-
-        public event PropertyChangedEventHandler? PropertyChanged;
     }
 }

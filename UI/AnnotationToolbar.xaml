@@ -92,10 +92,11 @@
                         <Border Style="{StaticResource IconCopyMask}" />
                     </Button>
                     <ToggleButton x:Name="TranslateToggle" Style="{StaticResource IconToolToggle}"
-                                  Click="TranslateToggle_Click" ToolTip="自动翻译（可激活）">
+                                  Click="TranslateToggle_Click"
+                                  ToolTip="原位翻译：像浏览器一样把选区里的文字直接替换成译文（开关会被记住）">
                         <Border Style="{StaticResource IconTranslateMask}" />
                     </ToggleButton>
-                    <TextBlock x:Name="TranslateHint" Text="自动翻译" Foreground="#6BA1FF" FontSize="10"
+                    <TextBlock x:Name="TranslateHint" Text="原位翻译" Foreground="#6BA1FF" FontSize="10"
                                VerticalAlignment="Center" Margin="2,0,0,0" Visibility="Collapsed" />
                 </StackPanel>
 
@@ -153,7 +154,7 @@
                     <StackPanel x:Name="WidthGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border x:Name="WidthSeparator" Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
                         <TextBlock x:Name="WidthLabel" Text="粗细" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
-                        <Slider x:Name="WidthSlider" IsMoveToPointEnabled="True" Width="86" Minimum="1" Maximum="16" Value="3"
+                        <Slider x:Name="WidthSlider" Focusable="False" IsMoveToPointEnabled="True" Width="86" Minimum="1" Maximum="16" Value="3"
                                 ValueChanged="Width_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
                         <TextBlock x:Name="WidthValue" Text="3" Foreground="#C8C8C8" FontSize="11" Width="20"
                                    TextAlignment="Center" VerticalAlignment="Center" />
@@ -162,10 +163,20 @@
                     <StackPanel x:Name="CornerGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border Width="1" Height="18" Background="#33FFFFFF" Margin="5,0" />
                         <TextBlock Text="圆角" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
-                        <Slider x:Name="CornerSlider" IsMoveToPointEnabled="True" Width="64" Minimum="0" Maximum="40" Value="0"
+                        <Slider x:Name="CornerSlider" Focusable="False" IsMoveToPointEnabled="True" Width="64" Minimum="0" Maximum="40" Value="0"
                                 ValueChanged="Corner_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
                         <TextBlock x:Name="CornerValue" Text="0" Foreground="#C8C8C8" FontSize="11" Width="20"
                                    TextAlignment="Center" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="TextStyleGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <ToggleButton x:Name="BoldToggle" Style="{StaticResource ToolToggle}" Padding="8,5"
+                                      Click="TextStyle_Click" ToolTip="粗体 (Ctrl+B)">
+                            <TextBlock Text="B" FontWeight="Bold" FontSize="13" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="BackgroundToggle" Style="{StaticResource ToolToggle}" Content="背景"
+                                      Click="TextStyle_Click" ToolTip="文字底色：以当前颜色作标签底，文字自动用反差色" />
                     </StackPanel>
 
                     <StackPanel x:Name="StrokeGroup" Orientation="Horizontal" Visibility="Collapsed">
@@ -177,7 +188,7 @@
                             <Ellipse x:Name="StrokeColorCircle" Width="16" Height="16" Fill="#202020"
                                      Stroke="#D8D8D8" StrokeThickness="1.2" />
                         </Button>
-                        <Slider x:Name="StrokeSlider" IsMoveToPointEnabled="True" Width="56" Minimum="0" Maximum="8" Value="0"
+                        <Slider x:Name="StrokeSlider" Focusable="False" IsMoveToPointEnabled="True" Width="56" Minimum="0" Maximum="8" Value="0"
                                 ValueChanged="Stroke_Changed" VerticalAlignment="Center" Margin="4,0,2,0" />
                         <TextBlock x:Name="StrokeValue" Text="0" Foreground="#C8C8C8" FontSize="11" Width="16"
                                    TextAlignment="Center" VerticalAlignment="Center" />

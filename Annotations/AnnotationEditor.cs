@@ -20,6 +20,9 @@ public sealed class AnnotationEditor : FrameworkElement
 
     public Annotation? Selected { get; set; }
 
+    /// <summary>Text currently open in the inline editor; drawn with a dashed edit frame.</summary>
+    public TextAnnotation? EditingText { get; set; }
+
     public Rect HoverBounds { get; set; } = Rect.Empty;
 
     public string? HoverLabel { get; set; }
@@ -62,7 +65,11 @@ public sealed class AnnotationEditor : FrameworkElement
             DrawHover(dc, HoverBounds, HoverLabel);
         }
 
-        if (Selected != null)
+        if (EditingText != null)
+        {
+            DrawEditingFrame(dc, EditingText);
+        }
+        else if (Selected != null)
         {
             DrawAnnotationSelection(dc, Selected);
         }
@@ -168,6 +175,22 @@ public sealed class AnnotationEditor : FrameworkElement
         // Rotation is performed from the dashed frame border, so no separate
         // rotation ring is drawn here.
 
+        dc.Pop();
+    }
+
+    private void DrawEditingFrame(DrawingContext dc, TextAnnotation text)
+    {
+        var unit = 1.0 / Scale;
+        var bounds = text.Bounds;
+        bounds.Inflate(4 * unit, 3 * unit);
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        dc.PushTransform(new RotateTransform(text.Rotation, center.X, center.Y));
+        // Two-tone dashes stay visible on both light and dark screenshots.
+        dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 1.2 * unit), bounds);
+        dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF)), 1.2 * unit)
+        {
+            DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0)
+        }, bounds);
         dc.Pop();
     }
 
