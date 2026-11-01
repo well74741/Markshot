@@ -87,6 +87,8 @@ dotnet run --project Markshot.csproj -- --demo
 | `UI/TranslationWindow.xaml(.cs)` | 普通 OCR / 文本翻译窗口 |
 | `UI/InlineTextEditor.cs` | 截图/贴图共用的原位文字编辑器（透明字形 TextBox 叠在实时渲染的文字上） |
 | `UI/AnnotationStyler.cs` | 工具栏样式 ↔ 批注对象的映射（两个窗口共用） |
+| `Annotations/CreationGesture.cs` | 绘制中的几何量分离：拉伸 / 空格平移 / E 旋转（支点=起点）/ Ctrl 圆角；笔迹 Shift 直线、空格整体平移 |
+| `UI/AnnotationOps.cs` | 两个窗口共用：按工具创建、过小丢弃、橡皮绑定、命中、缩放映射、水印、IME 真实按键、截图→贴图坐标转换 |
 | `Annotations/AnnotationHistory.cs` | 整体快照撤销/重做（克隆批注，位图共享），含 Arm/CommitArmed 与合并检查点 |
 | `Annotations/Annotation.cs` | 所有批注模型和绘制：矩形、椭圆、线、箭、画笔、橡皮、马赛克、水印、文字、序号 |
 | `Annotations/AnnotationEditor.cs` | 批注画布、选择框、8 手柄、旋转、坐标变换 |
@@ -121,6 +123,23 @@ dotnet run --project Markshot.csproj -- --demo
 - 画笔/荧光笔不参与选择；橡皮为像素盖回原图；
 - 矩形/椭圆支持填充；马赛克按块采样；水印为可编辑重复文字；
 - 文字/水印支持描边颜色、粗细；水印双击改文字。
+
+### 渲染与橡皮（0.8 起）
+
+- `AnnotationEditor.DrawItem` 是唯一绘制入口：画布、截图输出 `Compose()`、贴图合成 `ComposeEditedImage()` 都走它
+  （以前合成直接调 `Draw()`，**丢了旋转**，表现为“贴图应用后批注瞬间变化”）。
+- 橡皮不再是一个盖回原图的元素：松手时 `AnnotationOps.BindEraser` 把擦痕换算到每个被擦元素自己的未旋转坐标系，
+  存进 `Annotation.EraseMasks`；绘制时用 `Geometry.Combine(..., Exclude)` 裁掉。元素移动/缩放/旋转时洞跟着走，
+  被擦掉的地方 `IsErasedAt` 命中不到；没擦到任何元素不占撤销步。拖动中用 `LiveEraser` 实时预览。
+- 马赛克（框选/笔刷）是“透镜”：整幅画布生成一次块图（只读采样行），元素只负责裁剪；移动后打码的是新位置下的内容。
+  块图绘制用 `DrawingGroup` + NearestNeighbor，避免合成时被插值糊掉。
+- 水印：每张画布一个，插在最底层，`Rect` 跟随选区/贴图；无调整框；水印工具下悬停字形高亮、双击编辑；
+  设置只有大小、透明度、颜色。
+- 绘制形状：`CreationGesture` 按文档 §4.3 几何量分离，旋转支点为起点、以“绕中心旋转+平移”存回元素，
+  修复“拉伸时轴心漂移”；修饰键结束后按相对位移继续拉伸，不跳。
+- 拖动选中元素时按住 `E` 旋转、`R` 缩放（绕中心），期间其它按键都被拖动吞掉，不会切到橡皮。
+- 截图/贴图窗口关闭 IME（只给文字框开），否则中文输入法把空格、字母快捷键变成 `ImeProcessed`，
+  表现为“拖拽时按空格移动选区失效”；按键统一走 `AnnotationOps.RealKey`。
 
 ### 文字
 

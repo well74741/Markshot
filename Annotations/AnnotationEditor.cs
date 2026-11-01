@@ -1,11 +1,25 @@
 namespace Markshot.Annotations;
 
+/// <summary>What the pointer is over on a selected element's adjustment frame.</summary>
+public readonly record struct FrameHit(int Handle, bool Rotate, bool Inside)
+{
+    public static readonly FrameHit None = new(-1, false, false);
+
+    public bool IsHandle => Handle >= 0;
+
+    public bool Any => Handle >= 0 || Rotate || Inside;
+}
+
 /// <summary>
 /// Draws annotations in image-pixel coordinates on top of the frozen screenshot.
 /// The element itself lives in DIPs, so everything is scaled by 1/Scale.
+/// <see cref="DrawItem"/> is the single drawing path for the canvas, the
+/// capture output and the pin composition, so what you see is what you get.
 /// </summary>
 public sealed class AnnotationEditor : FrameworkElement
 {
+    private static readonly SolidColorBrush Accent = Freeze(new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF)));
+
     public BitmapSource? Source { get; set; }
 
     public double Scale { get; set; } = 1.0;
@@ -20,8 +34,16 @@ public sealed class AnnotationEditor : FrameworkElement
 
     public Annotation? Selected { get; set; }
 
-    /// <summary>Text currently open in the inline editor; drawn with a dashed edit frame.</summary>
+    /// <summary>Text currently open in the inline editor; drawn with its adjustment frame.</summary>
     public TextAnnotation? EditingText { get; set; }
+
+    /// <summary>Watermark whose glyphs are under the pointer (outlined).</summary>
+    public WatermarkAnnotation? HoverWatermark { get; set; }
+
+    /// <summary>Eraser stroke being dragged (canvas coordinates); erases live before it is bound.</summary>
+    public List<Point>? LiveEraser { get; set; }
+
+    public double LiveEraserWidth { get; set; }
 
     public Rect HoverBounds { get; set; } = Rect.Empty;
 
@@ -50,14 +72,15 @@ public sealed class AnnotationEditor : FrameworkElement
             dc.PushClip(new RectangleGeometry(Selection));
         }
 
+        var live = LiveEraser is { Count: > 0 } ? EraseStroke.Widen(LiveEraser, LiveEraserWidth) : null;
         foreach (var annotation in Items)
         {
-            DrawRotated(dc, annotation);
+            DrawItem(dc, annotation, live, ReferenceEquals(annotation, HoverWatermark) ? Accent : null);
         }
 
         if (Preview != null)
         {
-            DrawRotated(dc, Preview);
+            DrawItem(dc, Preview);
         }
 
         if (ShowHover && HoverBounds.Width > 0)
@@ -67,11 +90,11 @@ public sealed class AnnotationEditor : FrameworkElement
 
         if (EditingText != null)
         {
-            DrawEditingFrame(dc, EditingText);
+            DrawFrame(dc, EditingText, editing: true);
         }
         else if (Selected != null)
         {
-            DrawAnnotationSelection(dc, Selected);
+            DrawFrame(dc, Selected, editing: false);
         }
 
         if (hasSelection)
@@ -83,29 +106,88 @@ public sealed class AnnotationEditor : FrameworkElement
         dc.Pop();
     }
 
-    private static void DrawRotated(DrawingContext dc, Annotation annotation)
+    /// <summary>
+    /// Draws one element exactly as it appears everywhere: rotated about its
+    /// bounds centre, with its bound eraser strokes (and an optional live eraser)
+    /// cut out. Used by the canvas, the capture output and the pin composition.
+    /// </summary>
+    public static void DrawItem(DrawingContext dc, Annotation annotation, Geometry? liveEraser = null, Brush? highlight = null)
     {
-        if (Math.Abs(annotation.Rotation) < 0.01)
+        var bounds = annotation.Bounds;
+        var pops = 0;
+        if (liveEraser != null && annotation.Erasable && !bounds.IsEmpty)
         {
-            annotation.Draw(dc);
-            return;
+            var area = RotatedBounds(annotation);
+            area.Inflate(annotation.Thickness * 2 + 4, annotation.Thickness * 2 + 4);
+            if (area.IntersectsWith(liveEraser.Bounds))
+            {
+                dc.PushClip(Geometry.Combine(new RectangleGeometry(Room(area)), liveEraser, GeometryCombineMode.Exclude, null));
+                pops++;
+            }
         }
 
+        if (Math.Abs(annotation.Rotation) >= 0.01 && !bounds.IsEmpty)
+        {
+            var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
+            pops++;
+        }
+
+        var mask = annotation.MaskGeometry();
+        if (mask != null)
+        {
+            dc.PushClip(Geometry.Combine(new RectangleGeometry(Room(bounds)), mask, GeometryCombineMode.Exclude, null));
+            pops++;
+        }
+
+        if (annotation is WatermarkAnnotation watermark)
+        {
+            watermark.Draw(dc, highlight);
+        }
+        else
+        {
+            annotation.Draw(dc);
+        }
+
+        for (var i = 0; i < pops; i++)
+        {
+            dc.Pop();
+        }
+    }
+
+    /// <summary>Axis-aligned box around the element after rotation.</summary>
+    public static Rect RotatedBounds(Annotation annotation)
+    {
         var bounds = annotation.Bounds;
+        if (bounds.IsEmpty || Math.Abs(annotation.Rotation) < 0.01)
+        {
+            return bounds;
+        }
+
         var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
-        dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
-        annotation.Draw(dc);
-        dc.Pop();
+        var corners = new[] { bounds.TopLeft, bounds.TopRight, bounds.BottomRight, bounds.BottomLeft }
+            .Select(p => RotatePoint(p, center, annotation.Rotation))
+            .ToList();
+        var minX = corners.Min(p => p.X);
+        var minY = corners.Min(p => p.Y);
+        return new Rect(minX, minY, corners.Max(p => p.X) - minX, corners.Max(p => p.Y) - minY);
+    }
+
+    // Generous clip area so strokes, outlines and shadows are never cut.
+    private static Rect Room(Rect bounds)
+    {
+        var room = bounds;
+        room.Inflate(Math.Max(400, bounds.Width), Math.Max(400, bounds.Height));
+        return room;
     }
 
     private void DrawHover(DrawingContext dc, Rect bounds, string? label)
     {
         var unit = 1.0 / Scale;
-        var accent = new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF));
 
         dc.DrawRectangle(
             null,
-            new Pen(accent, 1.5 * unit)
+            new Pen(Accent, 1.5 * unit)
             {
                 DashStyle = new DashStyle(new[] { 5.0, 3.0 }, 0)
             },
@@ -146,56 +228,110 @@ public sealed class AnnotationEditor : FrameworkElement
         dc.DrawText(text, new Point(labelRect.X + 6 * unit, labelRect.Y + 3 * unit));
     }
 
-    private void DrawAnnotationSelection(DrawingContext dc, Annotation annotation)
+    private void DrawFrame(DrawingContext dc, Annotation annotation, bool editing)
     {
+        if (annotation is WatermarkAnnotation)
+        {
+            return; // the watermark covers the canvas and has no frame
+        }
+
         var unit = 1.0 / Scale;
-        var bounds = SelectionFrame(annotation.Bounds, unit);
-        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var frame = SelectionFrame(annotation.Bounds, unit);
+        var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
 
         dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
 
-        var accent = new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF));
-        var pen = new Pen(accent, 1.4 * unit)
+        // Two-tone dashes stay visible on light and dark screenshots.
+        dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)), 1.4 * unit), frame);
+        dc.DrawRectangle(null, new Pen(Accent, 1.4 * unit)
         {
             DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0)
-        };
+        }, frame);
 
-        dc.DrawRectangle(null, pen, bounds);
-
-        var handle = 7 * unit;
+        var handle = (editing ? 6 : 7) * unit;
         var handlePen = new Pen(Brushes.White, unit);
-        foreach (var point in HandleCenters(bounds))
+        foreach (var point in HandleCenters(frame))
         {
             dc.DrawRectangle(
-                accent,
+                Accent,
                 handlePen,
                 new Rect(point.X - handle / 2, point.Y - handle / 2, handle, handle));
         }
 
-        // Rotation is performed from the dashed frame border, so no separate
-        // rotation ring is drawn here.
-
         dc.Pop();
     }
 
-    private void DrawEditingFrame(DrawingContext dc, TextAnnotation text)
+    /// <summary>
+    /// Hit-tests the adjustment frame of <paramref name="annotation"/>: the 8
+    /// handles and the frame edges resize, a band just outside the corners
+    /// rotates, the inside moves. <paramref name="unit"/> = image px per DIP.
+    /// </summary>
+    public static FrameHit HitFrame(Annotation annotation, Point point, double unit)
     {
-        var unit = 1.0 / Scale;
-        var bounds = text.Bounds;
-        bounds.Inflate(4 * unit, 3 * unit);
-        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
-        dc.PushTransform(new RotateTransform(text.Rotation, center.X, center.Y));
-        // Two-tone dashes stay visible on both light and dark screenshots.
-        dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 1.2 * unit), bounds);
-        dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF)), 1.2 * unit)
+        if (annotation is WatermarkAnnotation)
         {
-            DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0)
-        }, bounds);
-        dc.Pop();
+            return FrameHit.None;
+        }
+
+        var frame = SelectionFrame(annotation.Bounds, unit);
+        var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
+        var local = RotatePoint(point, center, -annotation.Rotation);
+
+        var handles = HandleCenters(frame);
+        for (var i = 0; i < handles.Length; i++)
+        {
+            if ((local - handles[i]).Length <= 8 * unit)
+            {
+                return new FrameHit(i, false, false);
+            }
+        }
+
+        var edge = 5 * unit;
+        var withinX = local.X >= frame.Left - edge && local.X <= frame.Right + edge;
+        var withinY = local.Y >= frame.Top - edge && local.Y <= frame.Bottom + edge;
+        if (withinY && Math.Abs(local.X - frame.Left) <= edge) return new FrameHit(7, false, false);
+        if (withinY && Math.Abs(local.X - frame.Right) <= edge) return new FrameHit(3, false, false);
+        if (withinX && Math.Abs(local.Y - frame.Top) <= edge) return new FrameHit(1, false, false);
+        if (withinX && Math.Abs(local.Y - frame.Bottom) <= edge) return new FrameHit(5, false, false);
+
+        if (frame.Contains(local))
+        {
+            return new FrameHit(-1, false, true);
+        }
+
+        // Rotation: a band just outside each corner.
+        foreach (var corner in new[] { frame.TopLeft, frame.TopRight, frame.BottomRight, frame.BottomLeft })
+        {
+            if ((local - corner).Length <= 24 * unit)
+            {
+                return new FrameHit(-1, true, false);
+            }
+        }
+
+        return FrameHit.None;
     }
 
-    public static Point RotationHandleCenter(Rect rect) =>
-        new(rect.Left + rect.Width / 2, rect.Top - 24);
+    /// <summary>Double-arrow cursor for a resize handle, following the element's rotation.</summary>
+    public static Cursor ResizeCursor(int handle, double rotation)
+    {
+        // Direction the handle pulls in the element's own frame (y down).
+        var baseAngle = handle switch
+        {
+            0 or 4 => 45.0,
+            2 or 6 => 135.0,
+            1 or 5 => 90.0,
+            _ => 0.0
+        };
+        var angle = ((baseAngle + rotation) % 180 + 180) % 180;
+        var step = (int)Math.Round(angle / 45) % 4;
+        return step switch
+        {
+            0 => Cursors.SizeWE,
+            1 => Cursors.SizeNWSE,
+            2 => Cursors.SizeNS,
+            _ => Cursors.SizeNESW
+        };
+    }
 
     public static Rect SelectionFrame(Rect bounds, double unit)
     {
@@ -208,20 +344,8 @@ public sealed class AnnotationEditor : FrameworkElement
         return frame;
     }
 
-    public static Point RotatePoint(Point point, Point center, double degrees)
-    {
-        if (Math.Abs(degrees) < 0.01)
-        {
-            return point;
-        }
-
-        var radians = degrees * Math.PI / 180;
-        var dx = point.X - center.X;
-        var dy = point.Y - center.Y;
-        return new Point(
-            center.X + dx * Math.Cos(radians) - dy * Math.Sin(radians),
-            center.Y + dx * Math.Sin(radians) + dy * Math.Cos(radians));
-    }
+    public static Point RotatePoint(Point point, Point center, double degrees) =>
+        GeometryUtil.Rotate(point, center, degrees);
 
     private void DrawSelectionChrome(DrawingContext dc, Rect selection)
     {
@@ -289,4 +413,10 @@ public sealed class AnnotationEditor : FrameworkElement
         new Point(rect.Left, rect.Bottom),
         new Point(rect.Left, rect.Top + rect.Height / 2)
     };
+
+    private static T Freeze<T>(T freezable) where T : Freezable
+    {
+        freezable.Freeze();
+        return freezable;
+    }
 }

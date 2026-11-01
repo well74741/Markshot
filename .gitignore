@@ -17,3 +17,4 @@ docs/saved/
 docs/*.png
 docs/*.txt
 tools/__pycache__/
+publish_next/

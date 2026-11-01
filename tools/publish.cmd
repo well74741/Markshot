@@ -12,7 +12,8 @@ if exist "%USERPROFILE%\.dotnet\dotnet.exe" (
 set DOTNET_CLI_TELEMETRY_OPTOUT=1
 set DOTNET_NOLOGO=1
 
-tasklist /FI "IMAGENAME eq Markshot.exe" 2>nul | find /I "Markshot.exe" >nul
+rem Windows find.exe explicitly: from Git Bash, "find" resolves to GNU find.
+tasklist /FI "IMAGENAME eq Markshot.exe" 2>nul | "%SystemRoot%\System32\find.exe" /I "Markshot.exe" >nul
 if not errorlevel 1 (
     echo Markshot is running - exit it from the tray icon first, then run this again.
     pause

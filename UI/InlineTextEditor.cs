@@ -124,6 +124,7 @@ public sealed class InlineTextEditor
         _box.FontFamily = new FontFamily(TextAnnotation.FontFamilyName);
         _box.FontSize = target.FontSize / scale;
         _box.FontWeight = target.Bold ? FontWeights.Bold : FontWeights.Normal;
+        _box.FontStyle = target.Italic ? FontStyles.Italic : FontStyles.Normal;
         TextBlock.SetLineHeight(_box, target.LineHeight / scale);
         TextBlock.SetLineStackingStrategy(_box, LineStackingStrategy.BlockLineHeight);
         _box.CaretBrush = new SolidColorBrush(target.TextColor);
@@ -247,6 +248,14 @@ public sealed class InlineTextEditor
                 Dirty = true;
                 Refresh();
                 StyleChanged?.Invoke(target);
+                e.Handled = true;
+                break;
+
+            case Key.I when (Keyboard.Modifiers & ModifierKeys.Control) != 0 && Target is { } italicTarget:
+                italicTarget.Italic = !italicTarget.Italic;
+                Dirty = true;
+                Refresh();
+                StyleChanged?.Invoke(italicTarget);
                 e.Handled = true;
                 break;
 

@@ -96,8 +96,6 @@
                                   ToolTip="原位翻译：像浏览器一样把选区里的文字直接替换成译文（开关会被记住）">
                         <Border Style="{StaticResource IconTranslateMask}" />
                     </ToggleButton>
-                    <TextBlock x:Name="TranslateHint" Text="原位翻译" Foreground="#6BA1FF" FontSize="10"
-                               VerticalAlignment="Center" Margin="2,0,0,0" Visibility="Collapsed" />
                 </StackPanel>
 
                 <StackPanel x:Name="PinActions" Orientation="Horizontal" Visibility="Collapsed">
@@ -140,8 +138,15 @@
                     </StackPanel>
 
                     <StackPanel x:Name="MosaicVariants" Orientation="Horizontal" Visibility="Collapsed">
-                        <RadioButton x:Name="VariantMosaic" Style="{StaticResource IconToolRadio}" Tag="Mosaic" GroupName="Variant" Checked="Variant_Checked" ToolTip="马赛克">
+                        <RadioButton x:Name="VariantMosaic" Style="{StaticResource IconToolRadio}" Tag="Mosaic" GroupName="Variant" Checked="Variant_Checked" ToolTip="框选马赛克">
                             <Border Style="{StaticResource IconMosaicMask}" />
+                        </RadioButton>
+                        <RadioButton x:Name="VariantMosaicBrush" Style="{StaticResource IconToolRadio}" Tag="MosaicBrush" GroupName="Variant" Checked="Variant_Checked" ToolTip="笔刷马赛克（Shift 画直线）">
+                            <Grid Width="18" Height="18">
+                                <Border Style="{StaticResource IconMosaicMask}" Width="13" Height="13" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                                <Ellipse Width="7" Height="7" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                         HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                            </Grid>
                         </RadioButton>
                         <RadioButton x:Name="VariantWatermark" Style="{StaticResource IconToolRadio}" Tag="Watermark" GroupName="Variant" Checked="Variant_Checked" ToolTip="水印">
                             <Border Style="{StaticResource IconWatermarkMask}" />
@@ -169,11 +174,33 @@
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
+                    <StackPanel x:Name="LevelGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <TextBlock Text="程度" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
+                        <Slider x:Name="LevelSlider" Focusable="False" IsMoveToPointEnabled="True" Width="86" Minimum="4" Maximum="40" Value="12"
+                                ValueChanged="Level_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
+                        <TextBlock x:Name="LevelValue" Text="12" Foreground="#C8C8C8" FontSize="11" Width="20"
+                                   TextAlignment="Center" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="OpacityGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <TextBlock Text="透明度" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
+                        <Slider x:Name="OpacitySlider" Focusable="False" IsMoveToPointEnabled="True" Width="80" Minimum="5" Maximum="100" Value="25"
+                                ValueChanged="Opacity_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
+                        <TextBlock x:Name="OpacityValue" Text="25%" Foreground="#C8C8C8" FontSize="11" Width="30"
+                                   TextAlignment="Center" VerticalAlignment="Center" />
+                    </StackPanel>
+
                     <StackPanel x:Name="TextStyleGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
                         <ToggleButton x:Name="BoldToggle" Style="{StaticResource ToolToggle}" Padding="8,5"
                                       Click="TextStyle_Click" ToolTip="粗体 (Ctrl+B)">
                             <TextBlock Text="B" FontWeight="Bold" FontSize="13" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="ItalicToggle" Style="{StaticResource ToolToggle}" Padding="8,5"
+                                      Click="TextStyle_Click" ToolTip="倾斜 (Ctrl+I)">
+                            <TextBlock Text="I" FontStyle="Italic" FontWeight="SemiBold" FontSize="13" FontFamily="Georgia" />
                         </ToggleButton>
                         <ToggleButton x:Name="BackgroundToggle" Style="{StaticResource ToolToggle}" Content="背景"
                                       Click="TextStyle_Click" ToolTip="文字底色：以当前颜色作标签底，文字自动用反差色" />
@@ -182,10 +209,10 @@
                     <StackPanel x:Name="StrokeGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
                         <ToggleButton x:Name="StrokeToggle" Style="{StaticResource ToolToggle}" Content="描边"
-                                      Click="Stroke_Click" ToolTip="文字/水印描边" />
+                                      Click="Stroke_Click" ToolTip="文字描边（默认白色）" />
                         <Button x:Name="StrokeColorButton" Style="{StaticResource IconToolButton}"
                                 Click="StrokeColor_Click" ToolTip="描边颜色">
-                            <Ellipse x:Name="StrokeColorCircle" Width="16" Height="16" Fill="#202020"
+                            <Ellipse x:Name="StrokeColorCircle" Width="16" Height="16" Fill="#FFFFFF"
                                      Stroke="#D8D8D8" StrokeThickness="1.2" />
                         </Button>
                         <Slider x:Name="StrokeSlider" Focusable="False" IsMoveToPointEnabled="True" Width="56" Minimum="0" Maximum="8" Value="0"
@@ -198,8 +225,9 @@
                         <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
                         <StackPanel x:Name="ColorGroup" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button x:Name="CustomColorButton" Style="{StaticResource IconToolButton}" Click="CustomColor_Click" ToolTip="自定义颜色">
-                                <Grid Width="22" Height="22">
-                                    <Ellipse Width="22" Height="22">
+                                <!-- Same size as the palette swatches (20px) plus a 3px rainbow ring outside. -->
+                                <Grid Width="26" Height="26">
+                                    <Ellipse Width="26" Height="26">
                                         <Ellipse.Fill>
                                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                                 <GradientStop Color="#FF4D4F" Offset="0" />
@@ -211,7 +239,9 @@
                                             </LinearGradientBrush>
                                         </Ellipse.Fill>
                                     </Ellipse>
-                                    <Ellipse x:Name="CustomColorInner" Width="14" Height="14" Stroke="#F2F2F2" StrokeThickness="1" />
+                                    <Ellipse Width="22" Height="22" Fill="#FF1E1E1E" />
+                                    <Ellipse x:Name="CustomColorInner" Width="20" Height="20"
+                                             Stroke="#5AFFFFFF" StrokeThickness="1" />
                                 </Grid>
                             </Button>
                             <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />

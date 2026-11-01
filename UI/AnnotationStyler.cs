@@ -8,55 +8,97 @@ internal static class AnnotationStyler
     /// <summary>Applies the toolbar's current style to an existing annotation.</summary>
     public static void Apply(Annotation annotation, AnnotationToolbar toolbar, BitmapSource? mosaicSource)
     {
-        annotation.Color = toolbar.Color;
         var stroke = toolbar.StrokeEnabled ? toolbar.StrokeWidth : 0;
         switch (annotation)
         {
             case TextAnnotation text:
+                text.Color = toolbar.Color;
                 text.FontSize = Math.Clamp(toolbar.Thickness, 6, 400);
                 text.Bold = toolbar.TextBold;
+                text.Italic = toolbar.TextItalic;
                 text.Fill = toolbar.TextBackground;
                 text.StrokeColor = toolbar.StrokeColor;
                 text.StrokeThickness = stroke;
                 break;
 
             case WatermarkAnnotation watermark:
+                watermark.Color = toolbar.Color;
                 watermark.FontSize = Math.Max(10, toolbar.Thickness);
-                watermark.StrokeColor = toolbar.StrokeColor;
-                watermark.StrokeThickness = stroke;
+                watermark.Opacity = toolbar.WatermarkOpacity;
                 break;
 
             case NumberAnnotation number:
+                number.Color = toolbar.Color;
                 number.Radius = Math.Max(8, toolbar.Thickness);
                 number.Thickness = 1.5;
                 break;
 
-            case MosaicAnnotation mosaic:
-                var block = Math.Clamp(toolbar.Thickness, 4, 40);
-                if (Math.Abs(block - mosaic.Thickness) > 0.01 && mosaicSource != null)
-                {
-                    mosaic.Thickness = block;
-                    mosaic.Pattern = MosaicBuilder.Build(mosaicSource, mosaic.Rect, (int)Math.Round(block));
-                }
+            case MosaicAnnotation box:
+                SetLevel(box, toolbar.MosaicLevel, mosaicSource);
+                break;
 
+            case MosaicBrushAnnotation brush:
+                brush.Thickness = Math.Max(2, toolbar.Thickness);
+                SetLevel(brush, toolbar.MosaicLevel, mosaicSource);
                 break;
 
             case RectAnnotation:
+                annotation.Color = toolbar.Color;
                 annotation.Thickness = toolbar.Thickness;
                 annotation.Fill = toolbar.FillEnabled;
                 annotation.CornerRadius = toolbar.CornerRadius;
                 break;
 
             case EllipseAnnotation:
+                annotation.Color = toolbar.Color;
                 annotation.Thickness = toolbar.Thickness;
                 annotation.Fill = toolbar.FillEnabled;
                 break;
 
             default:
+                annotation.Color = toolbar.Color;
                 annotation.Thickness = toolbar.Thickness;
                 break;
         }
     }
+
+    private static void SetLevel(Annotation mosaic, double level, BitmapSource? source)
+    {
+        var block = Math.Clamp(Math.Round(level), 3, 64);
+        var current = mosaic switch
+        {
+            MosaicAnnotation box => box.BlockSize,
+            MosaicBrushAnnotation brush => brush.BlockSize,
+            _ => block
+        };
+
+        if (Math.Abs(current - block) < 0.01 && HasPattern(mosaic))
+        {
+            return;
+        }
+
+        switch (mosaic)
+        {
+            case MosaicAnnotation box:
+                box.BlockSize = block;
+                break;
+            case MosaicBrushAnnotation brush:
+                brush.BlockSize = block;
+                break;
+        }
+
+        if (source != null)
+        {
+            MosaicBuilder.Rebuild(mosaic, source);
+        }
+    }
+
+    private static bool HasPattern(Annotation mosaic) => mosaic switch
+    {
+        MosaicAnnotation box => box.Pattern != null,
+        MosaicBrushAnnotation brush => brush.Pattern != null,
+        _ => true
+    };
 
     /// <summary>
     /// A new, empty text whose first line is vertically centred on the click,
@@ -69,6 +111,7 @@ internal static class AnnotationStyler
             Color = toolbar.Color,
             FontSize = Math.Clamp(toolbar.Thickness, 6, 400),
             Bold = toolbar.TextBold,
+            Italic = toolbar.TextItalic,
             Fill = toolbar.TextBackground,
             StrokeColor = toolbar.StrokeColor,
             StrokeThickness = toolbar.StrokeEnabled ? toolbar.StrokeWidth : 0

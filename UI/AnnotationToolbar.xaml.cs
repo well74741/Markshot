@@ -42,9 +42,12 @@ public partial class AnnotationToolbar : UserControl
     private double _thickness = 3;
     private double _corner;
     private bool _fill;
-    private Color _strokeColor = Color.FromRgb(0x20, 0x20, 0x20);
+    private Color _strokeColor = Colors.White;
     private double _strokeWidth;
     private bool _textBold;
+    private bool _textItalic;
+    private double _mosaicLevel = 12;
+    private double _watermarkOpacity = 0.25;
     private bool _textBackground;
     private bool _dragging;
     private Point _dragStart;
@@ -64,6 +67,7 @@ public partial class AnnotationToolbar : UserControl
         [AnnotationTool.Text] = 20,
         [AnnotationTool.Number] = 14,
         [AnnotationTool.Mosaic] = 12,
+        [AnnotationTool.MosaicBrush] = 24,
         [AnnotationTool.Watermark] = 24
     };
 
@@ -87,6 +91,8 @@ public partial class AnnotationToolbar : UserControl
         SliderDragBehavior.Enable(WidthSlider);
         SliderDragBehavior.Enable(CornerSlider);
         SliderDragBehavior.Enable(StrokeSlider);
+        SliderDragBehavior.Enable(LevelSlider);
+        SliderDragBehavior.Enable(OpacitySlider);
         InitPalette();
         SetTool(AnnotationTool.Select, notify: false);
         SetMode(AnnotationToolbarMode.Capture);
@@ -111,6 +117,13 @@ public partial class AnnotationToolbar : UserControl
     public double StrokeWidth => _strokeWidth;
 
     public bool TextBold => _textBold;
+
+    public bool TextItalic => _textItalic;
+
+    /// <summary>Mosaic block size (strength).</summary>
+    public double MosaicLevel => _mosaicLevel;
+
+    public double WatermarkOpacity => _watermarkOpacity;
 
     public bool TextBackground => _textBackground;
 
@@ -326,10 +339,11 @@ public partial class AnnotationToolbar : UserControl
                 : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
         }
 
+        // The custom button always previews the current colour.
         var custom = !Palette.Contains(_color);
-        CustomColorInner.Fill = new SolidColorBrush(_customColor);
-        CustomColorButton.BorderThickness = new Thickness(custom ? 2 : 0);
-        CustomColorButton.BorderBrush = custom ? Brushes.White : Brushes.Transparent;
+        CustomColorInner.Fill = new SolidColorBrush(_color);
+        CustomColorInner.Stroke = custom ? Brushes.White : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
+        CustomColorInner.StrokeThickness = custom ? 2 : 1;
     }
 
     private void CheckMainButton(AnnotationTool tool)
@@ -358,6 +372,8 @@ public partial class AnnotationToolbar : UserControl
         ColorSection.Visibility = Visibility.Visible;
         StrokeGroup.Visibility = Visibility.Collapsed;
         TextStyleGroup.Visibility = Visibility.Collapsed;
+        LevelGroup.Visibility = Visibility.Collapsed;
+        OpacityGroup.Visibility = Visibility.Collapsed;
         FillToggle.Visibility = Visibility.Collapsed;
         CornerGroup.Visibility = Visibility.Collapsed;
         WidthLabel.Text = "粗细";
@@ -396,18 +412,27 @@ public partial class AnnotationToolbar : UserControl
 
             case ToolFamily.Mosaic:
                 MosaicVariants.Visibility = Visibility.Visible;
-                if (_tool == AnnotationTool.Watermark || annotation is WatermarkAnnotation)
+                if (tool == AnnotationTool.Watermark || annotation is WatermarkAnnotation)
                 {
-                    WidthLabel.Text = "字号";
-                    WidthSlider.Minimum = 8;
-                    WidthSlider.Maximum = 64;
-                    StrokeGroup.Visibility = Visibility.Visible;
+                    // Watermark: size, opacity and colour only.
+                    WidthLabel.Text = "大小";
+                    WidthSlider.Minimum = 10;
+                    WidthSlider.Maximum = 120;
+                    OpacityGroup.Visibility = Visibility.Visible;
+                }
+                else if (tool == AnnotationTool.MosaicBrush || annotation is MosaicBrushAnnotation)
+                {
+                    WidthLabel.Text = "粗细";
+                    WidthSlider.Minimum = 4;
+                    WidthSlider.Maximum = 80;
+                    LevelGroup.Visibility = Visibility.Visible;
+                    ColorSection.Visibility = Visibility.Collapsed;
                 }
                 else
                 {
-                    WidthLabel.Text = "块大小";
-                    WidthSlider.Minimum = 4;
-                    WidthSlider.Maximum = 40;
+                    WidthGroup.Visibility = Visibility.Collapsed;
+                    LevelGroup.Visibility = Visibility.Visible;
+                    ColorSection.Visibility = Visibility.Collapsed;
                 }
                 break;
 
@@ -431,7 +456,12 @@ public partial class AnnotationToolbar : UserControl
 
             SyncVariant(tool);
             BoldToggle.IsChecked = _textBold;
+            ItalicToggle.IsChecked = _textItalic;
             BackgroundToggle.IsChecked = _textBackground;
+            LevelSlider.Value = Math.Clamp(_mosaicLevel, LevelSlider.Minimum, LevelSlider.Maximum);
+            LevelValue.Text = ((int)Math.Round(_mosaicLevel)).ToString(CultureInfo.InvariantCulture);
+            OpacitySlider.Value = Math.Round(_watermarkOpacity * 100);
+            OpacityValue.Text = $"{Math.Round(_watermarkOpacity * 100)}%";
             WidthSlider.Value = Math.Clamp(_thickness, WidthSlider.Minimum, WidthSlider.Maximum);
             WidthValue.Text = ((int)Math.Round(WidthSlider.Value)).ToString(CultureInfo.InvariantCulture);
             CornerSlider.Value = Math.Clamp(_corner, 0, 40);
@@ -459,6 +489,7 @@ public partial class AnnotationToolbar : UserControl
         VariantPen.IsChecked = tool == AnnotationTool.Pen;
         VariantHighlighter.IsChecked = tool == AnnotationTool.Highlighter;
         VariantMosaic.IsChecked = tool == AnnotationTool.Mosaic;
+        VariantMosaicBrush.IsChecked = tool == AnnotationTool.MosaicBrush;
         VariantWatermark.IsChecked = tool == AnnotationTool.Watermark;
         _configuring = false;
     }
@@ -478,20 +509,38 @@ public partial class AnnotationToolbar : UserControl
         _strokeColor = annotation switch
         {
             TextAnnotation text => text.StrokeColor,
-            WatermarkAnnotation watermark => watermark.StrokeColor,
             _ => _strokeColor
         };
         _strokeWidth = annotation switch
         {
             TextAnnotation text => text.StrokeThickness,
-            WatermarkAnnotation watermark => watermark.StrokeThickness,
             _ => 0
         };
+
+        if (annotation is MosaicAnnotation box)
+        {
+            _mosaicLevel = box.BlockSize;
+        }
+        else if (annotation is MosaicBrushAnnotation brush)
+        {
+            _mosaicLevel = brush.BlockSize;
+        }
+        else if (annotation is WatermarkAnnotation mark)
+        {
+            _watermarkOpacity = mark.Opacity;
+        }
+
+        LevelSlider.Value = Math.Clamp(_mosaicLevel, LevelSlider.Minimum, LevelSlider.Maximum);
+        LevelValue.Text = ((int)Math.Round(_mosaicLevel)).ToString(CultureInfo.InvariantCulture);
+        OpacitySlider.Value = Math.Round(_watermarkOpacity * 100);
+        OpacityValue.Text = $"{Math.Round(_watermarkOpacity * 100)}%";
 
         if (annotation is TextAnnotation textAnnotation)
         {
             _textBold = textAnnotation.Bold;
+            _textItalic = textAnnotation.Italic;
             _textBackground = textAnnotation.Fill;
+            ItalicToggle.IsChecked = textAnnotation.Italic;
             BoldToggle.IsChecked = textAnnotation.Bold;
             BackgroundToggle.IsChecked = textAnnotation.Fill;
         }
@@ -517,6 +566,9 @@ public partial class AnnotationToolbar : UserControl
             case MosaicAnnotation:
                 VariantMosaic.IsChecked = true;
                 break;
+            case MosaicBrushAnnotation:
+                VariantMosaicBrush.IsChecked = true;
+                break;
             case WatermarkAnnotation:
                 VariantWatermark.IsChecked = true;
                 break;
@@ -540,7 +592,7 @@ public partial class AnnotationToolbar : UserControl
         AnnotationTool.Rectangle or AnnotationTool.Ellipse => ToolFamily.Shape,
         AnnotationTool.Line or AnnotationTool.Arrow => ToolFamily.Line,
         AnnotationTool.Pen or AnnotationTool.Highlighter => ToolFamily.Pen,
-        AnnotationTool.Mosaic or AnnotationTool.Watermark => ToolFamily.Mosaic,
+        AnnotationTool.Mosaic or AnnotationTool.MosaicBrush or AnnotationTool.Watermark => ToolFamily.Mosaic,
         AnnotationTool.Text => ToolFamily.Text,
         AnnotationTool.Number => ToolFamily.Number,
         AnnotationTool.Eraser => ToolFamily.Eraser,
@@ -552,7 +604,7 @@ public partial class AnnotationToolbar : UserControl
         RectAnnotation or EllipseAnnotation => ToolFamily.Shape,
         LineAnnotation or ArrowAnnotation => ToolFamily.Line,
         PenAnnotation => ToolFamily.Pen,
-        MosaicAnnotation or WatermarkAnnotation => ToolFamily.Mosaic,
+        MosaicAnnotation or MosaicBrushAnnotation or WatermarkAnnotation => ToolFamily.Mosaic,
         TextAnnotation => ToolFamily.Text,
         NumberAnnotation => ToolFamily.Number,
         _ => ToolFamily.None
@@ -585,7 +637,8 @@ public partial class AnnotationToolbar : UserControl
         ShowVariantMenu((Button)sender, ("箭头", AnnotationTool.Arrow), ("直线", AnnotationTool.Line));
 
     private void MosaicMenu_Click(object sender, RoutedEventArgs e) =>
-        ShowVariantMenu((Button)sender, ("马赛克", AnnotationTool.Mosaic), ("水印", AnnotationTool.Watermark));
+        ShowVariantMenu((Button)sender, ("框选马赛克", AnnotationTool.Mosaic), ("笔刷马赛克", AnnotationTool.MosaicBrush),
+            ("水印", AnnotationTool.Watermark));
 
     private void TextMenu_Click(object sender, RoutedEventArgs e)
     {
@@ -674,6 +727,7 @@ public partial class AnnotationToolbar : UserControl
         TextAnnotation => AnnotationTool.Text,
         NumberAnnotation => AnnotationTool.Number,
         MosaicAnnotation => AnnotationTool.Mosaic,
+        MosaicBrushAnnotation => AnnotationTool.MosaicBrush,
         WatermarkAnnotation => AnnotationTool.Watermark,
         _ => AnnotationTool.None
     };
@@ -686,7 +740,39 @@ public partial class AnnotationToolbar : UserControl
         }
 
         _textBold = BoldToggle.IsChecked == true;
+        _textItalic = ItalicToggle.IsChecked == true;
         _textBackground = BackgroundToggle.IsChecked == true;
+        SettingsChanged?.Invoke();
+    }
+
+    /// <summary>Ctrl+I while typing or with a text selected.</summary>
+    public void ToggleItalic()
+    {
+        ItalicToggle.IsChecked = ItalicToggle.IsChecked != true;
+        TextStyle_Click(ItalicToggle, new RoutedEventArgs());
+    }
+
+    private void Level_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_configuring || LevelValue == null)
+        {
+            return;
+        }
+
+        _mosaicLevel = Math.Round(e.NewValue);
+        LevelValue.Text = ((int)_mosaicLevel).ToString(CultureInfo.InvariantCulture);
+        SettingsChanged?.Invoke();
+    }
+
+    private void Opacity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_configuring || OpacityValue == null)
+        {
+            return;
+        }
+
+        _watermarkOpacity = Math.Clamp(e.NewValue / 100, 0.05, 1);
+        OpacityValue.Text = $"{Math.Round(e.NewValue)}%";
         SettingsChanged?.Invoke();
     }
 
@@ -727,7 +813,7 @@ public partial class AnnotationToolbar : UserControl
             return;
         }
 
-        _strokeWidth = StrokeToggle.IsChecked == true ? Math.Max(1, StrokeSlider.Value) : 0;
+        _strokeWidth = StrokeToggle.IsChecked == true ? Math.Max(2, StrokeSlider.Value) : 0;
         StrokeSlider.Value = _strokeWidth;
         SettingsChanged?.Invoke();
     }
@@ -799,13 +885,11 @@ public partial class AnnotationToolbar : UserControl
     public void SetTranslateEnabled(bool enabled)
     {
         TranslateToggle.IsChecked = enabled;
-        TranslateHint.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void TranslateToggle_Click(object sender, RoutedEventArgs e)
     {
         var enabled = TranslateToggle.IsChecked == true;
-        TranslateHint.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         TranslateToggled?.Invoke(enabled);
     }
 

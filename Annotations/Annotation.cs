@@ -14,7 +14,8 @@ public enum AnnotationTool
     Watermark,
     Text,
     Number,
-    Eraser
+    Eraser,
+    MosaicBrush
 }
 
 public abstract class Annotation
@@ -33,8 +34,95 @@ public abstract class Annotation
 
     public abstract void Draw(DrawingContext dc);
 
+    /// <summary>
+    /// Eraser strokes bound to this element, in its own unrotated frame relative
+    /// to <see cref="Bounds"/> at the time of erasing. They move, scale and rotate
+    /// with the element; nothing is left behind on the canvas.
+    /// </summary>
+    public List<EraseStroke>? EraseMasks { get; set; }
+
+    public virtual bool Erasable => true;
+
     /// <summary>Copy used by undo snapshots. Frozen bitmaps are shared.</summary>
-    public virtual Annotation Clone() => (Annotation)MemberwiseClone();
+    public virtual Annotation Clone()
+    {
+        var copy = (Annotation)MemberwiseClone();
+        copy.EraseMasks = EraseMasks?.Select(m => m.Clone()).ToList();
+        copy.MaskCache = null;
+        copy.MaskCacheKey = null;
+        return copy;
+    }
+
+    internal Geometry? MaskCache;
+    internal string? MaskCacheKey;
+
+    /// <summary>The element's erased area in canvas coordinates (unrotated element frame), or null.</summary>
+    public Geometry? MaskGeometry()
+    {
+        if (EraseMasks is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var bounds = Bounds;
+        if (bounds.IsEmpty)
+        {
+            return null;
+        }
+
+        var key = $"{bounds.X:F2},{bounds.Y:F2},{bounds.Width:F2},{bounds.Height:F2},{EraseMasks.Count}";
+        if (MaskCache != null && MaskCacheKey == key)
+        {
+            return MaskCache;
+        }
+
+        var group = new GeometryGroup { FillRule = FillRule.Nonzero };
+        foreach (var stroke in EraseMasks)
+        {
+            var sx = Math.Max(1, bounds.Width) / Math.Max(1, stroke.RecordedSize.Width);
+            var sy = Math.Max(1, bounds.Height) / Math.Max(1, stroke.RecordedSize.Height);
+            var points = stroke.Points.Select(p => new Point(bounds.X + p.X * sx, bounds.Y + p.Y * sy)).ToList();
+            group.Children.Add(EraseStroke.Widen(points, stroke.Width * Math.Sqrt(sx * sy)));
+        }
+
+        group.Freeze();
+        MaskCache = group;
+        MaskCacheKey = key;
+        return group;
+    }
+
+    /// <summary>Binds a canvas-space eraser stroke to this element.</summary>
+    public void AddEraseStroke(IReadOnlyList<Point> canvasPoints, double width)
+    {
+        var bounds = Bounds;
+        if (bounds.IsEmpty || canvasPoints.Count == 0)
+        {
+            return;
+        }
+
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var local = canvasPoints
+            .Select(p => GeometryUtil.Rotate(p, center, -Rotation))
+            .Select(p => new Point(p.X - bounds.X, p.Y - bounds.Y))
+            .ToList();
+        EraseMasks ??= new List<EraseStroke>();
+        EraseMasks.Add(new EraseStroke(local, width, new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height))));
+        MaskCache = null;
+    }
+
+    /// <summary>True when the canvas point lies in an erased part of the element.</summary>
+    public bool IsErasedAt(Point canvasPoint)
+    {
+        var mask = MaskGeometry();
+        if (mask == null)
+        {
+            return false;
+        }
+
+        var bounds = Bounds;
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        return mask.FillContains(GeometryUtil.Rotate(canvasPoint, center, -Rotation));
+    }
 
     public virtual Rect Bounds => Rect.Empty;
 
@@ -201,10 +289,14 @@ public sealed class PenAnnotation : Annotation
 {
     public List<Point> Points { get; private set; } = new();
 
+    /// <summary>Indices of points that start/end a Shift straight segment (drawn with lines, not curves).</summary>
+    public HashSet<int> Corners { get; private set; } = new();
+
     public override Annotation Clone()
     {
-        var copy = (PenAnnotation)MemberwiseClone();
+        var copy = (PenAnnotation)base.Clone();
         copy.Points = new List<Point>(Points);
+        copy.Corners = new HashSet<int>(Corners);
         return copy;
     }
 
@@ -237,9 +329,17 @@ public sealed class PenAnnotation : Annotation
             }
             else
             {
+                // Mid-point quadratic smoothing; Shift segments are straight
+                // (a curve would bend their ends).
                 for (var i = 1; i < Points.Count - 1; i++)
                 {
                     var control = Points[i];
+                    if (Corners.Contains(i) || Corners.Contains(i - 1))
+                    {
+                        context.LineTo(control, true, true);
+                        continue;
+                    }
+
                     var next = Points[i + 1];
                     context.QuadraticBezierTo(
                         control,
@@ -248,7 +348,14 @@ public sealed class PenAnnotation : Annotation
                         true);
                 }
 
-                context.QuadraticBezierTo(Points[^1], Points[^1], true, true);
+                if (Corners.Contains(Points.Count - 1) || Corners.Contains(Points.Count - 2))
+                {
+                    context.LineTo(Points[^1], true, true);
+                }
+                else
+                {
+                    context.QuadraticBezierTo(Points[^1], Points[^1], true, true);
+                }
             }
         }
 
@@ -295,165 +402,42 @@ public sealed class PenAnnotation : Annotation
     }
 }
 
-public sealed class EraserAnnotation : Annotation
-{
-    public List<Point> Points { get; private set; } = new();
-
-    public override Annotation Clone()
-    {
-        var copy = (EraserAnnotation)MemberwiseClone();
-        copy.Points = new List<Point>(Points);
-        return copy;
-    }
-
-    public BitmapSource? Source { get; set; }
-
-    public override void Draw(DrawingContext dc)
-    {
-        if (Source == null || Points.Count == 0)
-        {
-            return;
-        }
-
-        var brush = new ImageBrush(Source)
-        {
-            Viewbox = new Rect(0, 0, Source.PixelWidth, Source.PixelHeight),
-            ViewboxUnits = BrushMappingMode.Absolute,
-            Viewport = new Rect(0, 0, Source.PixelWidth, Source.PixelHeight),
-            ViewportUnits = BrushMappingMode.Absolute,
-            Stretch = Stretch.Fill,
-            TileMode = TileMode.None
-        };
-        brush.Freeze();
-
-        if (Points.Count == 1)
-        {
-            dc.DrawEllipse(brush, null, Points[0], Thickness / 2, Thickness / 2);
-            return;
-        }
-
-        var pen = new Pen(brush, Thickness)
-        {
-            StartLineCap = PenLineCap.Round,
-            EndLineCap = PenLineCap.Round,
-            LineJoin = PenLineJoin.Round
-        };
-        for (var i = 1; i < Points.Count; i++)
-        {
-            dc.DrawLine(pen, Points[i - 1], Points[i]);
-        }
-    }
-
-    public override Rect Bounds
-    {
-        get
-        {
-            if (Points.Count == 0)
-            {
-                return Rect.Empty;
-            }
-
-            var minX = Points.Min(p => p.X);
-            var minY = Points.Min(p => p.Y);
-            var maxX = Points.Max(p => p.X);
-            var maxY = Points.Max(p => p.Y);
-            return new Rect(minX, minY, Math.Max(1, maxX - minX), Math.Max(1, maxY - minY));
-        }
-    }
-
-    public override void Translate(double dx, double dy)
-    {
-        for (var i = 0; i < Points.Count; i++)
-        {
-            Points[i] = new Point(Points[i].X + dx, Points[i].Y + dy);
-        }
-    }
-
-    public override bool HitTest(Point point, double tolerance) => false;
-}
-
+/// <summary>
+/// Box mosaic. Like the brush mosaic it is a lens: the pixelated pattern covers
+/// the whole canvas and the box only clips it, so moving, resizing or rotating
+/// the box always pixelates whatever is underneath.
+/// </summary>
 public sealed class MosaicAnnotation : Annotation
 {
     public Rect Rect { get; set; }
 
+    /// <summary>Block size of the mosaic (its strength).</summary>
+    public double BlockSize { get; set; } = 12;
+
     public BitmapSource? Pattern { get; set; }
 
-    public override void Draw(DrawingContext dc)
-    {
-        if (Pattern != null)
-        {
-            dc.DrawImage(Pattern, Rect);
-            return;
-        }
-
-        // While the user is still dragging, show a translucent placeholder.
-        dc.DrawRectangle(
-            new SolidColorBrush(Color.FromArgb(120, 30, 30, 30)),
-            null,
-            Rect);
-    }
-
-    public override Rect Bounds => Rect;
-
-    public override void Translate(double dx, double dy)
-    {
-        Rect = new Rect(Rect.X + dx, Rect.Y + dy, Rect.Width, Rect.Height);
-    }
-}
-
-public sealed class WatermarkAnnotation : Annotation
-{
-    public Rect Rect { get; set; }
-
-    public string Text { get; set; } = "Markshot";
-
-    public double FontSize { get; set; } = 24;
-
-    public Color StrokeColor { get; set; } = Color.FromRgb(0x20, 0x20, 0x20);
-
-    public double StrokeThickness { get; set; }
+    /// <summary>Canvas area the <see cref="Pattern"/> is stretched over.</summary>
+    public Rect PatternRect { get; set; }
 
     public override void Draw(DrawingContext dc)
     {
-        if (Rect.Width < 4 || Rect.Height < 4)
+        if (Rect.Width < 1 || Rect.Height < 1)
         {
             return;
         }
-
-        var alpha = (byte)Math.Clamp(Opacity * 255, 0, 255);
-        var brush = new SolidColorBrush(Color.FromArgb(alpha, Color.R, Color.G, Color.B));
-        var fontSize = Math.Clamp(FontSize, 10, 160);
-        var text = new FormattedText(
-            Text,
-            CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight,
-            new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
-            fontSize,
-            brush,
-            1.0);
 
         dc.PushClip(new RectangleGeometry(Rect));
-        var stepX = Math.Max(80, text.Width + 46);
-        var stepY = Math.Max(46, text.Height + 34);
-        var row = 0;
-        for (var y = Rect.Top - stepY; y < Rect.Bottom + stepY; y += stepY, row++)
+        if (Pattern != null)
         {
-            var offset = row % 2 == 0 ? 0 : stepX / 2;
-            for (var x = Rect.Left - stepX; x < Rect.Right + stepX; x += stepX)
-            {
-                var point = new Point(x + offset, y);
-                if (StrokeThickness > 0)
-                {
-                    var geometry = text.BuildGeometry(point);
-                    dc.DrawGeometry(brush,
-                        new Pen(new SolidColorBrush(Color.FromArgb(alpha, StrokeColor.R, StrokeColor.G, StrokeColor.B)), StrokeThickness),
-                        geometry);
-                }
-                else
-                {
-                    dc.DrawText(text, point);
-                }
-            }
+            // Undo the element rotation for the pattern so it stays aligned with the canvas.
+            var center = new Point(Rect.X + Rect.Width / 2, Rect.Y + Rect.Height / 2);
+            dc.PushTransform(new RotateTransform(-Rotation, center.X, center.Y));
+            MosaicBuilder.DrawPattern(dc, Pattern, PatternRect);
+            dc.Pop();
+        }
+        else
+        {
+            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(120, 30, 30, 30)), null, Rect);
         }
 
         dc.Pop();
@@ -464,6 +448,121 @@ public sealed class WatermarkAnnotation : Annotation
     public override void Translate(double dx, double dy)
     {
         Rect = new Rect(Rect.X + dx, Rect.Y + dy, Rect.Width, Rect.Height);
+    }
+}
+
+/// <summary>
+/// A repeated text watermark covering the whole canvas (capture selection or
+/// pin image). It always sits at the bottom of the stack and has no frame:
+/// hovering its glyphs highlights it, double-click edits the text.
+/// </summary>
+public sealed class WatermarkAnnotation : Annotation
+{
+    public WatermarkAnnotation()
+    {
+        Opacity = 0.25;
+        Color = Color.FromRgb(0x80, 0x80, 0x80);
+    }
+
+    /// <summary>Area the watermark tiles; the host keeps it equal to the canvas.</summary>
+    public Rect Rect { get; set; }
+
+    public string Text { get; set; } = "Markshot";
+
+    public double FontSize { get; set; } = 24;
+
+    public const double Angle = -24;
+
+    public override bool Erasable => false;
+
+    public override void Draw(DrawingContext dc) => Draw(dc, null);
+
+    /// <summary>Draws the tiles; with <paramref name="highlight"/> the glyphs get an outline in that colour.</summary>
+    public void Draw(DrawingContext dc, Brush? highlight)
+    {
+        if (Rect.Width < 4 || Rect.Height < 4 || string.IsNullOrEmpty(Text))
+        {
+            return;
+        }
+
+        var alpha = (byte)Math.Clamp(Opacity * 255, 0, 255);
+        var brush = new SolidColorBrush(Color.FromArgb(alpha, Color.R, Color.G, Color.B));
+        var text = Format(brush);
+        var outline = highlight == null ? null : new Pen(highlight, Math.Max(1, FontSize / 14));
+
+        dc.PushClip(new RectangleGeometry(Rect));
+        foreach (var origin in TileOrigins(text))
+        {
+            dc.PushTransform(new RotateTransform(Angle, origin.X, origin.Y));
+            if (outline != null)
+            {
+                dc.DrawGeometry(brush, outline, text.BuildGeometry(origin));
+            }
+            else
+            {
+                dc.DrawText(text, origin);
+            }
+
+            dc.Pop();
+        }
+
+        dc.Pop();
+    }
+
+    public override Rect Bounds => Rect;
+
+    public override void Translate(double dx, double dy)
+    {
+        // The watermark is anchored to the canvas, not moved with the mouse.
+    }
+
+    /// <summary>True when the point is on one of the repeated texts (not the gaps between them).</summary>
+    public override bool HitTest(Point point, double tolerance)
+    {
+        if (!Rect.Contains(point) || string.IsNullOrEmpty(Text))
+        {
+            return false;
+        }
+
+        var text = Format(Brushes.Black);
+        var box = new Rect(0, 0, text.Width, text.Height);
+        box.Inflate(tolerance, tolerance);
+        foreach (var origin in TileOrigins(text))
+        {
+            var local = new RotateTransform(-Angle, origin.X, origin.Y).Transform(point);
+            if (box.Contains(new Point(local.X - origin.X, local.Y - origin.Y)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private FormattedText Format(Brush brush) => new(
+        Text,
+        CultureInfo.CurrentUICulture,
+        FlowDirection.LeftToRight,
+        new Typeface(new FontFamily(TextAnnotation.FontFamilyName), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
+        Math.Clamp(FontSize, 8, 200),
+        brush,
+        1.0);
+
+    private IEnumerable<Point> TileOrigins(FormattedText text)
+    {
+        var stepX = Math.Max(60, text.Width + FontSize * 3);
+        var stepY = Math.Max(40, text.Height + FontSize * 2.5);
+        // Extend past the edges: the tiles are rotated.
+        var margin = Math.Max(stepX, stepY) * 2;
+        var row = 0;
+        for (var y = Rect.Top - margin; y < Rect.Bottom + margin; y += stepY, row++)
+        {
+            var offset = row % 2 == 0 ? 0 : stepX / 2;
+            for (var x = Rect.Left - margin; x < Rect.Right + margin; x += stepX)
+            {
+                yield return new Point(x + offset, y);
+            }
+        }
     }
 }
 
@@ -485,7 +584,9 @@ public sealed class TextAnnotation : Annotation
 
     public bool Bold { get; set; }
 
-    public Color StrokeColor { get; set; } = Color.FromRgb(0x20, 0x20, 0x20);
+    public bool Italic { get; set; }
+
+    public Color StrokeColor { get; set; } = Colors.White;
 
     public double StrokeThickness { get; set; }
 
@@ -496,8 +597,9 @@ public sealed class TextAnnotation : Annotation
 
     public Color TextColor => Fill ? ContrastOn(Color) : Color;
 
-    public static Typeface TypefaceFor(bool bold) =>
-        new(Family, FontStyles.Normal, bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
+    public static Typeface TypefaceFor(bool bold, bool italic = false) =>
+        new(Family, italic ? FontStyles.Italic : FontStyles.Normal,
+            bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
 
     public override void Draw(DrawingContext dc)
     {
@@ -580,7 +682,7 @@ public sealed class TextAnnotation : Annotation
             text,
             CultureInfo.CurrentUICulture,
             FlowDirection.LeftToRight,
-            TypefaceFor(Bold),
+            TypefaceFor(Bold, Italic),
             FontSize,
             brush,
             1.0)
@@ -634,8 +736,148 @@ public sealed class NumberAnnotation : Annotation
     }
 }
 
+/// <summary>One eraser stroke stored in an element's local frame.</summary>
+public sealed class EraseStroke
+{
+    public EraseStroke(List<Point> points, double width, Size recordedSize)
+    {
+        Points = points;
+        Width = width;
+        RecordedSize = recordedSize;
+    }
+
+    public List<Point> Points { get; }
+
+    public double Width { get; }
+
+    public Size RecordedSize { get; }
+
+    public EraseStroke Clone() => new(new List<Point>(Points), Width, RecordedSize);
+
+    /// <summary>The area a round brush of <paramref name="width"/> covers along the points.</summary>
+    public static Geometry Widen(IReadOnlyList<Point> points, double width)
+    {
+        if (points.Count == 1)
+        {
+            return new EllipseGeometry(points[0], width / 2, width / 2);
+        }
+
+        var line = new StreamGeometry();
+        using (var context = line.Open())
+        {
+            context.BeginFigure(points[0], false, false);
+            context.PolyLineTo(points.Skip(1).ToList(), true, true);
+        }
+
+        line.Freeze();
+        var pen = new Pen(Brushes.Black, width)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round
+        };
+        return line.GetWidenedPathGeometry(pen);
+    }
+}
+
+/// <summary>
+/// Mosaic painted with a brush. The pattern covers the whole canvas and the
+/// stroke only clips it, so the stroke works like a lens over the image.
+/// </summary>
+public sealed class MosaicBrushAnnotation : Annotation
+{
+    public List<Point> Points { get; private set; } = new();
+
+    /// <summary>Indices of points that start/end a Shift straight segment.</summary>
+    public HashSet<int> Corners { get; private set; } = new();
+
+    /// <summary>Block size of the mosaic (its strength).</summary>
+    public double BlockSize { get; set; } = 12;
+
+    public BitmapSource? Pattern { get; set; }
+
+    /// <summary>Canvas area the <see cref="Pattern"/> is stretched over.</summary>
+    public Rect PatternRect { get; set; }
+
+    public override Annotation Clone()
+    {
+        var copy = (MosaicBrushAnnotation)base.Clone();
+        copy.Points = new List<Point>(Points);
+        copy.Corners = new HashSet<int>(Corners);
+        return copy;
+    }
+
+    public override void Draw(DrawingContext dc)
+    {
+        if (Points.Count == 0)
+        {
+            return;
+        }
+
+        var area = EraseStroke.Widen(Points, Thickness);
+        dc.PushClip(area);
+        if (Pattern != null)
+        {
+            var bounds = Bounds;
+            var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            dc.PushTransform(new RotateTransform(-Rotation, center.X, center.Y));
+            MosaicBuilder.DrawPattern(dc, Pattern, PatternRect);
+            dc.Pop();
+        }
+        else
+        {
+            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(120, 30, 30, 30)), null, area.Bounds);
+        }
+
+        dc.Pop();
+    }
+
+    public override Rect Bounds
+    {
+        get
+        {
+            if (Points.Count == 0)
+            {
+                return Rect.Empty;
+            }
+
+            var minX = Points.Min(p => p.X);
+            var minY = Points.Min(p => p.Y);
+            var maxX = Points.Max(p => p.X);
+            var maxY = Points.Max(p => p.Y);
+            return new Rect(minX, minY, Math.Max(1, maxX - minX), Math.Max(1, maxY - minY));
+        }
+    }
+
+    public override void Translate(double dx, double dy)
+    {
+        for (var i = 0; i < Points.Count; i++)
+        {
+            Points[i] = new Point(Points[i].X + dx, Points[i].Y + dy);
+        }
+    }
+
+    public override bool HitTest(Point point, double tolerance) =>
+        GeometryUtil.DistanceToPolyline(point, Points) <= tolerance + Thickness / 2;
+}
+
 internal static class GeometryUtil
 {
+    public static Point Rotate(Point point, Point center, double degrees)
+    {
+        if (Math.Abs(degrees) < 0.001)
+        {
+            return point;
+        }
+
+        var radians = degrees * Math.PI / 180;
+        var dx = point.X - center.X;
+        var dy = point.Y - center.Y;
+        return new Point(
+            center.X + dx * Math.Cos(radians) - dy * Math.Sin(radians),
+            center.Y + dx * Math.Sin(radians) + dy * Math.Cos(radians));
+    }
+
     public static double DistanceToSegment(Point point, Point start, Point end)
     {
         var segment = end - start;
@@ -676,6 +918,43 @@ internal static class GeometryUtil
 
 public static class MosaicBuilder
 {
+    /// <summary>(Re)builds the canvas-wide pattern a mosaic element clips.</summary>
+    public static void Rebuild(Annotation annotation, BitmapSource source)
+    {
+        switch (annotation)
+        {
+            case MosaicAnnotation box:
+                (box.Pattern, box.PatternRect) = BuildCanvas(source, box.BlockSize);
+                break;
+            case MosaicBrushAnnotation brush:
+                (brush.Pattern, brush.PatternRect) = BuildCanvas(source, brush.BlockSize);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// One sample per block for the whole canvas; the result is drawn stretched
+    /// over (blocks × block size) so every block is exactly <paramref name="blockSize"/> px.
+    /// </summary>
+    public static (BitmapSource? Pattern, Rect Area) BuildCanvas(BitmapSource source, double blockSize)
+    {
+        var block = Math.Clamp((int)Math.Round(blockSize), 3, 64);
+        var pattern = Build(source, new Rect(0, 0, source.PixelWidth, source.PixelHeight), block);
+        return pattern == null
+            ? (null, Rect.Empty)
+            : (pattern, new Rect(0, 0, pattern.PixelWidth * block, pattern.PixelHeight * block));
+    }
+
+    /// <summary>Draws a mosaic pattern with hard block edges (no smoothing) in any drawing context.</summary>
+    public static void DrawPattern(DrawingContext dc, BitmapSource pattern, Rect area)
+    {
+        var group = new DrawingGroup();
+        RenderOptions.SetBitmapScalingMode(group, BitmapScalingMode.NearestNeighbor);
+        group.Children.Add(new ImageDrawing(pattern, area));
+        group.Freeze();
+        dc.DrawDrawing(group);
+    }
+
     public static BitmapSource? Build(BitmapSource source, Rect rect, int blockSize = 12)
     {
         var x = (int)Math.Floor(rect.X);
@@ -693,32 +972,31 @@ public static class MosaicBuilder
             return null;
         }
 
-        blockSize = Math.Clamp(blockSize, 4, 64);
+        blockSize = Math.Clamp(blockSize, 3, 64);
 
         var converted = source.Format == PixelFormats.Bgra32
             ? source
             : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
 
-        var stride = width * 4;
-        var pixels = new byte[stride * height];
-        converted.CopyPixels(new Int32Rect(x, y, width, height), pixels, stride, 0);
-
         var smallWidth = Math.Max(1, (width + blockSize - 1) / blockSize);
         var smallHeight = Math.Max(1, (height + blockSize - 1) / blockSize);
         var small = new byte[smallWidth * smallHeight * 4];
 
+        // Only the sampled row of each block row is read, not the whole image.
+        var row = new byte[width * 4];
         for (var by = 0; by < smallHeight; by++)
         {
+            var sy = Math.Min(height - 1, by * blockSize + blockSize / 2);
+            converted.CopyPixels(new Int32Rect(x, y + sy, width, 1), row, width * 4, 0);
             for (var bx = 0; bx < smallWidth; bx++)
             {
                 var sx = Math.Min(width - 1, bx * blockSize + blockSize / 2);
-                var sy = Math.Min(height - 1, by * blockSize + blockSize / 2);
-                var sourceIndex = sy * stride + sx * 4;
+                var sourceIndex = sx * 4;
                 var targetIndex = (by * smallWidth + bx) * 4;
-                small[targetIndex] = pixels[sourceIndex];
-                small[targetIndex + 1] = pixels[sourceIndex + 1];
-                small[targetIndex + 2] = pixels[sourceIndex + 2];
-                small[targetIndex + 3] = pixels[sourceIndex + 3];
+                small[targetIndex] = row[sourceIndex];
+                small[targetIndex + 1] = row[sourceIndex + 1];
+                small[targetIndex + 2] = row[sourceIndex + 2];
+                small[targetIndex + 3] = row[sourceIndex + 3];
             }
         }
 
