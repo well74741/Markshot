@@ -34,6 +34,7 @@ public partial class PinWindow : Window
     private Point _lastPoint;
     private bool _movingSelected;
     private bool _erasing;
+    private EraserAnnotation? _eraserStroke;
     private bool _resizingAnnotation;
     private bool _rotatingAnnotation;
     private int _annotationHandle = -1;
@@ -777,8 +778,18 @@ public partial class PinWindow : Window
             return;
         }
 
-        if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0 &&
-            MatchesPinKey(App.Config.PinResetHotkey, e.Key))
+        if (!_editMode &&
+            (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0 &&
+            ToolHotkeys.TryMap(e.Key, App.Config, out var hotkeyTool))
+        {
+            EnterEditMode();
+            OnToolbarToolChanged(hotkeyTool);
+            e.Handled = true;
+            return;
+        }
+
+        if (MatchesPinKey(App.Config.PinResetHotkey, e.Key) &&
+            (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0)
         {
             ResetPinImageTransform();
             e.Handled = true;
@@ -1103,9 +1114,22 @@ public partial class PinWindow : Window
 
         if (_tool == AnnotationTool.Eraser)
         {
+            _eraserStroke = new EraserAnnotation
+            {
+                Source = _baseImage,
+                Thickness = Math.Max(8, _thickness * 2)
+            };
+            _eraserStroke.Points.Add(point);
+            Editor.Items.Add(_eraserStroke);
             _erasing = true;
-            EraseAt(point);
+            Editor.InvalidateVisual();
             InputLayer.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
+        if (_tool == AnnotationTool.Text && e.ClickCount < 2)
+        {
             e.Handled = true;
             return;
         }
@@ -1162,7 +1186,8 @@ public partial class PinWindow : Window
 
         if (_erasing)
         {
-            EraseAt(point);
+            _eraserStroke?.Points.Add(point);
+            Editor.InvalidateVisual();
             return;
         }
 
@@ -1194,6 +1219,7 @@ public partial class PinWindow : Window
         if (_erasing)
         {
             _erasing = false;
+            _eraserStroke = null;
             return;
         }
 
@@ -1473,9 +1499,19 @@ public partial class PinWindow : Window
             CancelText();
             e.Handled = true;
         }
-        else if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        else if (e.Key == Key.Enter)
         {
-            CommitText();
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0)
+            {
+                var caret = TextEditor.CaretIndex;
+                TextEditor.Text = TextEditor.Text.Insert(caret, Environment.NewLine);
+                TextEditor.CaretIndex = caret + Environment.NewLine.Length;
+            }
+            else
+            {
+                CommitText();
+            }
+
             e.Handled = true;
         }
     }
@@ -1485,7 +1521,7 @@ public partial class PinWindow : Window
         var tolerance = 7 / (1.0 / _zoom);
         for (var i = Editor.Items.Count - 1; i >= 0; i--)
         {
-            if (!includePen && Editor.Items[i] is PenAnnotation)
+            if (!includePen && Editor.Items[i] is PenAnnotation or EraserAnnotation)
             {
                 continue;
             }
@@ -1560,15 +1596,6 @@ public partial class PinWindow : Window
         var local = AnnotationEditor.RotatePoint(point, center, -_selected.Rotation);
         _resizingAnnotation = false;
         _rotatingAnnotation = false;
-
-        if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 * scale)
-        {
-            _rotatingAnnotation = true;
-            _annotationCenter = center;
-            _annotationStartRotation = _selected.Rotation;
-            _annotationRotateStartAngle = Math.Atan2(point.Y - center.Y, point.X - center.X) * 180 / Math.PI;
-            return true;
-        }
 
         var handles = AnnotationEditor.HandleCenters(frame);
         var tolerance = 10 * scale;
@@ -1800,12 +1827,6 @@ public partial class PinWindow : Window
         var frame = AnnotationEditor.SelectionFrame(bounds, 1 / _zoom);
         var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         var local = AnnotationEditor.RotatePoint(point, center, -_selected.Rotation);
-
-        if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 / _zoom)
-        {
-            ImageHost.Cursor = Cursors.Hand;
-            return true;
-        }
 
         var handles = AnnotationEditor.HandleCenters(frame);
         for (var i = 0; i < handles.Length; i++)

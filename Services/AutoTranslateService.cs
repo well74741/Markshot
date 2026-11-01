@@ -33,44 +33,72 @@ public static class AutoTranslateService
             : App.Config.Translation.TargetLanguage;
         var provider = TranslationService.Create(App.Config.Translation);
         var translated = new string[blocks.Count];
+        var unique = blocks.Select(block => block.Text).Distinct(StringComparer.Ordinal).ToList();
+        var chunks = unique.Chunk(30).ToList();
+        var lookup = new Dictionary<string, string>(StringComparer.Ordinal);
         var done = 0;
-        var semaphore = new SemaphoreSlim(4);
-        progress?.Report($"正在翻译 0/{blocks.Count}…");
+        progress?.Report($"正在翻译 0/{chunks.Count} 批…");
 
-        try
+        for (var chunkIndex = 0; chunkIndex < chunks.Count; chunkIndex++)
         {
-            await Task.WhenAll(blocks.Select(async (block, index) =>
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunk = chunks[chunkIndex];
+            const string separator = "\n[[MarkshotSeg]]\n";
+            try
             {
-                await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-                try
+                var joined = string.Join(separator, chunk);
+                var result = await provider.TranslateAsync(joined, target, cancellationToken)
+                    .ConfigureAwait(false);
+                var parts = result.Split("[[MarkshotSeg]]", StringSplitOptions.None);
+                if (parts.Length == chunk.Length)
                 {
-                    translated[index] = await provider
-                        .TranslateAsync(block.Text, target, cancellationToken)
-                        .ConfigureAwait(false);
+                    for (var i = 0; i < chunk.Length; i++)
+                    {
+                        lookup[chunk[i]] = parts[i].Trim();
+                    }
                 }
-                catch (OperationCanceledException)
+                else
+                {
+                    // Some models collapse delimiters. Translate this small
+                    // chunk line by line rather than silently keeping originals.
+                    for (var i = 0; i < chunk.Length; i++)
+                    {
+                        lookup[chunk[i]] = await provider
+                            .TranslateAsync(chunk[i], target, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("自动翻译批次失败", ex);
+                if (ex is InvalidOperationException)
                 {
                     throw;
                 }
-                catch (Exception ex)
+
+                foreach (var text in chunk)
                 {
-                    Log.Error("自动翻译单行失败", ex);
-                    translated[index] = block.Text;
+                    lookup.TryAdd(text, text);
                 }
-                finally
-                {
-                    semaphore.Release();
-                    var current = Interlocked.Increment(ref done);
-                    progress?.Report($"正在翻译 {current}/{blocks.Count}…");
-                }
-            })).ConfigureAwait(false);
-        }
-        finally
-        {
-            semaphore.Dispose();
+            }
+
+            done++;
+            progress?.Report($"正在翻译 {done}/{chunks.Count} 批…");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            translated[i] = lookup.TryGetValue(blocks[i].Text, out var value)
+                ? value
+                : blocks[i].Text;
+        }
+
         return Render(image, blocks, translated);
     }
 

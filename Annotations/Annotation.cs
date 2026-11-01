@@ -124,7 +124,7 @@ public sealed class ArrowAnnotation : Annotation
         var brush = new SolidColorBrush(Color);
         var perpendicular = new Vector(-unit.Y, unit.X);
         var headBase = End - unit * headLength;
-        var tailHalf = Math.Max(Thickness * 0.32, 0.9);
+        var tailHalf = Math.Max(Thickness * 0.9, 1.8);
 
         // Swept-back barbs and a pointed tail: the two wings sit behind the
         // head base, while the tail narrows to a point at Start.
@@ -283,6 +283,76 @@ public sealed class PenAnnotation : Annotation
     {
         return GeometryUtil.DistanceToPolyline(point, Points) <= tolerance + Thickness * (Highlight ? 2 : 1);
     }
+}
+
+public sealed class EraserAnnotation : Annotation
+{
+    public List<Point> Points { get; } = new();
+
+    public BitmapSource? Source { get; set; }
+
+    public override void Draw(DrawingContext dc)
+    {
+        if (Source == null || Points.Count == 0)
+        {
+            return;
+        }
+
+        var brush = new ImageBrush(Source)
+        {
+            Viewbox = new Rect(0, 0, Source.PixelWidth, Source.PixelHeight),
+            ViewboxUnits = BrushMappingMode.Absolute,
+            Viewport = new Rect(0, 0, Source.PixelWidth, Source.PixelHeight),
+            ViewportUnits = BrushMappingMode.Absolute,
+            Stretch = Stretch.Fill,
+            TileMode = TileMode.None
+        };
+        brush.Freeze();
+
+        if (Points.Count == 1)
+        {
+            dc.DrawEllipse(brush, null, Points[0], Thickness / 2, Thickness / 2);
+            return;
+        }
+
+        var pen = new Pen(brush, Thickness)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round
+        };
+        for (var i = 1; i < Points.Count; i++)
+        {
+            dc.DrawLine(pen, Points[i - 1], Points[i]);
+        }
+    }
+
+    public override Rect Bounds
+    {
+        get
+        {
+            if (Points.Count == 0)
+            {
+                return Rect.Empty;
+            }
+
+            var minX = Points.Min(p => p.X);
+            var minY = Points.Min(p => p.Y);
+            var maxX = Points.Max(p => p.X);
+            var maxY = Points.Max(p => p.Y);
+            return new Rect(minX, minY, Math.Max(1, maxX - minX), Math.Max(1, maxY - minY));
+        }
+    }
+
+    public override void Translate(double dx, double dy)
+    {
+        for (var i = 0; i < Points.Count; i++)
+        {
+            Points[i] = new Point(Points[i].X + dx, Points[i].Y + dy);
+        }
+    }
+
+    public override bool HitTest(Point point, double tolerance) => false;
 }
 
 public sealed class MosaicAnnotation : Annotation

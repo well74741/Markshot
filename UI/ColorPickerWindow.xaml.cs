@@ -22,6 +22,8 @@ public partial class ColorPickerWindow : Window
     public ColorPickerWindow(Color color)
     {
         InitializeComponent();
+        SliderDragBehavior.Enable(HueSlider);
+        SliderDragBehavior.Enable(AlphaSlider);
 
         SelectedColor = color;
         SetFromColor(color);
@@ -210,9 +212,18 @@ public partial class ColorPickerWindow : Window
 
     private void Title_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed)
+        if (e.LeftButton == MouseButtonState.Pressed && !TitleCloseButton.IsMouseOver)
         {
-            DragMove();
+            try
+            {
+                DragMove();
+            }
+            catch
+            {
+                // The window can be activated by the time DragMove is called.
+            }
+
+            e.Handled = true;
         }
     }
 
@@ -220,8 +231,9 @@ public partial class ColorPickerWindow : Window
     {
         Hide();
         _pickWaitRelease = true;
+        Mouse.OverrideCursor = Cursors.Cross;
         _pickTimer?.Stop();
-        _pickTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+        _pickTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(35) };
         _pickTimer.Tick += (_, _) =>
         {
             var down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
@@ -235,25 +247,46 @@ public partial class ColorPickerWindow : Window
                 return;
             }
 
-            if (!down || !GetCursorPos(out var point))
+            if (!GetCursorPos(out var point))
+            {
+                return;
+            }
+
+            if (TryReadScreenColor(point.X, point.Y, out var liveColor))
+            {
+                SetFromColor(liveColor);
+            }
+
+            if (!down)
             {
                 return;
             }
 
             _pickTimer?.Stop();
             _pickTimer = null;
-            var hdc = GetDC(IntPtr.Zero);
-            var colorRef = GetPixel(hdc, point.X, point.Y);
-            ReleaseDC(IntPtr.Zero, hdc);
-            var color = Color.FromRgb(
-                (byte)(colorRef & 0xFF),
-                (byte)((colorRef >> 8) & 0xFF),
-                (byte)((colorRef >> 16) & 0xFF));
-            SetFromColor(color);
+            Mouse.OverrideCursor = null;
             Show();
             Activate();
         };
         _pickTimer.Start();
+    }
+
+    private static bool TryReadScreenColor(int x, int y, out Color color)
+    {
+        var hdc = GetDC(IntPtr.Zero);
+        var colorRef = GetPixel(hdc, x, y);
+        ReleaseDC(IntPtr.Zero, hdc);
+        if (colorRef == uint.MaxValue)
+        {
+            color = Colors.Transparent;
+            return false;
+        }
+
+        color = Color.FromRgb(
+            (byte)(colorRef & 0xFF),
+            (byte)((colorRef >> 8) & 0xFF),
+            (byte)((colorRef >> 16) & 0xFF));
+        return true;
     }
 
     [DllImport("user32.dll")]
@@ -334,5 +367,13 @@ public partial class ColorPickerWindow : Window
         return ((byte)Math.Round((r + m) * 255),
                 (byte)Math.Round((g + m) * 255),
                 (byte)Math.Round((b + m) * 255));
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _pickTimer?.Stop();
+        _pickTimer = null;
+        Mouse.OverrideCursor = null;
+        base.OnClosed(e);
     }
 }

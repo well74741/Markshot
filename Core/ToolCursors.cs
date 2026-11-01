@@ -44,8 +44,83 @@ public static class ToolCursors
         return cursor;
     }
 
+    private static Cursor? BuildRotationCursorFromAsset()
+    {
+        try
+        {
+            var resource = System.Windows.Application.GetResourceStream(
+                new Uri("pack://application:,,,/Markshot;component/Assets/Icons/rotation.png"));
+            if (resource == null)
+            {
+                return null;
+            }
+
+            using var imageStream = resource.Stream;
+            var decoder = BitmapDecoder.Create(
+                imageStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+            var frame = decoder.Frames[0];
+            var transformed = new TransformedBitmap(frame, new ScaleTransform(32.0 / frame.PixelWidth, 32.0 / frame.PixelHeight));
+            transformed.Freeze();
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(transformed));
+            using var png = new MemoryStream();
+            encoder.Save(png);
+            var payload = png.ToArray();
+            using var cur = new MemoryStream();
+            using (var writer = new BinaryWriter(cur, Encoding.UTF8, leaveOpen: true))
+            {
+                writer.Write((ushort)0);
+                writer.Write((ushort)2);
+                writer.Write((ushort)1);
+                writer.Write((byte)32);
+                writer.Write((byte)32);
+                writer.Write((byte)0);
+                writer.Write((byte)0);
+                writer.Write((ushort)16);
+                writer.Write((ushort)16);
+                writer.Write((uint)payload.Length);
+                writer.Write((uint)22);
+            }
+
+            cur.Write(payload, 0, payload.Length);
+            var directory = Path.Combine(AppContext.BaseDirectory, "cursors");
+            try
+            {
+                Directory.CreateDirectory(directory);
+            }
+            catch
+            {
+                directory = Path.Combine(Path.GetTempPath(), "MarkshotCursors");
+                Directory.CreateDirectory(directory);
+            }
+
+            var file = Path.Combine(directory, "rotate-icon.cur");
+            File.WriteAllBytes(file, cur.ToArray());
+            var handle = LoadCursorFromFile(file);
+            if (handle == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            var safeHandle = new CursorHandle(handle);
+            Handles.Add(safeHandle);
+            return CursorInteropHelper.Create(safeHandle);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("创建旋转图标光标失败", ex);
+            return null;
+        }
+    }
+
     private static Cursor? BuildRotationCursor(bool clockwise)
     {
+        var assetCursor = BuildRotationCursorFromAsset();
+        if (assetCursor != null)
+        {
+            return assetCursor;
+        }
+
         try
         {
             var visual = new DrawingVisual();

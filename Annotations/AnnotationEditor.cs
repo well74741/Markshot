@@ -165,29 +165,8 @@ public sealed class AnnotationEditor : FrameworkElement
                 new Rect(point.X - handle / 2, point.Y - handle / 2, handle, handle));
         }
 
-        var rotateCenter = RotationHandleCenter(bounds);
-        var radius = 9 * unit;
-        dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(220, 25, 25, 25)), new Pen(accent, 1.4 * unit),
-            rotateCenter, radius, radius);
-
-        var arc = new StreamGeometry();
-        using (var context = arc.Open())
-        {
-            var start = new Point(rotateCenter.X - radius * 0.62, rotateCenter.Y + radius * 0.35);
-            var end = new Point(rotateCenter.X + radius * 0.62, rotateCenter.Y + radius * 0.35);
-            context.BeginFigure(start, false, false);
-            context.ArcTo(end, new Size(radius * 0.72, radius * 0.72), 0, false,
-                SweepDirection.Counterclockwise, true, false);
-        }
-
-        arc.Freeze();
-        dc.DrawGeometry(null, new Pen(accent, 1.5 * unit), arc);
-        dc.DrawLine(new Pen(accent, 1.5 * unit),
-            new Point(rotateCenter.X - radius * 0.62, rotateCenter.Y + radius * 0.35),
-            new Point(rotateCenter.X - radius * 0.62, rotateCenter.Y - radius * 0.15));
-        dc.DrawLine(new Pen(accent, 1.5 * unit),
-            new Point(rotateCenter.X + radius * 0.62, rotateCenter.Y + radius * 0.35),
-            new Point(rotateCenter.X + radius * 0.62, rotateCenter.Y + radius * 0.85));
+        // Rotation is performed from the dashed frame border, so no separate
+        // rotation ring is drawn here.
 
         dc.Pop();
     }

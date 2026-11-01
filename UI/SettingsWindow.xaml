@@ -67,7 +67,7 @@
                     </StackPanel>
                 </Grid>
 
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
                     <CheckBox x:Name="ManualHotkeyCheck" Content="手动输入" Foreground="#8A8A8A" FontSize="12"
                               VerticalAlignment="Center" Checked="ManualHotkey_Changed" Unchecked="ManualHotkey_Changed" />
                     <TextBlock Text="  点击输入框后直接按下组合键；Backspace 清除，Esc 取消。捕获不到时可勾选左侧手动键入。"
@@ -143,8 +143,8 @@
                 </StackPanel>
 
                 <TextBlock Text="批注栏按钮（拖动排序，勾选显示）" FontSize="15" Foreground="#F5F5F5"
-                           FontWeight="SemiBold" Margin="0,18,0,8" />
-                <Grid>
+                           FontWeight="SemiBold" Margin="0,18,0,8" Visibility="Collapsed" />
+                <Grid Visibility="Collapsed">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="16" />

@@ -67,6 +67,9 @@ public partial class AnnotationToolbar : UserControl
     public AnnotationToolbar()
     {
         InitializeComponent();
+        SliderDragBehavior.Enable(WidthSlider);
+        SliderDragBehavior.Enable(CornerSlider);
+        SliderDragBehavior.Enable(StrokeSlider);
         InitPalette();
         SetTool(AnnotationTool.Select, notify: false);
         SetMode(AnnotationToolbarMode.Capture);

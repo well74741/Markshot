@@ -25,6 +25,7 @@ public partial class AutoTranslateWindow : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        Log.Info("自动翻译开始");
         try
         {
             var progress = new Progress<string>(text => StatusText.Text = text);
@@ -34,6 +35,7 @@ public partial class AutoTranslateWindow : Window
                 return;
             }
 
+            Log.Info("自动翻译完成");
             Preview.Source = _translated;
             BusyPanel.Visibility = Visibility.Collapsed;
             StatusText.Text = "翻译完成";

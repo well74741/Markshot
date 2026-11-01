@@ -31,6 +31,14 @@ public static class SliderDragBehavior
     public static bool GetEnabled(DependencyObject element) =>
         (bool)element.GetValue(EnabledProperty);
 
+    public static void Enable(Slider slider)
+    {
+        if (!GetEnabled(slider))
+        {
+            SetEnabled(slider, true);
+        }
+    }
+
     private static void OnEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not Slider slider)

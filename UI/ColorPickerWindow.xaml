@@ -91,7 +91,8 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" MouseLeftButtonDown="Title_MouseLeftButtonDown">
+            <Grid x:Name="TitleBarGrid" Grid.Row="0" Background="Transparent"
+                  PreviewMouseLeftButtonDown="Title_MouseLeftButtonDown">
                 <TextBlock Text="选择颜色" Foreground="#FFF0F0F0" FontSize="14" FontWeight="SemiBold"
                            VerticalAlignment="Center" />
                 <Button x:Name="TitleCloseButton" Content="×" Foreground="#FFB8B8B8" Background="Transparent"

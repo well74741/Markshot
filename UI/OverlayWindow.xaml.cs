@@ -67,6 +67,7 @@ public partial class OverlayWindow : Window
     private bool _draggingAnnotation;
     private Point _lastAnnotationPoint;
     private bool _erasing;
+    private EraserAnnotation? _eraserStroke;
     private bool _resizingAnnotation;
     private bool _rotatingAnnotation;
     private int _annotationHandle = -1;
@@ -154,7 +155,14 @@ public partial class OverlayWindow : Window
         Toolbar.PinRequested += PinAndClose;
         Toolbar.TranslateRequested += TranslateAndClose;
         Toolbar.OcrRequested += OcrAndClose;
-        Toolbar.TranslateToggled += enabled => _autoTranslate = enabled;
+        Toolbar.TranslateToggled += enabled =>
+        {
+            _autoTranslate = enabled;
+            if (enabled && _hasSelection)
+            {
+                BeginAutoTranslateSelection();
+            }
+        };
         Toolbar.CloseRequested += Close;
         Toolbar.SizeChanged += (_, _) =>
         {
@@ -552,9 +560,22 @@ public partial class OverlayWindow : Window
 
         if (_tool == AnnotationTool.Eraser)
         {
+            _eraserStroke = new EraserAnnotation
+            {
+                Source = _screen,
+                Thickness = Math.Max(8, _thickness * 2)
+            };
+            _eraserStroke.Points.Add(point);
+            Editor.Items.Add(_eraserStroke);
             _erasing = true;
-            EraseAt(point);
+            Editor.InvalidateVisual();
             InputLayer.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
+        if (_tool == AnnotationTool.Text && e.ClickCount < 2)
+        {
             e.Handled = true;
             return;
         }
@@ -691,7 +712,8 @@ public partial class OverlayWindow : Window
 
         if (_erasing)
         {
-            EraseAt(point);
+            _eraserStroke?.Points.Add(point);
+            Editor.InvalidateVisual();
             return;
         }
 
@@ -847,6 +869,7 @@ public partial class OverlayWindow : Window
         if (_erasing)
         {
             _erasing = false;
+            _eraserStroke = null;
             _mode = DragMode.None;
             UpdateSelectionVisuals();
             UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
@@ -961,7 +984,7 @@ public partial class OverlayWindow : Window
         var tolerance = 7 / _scale;
         for (var i = Editor.Items.Count - 1; i >= 0; i--)
         {
-            if (!includePen && Editor.Items[i] is PenAnnotation)
+            if (!includePen && Editor.Items[i] is PenAnnotation or EraserAnnotation)
             {
                 continue;
             }
@@ -1118,15 +1141,6 @@ public partial class OverlayWindow : Window
         var local = AnnotationEditor.RotatePoint(point, center, -_selectedAnnotation.Rotation);
         _resizingAnnotation = false;
         _rotatingAnnotation = false;
-
-        if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 / _scale)
-        {
-            _rotatingAnnotation = true;
-            _annotationCenter = center;
-            _annotationStartRotation = _selectedAnnotation.Rotation;
-            _annotationRotateStartAngle = Math.Atan2(point.Y - center.Y, point.X - center.X) * 180 / Math.PI;
-            return true;
-        }
 
         var handles = AnnotationEditor.HandleCenters(frame);
         var tolerance = 10 / _scale;
@@ -1791,9 +1805,19 @@ public partial class OverlayWindow : Window
             CancelText();
             e.Handled = true;
         }
-        else if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        else if (e.Key == Key.Enter)
         {
-            CommitText();
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0)
+            {
+                var caret = TextEditor.CaretIndex;
+                TextEditor.Text = TextEditor.Text.Insert(caret, Environment.NewLine);
+                TextEditor.CaretIndex = caret + Environment.NewLine.Length;
+            }
+            else
+            {
+                CommitText();
+            }
+
             e.Handled = true;
         }
     }
@@ -2186,12 +2210,6 @@ public partial class OverlayWindow : Window
         var frame = AnnotationEditor.SelectionFrame(bounds, 1 / _scale);
         var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         var local = AnnotationEditor.RotatePoint(point, center, -_selectedAnnotation.Rotation);
-
-        if ((local - AnnotationEditor.RotationHandleCenter(frame)).Length <= 12 / _scale)
-        {
-            InputLayer.Cursor = Cursors.Hand;
-            return true;
-        }
 
         var handles = AnnotationEditor.HandleCenters(frame);
         for (var i = 0; i < handles.Length; i++)
@@ -2662,6 +2680,26 @@ public partial class OverlayWindow : Window
 
         CommitPendingText();
         CloseWith(CaptureAction.Pin, Compose());
+    }
+
+    private void BeginAutoTranslateSelection()
+    {
+        if (!_hasSelection || _closed)
+        {
+            return;
+        }
+
+        CommitPendingText();
+        var rect = ClampToScreen(_selection);
+        var cropped = new CroppedBitmap(
+            _screen,
+            new Int32Rect(
+                (int)Math.Round(rect.X),
+                (int)Math.Round(rect.Y),
+                Math.Max(1, (int)Math.Round(rect.Width)),
+                Math.Max(1, (int)Math.Round(rect.Height))));
+        cropped.Freeze();
+        ((App)Application.Current).ShowAutoTranslation(cropped);
     }
 
     private void TranslateAndClose()
