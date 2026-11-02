@@ -30,6 +30,15 @@ public sealed class AppConfig
 
     public string PinToolHidden { get; set; } = "";
 
+    /// <summary>Order / hidden of the action buttons on the right of the annotation bar.</summary>
+    public string CaptureActionOrder { get; set; } = "Ocr,Close,Pin,Save,Copy,Translate";
+
+    public string CaptureActionHidden { get; set; } = "";
+
+    public string PinActionOrder { get; set; } = "Save,Apply";
+
+    public string PinActionHidden { get; set; } = "";
+
     public string ToolPenHotkey { get; set; } = "B";
 
     public string ToolSelectHotkey { get; set; } = "V";

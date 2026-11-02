@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.08`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.09`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -415,6 +415,23 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 保存后提示 `SavedPromptWindow`（`Config.AskOpenFolderAfterSave`），截图保存经 `overlay.SavedPath`，贴图保存直接调用。
 - 贴图翻转/旋转 `AnimateOrientation`：ScaleX/ScaleY 从 -1、或旋转从 90° 回到 0（240ms）。阴影设置实时预览 `App.PreviewPinShadow`。
 - 设置左栏：更新按钮独占一行；底部“请杯咖啡”抽屉（拖动横条拉出二维码 `Assets/donate_qr.png`，拉满即停，单击收起）。
+
+## 8.1.7 0.8.09 变更
+
+- 更新：`UpdateService.FindNewestAsync(custom)` 总是检查内置 `DefaultRepository`，自定义路径（可空）另外检查，取较新者；
+  `EffectivePath` 在未设置时返回空串。启动/定时检查与设置页都走它。
+- 咖啡抽屉：横条在上、二维码在下（DrawerHandle 位于 DrawerPanel 之前），拉高 DrawerPanel 时横条一起上移。
+- 贴图光带：`PlayLightSweep` 改为倾斜 22° 的整条光带，从左到右平移（220~340ms，随宽度），Loaded 优先级立即开始，裁剪在圆角内。
+- 贴图 `OnLoaded` 先 `UpdateFrame()`：`ShapedShadow` / `CornerRadius` 是 init 属性，构造时还未赋值，套索贴图原先会留下矩形阴影。
+  套索截图的原位翻译图也按套索形状裁剪。
+- 截图变暗聚拢改用 `Motion.Fast` + EaseOut，与悬停窗口边框同步出现；提示条加入“右键拖动手绘截图（Shift 直线）”。
+- 翻转/旋转过渡 150ms；旋转时调整 `_left/_top` 让贴图中心不动。
+- 批注栏排序 `UI/ReorderBehavior.cs`：子元素用 Tag 作键；按住 420ms 拿起（移动超过 6px 视为普通拖动，取消），面板捕获鼠标，
+  被拿起项 ±5° 抖动，按中心点算落位，邻居用 `Motion.SlideX` 让位；松开后重排 `Children` 并触发 `Reordered(keys)`。
+  工具按钮和其下拉箭头被包进 `_groupPanels[key]` 一起移动；动作按钮（Ocr/Close/Pin/Save/Copy/Translate、Save/Apply）按 Tag 排序/隐藏。
+- 配置新增 `CaptureActionOrder/Hidden`、`PinActionOrder/Hidden`；`UI/ToolbarCatalog.cs` 统一键、名称、图标与 `Order()` 清洗。
+- 设置 → 保存与识别 → 批注栏按钮：两行（截图模式 / 贴图模式），每行工具 + 动作两组方块（无模板 Border，避免模板资源问题），
+  单击切换隐藏、长按拖动排序；保存时写回四组 order/hidden，打开的贴图经 `ApplyShadowSettings` 同步。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

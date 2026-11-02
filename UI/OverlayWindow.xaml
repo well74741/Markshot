@@ -47,7 +47,7 @@
         <Canvas x:Name="UiLayer">
             <Border x:Name="Hint" Background="#CC1C1C1C" BorderBrush="#33FFFFFF" BorderThickness="1"
                     CornerRadius="7" Padding="16,9" IsHitTestVisible="False">
-                <TextBlock Text="拖拽选择区域　·　点击窗口可直接选中　·　R 上次区域　·　双击复制　·　Esc 取消"
+                <TextBlock Text="拖拽选择区域　·　右键拖动手绘截图（Shift 直线）　·　点击窗口可直接选中　·　R 上次区域　·　双击复制　·　Esc 取消"
                            Foreground="#EDEDED" FontSize="13" />
             </Border>
 

@@ -395,7 +395,7 @@ public partial class App : Application
         {
             _updateTimer.Interval = TimeSpan.FromHours(2);
             var folder = UpdateService.EffectivePath(Config);
-            var package = await UpdateService.FindNewerAsync(folder);
+            var package = await UpdateService.FindNewestAsync(folder);
             if (package != null && package.Version != _notifiedUpdate)
             {
                 _notifiedUpdate = package.Version;

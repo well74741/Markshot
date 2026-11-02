@@ -198,7 +198,15 @@ public partial class AnnotationToolbar : UserControl
         ApplyToolOrder(
             _mode == AnnotationToolbarMode.Pin ? config.PinToolOrder : config.CaptureToolOrder,
             _mode == AnnotationToolbarMode.Pin ? config.PinToolHidden : config.CaptureToolHidden);
+        ApplyActionOrder(CaptureActions, config.CaptureActionOrder, config.CaptureActionHidden, ToolbarCatalog.CaptureActions);
+        ApplyActionOrder(PinActions, config.PinActionOrder, config.PinActionHidden, ToolbarCatalog.PinActions);
     }
+
+    // Each tool button (+ its menu arrow) sits in its own panel so it moves as one when reordering.
+    private readonly Dictionary<string, StackPanel> _groupPanels = new();
+    private ReorderBehavior? _toolsReorder;
+    private ReorderBehavior? _captureActionsReorder;
+    private ReorderBehavior? _pinActionsReorder;
 
     public void ApplyToolOrder(string? order, string? hidden)
     {
@@ -217,43 +225,75 @@ public partial class AnnotationToolbar : UserControl
             ["Mosaic"] = new FrameworkElement[] { ToolMosaic, MosaicChevron },
             ["Eraser"] = new FrameworkElement[] { ToolEraser }
         };
-        var defaults = new[] { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
-        var keys = (order ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(groups.ContainsKey)
-            .Distinct()
-            .ToList();
-        foreach (var key in defaults)
-        {
-            if (!keys.Contains(key))
-            {
-                // A tool missing from an older saved order goes next to its default neighbour.
-                var before = Array.IndexOf(defaults, key) - 1;
-                var at = before >= 0 ? keys.IndexOf(defaults[before]) : -1;
-                if (at >= 0)
-                {
-                    keys.Insert(at + 1, key);
-                }
-                else
-                {
-                    keys.Add(key);
-                }
-            }
-        }
-
-        var hiddenSet = new HashSet<string>(
-            (hidden ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-            StringComparer.OrdinalIgnoreCase);
+        var hiddenSet = ToolbarCatalog.Set(hidden);
 
         ToolItems.Children.Clear();
-        foreach (var key in keys)
+        foreach (var key in ToolbarCatalog.Order(order, ToolbarCatalog.Tools))
         {
-            foreach (var element in groups[key])
+            if (!_groupPanels.TryGetValue(key, out var panel))
+            {
+                panel = new StackPanel { Orientation = Orientation.Horizontal, Tag = key, Background = Brushes.Transparent };
+                foreach (var element in groups[key])
+                {
+                    (element.Parent as Panel)?.Children.Remove(element);
+                    element.Visibility = Visibility.Visible;
+                    panel.Children.Add(element);
+                }
+
+                _groupPanels[key] = panel;
+            }
+
+            panel.Visibility = hiddenSet.Contains(key) ? Visibility.Collapsed : Visibility.Visible;
+            ToolItems.Children.Add(panel);
+        }
+
+        if (_toolsReorder == null)
+        {
+            // Long-press a tool to pick it up, drag it sideways to move it.
+            _toolsReorder = new ReorderBehavior(ToolItems);
+            _toolsReorder.Reordered += keys => SaveOrder(keys, tools: true);
+            _captureActionsReorder = new ReorderBehavior(CaptureActions);
+            _captureActionsReorder.Reordered += keys => SaveOrder(keys, tools: false);
+            _pinActionsReorder = new ReorderBehavior(PinActions);
+            _pinActionsReorder.Reordered += keys => SaveOrder(keys, tools: false);
+        }
+    }
+
+    /// <summary>Orders / hides the action buttons (by their Tag).</summary>
+    private static void ApplyActionOrder(Panel panel, string? order, string? hidden, string[] defaults)
+    {
+        var hiddenSet = ToolbarCatalog.Set(hidden);
+        var byKey = panel.Children.OfType<FrameworkElement>().ToDictionary(child => child.Tag as string ?? "", child => child);
+        panel.Children.Clear();
+        foreach (var key in ToolbarCatalog.Order(order, defaults))
+        {
+            if (byKey.TryGetValue(key, out var element))
             {
                 element.Visibility = hiddenSet.Contains(key) ? Visibility.Collapsed : Visibility.Visible;
-                ToolItems.Children.Add(element);
+                panel.Children.Add(element);
             }
         }
+    }
+
+    private void SaveOrder(IReadOnlyList<string> keys, bool tools)
+    {
+        if (App.Config is not { } config)
+        {
+            return;
+        }
+
+        var text = string.Join(",", keys);
+        var pin = _mode == AnnotationToolbarMode.Pin;
+        if (tools)
+        {
+            if (pin) config.PinToolOrder = text; else config.CaptureToolOrder = text;
+        }
+        else
+        {
+            if (pin) config.PinActionOrder = text; else config.CaptureActionOrder = text;
+        }
+
+        config.Save();
     }
 
     public void SetTool(AnnotationTool tool, bool notify = false)

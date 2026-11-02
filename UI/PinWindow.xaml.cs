@@ -527,6 +527,8 @@ public partial class PinWindow : Window
     }
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        UpdateFrame(); // ShapedShadow / CornerRadius are set after the constructor drew the first shadow
+
         var handle = new WindowInteropHelper(this).Handle;
         var dpi = handle != IntPtr.Zero ? Native.GetDpiForWindow(handle) / 96.0 : 1.0;
 
@@ -540,7 +542,7 @@ public partial class PinWindow : Window
         if (FromCapture)
         {
             // Same pixels as the capture underneath: no fade (that flickered), just the light sweep.
-            Dispatcher.BeginInvoke(new Action(PlayLightSweep), DispatcherPriority.Render);
+            Dispatcher.BeginInvoke(new Action(PlayLightSweep), DispatcherPriority.Loaded);
         }
         else
         {
@@ -747,6 +749,7 @@ public partial class PinWindow : Window
     {
         UpdateFrame();
         ApplyBounds();
+        Toolbar.ApplyToolOrderFromConfig(); // button order / visibility from the settings
     }
 
     private void UpdateFrame()
@@ -2693,8 +2696,15 @@ public partial class PinWindow : Window
                 ApplyPinImageTransform(new ScaleTransform(1, -1), p => new Point(p.X, height - p.Y), width, height, op);
                 break;
             default:
+            {
+                // Turn about the pin's centre: move the top-left so the centre stays where it is.
+                var oldWidth = width * _zoom;
+                var oldHeight = height * _zoom;
+                _left += (int)Math.Round((oldWidth - oldHeight) / 2);
+                _top += (int)Math.Round((oldHeight - oldWidth) / 2);
                 ApplyPinImageTransform(new RotateTransform(-90), p => new Point(p.Y, width - p.X), height, width, op);
                 break;
+            }
         }
 
         if (record)
@@ -2715,7 +2725,7 @@ public partial class PinWindow : Window
         var rotate = new RotateTransform(0);
         ImageHost.RenderTransformOrigin = new Point(0.5, 0.5);
         ImageHost.RenderTransform = new TransformGroup { Children = { scale, rotate } };
-        var duration = Motion.Base;
+        var duration = new Duration(TimeSpan.FromMilliseconds(150));
         switch (op)
         {
             case 'H':
@@ -2730,7 +2740,9 @@ public partial class PinWindow : Window
         }
     }
 
-    /// <summary>A bright band sweeps once across the pin, top-left to bottom-right, inside its outline.</summary>
+    /// <summary>
+    /// A slanted band of light crosses the pin once, left to right (fast), clipped to its outline.
+    /// </summary>
     private void PlayLightSweep()
     {
         var width = ImageHost.ActualWidth;
@@ -2740,17 +2752,19 @@ public partial class PinWindow : Window
             return;
         }
 
-        var diagonal = Math.Sqrt(width * width + height * height);
+        const double tilt = 22; // degrees from vertical
+        var bandWidth = Math.Clamp(width * 0.18, 26, 120);
+        var bandHeight = height / Math.Cos(tilt * Math.PI / 180) + bandWidth * 2;
         var band = new System.Windows.Shapes.Rectangle
         {
-            Width = diagonal * 0.22,
-            Height = diagonal * 2,
+            Width = bandWidth,
+            Height = bandHeight,
             IsHitTestVisible = false,
             Fill = new LinearGradientBrush(
                 new GradientStopCollection
                 {
                     new(Color.FromArgb(0, 255, 255, 255), 0),
-                    new(Color.FromArgb(110, 255, 255, 255), 0.5),
+                    new(Color.FromArgb(120, 255, 255, 255), 0.5),
                     new(Color.FromArgb(0, 255, 255, 255), 1)
                 },
                 new Point(0, 0.5), new Point(1, 0.5))
@@ -2758,29 +2772,27 @@ public partial class PinWindow : Window
         var move = new TranslateTransform();
         band.RenderTransform = new TransformGroup
         {
-            Children = { new RotateTransform(-45, band.Width / 2, band.Height / 2), move }
+            Children = { new RotateTransform(tilt, bandWidth / 2, bandHeight / 2), move }
         };
         var layer = new Canvas
         {
             IsHitTestVisible = false,
             Width = width,
             Height = height,
-            ClipToBounds = true,
             // Never outside the pin (rounded corners included).
             Clip = new RectangleGeometry(new Rect(0, 0, width, height), CornerRadius * _zoom, CornerRadius * _zoom)
         };
-        Canvas.SetLeft(band, -band.Width / 2);
-        Canvas.SetTop(band, -band.Height / 2);
+        Canvas.SetTop(band, (height - bandHeight) / 2);
         layer.Children.Add(band);
         ImageHost.Children.Add(layer);
 
-        var start = -diagonal * 0.75;
-        var end = diagonal * 0.75;
-        var sweep = new DoubleAnimation(start, end + width / 2, TimeSpan.FromMilliseconds(520)) { EasingFunction = Motion.Ease };
-        var sweepY = new DoubleAnimation(start + height / 2 - width / 2, end + height / 2, TimeSpan.FromMilliseconds(520)) { EasingFunction = Motion.Ease };
+        var reach = bandHeight * Math.Sin(tilt * Math.PI / 180) / 2 + bandWidth;
+        var sweep = new DoubleAnimation(-reach, width + reach, TimeSpan.FromMilliseconds(Math.Clamp(200 + width * 0.12, 220, 340)))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut }
+        };
         sweep.Completed += (_, _) => ImageHost.Children.Remove(layer);
         move.BeginAnimation(TranslateTransform.XProperty, sweep);
-        move.BeginAnimation(TranslateTransform.YProperty, sweepY);
     }
 
     private async void TranslateInPlace()
@@ -2864,6 +2876,7 @@ public partial class PinWindow : Window
         _translateCts = null;
         _untranslatedBase = null;
     }
+
 
     /// <summary>Swaps the image under the annotations and re-composes what the pin shows.</summary>
     private void SetBaseImage(BitmapSource image)

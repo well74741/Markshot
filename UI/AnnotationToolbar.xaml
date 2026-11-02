@@ -77,33 +77,33 @@
                 <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
                 <StackPanel x:Name="CaptureActions" Orientation="Horizontal">
-                    <Button Style="{StaticResource IconToolButton}" Click="Ocr_Click" ToolTip="文字识别">
+                    <Button Style="{StaticResource IconToolButton}" Click="Ocr_Click" Tag="Ocr" ToolTip="文字识别">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconOcr}" />
                     </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Close_Click" ToolTip="关闭 (Esc)">
+                    <Button Style="{StaticResource IconToolButton}" Click="Close_Click" Tag="Close" ToolTip="关闭 (Esc)">
                         <Border Style="{StaticResource IconCloseMask}" />
                     </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Pin_Click" ToolTip="贴图 (F3)" Foreground="{StaticResource Accent}">
+                    <Button Style="{StaticResource IconToolButton}" Click="Pin_Click" Tag="Pin" ToolTip="贴图 (F3)" Foreground="{StaticResource Accent}">
                         <Border Style="{StaticResource IconPinMask}" />
                     </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存 (Ctrl+S)">
+                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" Tag="Save" ToolTip="保存 (Ctrl+S)">
                         <Border Style="{StaticResource IconSaveMask}" />
                     </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" ToolTip="复制 (Enter)">
+                    <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" Tag="Copy" ToolTip="复制 (Enter)">
                         <Border Style="{StaticResource IconCopyMask}" />
                     </Button>
                     <ToggleButton x:Name="TranslateToggle" Style="{StaticResource IconToolToggle}"
-                                  Click="TranslateToggle_Click"
+                                  Click="TranslateToggle_Click" Tag="Translate"
                                   ToolTip="原位翻译：像浏览器一样把选区里的文字直接替换成译文（开关会被记住）">
                         <Border Style="{StaticResource IconTranslateMask}" />
                     </ToggleButton>
                 </StackPanel>
 
                 <StackPanel x:Name="PinActions" Orientation="Horizontal" Visibility="Collapsed">
-                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存">
+                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" Tag="Save" ToolTip="保存">
                         <Border Style="{StaticResource IconSaveMask}" />
                     </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" ToolTip="应用 (Ctrl+S)" Foreground="{StaticResource Accent}">
+                    <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" Tag="Apply" ToolTip="应用 (Ctrl+S)" Foreground="{StaticResource Accent}">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconCheck}" />
                     </Button>
                 </StackPanel>

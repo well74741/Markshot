@@ -1,0 +1,92 @@
+using Path = System.Windows.Shapes.Path;
+
+namespace Markshot.UI;
+
+/// <summary>The annotation bar's buttons by key: default orders, names and icons (toolbar + settings).</summary>
+internal static class ToolbarCatalog
+{
+    public static readonly string[] Tools = { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
+    public static readonly string[] CaptureActions = { "Ocr", "Close", "Pin", "Save", "Copy", "Translate" };
+    public static readonly string[] PinActions = { "Save", "Apply" };
+
+    public static string Label(string key) => key switch
+    {
+        "Shape" => "图形",
+        "Pen" => "画笔",
+        "Arrow" => "箭头 / 直线",
+        "Text" => "文字 / 水印",
+        "Number" => "序号",
+        "Mosaic" => "马赛克",
+        "Eraser" => "橡皮擦",
+        "Ocr" => "文字识别",
+        "Close" => "关闭",
+        "Pin" => "贴图",
+        "Save" => "保存",
+        "Copy" => "复制",
+        "Translate" => "原位翻译",
+        "Apply" => "应用",
+        _ => key
+    };
+
+    public static UIElement Icon(string key)
+    {
+        if (key is "Ocr" or "Apply")
+        {
+            return new Path
+            {
+                Style = (Style)Application.Current.FindResource("IconPath"),
+                Data = (Geometry)Application.Current.FindResource(key == "Ocr" ? "IconOcr" : "IconCheck")
+            };
+        }
+
+        var mask = key switch
+        {
+            "Shape" => "IconRectMask",
+            "Pen" => "IconPenMask",
+            "Arrow" => "IconArrowMask",
+            "Text" => "IconTextMask",
+            "Number" => "IconNumberMask",
+            "Mosaic" => "IconMosaicMask",
+            "Eraser" => "IconEraserMask",
+            "Close" => "IconCloseMask",
+            "Pin" => "IconPinMask",
+            "Save" => "IconSaveMask",
+            "Copy" => "IconCopyMask",
+            _ => "IconTranslateMask"
+        };
+        return new Border { Style = (Style)Application.Current.FindResource(mask) };
+    }
+
+    /// <summary>Saved order, cleaned up: unknown keys dropped, missing ones added next to their default neighbour.</summary>
+    public static List<string> Order(string? saved, string[] defaults)
+    {
+        var keys = (saved ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(defaults.Contains)
+            .Distinct()
+            .ToList();
+        foreach (var key in defaults)
+        {
+            if (keys.Contains(key))
+            {
+                continue;
+            }
+
+            var before = Array.IndexOf(defaults, key) - 1;
+            var at = before >= 0 ? keys.IndexOf(defaults[before]) : -1;
+            if (at >= 0)
+            {
+                keys.Insert(at + 1, key);
+            }
+            else
+            {
+                keys.Add(key);
+            }
+        }
+
+        return keys;
+    }
+
+    public static HashSet<string> Set(string? text) =>
+        new((text ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
+}

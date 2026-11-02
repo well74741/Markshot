@@ -249,11 +249,7 @@
             <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,6">
                 <TextBlock x:Name="DrawerHint" Text="往上拉，请杯咖~" Foreground="#8A8A8A" FontSize="12"
                            HorizontalAlignment="Center" Margin="0,0,0,4" Opacity="0" IsHitTestVisible="False" />
-                <Border x:Name="DrawerPanel" Height="0" ClipToBounds="True">
-                    <Image x:Name="DrawerQr" Source="pack://application:,,,/Markshot;component/Assets/donate_qr.png"
-                           Width="136" Height="136" VerticalAlignment="Top" Margin="0,4,0,0"
-                           RenderOptions.BitmapScalingMode="HighQuality" />
-                </Border>
+                <!-- The bar rides on top: pulling it up reveals the QR code underneath. -->
                 <Border x:Name="DrawerHandle" Height="22" Background="Transparent" Cursor="SizeNS"
                         ToolTip="往上拉，请杯咖~"
                         MouseEnter="DrawerHandle_MouseEnter" MouseLeave="DrawerHandle_MouseLeave"
@@ -261,6 +257,11 @@
                         MouseLeftButtonUp="DrawerHandle_MouseLeftButtonUp">
                     <Border x:Name="DrawerBar" Width="46" Height="4" CornerRadius="2" Background="#4DFFFFFF"
                             VerticalAlignment="Center" />
+                </Border>
+                <Border x:Name="DrawerPanel" Height="0" ClipToBounds="True">
+                    <Image x:Name="DrawerQr" Source="pack://application:,,,/Markshot;component/Assets/donate_qr.png"
+                           Width="136" Height="136" VerticalAlignment="Top" Margin="0,0,0,8"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
                 </Border>
             </StackPanel>
             </Grid>
@@ -518,6 +519,41 @@
 
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
+                            <TextBlock Text="批注栏按钮" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="截图模式" Style="{StaticResource RowLabel}" />
+                                <Border Grid.Column="1" Background="#FF1B1B1B" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel x:Name="CaptureToolsRow" Orientation="Horizontal" />
+                                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                                        <StackPanel x:Name="CaptureActionsRow" Orientation="Horizontal" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Grid.Row="2" Text="贴图模式" Style="{StaticResource RowLabel}" />
+                                <Border Grid.Row="2" Grid.Column="1" Background="#FF1B1B1B" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel x:Name="PinToolsRow" Orientation="Horizontal" />
+                                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                                        <StackPanel x:Name="PinActionsRow" Orientation="Horizontal" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0"
+                                       Text="单击按钮开关（变暗 = 不显示），长按拖动排序；批注栏上也可以长按按钮直接拖动排序。" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
                             <TextBlock Text="保存" Style="{StaticResource CardTitle}" />
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -572,7 +608,7 @@
                                         Click="BrowseUpdate_Click" Margin="8,0,0,0" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="默认是 GitHub 仓库（下载最新 Release 里的 Markshot-Setup-版本号.exe），也可以填放安装包的文件夹。发现新版本时版本号旁会出现“更新”。" />
+                                       Text="可选：另外检查的文件夹（放 Markshot-Setup-版本号.exe）。留空即可——软件始终从内置的发布渠道检查更新，发现新版本时版本号下方会出现“更新”。" />
                         </StackPanel>
                     </Border>
 

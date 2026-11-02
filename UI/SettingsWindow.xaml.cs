@@ -38,6 +38,10 @@ public partial class SettingsWindow : Window
         LineKeyBox.Text = config.ToolLineHotkey;
         ShapeKeyBox.Text = config.ToolShapeHotkey;
         CopyFileCheck.IsChecked = config.CopyImageAsFile;
+        FillToolbarRow(CaptureToolsRow, ToolbarCatalog.Tools, config.CaptureToolOrder, config.CaptureToolHidden);
+        FillToolbarRow(CaptureActionsRow, ToolbarCatalog.CaptureActions, config.CaptureActionOrder, config.CaptureActionHidden);
+        FillToolbarRow(PinToolsRow, ToolbarCatalog.Tools, config.PinToolOrder, config.PinToolHidden);
+        FillToolbarRow(PinActionsRow, ToolbarCatalog.PinActions, config.PinActionOrder, config.PinActionHidden);
         AskOpenFolderCheck.IsChecked = config.AskOpenFolderAfterSave;
         SaveDirBox.Text = config.SaveDirectory;
         UpdatePathBox.Text = UpdateService.EffectivePath(config);
@@ -363,12 +367,16 @@ public partial class SettingsWindow : Window
         _config.PinShadowOpacity = Math.Round(ShadowOpacitySlider.Value) / 100;
         _config.PinShadowColor = _shadowColor;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
+        (_config.CaptureToolOrder, _config.CaptureToolHidden) = ReadToolbarRow(CaptureToolsRow);
+        (_config.CaptureActionOrder, _config.CaptureActionHidden) = ReadToolbarRow(CaptureActionsRow);
+        (_config.PinToolOrder, _config.PinToolHidden) = ReadToolbarRow(PinToolsRow);
+        (_config.PinActionOrder, _config.PinActionHidden) = ReadToolbarRow(PinActionsRow);
         _config.AskOpenFolderAfterSave = AskOpenFolderCheck.IsChecked == true;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
         // Keep following the installer's folder unless another one was entered.
         var updatePath = UpdatePathBox.Text.Trim();
-        _config.UpdatePath = string.Equals(updatePath, UpdateService.DefaultPath(), StringComparison.OrdinalIgnoreCase) ? "" : updatePath;
+        _config.UpdatePath = updatePath; // optional; the built-in GitHub source is always used as well
         _config.OcrLanguage = OcrLanguageBox.Text.Trim();
 
         _config.Translation.BaseUrl = BaseUrlBox.Text.Trim();
@@ -477,6 +485,75 @@ public partial class SettingsWindow : Window
         e.Handled = true;
     }
 
+    // ---- annotation bar buttons: click = show / hide, long-press drag = order ----------------
+    private readonly HashSet<string> _hiddenButtons = new();
+
+    private void FillToolbarRow(Panel row, string[] defaults, string order, string hidden)
+    {
+        var hiddenSet = ToolbarCatalog.Set(hidden);
+        var reorder = new ReorderBehavior(row);
+        row.Children.Clear();
+        foreach (var key in ToolbarCatalog.Order(order, defaults))
+        {
+            // A plain tile (no control template): the icon in white, a hover plate, click = on / off.
+            var icon = ToolbarCatalog.Icon(key);
+            if (icon is Border mask)
+            {
+                mask.Background = Brushes.White;
+            }
+            else if (icon is System.Windows.Shapes.Shape shape)
+            {
+                shape.Stroke = Brushes.White;
+            }
+
+            var button = new Border
+            {
+                Width = 28,
+                Height = 28,
+                CornerRadius = new CornerRadius(5),
+                Background = Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                Tag = key,
+                Child = icon,
+                ToolTip = ToolbarCatalog.Label(key) + "：单击开关，长按拖动排序"
+            };
+            if (icon is FrameworkElement iconElement)
+            {
+                iconElement.HorizontalAlignment = HorizontalAlignment.Center;
+                iconElement.VerticalAlignment = VerticalAlignment.Center;
+            }
+
+            button.MouseEnter += (_, _) => button.Background = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF));
+            button.MouseLeave += (_, _) => button.Background = Brushes.Transparent;
+            var id = RowId(row, key);
+            if (hiddenSet.Contains(key))
+            {
+                _hiddenButtons.Add(id);
+                icon.Opacity = 0.28; // dimmed = not shown on the bar
+            }
+
+            button.MouseLeftButtonUp += (_, _) =>
+            {
+                if (reorder.JustDragged || reorder.IsDragging)
+                {
+                    return;
+                }
+
+                var off = _hiddenButtons.Add(id) || !_hiddenButtons.Remove(id);
+                Motion.Fade(icon, off ? 0.28 : 1);
+            };
+            row.Children.Add(button);
+        }
+    }
+
+    private (string Order, string Hidden) ReadToolbarRow(Panel row)
+    {
+        var keys = row.Children.OfType<FrameworkElement>().Select(child => child.Tag as string ?? "").ToList();
+        return (string.Join(",", keys), string.Join(",", keys.Where(key => _hiddenButtons.Contains(RowId(row, key)))));
+    }
+
+    private static string RowId(Panel row, string key) => row.Name + ":" + key;
+
     private string _shadowColor = "#6A6A6A";
 
     private void Shadow_Changed(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateShadowPreview();
@@ -542,7 +619,7 @@ public partial class SettingsWindow : Window
             StatusText.Text = "正在检查更新…";
         }
 
-        _update = await UpdateService.FindNewerAsync(folder);
+        _update = await UpdateService.FindNewestAsync(folder);
         if (!IsLoaded)
         {
             return;
@@ -560,11 +637,9 @@ public partial class SettingsWindow : Window
         UpdateButton.Visibility = Visibility.Collapsed;
         if (!quiet)
         {
-            StatusText.Text = UpdateService.IsGitHub(folder)
-                ? $"没有找到更新版本（当前 {AppVersion.Display}）。GitHub 仓库需公开，且 Release 里有 Markshot-Setup-版本号.exe。"
-                : string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)
-                    ? "更新路径不存在，请在“保存与识别 → 更新”里设置。"
-                    : $"已是最新版本（{AppVersion.Display}）";
+            StatusText.Text = !string.IsNullOrWhiteSpace(folder) && !UpdateService.IsGitHub(folder) && !Directory.Exists(folder)
+                ? $"已是最新版本（{AppVersion.Display}）。自定义更新路径不存在：{folder}"
+                : $"已是最新版本（{AppVersion.Display}）";
         }
     }
 

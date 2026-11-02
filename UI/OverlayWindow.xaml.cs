@@ -545,7 +545,11 @@ public partial class OverlayWindow : Window
         mask.GradientStops.Add(new GradientStop(Colors.Black, 1));
         DimLayer.OpacityMask = mask;
 
-        var shrink = new System.Windows.Media.Animation.DoubleAnimation(reach / 0.7, 0.5, Motion.Slow) { EasingFunction = Motion.Ease };
+        // Quick (the frame of the hovered window appears at once; the dimming must not lag behind it).
+        var shrink = new System.Windows.Media.Animation.DoubleAnimation(reach / 0.7, 0.5, Motion.Fast)
+        {
+            EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+        };
         shrink.Completed += (_, _) => DimLayer.OpacityMask = null;
         mask.BeginAnimation(RadialGradientBrush.RadiusXProperty, shrink);
         mask.BeginAnimation(RadialGradientBrush.RadiusYProperty, shrink);
@@ -3629,6 +3633,24 @@ public partial class OverlayWindow : Window
             Canvas.SetTop(TranslatedImage, _translatedRect.Y / _scale);
             TranslatedImage.Width = _translatedRect.Width / _scale;
             TranslatedImage.Height = _translatedRect.Height / _scale;
+            // A lasso capture shows the translation only inside its shape.
+            if (LassoGeometry() is { } lassoShape)
+            {
+                var clip = lassoShape.Clone();
+                clip.Transform = new TransformGroup
+                {
+                    Children =
+                    {
+                        new TranslateTransform(-_translatedRect.X, -_translatedRect.Y),
+                        new ScaleTransform(1 / _scale, 1 / _scale)
+                    }
+                };
+                TranslatedImage.Clip = clip;
+            }
+            else
+            {
+                TranslatedImage.Clip = null;
+            }
             TranslatedImage.Visibility = Visibility.Visible;
         }
 
