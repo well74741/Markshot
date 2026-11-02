@@ -292,8 +292,10 @@
                             <Border x:Name="Hl" Background="{StaticResource Hover}" CornerRadius="5" Opacity="0" />
                             <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5"
                                     Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                                <ContentPresenter x:Name="Cp" RenderTransformOrigin="0.5,0.5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" >
+                                    <ContentPresenter.RenderTransform><ScaleTransform /></ContentPresenter.RenderTransform>
+                                </ContentPresenter>
                             </Border>
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -305,6 +307,12 @@
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1.1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -312,6 +320,12 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>
@@ -345,8 +359,10 @@
                             <Border x:Name="Hl" Background="{StaticResource Hover}" CornerRadius="5" Opacity="0" />
                             <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5"
                                     Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                                <ContentPresenter x:Name="Cp" RenderTransformOrigin="0.5,0.5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" >
+                                    <ContentPresenter.RenderTransform><ScaleTransform /></ContentPresenter.RenderTransform>
+                                </ContentPresenter>
                             </Border>
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -358,6 +374,12 @@
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1.1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -365,6 +387,12 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>
@@ -408,8 +436,10 @@
                             <Border x:Name="Hl" Background="{StaticResource Hover}" CornerRadius="5" Opacity="0" />
                             <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5"
                                     Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                                <ContentPresenter x:Name="Cp" RenderTransformOrigin="0.5,0.5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" >
+                                    <ContentPresenter.RenderTransform><ScaleTransform /></ContentPresenter.RenderTransform>
+                                </ContentPresenter>
                             </Border>
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -421,6 +451,12 @@
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1.1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -428,6 +464,12 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>
@@ -461,8 +503,10 @@
                             <Border x:Name="Hl" Background="{StaticResource Hover}" CornerRadius="5" Opacity="0" />
                             <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5"
                                     Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                                <ContentPresenter x:Name="Cp" RenderTransformOrigin="0.5,0.5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" >
+                                    <ContentPresenter.RenderTransform><ScaleTransform /></ContentPresenter.RenderTransform>
+                                </ContentPresenter>
                             </Border>
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -474,6 +518,12 @@
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1.1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -481,6 +531,12 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>
@@ -611,7 +667,9 @@
                             <!-- The selected plate cross-fades between segments (160 ms). -->
                             <Border x:Name="Sel" Background="{StaticResource Accent}" CornerRadius="4" Opacity="0" />
                             <Border Background="Transparent" Padding="9,3">
-                                <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" />
+                                <ContentPresenter x:Name="Cp" RenderTransformOrigin="0.5,0.5" TextElement.Foreground="{TemplateBinding Foreground}" >
+                                    <ContentPresenter.RenderTransform><ScaleTransform /></ContentPresenter.RenderTransform>
+                                </ContentPresenter>
                             </Border>
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -623,6 +681,12 @@
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.05" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1.05" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -630,6 +694,12 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>
@@ -693,7 +763,9 @@
                             <!-- The selected plate cross-fades between segments (160 ms). -->
                             <Border x:Name="Sel" Background="{StaticResource Accent}" CornerRadius="4" Opacity="0" />
                             <Border Background="Transparent" Padding="10,3">
-                                <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" />
+                                <ContentPresenter x:Name="Cp" RenderTransformOrigin="0.5,0.5" TextElement.Foreground="{TemplateBinding Foreground}" >
+                                    <ContentPresenter.RenderTransform><ScaleTransform /></ContentPresenter.RenderTransform>
+                                </ContentPresenter>
                             </Border>
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -705,6 +777,12 @@
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.05" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1.05" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -712,6 +790,12 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
+                                                <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.16">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>

@@ -380,6 +380,10 @@ public partial class AnnotationToolbar : UserControl
                 ToolTip = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
             };
 
+            swatch.RenderTransformOrigin = new Point(0.5, 0.5);
+            swatch.RenderTransform = new ScaleTransform(1, 1);
+            swatch.MouseEnter += (_, _) => HoverScale(swatch, 1.15);
+            swatch.MouseLeave += (_, _) => HoverScale(swatch, 1);
             swatch.MouseLeftButtonDown += (_, e) =>
             {
                 _color = color;
@@ -393,6 +397,18 @@ public partial class AnnotationToolbar : UserControl
         }
 
         UpdateSwatches();
+    }
+
+    private static void HoverScale(FrameworkElement element, double to)
+    {
+        if (element.RenderTransform is not ScaleTransform scale)
+        {
+            return;
+        }
+
+        var animation = new System.Windows.Media.Animation.DoubleAnimation(to, Motion.Fast) { EasingFunction = Motion.Ease };
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, animation);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, animation);
     }
 
     private void UpdateSwatches()

@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.05`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.06`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -373,6 +373,16 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 目标框架改为 `net8.0-windows`（不再带 25MB 的 Microsoft.Windows.SDK.NET.dll，未使用任何 WinRT API）。
   安装包改为发布文件夹 + Inno LZMA2 固实压缩：约 80MB（以前 105MB）。主要体积：.NET 运行时 + WPF/WinForms、onnxruntime/SkiaSharp、OCR 模型 ~30MB。
 - Logo 去掉深色描边（看起来是黑边），32px 以上改为很淡的柔和投影，16~24px 无投影。
+
+## 8.1.4 0.8.06 变更
+
+- `SizeTransitionHost` 改为自己按帧推进（`CompositionTarget.Rendering` + `Motion.Bezier`）：WPF 动画在第一帧前读到的是旧值，
+  选工具时同一帧两次布局会让过渡从终点重新开始，首次展开设置栏看起来是一下弹出。
+- 画笔类光标 `ToolCursors.Get(..., scale)`：贴图传 `CursorScale = 缩放 × DPI`，光标圈 = 屏幕上实际笔宽；光标位图随尺寸变大（不再 60px 封顶）。
+- 截图 → 贴图：`OverlayWindow.FinishWithTransition`：工具栏弹出收起、遮罩/选区框淡出 170ms 后再关闭窗口（期间不接受输入）。
+- 悬停放大：App.xaml 里带 `Hl` 悬停底板的按钮/单选/开关模板，内容 `Cp` 160ms 放大到 1.1（文字分段 1.05）；色块在代码里 1.15。
+- 贴图：方向键微调（Shift 10px）、拖动时 Shift 锁定横/竖方向（`Straighten`）；托盘中键截图。
+- 打包：`tools/package.ps1`（UTF-8 BOM，Windows PowerShell 才能读中文）检查依赖并生成便携 zip + 安装包。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

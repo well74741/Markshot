@@ -183,7 +183,9 @@ public static class ToolCursors
         return new Point(cx + Math.Cos(radians) * radius, cy + Math.Sin(radians) * radius);
     }
 
-    public static Cursor Get(AnnotationTool tool, double thickness = 3, Color? color = null)
+    /// <param name="scale">Screen pixels per canvas pixel (a zoomed pin on a high-DPI screen &gt; 1), so the ring
+    /// is as big as the stroke really is on screen.</param>
+    public static Cursor Get(AnnotationTool tool, double thickness = 3, Color? color = null, double scale = 1)
     {
         if (tool == AnnotationTool.Select || tool == AnnotationTool.None)
         {
@@ -208,7 +210,7 @@ public static class ToolCursors
             AnnotationTool.Highlighter => thickness * 4,
             _ => thickness
         };
-        var diameter = Math.Clamp((int)Math.Round(width), 6, 60);
+        var diameter = Math.Clamp((int)Math.Round(width * Math.Max(0.1, scale)), 6, 240);
         var ink = tool == AnnotationTool.Eraser
             ? Colors.White
             : color ?? Color.FromRgb(0xF5, 0xF5, 0xF5);
@@ -223,6 +225,9 @@ public static class ToolCursors
         return cursor;
     }
 
+    /// <summary>Cursor bitmap edge: 64 px, larger for big brushes (the ring is never clipped).</summary>
+    private static int CursorSize(int diameter) => Math.Max(64, (int)Math.Ceiling((diameter + 12) / 32.0) * 32);
+
     /// <summary>
     /// Brush ring: a bright white ring with a soft dark halo (visible on any
     /// background), the tool colour as an inner ring for the pen, a light
@@ -236,7 +241,8 @@ public static class ToolCursors
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
             {
-                var center = new Point(32, 32);
+                var size = CursorSize(diameter);
+                var center = new Point(size / 2.0, size / 2.0);
                 var radius = diameter / 2.0;
                 var halo = new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 3.2);
                 var ring = new Pen(new SolidColorBrush(Color.FromRgb(255, 255, 255)), 1.6);
@@ -252,7 +258,8 @@ public static class ToolCursors
                 dc.DrawEllipse(Brushes.White, null, center, 0.9, 0.9);
             }
 
-            return SaveCursor(visual, 64, 32, 32, $"cursor-{key}.cur");
+            var canvas = CursorSize(diameter);
+            return SaveCursor(visual, canvas, canvas / 2, canvas / 2, $"cursor-{key}.cur");
         }
         catch (Exception ex)
         {

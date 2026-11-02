@@ -48,6 +48,9 @@ public sealed class AnnotationEditor : FrameworkElement
     /// <summary>Opacity of the live eraser (1 = erases fully).</summary>
     public double LiveEraserStrength { get; set; } = 1;
 
+    /// <summary>False while the capture is finishing into a pin: the area frame is no longer drawn.</summary>
+    public bool ChromeVisible { get; set; } = true;
+
     /// <summary>The capture area is being dragged: a bold outline without handles.</summary>
     public bool SelectionDragging { get; set; }
 
@@ -116,7 +119,10 @@ public sealed class AnnotationEditor : FrameworkElement
         if (hasSelection)
         {
             dc.Pop();
-            DrawSelectionChrome(dc, Selection);
+            if (ChromeVisible)
+            {
+                DrawSelectionChrome(dc, Selection);
+            }
         }
 
         dc.Pop();

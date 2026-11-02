@@ -1983,6 +1983,12 @@ public partial class OverlayWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (_finishing)
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (_closed || _textEditor.IsActive || _editingWatermark != null || WatermarkEditor.IsKeyboardFocusWithin)
         {
             return;
@@ -2941,7 +2947,46 @@ public partial class OverlayWindow : Window
         var origin = new Point(Math.Round(rect.X), Math.Round(rect.Y));
         PinBaseImage = Compose(includeAnnotations: false);
         PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, origin, PinBaseImage);
-        CloseWith(CaptureAction.Pin, Compose());
+        var output = Compose();
+        FinishWithTransition(() => CloseWith(CaptureAction.Pin, output));
+    }
+
+    private bool _finishing;
+
+    /// <summary>
+    /// Turning the capture into a pin: the toolbar folds away, the dimming, the area frame and
+    /// the selection handles fade out (the screen then looks like the pin about to appear in
+    /// the same place), and only then the window closes. Input is ignored meanwhile.
+    /// </summary>
+    private void FinishWithTransition(Action done)
+    {
+        if (_finishing)
+        {
+            return;
+        }
+
+        _finishing = true;
+        InputLayer.IsHitTestVisible = false;
+        Toolbar.IsHitTestVisible = false;
+        Editor.ChromeVisible = false;
+        Editor.Selected = null;
+        Editor.HoverWatermark = null;
+        Editor.InvalidateVisual();
+        Magnifier.Visibility = Visibility.Collapsed;
+        Hint.Visibility = Visibility.Collapsed;
+        Motion.SetShown(TranslateStatus, false);
+        Motion.Fade(DimLayer, 0, Motion.Fast);
+        Motion.PopOut(Toolbar);
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(170) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (!_closed)
+            {
+                done();
+            }
+        };
+        timer.Start();
     }
 
     /// <summary>True while the selection itself is being drawn, moved or resized.</summary>

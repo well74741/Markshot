@@ -310,7 +310,7 @@ public partial class PinWindow : Window
         Toolbar.SetSelection(null);
         var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
         InputLayer.IsHitTestVisible = active;
-        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color) : Cursors.Arrow;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale) : Cursors.Arrow;
         ActivateWatermarkIfNeeded();
     }
 
@@ -333,7 +333,7 @@ public partial class PinWindow : Window
         _thickness = Toolbar.Thickness;
         var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
         InputLayer.IsHitTestVisible = active;
-        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color) : Cursors.Arrow;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale) : Cursors.Arrow;
         ClearAnnotationHover();
         ActivateWatermarkIfNeeded();
     }
@@ -362,7 +362,7 @@ public partial class PinWindow : Window
         _corner = Toolbar.CornerRadius;
         if (_tool is not AnnotationTool.None and not AnnotationTool.Select)
         {
-            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
         }
 
         if (_textEditor.Target is { } editing)
@@ -487,7 +487,7 @@ public partial class PinWindow : Window
             // Drawing with the button: keep drawing in the new style, the element stays selected.
             _tool = variant;
             Toolbar.SetTool(variant);
-            InputLayer.Cursor = ToolCursors.Get(variant, _thickness, _color);
+            InputLayer.Cursor = ToolCursors.Get(variant, _thickness, _color, CursorScale);
             SelectQuietly(replacement);
             _freshSelection = replacement;
             return;
@@ -808,8 +808,7 @@ public partial class PinWindow : Window
         if (_middleDragging)
         {
             var middleCursor = Native.CursorPosition();
-            var dx = middleCursor.X - _dragStartCursorX;
-            var dy = middleCursor.Y - _dragStartCursorY;
+            var (dx, dy) = Straighten(middleCursor.X - _dragStartCursorX, middleCursor.Y - _dragStartCursorY);
             if (_middleMoved || Math.Abs(dx) + Math.Abs(dy) > 3)
             {
                 _middleMoved = true;
@@ -890,9 +889,21 @@ public partial class PinWindow : Window
         }
 
         var cursor = Native.CursorPosition();
-        _left = _dragStartLeft + (cursor.X - _dragStartCursorX);
-        _top = _dragStartTop + (cursor.Y - _dragStartCursorY);
+        var (moveX, moveY) = Straighten(cursor.X - _dragStartCursorX, cursor.Y - _dragStartCursorY);
+        _left = _dragStartLeft + moveX;
+        _top = _dragStartTop + moveY;
         ApplyBounds();
+    }
+
+    /// <summary>With Shift held a pin moves only horizontally or only vertically (the larger direction).</summary>
+    private static (int X, int Y) Straighten(int dx, int dy)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+        {
+            return (dx, dy);
+        }
+
+        return Math.Abs(dx) >= Math.Abs(dy) ? (dx, 0) : (0, dy);
     }
 
     private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -1325,6 +1336,16 @@ public partial class PinWindow : Window
                 EnterEditMode();
                 e.Handled = true;
                 break;
+            case Key.Left or Key.Right or Key.Up or Key.Down when !_locked && !control:
+            {
+                // Arrow keys nudge the pin by a pixel (Shift: 10).
+                var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 10 : 1;
+                _left += key == Key.Left ? -step : key == Key.Right ? step : 0;
+                _top += key == Key.Up ? -step : key == Key.Down ? step : 0;
+                ApplyBounds();
+                e.Handled = true;
+                break;
+            }
         }
     }
 
@@ -1341,7 +1362,7 @@ public partial class PinWindow : Window
             if (key == Key.Space)
             {
                 _gesture.EndMove();
-                InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+                InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
             }
             else if (key == Key.E)
             {
@@ -1676,7 +1697,7 @@ public partial class PinWindow : Window
 
         var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
         InputLayer.IsHitTestVisible = active;
-        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color) : Cursors.Arrow;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale) : Cursors.Arrow;
         ClearAnnotationHover();
     }
 
@@ -1704,6 +1725,9 @@ public partial class PinWindow : Window
     }
 
     private Point ToPixels(Point dip) => new(dip.X / _zoom, dip.Y / _zoom);
+
+    /// <summary>Screen pixels per image pixel (zoom × display scaling): brush cursors use it to match the stroke.</summary>
+    private double CursorScale => _zoom * VisualTreeHelper.GetDpi(this).DpiScaleX;
 
     private void Input_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -2139,7 +2163,7 @@ public partial class PinWindow : Window
         Toolbar.SyncFrom(text);
         _tool = AnnotationTool.Text;
         InputLayer.IsHitTestVisible = true;
-        InputLayer.Cursor = ToolCursors.Get(AnnotationTool.Text, _thickness, _color);
+        InputLayer.Cursor = ToolCursors.Get(AnnotationTool.Text, _thickness, _color, CursorScale);
         _textEditor.Begin(text, isNew, caretAt, selectAll);
     }
 
@@ -2387,7 +2411,7 @@ public partial class PinWindow : Window
         }
         else
         {
-            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
         }
     }
 
@@ -2413,7 +2437,7 @@ public partial class PinWindow : Window
         }
 
         ClearAnnotationHover();
-        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
     }
 
     private void ClearAnnotationHover()
@@ -2487,7 +2511,7 @@ public partial class PinWindow : Window
 
         _thickness = value;
         Toolbar.SetThickness(value);
-        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
     }
 
     private void AdjustSelectedByWheel(int delta, bool opacity)

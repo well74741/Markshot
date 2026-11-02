@@ -47,6 +47,14 @@ public sealed class TrayService : IDisposable
         };
 
         _notifyIcon.DoubleClick += (_, _) => capture();
+        // Middle click on the tray icon starts a capture right away.
+        _notifyIcon.MouseUp += (_, e) =>
+        {
+            if (e.Button == Forms.MouseButtons.Middle)
+            {
+                capture();
+            }
+        };
     }
 
     public void ShowBalloon(string title, string text)
