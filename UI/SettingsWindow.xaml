@@ -223,17 +223,20 @@
 
         <!-- Navigation -->
         <Border Grid.Row="0" Grid.RowSpan="2" Background="#FF151515" BorderBrush="#14FFFFFF" BorderThickness="0,0,1,0">
+            <Grid>
             <StackPanel Margin="12,18,12,12">
                 <TextBlock Text="Markshot" Foreground="#F5F5F5" FontSize="15" FontWeight="SemiBold" Margin="8,0,0,2" />
-                <StackPanel Orientation="Horizontal" Margin="8,0,0,18">
+                <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
                     <TextBlock x:Name="VersionText" Foreground="#6E6E6E" FontSize="11" VerticalAlignment="Center" />
                     <Button x:Name="CheckUpdateButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="4,0,0,0"
-                            Foreground="#8A8A8A" FontSize="12" Content="↻" ToolTip="检查更新（更新路径里的安装包）"
+                            Foreground="#8A8A8A" FontSize="12" Content="↻" ToolTip="检查更新"
                             Click="CheckUpdate_Click" VerticalAlignment="Center" />
-                    <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButton}" MinWidth="0" Height="20"
-                            Padding="7,0" FontSize="11" Margin="2,0,0,0" Visibility="Collapsed"
-                            Click="Update_Click" VerticalAlignment="Center" />
                 </StackPanel>
+                <!-- Own line so it is never cut off by the narrow column. -->
+                <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButton}" MinWidth="0" Height="24"
+                        Padding="10,0" FontSize="11.5" Margin="8,6,0,0" Visibility="Collapsed" HorizontalAlignment="Left"
+                        Click="Update_Click" />
+                <Border Height="18" />
                 <RadioButton x:Name="NavHotkeys" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Hotkeys"
                              Content="快捷键" IsChecked="True" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavTranslate" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Translate"
@@ -241,6 +244,26 @@
                 <RadioButton x:Name="NavGeneral" Style="{StaticResource NavItem}" GroupName="Nav" Tag="General"
                              Content="保存与识别" Checked="Nav_Checked" />
             </StackPanel>
+
+            <!-- Coffee drawer: drag the bar up to pull the QR code out; click it to put it away. -->
+            <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,6">
+                <TextBlock x:Name="DrawerHint" Text="往上拉，请杯咖~" Foreground="#8A8A8A" FontSize="12"
+                           HorizontalAlignment="Center" Margin="0,0,0,4" Opacity="0" IsHitTestVisible="False" />
+                <Border x:Name="DrawerPanel" Height="0" ClipToBounds="True">
+                    <Image x:Name="DrawerQr" Source="pack://application:,,,/Markshot;component/Assets/donate_qr.png"
+                           Width="136" Height="136" VerticalAlignment="Top" Margin="0,4,0,0"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+                </Border>
+                <Border x:Name="DrawerHandle" Height="22" Background="Transparent" Cursor="SizeNS"
+                        ToolTip="往上拉，请杯咖~"
+                        MouseEnter="DrawerHandle_MouseEnter" MouseLeave="DrawerHandle_MouseLeave"
+                        MouseLeftButtonDown="DrawerHandle_MouseLeftButtonDown" MouseMove="DrawerHandle_MouseMove"
+                        MouseLeftButtonUp="DrawerHandle_MouseLeftButtonUp">
+                    <Border x:Name="DrawerBar" Width="46" Height="4" CornerRadius="2" Background="#4DFFFFFF"
+                            VerticalAlignment="Center" />
+                </Border>
+            </StackPanel>
+            </Grid>
         </Border>
 
         <!-- Pages -->
@@ -270,21 +293,21 @@
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="截图" Style="{StaticResource RowLabel}" />
                                 <TextBox Grid.Row="0" Grid.Column="1" x:Name="CaptureHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
                                 <TextBlock Grid.Row="0" Grid.Column="3" Text="贴剪贴板" Style="{StaticResource RowLabel}" />
                                 <TextBox Grid.Row="0" Grid.Column="4" x:Name="PinHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="鼠标穿透" Style="{StaticResource RowLabel}" />
                                 <TextBox Grid.Row="2" Grid.Column="1" x:Name="MouseThroughHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
                                 <TextBlock Grid.Row="2" Grid.Column="3" Text="恢复贴图" Style="{StaticResource RowLabel}"
                                            ToolTip="重新打开最近关闭的贴图" />
                                 <TextBox Grid.Row="2" Grid.Column="4" x:Name="RestorePinHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"
-                                       Text="点击输入框后直接按组合键；Backspace 清除，Esc 还原；除截图外都可留空。" />
+                                       Text="点击输入框后直接按组合键，也可以按鼠标中键 / 侧键（可配合 Ctrl / Alt / Shift）；Backspace 清除，Esc 还原；除截图外都可留空。" />
                         </StackPanel>
                     </Border>
 
@@ -511,6 +534,8 @@
                                        Text="留空则保存到 图片\Markshot；Ctrl+Shift+S 直接存到这里不弹窗。" />
                             <CheckBox x:Name="CopyFileCheck" Margin="84,10,0,0" Foreground="#D8D8D8" FontSize="12"
                                       Content="复制图片文件：复制截图或贴图时同时复制 PNG 文件，可直接在文件管理器里粘贴" />
+                            <CheckBox x:Name="AskOpenFolderCheck" Margin="84,8,0,0" Foreground="#D8D8D8" FontSize="12"
+                                      Content="保存图片后询问是否打开所在文件夹" />
                         </StackPanel>
                     </Border>
 

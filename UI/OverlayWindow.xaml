@@ -63,15 +63,14 @@
 
             <ui:AnnotationToolbar x:Name="Toolbar" Visibility="Collapsed" />
 
-            <!-- Size of the capture, editable: appears above the area while the pointer is on its frame. -->
-            <Border x:Name="SizeBox" Visibility="Collapsed" Background="#F01C1C1C" BorderBrush="#33FFFFFF"
-                    BorderThickness="1" CornerRadius="6" Padding="4,3">
+            <!-- The size label at the capture's top-left, editable in place: click a number, type, Enter. -->
+            <Border x:Name="SizeBox" Visibility="Collapsed" Background="#CD141414" CornerRadius="3" Padding="3,1">
                 <StackPanel Orientation="Horizontal">
-                    <TextBox x:Name="SizeWidthBox" Style="{StaticResource InputBox}" Width="56" FontSize="12" Padding="3,0"
-                             TextAlignment="Center" ToolTip="宽（像素）" PreviewKeyDown="SizeBox_PreviewKeyDown" />
-                    <TextBlock Text="×" Foreground="#9A9A9A" FontSize="12" Margin="5,0" VerticalAlignment="Center" />
-                    <TextBox x:Name="SizeHeightBox" Style="{StaticResource InputBox}" Width="56" FontSize="12" Padding="3,0"
-                             TextAlignment="Center" ToolTip="高（像素），Enter 应用" PreviewKeyDown="SizeBox_PreviewKeyDown" />
+                    <TextBox x:Name="SizeWidthBox" Style="{StaticResource SizeLabelField}" ToolTip="宽（像素），可直接修改，Enter 应用"
+                             PreviewKeyDown="SizeBox_PreviewKeyDown" />
+                    <TextBlock Text="×" Foreground="#C8C8C8" FontSize="12" Margin="1,0" VerticalAlignment="Center" />
+                    <TextBox x:Name="SizeHeightBox" Style="{StaticResource SizeLabelField}" ToolTip="高（像素），可直接修改，Enter 应用"
+                             PreviewKeyDown="SizeBox_PreviewKeyDown" />
                 </StackPanel>
             </Border>
 

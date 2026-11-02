@@ -768,6 +768,9 @@ public partial class AnnotationToolbar : UserControl
             menu.Items.Add(item);
         }
 
+        // While a style menu is open the windows must not take the focus back (it would close it).
+        IsMenuOpen = true;
+        menu.Closed += (_, _) => IsMenuOpen = false;
         anchor.ContextMenu = menu;
         menu.IsOpen = true;
     }
@@ -796,6 +799,8 @@ public partial class AnnotationToolbar : UserControl
     /// Switches to another style of a button (menu, Tab): the window converts a selected
     /// element of that button, or simply changes the tool.
     /// </summary>
+    public bool IsMenuOpen { get; private set; }
+
     public void PickVariant(AnnotationTool tool)
     {
         SetTool(tool, notify: false);

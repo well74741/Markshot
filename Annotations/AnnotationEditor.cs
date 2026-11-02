@@ -48,6 +48,14 @@ public sealed class AnnotationEditor : FrameworkElement
     /// <summary>Opacity of the live eraser (1 = erases fully).</summary>
     public double LiveEraserStrength { get; set; } = 1;
 
+    /// <summary>Freehand (lasso) capture being drawn: the path so far and the straight-segment preview end.</summary>
+    public List<Point>? LassoDraft { get; set; }
+
+    public Point? LassoPreview { get; set; }
+
+    /// <summary>Shape of a lasso capture (canvas pixels); null = the rectangle.</summary>
+    public Geometry? SelectionPath { get; set; }
+
     /// <summary>Corner radius of the capture area (canvas pixels); 0 = square.</summary>
     public double SelectionCornerRadius { get; set; }
 
@@ -119,7 +127,7 @@ public sealed class AnnotationEditor : FrameworkElement
         var hasSelection = ShowSelectionChrome && Selection.Width > 0 && Selection.Height > 0;
         if (hasSelection)
         {
-            dc.PushClip(new RectangleGeometry(Selection, SelectionCornerRadius, SelectionCornerRadius));
+            dc.PushClip(SelectionPath ?? new RectangleGeometry(Selection, SelectionCornerRadius, SelectionCornerRadius));
         }
         else if (Source != null)
         {
@@ -164,6 +172,11 @@ public sealed class AnnotationEditor : FrameworkElement
             {
                 DrawSelectionChrome(dc, Selection);
             }
+        }
+
+        if (LassoDraft is { Count: > 0 })
+        {
+            DrawLassoDraft(dc);
         }
 
         dc.Pop();
@@ -231,6 +244,32 @@ public sealed class AnnotationEditor : FrameworkElement
         {
             dc.Pop();
         }
+    }
+
+    private void DrawLassoDraft(DrawingContext dc)
+    {
+        var unit = Scale;
+        var points = LassoDraft!;
+        var line = new StreamGeometry();
+        using (var context = line.Open())
+        {
+            context.BeginFigure(points[0], false, false);
+            context.PolyLineTo(points.Skip(1).ToList(), true, true);
+        }
+
+        line.Freeze();
+        dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), unit * 3.4) { LineJoin = PenLineJoin.Round }, line);
+        dc.DrawGeometry(null, new Pen(Brushes.White, unit * 1.6) { LineJoin = PenLineJoin.Round }, line);
+        var last = points[^1];
+        if (LassoPreview is { } preview)
+        {
+            // Shift: the straight segment that will be added.
+            dc.DrawLine(new Pen(Accent, unit * 1.6) { DashStyle = new DashStyle(new[] { 3.0, 2.0 }, 0) }, last, preview);
+        }
+
+        // Closing hint back to the start.
+        dc.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), unit) { DashStyle = new DashStyle(new[] { 2.0, 3.0 }, 0) },
+            LassoPreview ?? last, points[0]);
     }
 
     /// <summary>
@@ -571,6 +610,14 @@ public sealed class AnnotationEditor : FrameworkElement
         var unit = Scale; // canvas pixels per DIP
 
         var blue = new SolidColorBrush(Color.FromRgb(0x2F, 0x7B, 0xFF));
+        if (SelectionPath != null)
+        {
+            // Lasso capture: its outline only (no handles / rounding dots; it can be moved).
+            dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), unit * 3.6), SelectionPath);
+            dc.DrawGeometry(null, new Pen(blue, unit * 2), SelectionPath);
+            return;
+        }
+
         var corner = SelectionCornerRadius;
         if (SelectionDragging)
         {

@@ -54,6 +54,9 @@ public sealed class AppConfig
     /// <summary>Copying a capture / pin also puts a PNG file on the clipboard (paste in Explorer).</summary>
     public bool CopyImageAsFile { get; set; } = true;
 
+    /// <summary>After saving an image, ask whether to open its folder.</summary>
+    public bool AskOpenFolderAfterSave { get; set; } = true;
+
     /// <summary>Translate every capture selection in place (the toolbar's translate toggle remembers it).</summary>
     public bool ImmersiveTranslate { get; set; }
 

@@ -1,9 +1,47 @@
+using System.Runtime.InteropServices;
 using System.Windows.Interop;
 
 namespace Markshot.Core;
 
 public readonly record struct HotkeyGesture(uint Modifiers, uint VirtualKey, string Text)
 {
+    // Mouse buttons as hotkeys (virtual-key codes of the buttons).
+    public const uint VkMiddle = 0x04;
+    public const uint VkX1 = 0x05;
+    public const uint VkX2 = 0x06;
+
+    public const string MiddleName = "鼠标中键";
+    public const string X1Name = "鼠标侧键1";
+    public const string X2Name = "鼠标侧键2";
+
+    /// <summary>A mouse button (middle / side) rather than a key: needs the mouse hook.</summary>
+    public bool IsMouse => VirtualKey is VkMiddle or VkX1 or VkX2;
+
+    /// <summary>The settings box text for a mouse button with the held modifiers, e.g. "Ctrl+鼠标侧键1".</summary>
+    public static string FormatMouse(MouseButton button, ModifierKeys modifiers)
+    {
+        var parts = new List<string>();
+        if ((modifiers & ModifierKeys.Control) != 0) parts.Add("Ctrl");
+        if ((modifiers & ModifierKeys.Alt) != 0) parts.Add("Alt");
+        if ((modifiers & ModifierKeys.Shift) != 0) parts.Add("Shift");
+        if ((modifiers & ModifierKeys.Windows) != 0) parts.Add("Win");
+        parts.Add(button switch
+        {
+            MouseButton.XButton1 => X1Name,
+            MouseButton.XButton2 => X2Name,
+            _ => MiddleName
+        });
+        return string.Join("+", parts);
+    }
+
+    private static uint MouseVirtualKey(string name) => name.ToLowerInvariant() switch
+    {
+        "鼠标中键" or "中键" or "middlebutton" or "mbutton" or "middle" => VkMiddle,
+        "鼠标侧键1" or "侧键1" or "xbutton1" or "mousex1" => VkX1,
+        "鼠标侧键2" or "侧键2" or "xbutton2" or "mousex2" => VkX2,
+        _ => 0
+    };
+
     public static bool TryParse(string? text, out HotkeyGesture gesture, out string error)
     {
         gesture = default;
@@ -17,6 +55,7 @@ public readonly record struct HotkeyGesture(uint Modifiers, uint VirtualKey, str
 
         uint modifiers = 0;
         Key key = Key.None;
+        uint mouse = 0;
 
         foreach (var raw in text.Split('+', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -44,7 +83,19 @@ public readonly record struct HotkeyGesture(uint Modifiers, uint VirtualKey, str
                     continue;
             }
 
-            if (key != Key.None)
+            if (MouseVirtualKey(part) is var button and not 0)
+            {
+                if (key != Key.None || mouse != 0)
+                {
+                    error = "只能包含一个主键";
+                    return false;
+                }
+
+                mouse = button;
+                continue;
+            }
+
+            if (key != Key.None || mouse != 0)
             {
                 error = "只能包含一个主键";
                 return false;
@@ -55,6 +106,12 @@ public readonly record struct HotkeyGesture(uint Modifiers, uint VirtualKey, str
                 error = $"无法识别按键 “{part}”";
                 return false;
             }
+        }
+
+        if (mouse != 0)
+        {
+            gesture = new HotkeyGesture(modifiers, mouse, Normalize(text));
+            return true;
         }
 
         if (key == Key.None)
@@ -264,6 +321,12 @@ public sealed class HotkeyManager : IDisposable
 
     private readonly HwndSource _source;
     private readonly Dictionary<int, Action> _handlers = new();
+
+    // Mouse-button hotkeys: a low-level mouse hook (RegisterHotKey only knows keys).
+    private readonly List<(HotkeyGesture Gesture, Action Action)> _mouseBindings = new();
+    private readonly HashSet<uint> _swallowUp = new();
+    private LowLevelMouseProc? _mouseProc;
+    private IntPtr _mouseHook;
     private int _nextId = 0xA100;
     private bool _disposed;
 
@@ -298,6 +361,12 @@ public sealed class HotkeyManager : IDisposable
                 continue;
             }
 
+            if (gesture.IsMouse)
+            {
+                _mouseBindings.Add((gesture, () => Application.Current?.Dispatcher.BeginInvoke(action)));
+                continue;
+            }
+
             var id = _nextId++;
             var modifiers = gesture.Modifiers | Native.MOD_NOREPEAT;
             if (!Native.RegisterHotKey(_source.Handle, id, modifiers, gesture.VirtualKey))
@@ -320,8 +389,102 @@ public sealed class HotkeyManager : IDisposable
             };
         }
 
+        if (_mouseBindings.Count > 0)
+        {
+            _mouseProc = MouseHook;
+            _mouseHook = SetWindowsHookEx(WhMouseLl, _mouseProc, GetModuleHandle(null), 0);
+            if (_mouseHook == IntPtr.Zero)
+            {
+                errors.Add("鼠标按键快捷键：无法安装鼠标钩子");
+                _mouseBindings.Clear();
+            }
+        }
+
         return errors;
     }
+
+    private const int WhMouseLl = 14;
+    private const int WmMButtonDown = 0x0207;
+    private const int WmMButtonUp = 0x0208;
+    private const int WmXButtonDown = 0x020B;
+    private const int WmXButtonUp = 0x020C;
+
+    private IntPtr MouseHook(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0)
+        {
+            var message = wParam.ToInt32();
+            if (message is WmMButtonDown or WmMButtonUp or WmXButtonDown or WmXButtonUp)
+            {
+                var data = Marshal.PtrToStructure<MouseHookData>(lParam);
+                var vk = message is WmMButtonDown or WmMButtonUp
+                    ? HotkeyGesture.VkMiddle
+                    : (data.MouseData >> 16) == 1 ? HotkeyGesture.VkX1 : HotkeyGesture.VkX2;
+                if (message is WmMButtonUp or WmXButtonUp)
+                {
+                    if (_swallowUp.Remove(vk))
+                    {
+                        return new IntPtr(1);
+                    }
+                }
+                else
+                {
+                    var modifiers = CurrentModifiers();
+                    foreach (var (gesture, action) in _mouseBindings)
+                    {
+                        if (gesture.VirtualKey == vk && gesture.Modifiers == modifiers)
+                        {
+                            // Take the click (and its release) so the window below does not see it.
+                            _swallowUp.Add(vk);
+                            action();
+                            return new IntPtr(1);
+                        }
+                    }
+                }
+            }
+        }
+
+        return CallNextHookEx(_mouseHook, code, wParam, lParam);
+    }
+
+    private static uint CurrentModifiers()
+    {
+        static bool Down(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+        uint modifiers = 0;
+        if (Down(0x11)) modifiers |= Native.MOD_CONTROL;
+        if (Down(0x12)) modifiers |= Native.MOD_ALT;
+        if (Down(0x10)) modifiers |= Native.MOD_SHIFT;
+        if (Down(0x5B) || Down(0x5C)) modifiers |= Native.MOD_WIN;
+        return modifiers;
+    }
+
+    private delegate IntPtr LowLevelMouseProc(int code, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseHookData
+    {
+        public int X;
+        public int Y;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int hookType, LowLevelMouseProc callback, IntPtr module, uint threadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetModuleHandle(string? name);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -342,6 +505,14 @@ public sealed class HotkeyManager : IDisposable
         }
 
         _handlers.Clear();
+        if (_mouseHook != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(_mouseHook);
+            _mouseHook = IntPtr.Zero;
+        }
+
+        _mouseBindings.Clear();
+        _swallowUp.Clear();
     }
 
     public void Dispose()

@@ -184,8 +184,20 @@ public partial class App : Application
         try
         {
             var (image, bounds) = ScreenCapture.CaptureVirtualScreen();
-            var overlay = new OverlayWindow(image, bounds, demo);
+            var overlay = new OverlayWindow(image, bounds, demo)
+            {
+                // The pin is created while the capture is still on screen (no gap, no flicker).
+                PinNow = (source, output) => CreatePin(output, (int)source.SelectionScreenRect.X, (int)source.SelectionScreenRect.Y,
+                    source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow)
+            };
             overlay.ShowDialog();
+
+            if (overlay.PinnedDirectly)
+            {
+                Config.RememberRegion(overlay.SelectionScreenRect);
+                Config.Save();
+                return;
+            }
 
             var result = overlay.Result;
             var output = overlay.OutputImage;
@@ -203,6 +215,9 @@ public partial class App : Application
 
             switch (result)
             {
+                case CaptureAction.Save when overlay.SavedPath != null:
+                    ShowSavedPrompt(overlay.SavedPath);
+                    break;
                 case CaptureAction.Pin:
                     CreatePin(output, (int)overlay.SelectionScreenRect.X, (int)overlay.SelectionScreenRect.Y,
                         overlay.PinBaseImage, overlay.PinAnnotations, overlay.PinCornerRadius);
@@ -229,7 +244,8 @@ public partial class App : Application
     }
 
     public PinWindow CreatePin(BitmapSource image, int screenX, int screenY,
-        BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null, double cornerRadius = 0)
+        BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null, double cornerRadius = 0,
+        bool fromCapture = false, bool shapedShadow = false)
     {
         while (_pins.Count >= MaxPins)
         {
@@ -239,7 +255,12 @@ public partial class App : Application
             _pins.Remove(oldest);
         }
 
-        var pin = new PinWindow(image, screenX, screenY, baseImage, annotations) { CornerRadius = cornerRadius };
+        var pin = new PinWindow(image, screenX, screenY, baseImage, annotations)
+        {
+            CornerRadius = cornerRadius,
+            ShapedShadow = shapedShadow,
+            FromCapture = fromCapture
+        };
 
         pin.Closed += (_, _) =>
         {
@@ -263,6 +284,26 @@ public partial class App : Application
     }
 
     public int PinCount => _pins.Count;
+
+    /// <summary>After an image was saved: offer to open its folder (unless turned off).</summary>
+    public void ShowSavedPrompt(string path)
+    {
+        if (!Config.AskOpenFolderAfterSave || string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        new SavedPromptWindow(path).Show();
+    }
+
+    /// <summary>Settings window: the shadow sliders preview on every open pin (null = back to the saved values).</summary>
+    public void PreviewPinShadow((double Size, string Color, double Opacity)? shadow)
+    {
+        foreach (var pin in _pins)
+        {
+            pin.PreviewShadow(shadow);
+        }
+    }
 
     public void CreatePinAtCursor(BitmapSource image)
     {
@@ -409,6 +450,7 @@ public partial class App : Application
         {
             var saved = _settings?.Saved == true;
             _settings = null;
+            PreviewPinShadow(null); // drop an unsaved preview (saved values are re-applied below)
             if (saved)
             {
                 Config.Save();

@@ -246,6 +246,25 @@ public partial class PinWindow : Window
     /// <summary>Corner radius in image pixels (a pin made from a rounded capture).</summary>
     public double CornerRadius { get; init; }
 
+    /// <summary>The shadow follows the image's own shape (a lasso capture with transparent surroundings).</summary>
+    public bool ShapedShadow { get; init; }
+
+    /// <summary>Made from a capture: appears at once (no fade, the capture shows the same pixels) with a light sweep.</summary>
+    public bool FromCapture { get; init; }
+
+    // Shadow settings being previewed from the settings window (null = the saved ones).
+    private (double Size, string Color, double Opacity)? _shadowPreview;
+
+    private double ShadowSize => _shadowPreview?.Size ?? App.Config?.PinShadowSize ?? 12;
+
+    /// <summary>Live preview while the shadow sliders move; null restores the saved settings.</summary>
+    public void PreviewShadow((double Size, string Color, double Opacity)? shadow)
+    {
+        _shadowPreview = shadow;
+        UpdateFrame();
+        ApplyBounds();
+    }
+
     /// <summary>Everything needed to reopen this pin exactly as it was (image, editable annotations, place, zoom, opacity).</summary>
     public PinSnapshot Snapshot() => new(
         SourceImage,
@@ -518,7 +537,15 @@ public partial class PinWindow : Window
 
         ApplyBounds();
         Dispatcher.BeginInvoke(new Action(ApplyBounds), DispatcherPriority.Loaded);
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Motion.Fast) { EasingFunction = Motion.Ease });
+        if (FromCapture)
+        {
+            // Same pixels as the capture underneath: no fade (that flickered), just the light sweep.
+            Dispatcher.BeginInvoke(new Action(PlayLightSweep), DispatcherPriority.Render);
+        }
+        else
+        {
+            BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Motion.Fast) { EasingFunction = Motion.Ease });
+        }
         RefreshTextLayer();
     }
 
@@ -686,7 +713,7 @@ public partial class PinWindow : Window
     /// </summary>
     private void ReclaimKeyboard()
     {
-        if (!_editMode || _textEditor.IsActive || _editingWatermark != null)
+        if (!_editMode || _textEditor.IsActive || _editingWatermark != null || Toolbar.IsMenuOpen)
         {
             return;
         }
@@ -713,7 +740,7 @@ public partial class PinWindow : Window
     }
 
     /// <summary>Margin around the image: enough for the configured shadow.</summary>
-    private static int Pad => Math.Max(16, (int)Math.Ceiling(App.Config?.PinShadowSize ?? 12) + 4);
+    private int Pad => Math.Max(16, (int)Math.Ceiling(ShadowSize) + 4);
 
     /// <summary>Settings changed: re-apply the shadow (size, colour, opacity) and the margin it needs.</summary>
     public void ApplyShadowSettings()
@@ -737,18 +764,36 @@ public partial class PinWindow : Window
         {
             // Shadow from the settings (size / colour / opacity); the active, locked and
             // click-through states tint it with their colour so the state stays visible.
+            // While annotating, the pin counts as active: clicks on its toolbar window (which never
+            // activates) used to toggle the state and made the shadow flicker.
+            var active = IsActive || _editMode;
             var config = App.Config;
-            var size = Math.Clamp(config?.PinShadowSize ?? 12, 0, 60);
-            var opacity = Math.Clamp(config?.PinShadowOpacity ?? 0.47, 0, 1);
-            var shadow = _clickThrough || _locked || IsActive ? color : ParseColor(config?.PinShadowColor, Color.FromRgb(0x6A, 0x6A, 0x6A));
-            if (IsActive)
+            var size = Math.Clamp(ShadowSize, 0, 60);
+            var opacity = Math.Clamp(_shadowPreview?.Opacity ?? config?.PinShadowOpacity ?? 0.47, 0, 1);
+            var stateColor = _clickThrough || _locked || active;
+            var shadow = stateColor
+                ? (_clickThrough || _locked ? color : Color.FromRgb(0x3B, 0x82, 0xF6))
+                : ParseColor(_shadowPreview?.Color ?? config?.PinShadowColor, Color.FromRgb(0x6A, 0x6A, 0x6A));
+            if (active)
             {
                 opacity = Math.Min(1, opacity * 1.25);
             }
 
-            ShadowBlur.Radius = size;
-            ImageShadowLayer.Visibility = size < 0.5 || opacity < 0.01 ? Visibility.Collapsed : Visibility.Visible;
-            ImageShadowLayer.Background = new SolidColorBrush(Color.FromArgb((byte)Math.Round(opacity * 255), shadow.R, shadow.G, shadow.B));
+            var visible = size >= 0.5 && opacity >= 0.01;
+            if (ShapedShadow)
+            {
+                // Lasso pins: the shadow traces the shape itself.
+                ImageShadowLayer.Visibility = Visibility.Collapsed;
+                Img.Effect = visible
+                    ? new DropShadowEffect { Color = shadow, BlurRadius = size * 1.6, ShadowDepth = 0, Opacity = opacity, RenderingBias = RenderingBias.Quality }
+                    : null;
+            }
+            else
+            {
+                ShadowBlur.Radius = size;
+                ImageShadowLayer.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                ImageShadowLayer.Background = new SolidColorBrush(Color.FromArgb((byte)Math.Round(opacity * 255), shadow.R, shadow.G, shadow.B));
+            }
         }
     }
 
@@ -2656,6 +2701,86 @@ public partial class PinWindow : Window
         {
             _orientation.Add(op);
         }
+
+        AnimateOrientation(op);
+    }
+
+    /// <summary>
+    /// A quick turn after a flip / rotation: the new image starts where the old one was
+    /// (mirrored, or turned back 90°) and swings into place (240 ms, shared curve).
+    /// </summary>
+    private void AnimateOrientation(char op)
+    {
+        var scale = new ScaleTransform(1, 1);
+        var rotate = new RotateTransform(0);
+        ImageHost.RenderTransformOrigin = new Point(0.5, 0.5);
+        ImageHost.RenderTransform = new TransformGroup { Children = { scale, rotate } };
+        var duration = Motion.Base;
+        switch (op)
+        {
+            case 'H':
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(-1, 1, duration) { EasingFunction = Motion.Ease });
+                break;
+            case 'V':
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(-1, 1, duration) { EasingFunction = Motion.Ease });
+                break;
+            default:
+                rotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(90, 0, duration) { EasingFunction = Motion.Ease });
+                break;
+        }
+    }
+
+    /// <summary>A bright band sweeps once across the pin, top-left to bottom-right, inside its outline.</summary>
+    private void PlayLightSweep()
+    {
+        var width = ImageHost.ActualWidth;
+        var height = ImageHost.ActualHeight;
+        if (width < 8 || height < 8)
+        {
+            return;
+        }
+
+        var diagonal = Math.Sqrt(width * width + height * height);
+        var band = new System.Windows.Shapes.Rectangle
+        {
+            Width = diagonal * 0.22,
+            Height = diagonal * 2,
+            IsHitTestVisible = false,
+            Fill = new LinearGradientBrush(
+                new GradientStopCollection
+                {
+                    new(Color.FromArgb(0, 255, 255, 255), 0),
+                    new(Color.FromArgb(110, 255, 255, 255), 0.5),
+                    new(Color.FromArgb(0, 255, 255, 255), 1)
+                },
+                new Point(0, 0.5), new Point(1, 0.5))
+        };
+        var move = new TranslateTransform();
+        band.RenderTransform = new TransformGroup
+        {
+            Children = { new RotateTransform(-45, band.Width / 2, band.Height / 2), move }
+        };
+        var layer = new Canvas
+        {
+            IsHitTestVisible = false,
+            Width = width,
+            Height = height,
+            ClipToBounds = true,
+            // Never outside the pin (rounded corners included).
+            Clip = new RectangleGeometry(new Rect(0, 0, width, height), CornerRadius * _zoom, CornerRadius * _zoom)
+        };
+        Canvas.SetLeft(band, -band.Width / 2);
+        Canvas.SetTop(band, -band.Height / 2);
+        layer.Children.Add(band);
+        ImageHost.Children.Add(layer);
+
+        var start = -diagonal * 0.75;
+        var end = diagonal * 0.75;
+        var sweep = new DoubleAnimation(start, end + width / 2, TimeSpan.FromMilliseconds(520)) { EasingFunction = Motion.Ease };
+        var sweepY = new DoubleAnimation(start + height / 2 - width / 2, end + height / 2, TimeSpan.FromMilliseconds(520)) { EasingFunction = Motion.Ease };
+        sweep.Completed += (_, _) => ImageHost.Children.Remove(layer);
+        move.BeginAnimation(TranslateTransform.XProperty, sweep);
+        move.BeginAnimation(TranslateTransform.YProperty, sweepY);
     }
 
     private async void TranslateInPlace()
@@ -3087,8 +3212,12 @@ public partial class PinWindow : Window
                 ? new JpegBitmapEncoder { QualityLevel = 92 }
                 : new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(CurrentImage));
-            using var stream = File.Create(dialog.FileName);
-            encoder.Save(stream);
+            using (var stream = File.Create(dialog.FileName))
+            {
+                encoder.Save(stream);
+            }
+
+            ((App)Application.Current).ShowSavedPrompt(dialog.FileName);
         }
         catch (Exception ex)
         {

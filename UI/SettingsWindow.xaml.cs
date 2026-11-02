@@ -38,6 +38,7 @@ public partial class SettingsWindow : Window
         LineKeyBox.Text = config.ToolLineHotkey;
         ShapeKeyBox.Text = config.ToolShapeHotkey;
         CopyFileCheck.IsChecked = config.CopyImageAsFile;
+        AskOpenFolderCheck.IsChecked = config.AskOpenFolderAfterSave;
         SaveDirBox.Text = config.SaveDirectory;
         UpdatePathBox.Text = UpdateService.EffectivePath(config);
         Loaded += (_, _) => RefreshUpdate(quiet: true);
@@ -167,6 +168,20 @@ public partial class SettingsWindow : Window
             box.Tag = box.Text;
             box.SelectAll();
         }
+    }
+
+    /// <summary>A focused hotkey box takes the middle / side mouse buttons as the hotkey.</summary>
+    private void HotkeyBox_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not TextBox box || !box.IsKeyboardFocused ||
+            e.ChangedButton is not (MouseButton.Middle or MouseButton.XButton1 or MouseButton.XButton2))
+        {
+            return;
+        }
+
+        box.Text = HotkeyGesture.FormatMouse(e.ChangedButton, Keyboard.Modifiers);
+        box.CaretIndex = box.Text.Length;
+        e.Handled = true;
     }
 
     private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -348,6 +363,7 @@ public partial class SettingsWindow : Window
         _config.PinShadowOpacity = Math.Round(ShadowOpacitySlider.Value) / 100;
         _config.PinShadowColor = _shadowColor;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
+        _config.AskOpenFolderAfterSave = AskOpenFolderCheck.IsChecked == true;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
         // Keep following the installer's folder unless another one was entered.
@@ -375,6 +391,92 @@ public partial class SettingsWindow : Window
     /// <summary>True when the window was closed with “保存”.</summary>
     public bool Saved { get; private set; }
 
+    // ---- coffee drawer ------------------------------------------------------------------
+    private const double DrawerFull = 144; // QR (136) + its top margin
+    private bool _drawerDragging;
+    private bool _drawerMoved;
+    private double _drawerStartY;
+    private double _drawerStartHeight;
+
+    private double DrawerHeight => double.IsNaN(DrawerPanel.Height) ? 0 : DrawerPanel.Height;
+
+    private void DrawerHandle_MouseEnter(object sender, MouseEventArgs e)
+    {
+        DrawerBar.Background = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF));
+        if (DrawerHeight < 1)
+        {
+            Motion.Fade(DrawerHint, 1);
+        }
+    }
+
+    private void DrawerHandle_MouseLeave(object sender, MouseEventArgs e)
+    {
+        DrawerBar.Background = new SolidColorBrush(Color.FromArgb(0x4D, 0xFF, 0xFF, 0xFF));
+        if (!_drawerDragging)
+        {
+            Motion.Fade(DrawerHint, 0);
+        }
+    }
+
+    private void DrawerHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var height = DrawerHeight;
+        DrawerPanel.BeginAnimation(HeightProperty, null);
+        DrawerPanel.Height = height;
+        _drawerDragging = true;
+        _drawerMoved = false;
+        _drawerStartY = e.GetPosition(this).Y;
+        _drawerStartHeight = height;
+        DrawerHandle.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void DrawerHandle_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_drawerDragging)
+        {
+            return;
+        }
+
+        var delta = _drawerStartY - e.GetPosition(this).Y;
+        if (Math.Abs(delta) > 3)
+        {
+            _drawerMoved = true;
+        }
+
+        // Follows the pointer upwards and stops once the QR code is fully out.
+        DrawerPanel.Height = Math.Clamp(_drawerStartHeight + delta, 0, DrawerFull);
+        DrawerHint.Opacity = DrawerPanel.Height < 1 ? 1 : 0;
+    }
+
+    private void DrawerHandle_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_drawerDragging)
+        {
+            return;
+        }
+
+        _drawerDragging = false;
+        DrawerHandle.ReleaseMouseCapture();
+        var height = DrawerHeight;
+        double target;
+        if (!_drawerMoved)
+        {
+            target = height > 1 ? 0 : DrawerFull; // a click puts it away (or pulls it out)
+        }
+        else
+        {
+            target = height > DrawerFull * 0.4 ? DrawerFull : 0;
+        }
+
+        DrawerPanel.BeginAnimation(HeightProperty, new System.Windows.Media.Animation.DoubleAnimation(height, target, Motion.Base)
+        {
+            EasingFunction = Motion.Ease
+        });
+        Motion.Fade(DrawerHint, target < 1 && DrawerHandle.IsMouseOver ? 1 : 0);
+        e.Handled = true;
+    }
+
     private string _shadowColor = "#6A6A6A";
 
     private void Shadow_Changed(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateShadowPreview();
@@ -388,6 +490,11 @@ public partial class SettingsWindow : Window
 
         ShadowSizeValue.Text = $"{Math.Round(ShadowSizeSlider.Value)}";
         ShadowOpacityValue.Text = $"{Math.Round(ShadowOpacitySlider.Value)}%";
+        if (IsLoaded && Application.Current is App app)
+        {
+            // Live on the open pins while dragging; saved or dropped when the window closes.
+            app.PreviewPinShadow((Math.Round(ShadowSizeSlider.Value), _shadowColor, Math.Round(ShadowOpacitySlider.Value) / 100));
+        }
         try
         {
             ShadowColorSwatch.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_shadowColor));

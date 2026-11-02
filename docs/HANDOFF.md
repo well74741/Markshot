@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.07`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.08`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -397,6 +397,24 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 更新源默认 GitHub（`UpdateService.DefaultRepository`，releases/latest 的 `Markshot-Setup-*.exe` 资产，下载到 %TEMP% 后安装）；
   私有仓库 API 返回 404，需公开仓库。`.github/workflows/release.yml`：推送 `v*` 标签自动打包并发布 Release。
 - 版权：csproj `Copyright/Company/Product`，安装包 `AppPublisher/AppCopyright`；`THIRD-PARTY-NOTICES.md` 随包分发。可选签名 `tools/sign.ps1`。
+
+## 8.1.6 0.8.08 变更
+
+- 截图结束过渡 `OverlayWindow.FinishWithTransition(done, clearFrom, keepAnnotations)`：DimLayer 径向遮罩从一点（取消：鼠标处）或一个区域
+  （贴图：选区）向外扩开 240ms 后关闭。取消路径统一 `CancelCapture()`（Esc / ✕ / 无区域时右键）。
+- 截图转贴图不再等窗口关闭：App 给 overlay 设 `PinNow` 回调，`PinAndClose` 里立即 `CreatePin(..., fromCapture: true)`（贴图在截图窗口之上、
+  像素相同，不淡入，`PlayLightSweep` 斜向光带 520ms，裁剪在贴图轮廓内），然后 overlay 再做变亮过渡；`PinnedDirectly` 告诉 App 不必再建。
+- 套索截图：未选区域时按住右键拖动（`_lassoDraft`，Shift = 预览直线段，松开 Shift 落点），松开得到 `_lasso`（相对选区左上角的点 + 原始尺寸），
+  选区为外接矩形；亮区 Clip、元素裁剪、`Compose` 都用 `LassoGeometry()`；套索选区只能移动不能缩放（无手柄/圆角点）。
+  贴图 `ShapedShadow`：阴影用 Img 的 DropShadowEffect 跟随透明形状。
+- 已有区域时右键（未拖动）→ `ResetCapture()` 回到选区阶段（批注一并清除）；区域内鼠标中键 → 贴图。
+- 尺寸标签就是输入框（`SizeBox` + `SizeLabelField` 样式），编辑器自己不再画尺寸标签。
+- 工具栏样式菜单打开期间 `Toolbar.IsMenuOpen`，窗口不抢焦点（以前抢焦点让菜单立刻关闭）。贴图编辑时阴影按“激活”处理，不再闪。
+- 全局鼠标快捷键：`HotkeyGesture` 支持 鼠标中键 / 鼠标侧键1 / 鼠标侧键2（VK 4/5/6），`HotkeyManager` 用 WH_MOUSE_LL 钩子，
+  命中（修饰键完全一致）时吞掉按下和对应抬起。设置里热键框聚焦时按中键/侧键即录入。
+- 保存后提示 `SavedPromptWindow`（`Config.AskOpenFolderAfterSave`），截图保存经 `overlay.SavedPath`，贴图保存直接调用。
+- 贴图翻转/旋转 `AnimateOrientation`：ScaleX/ScaleY 从 -1、或旋转从 90° 回到 0（240ms）。阴影设置实时预览 `App.PreviewPinShadow`。
+- 设置左栏：更新按钮独占一行；底部“请杯咖啡”抽屉（拖动横条拉出二维码 `Assets/donate_qr.png`，拉满即停，单击收起）。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 
