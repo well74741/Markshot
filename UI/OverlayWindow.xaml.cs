@@ -262,9 +262,16 @@ public partial class OverlayWindow : Window
 
     private void OnToolbarVariantChanged(AnnotationTool tool)
     {
-        if (_tool == AnnotationTool.Select && _selectedAnnotation != null)
+        // A selected element of that button switches to the picked style.
+        if (_selectedAnnotation != null && AnnotationOps.CanConvert(_selectedAnnotation, tool))
         {
             ConvertSelected(tool);
+            return;
+        }
+
+        if (!AnnotationOps.SameVariantFamily(_tool, tool))
+        {
+            OnToolbarToolChanged(tool);
             return;
         }
 
@@ -429,7 +436,7 @@ public partial class OverlayWindow : Window
             Editor.Selection = Rect.Empty;
             Editor.ShowSelectionChrome = false;
             Editor.InvalidateVisual();
-            Toolbar.Visibility = Visibility.Collapsed;
+            ShowToolbar(false);
             Hint.Visibility = Visibility.Visible;
             PositionHint();
             return;
@@ -466,12 +473,35 @@ public partial class OverlayWindow : Window
 
         if (_dragging)
         {
-            Toolbar.Visibility = Visibility.Collapsed;
+            ShowToolbar(false);
         }
         else
         {
-            Toolbar.Visibility = Visibility.Visible;
+            ShowToolbar(true);
             PositionToolbar();
+        }
+    }
+
+    /// <summary>Shows / hides the toolbar with the pop transition; reversing mid-way continues from where it is.</summary>
+    private void ShowToolbar(bool show)
+    {
+        if (show)
+        {
+            if (Toolbar.Visibility != Visibility.Visible)
+            {
+                Toolbar.Visibility = Visibility.Visible; // pops in (Motion.PopOnShow)
+            }
+            else if (Motion.IsHiding(Toolbar))
+            {
+                Motion.PopIn(Toolbar);
+            }
+
+            return;
+        }
+
+        if (Toolbar.Visibility == Visibility.Visible && !Motion.IsHiding(Toolbar))
+        {
+            Motion.PopOut(Toolbar);
         }
     }
 
@@ -1431,6 +1461,29 @@ public partial class OverlayWindow : Window
         Editor.InvalidateVisual();
     }
 
+    private void PasteAnnotation()
+    {
+        if (AnnotationClipboard.Paste(SnapRect(_selection)) is not { } pasted)
+        {
+            return;
+        }
+
+        _history.Checkpoint(Editor.Items);
+        if (pasted is MosaicAnnotation mosaic)
+        {
+            MosaicBuilder.Rebuild(mosaic, EffectiveScreen);
+        }
+
+        Editor.Items.Add(pasted);
+        if (pasted is NumberAnnotation)
+        {
+            _numberCounter++;
+        }
+
+        UpdateUndoButtons();
+        SelectQuietly(pasted);
+    }
+
     private void ConvertSelected(AnnotationTool variant)
     {
         if (_selectedAnnotation == null)
@@ -1468,13 +1521,11 @@ public partial class OverlayWindow : Window
                     Start = arrow.Start, End = arrow.End, Color = arrow.Color, Thickness = arrow.Thickness
                 };
                 break;
-            case (PenAnnotation pen, AnnotationTool.Pen):
-                pen.Highlight = false;
-                SelectAnnotation(pen);
-                return;
-            case (PenAnnotation pen, AnnotationTool.Highlighter):
-                pen.Highlight = true;
-                SelectAnnotation(pen);
+            case (PenAnnotation pen, AnnotationTool.Pen or AnnotationTool.Highlighter):
+                _history.Checkpoint(Editor.Items);
+                UpdateUndoButtons();
+                pen.Highlight = variant == AnnotationTool.Highlighter;
+                Editor.InvalidateVisual();
                 return;
         }
 
@@ -1497,6 +1548,17 @@ public partial class OverlayWindow : Window
         UpdateUndoButtons();
 
         Editor.Items[index] = replacement;
+        if (_tool is not AnnotationTool.None and not AnnotationTool.Select)
+        {
+            // Drawing with the button: keep drawing in the new style, the element stays selected.
+            _tool = variant;
+            Toolbar.SetTool(variant);
+            SelectQuietly(replacement);
+            _freshSelection = replacement;
+            UpdateCursorToPointer();
+            return;
+        }
+
         _selectedAnnotation = replacement;
         Editor.Selected = replacement;
         Toolbar.SetTool(AnnotationTool.Select);
@@ -1999,7 +2061,49 @@ public partial class OverlayWindow : Window
         if (!control && (Keyboard.Modifiers & ModifierKeys.Alt) == 0 &&
             ToolHotkeys.TryMap(key, App.Config, out var toolShortcut))
         {
-            SetTool(toolShortcut);
+            SetTool(Toolbar.ChoiceFor(toolShortcut));
+            e.Handled = true;
+            return;
+        }
+
+        if (key == Key.Tab && !control && _hasSelection)
+        {
+            // Tab: the other style of the current button (or of the selected element).
+            var current = _selectedAnnotation != null && _tool is AnnotationTool.None or AnnotationTool.Select
+                ? AnnotationOps.ToolOf(_selectedAnnotation)
+                : _tool;
+            if (AnnotationOps.NextVariant(current) is { } next)
+            {
+                Toolbar.PickVariant(next);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        if (control && key == Key.C && _selectedAnnotation != null && AnnotationClipboard.CanCopy(_selectedAnnotation))
+        {
+            AnnotationClipboard.Copy(_selectedAnnotation);
+            e.Handled = true;
+            return;
+        }
+
+        if (control && key == Key.V && AnnotationClipboard.HasContent && _hasSelection)
+        {
+            PasteAnnotation();
+            e.Handled = true;
+            return;
+        }
+
+        if (key is Key.Delete or Key.Back && _selectedAnnotation == null && _tool == AnnotationTool.Watermark &&
+            AnnotationOps.FindWatermark(Editor.Items) is { } watermarkToDelete)
+        {
+            _history.Checkpoint(Editor.Items);
+            Editor.Items.Remove(watermarkToDelete);
+            Editor.HoverWatermark = null;
+            SetTool(AnnotationTool.Select);
+            UpdateUndoButtons();
+            Editor.InvalidateVisual();
             e.Handled = true;
             return;
         }

@@ -112,7 +112,8 @@
             <core:SizeTransitionHost x:Name="SettingsHost">
             <Border x:Name="SettingsBar" BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0"
                     Margin="0,3,0,0" Padding="2,3,0,0">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Same height for every tool's row. -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Height="32">
                     <StackPanel x:Name="RectVariants" Orientation="Horizontal" Visibility="Collapsed">
                         <RadioButton x:Name="VariantRect" Style="{StaticResource IconToolRadio}" Tag="Rectangle" GroupName="Variant" Checked="Variant_Checked" ToolTip="矩形">
                             <Border Style="{StaticResource IconRectMask}" />

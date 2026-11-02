@@ -15,6 +15,7 @@ public static class ToolHotkeys
         else if (Matches(name, config.ToolTextHotkey)) tool = AnnotationTool.Text;
         else if (Matches(name, config.ToolNumberHotkey)) tool = AnnotationTool.Number;
         else if (Matches(name, config.ToolLineHotkey)) tool = AnnotationTool.Line;
+        else if (Matches(name, config.ToolShapeHotkey)) tool = AnnotationTool.Rectangle;
 
         return tool != AnnotationTool.None;
     }

@@ -86,7 +86,9 @@ public partial class App : Application
             RestoreLastPin,
             ShowSettings,
             DisableClickThrough,
-            ShutdownApp);
+            ShutdownApp,
+            () => _closedPins.Count > 0 || History.Last != null,
+            () => _pins.Any(pin => pin.IsClickThrough));
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -259,6 +261,8 @@ public partial class App : Application
         pin.Show();
         return pin;
     }
+
+    public int PinCount => _pins.Count;
 
     public void CreatePinAtCursor(BitmapSource image)
     {

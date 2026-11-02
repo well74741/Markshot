@@ -2,8 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
-    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
@@ -17,11 +16,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Patch releases count in two digits from 0.8.01 on (display version);
          the numeric Windows version fields carry 0.8.1.0. -->
-    <Version>0.8.4</Version>
-    <InformationalVersion>0.8.04</InformationalVersion>
+    <Version>0.8.5</Version>
+    <InformationalVersion>0.8.05</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
-    <AssemblyVersion>0.8.4.0</AssemblyVersion>
-    <FileVersion>0.8.4.0</FileVersion>
+    <AssemblyVersion>0.8.5.0</AssemblyVersion>
+    <FileVersion>0.8.5.0</FileVersion>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>

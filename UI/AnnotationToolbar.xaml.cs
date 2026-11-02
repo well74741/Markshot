@@ -747,11 +747,7 @@ public partial class AnnotationToolbar : UserControl
         {
             var item = new MenuItem { Header = label, IsChecked = FamilyOf(tool) == FamilyOf(_tool) && _tool == tool };
             var target = tool;
-            item.Click += (_, _) =>
-            {
-                SetTool(target, notify: false);
-                ToolChanged?.Invoke(target);
-            };
+            item.Click += (_, _) => PickVariant(target);
             item.IsChecked = _tool == tool;
             menu.Items.Add(item);
         }
@@ -778,6 +774,28 @@ public partial class AnnotationToolbar : UserControl
 
         ShowChoice(tool);
         VariantChanged?.Invoke(tool);
+    }
+
+    /// <summary>
+    /// Switches to another style of a button (menu, Tab): the window converts a selected
+    /// element of that button, or simply changes the tool.
+    /// </summary>
+    public void PickVariant(AnnotationTool tool)
+    {
+        SetTool(tool, notify: false);
+        VariantChanged?.Invoke(tool);
+    }
+
+    /// <summary>The style last chosen for the button <paramref name="tool"/> belongs to (hotkeys use it).</summary>
+    public AnnotationTool ChoiceFor(AnnotationTool tool)
+    {
+        var family = FamilyOf(tool);
+        if (family == ToolFamily.Watermark)
+        {
+            family = ToolFamily.Text;
+        }
+
+        return _familyChoice.TryGetValue(family, out var choice) && AnnotationOps.SameVariantFamily(choice, tool) ? choice : tool;
     }
 
     /// <summary>The tool button of a family shows (and activates) the variant chosen last.</summary>

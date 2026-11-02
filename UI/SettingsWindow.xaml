@@ -290,8 +290,12 @@
 
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Text="批注工具（单个字母，截图和贴图编辑时生效）" Style="{StaticResource CardTitle}" />
-                            <UniformGrid Columns="6">
+                            <TextBlock Text="批注工具（单个字母，截图和贴图编辑时生效；Tab 切换同一按钮里的样式）" Style="{StaticResource CardTitle}" />
+                            <UniformGrid Columns="7">
+                                <StackPanel>
+                                    <TextBlock Text="图形" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
+                                    <TextBox x:Name="ShapeKeyBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
+                                </StackPanel>
                                 <StackPanel>
                                     <TextBlock Text="画笔" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
                                     <TextBox x:Name="PenKeyBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
@@ -474,6 +478,8 @@
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0"
                                        Text="留空则保存到 图片\Markshot；Ctrl+Shift+S 直接存到这里不弹窗。" />
+                            <CheckBox x:Name="CopyFileCheck" Margin="84,10,0,0" Foreground="#D8D8D8" FontSize="12"
+                                      Content="复制图片文件：复制截图或贴图时同时复制 PNG 文件，可直接在文件管理器里粘贴" />
                         </StackPanel>
                     </Border>
 

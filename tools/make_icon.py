@@ -1,8 +1,8 @@
 """Generates the Markshot logo: Assets/markshot.ico (all Windows sizes) and Assets/markshot.png.
 
 Flat style on a transparent background: four white capture-corner brackets and
-a bold white "M", filling the canvas. A thin dark outline keeps the white mark
-readable on light backgrounds (Explorer, light taskbars) as well as dark ones.
+a bold white "M", filling the canvas. A faint soft shadow (32 px and up) keeps the
+white mark readable on light backgrounds without a dark edge.
 Run with Pillow installed:  python tools/make_icon.py
 """
 import os
@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, "Assets")
 FONT = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "segoeuib.ttf")
 
-OUTLINE = (20, 23, 29)   # #14171D
+SHADOW = (60, 66, 80)    # faint cool-grey shadow (no outline)
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 
 
@@ -42,11 +42,15 @@ def render(size):
     scale = 8
     s = size * scale
     white = mark_mask(s, small)
-    # Outline: the white mark grown by ~1px at the final size (every size), in the dark colour.
-    grow = 2 * scale + 1
-    outline = white.filter(ImageFilter.MaxFilter(grow))
     image = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    image.paste(Image.new("RGBA", (s, s), OUTLINE + (255,)), (0, 0), outline)
+    if not small:
+        # No hard outline (it read as a black edge). A faint, blurred shadow just below the
+        # mark keeps it visible on light backgrounds without darkening its edge.
+        shadow = white.filter(ImageFilter.GaussianBlur(1.3 * scale))
+        shadow = shadow.point(lambda v: int(v * 0.55))
+        offset = Image.new("L", (s, s), 0)
+        offset.paste(shadow, (0, int(0.8 * scale)))
+        image.paste(Image.new("RGBA", (s, s), SHADOW + (255,)), (0, 0), offset)
     image.paste(Image.new("RGBA", (s, s), (255, 255, 255, 255)), (0, 0), white)
     return image.resize((size, size), Image.LANCZOS)
 

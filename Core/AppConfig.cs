@@ -42,6 +42,11 @@ public sealed class AppConfig
 
     public string ToolLineHotkey { get; set; } = "L";
 
+    public string ToolShapeHotkey { get; set; } = "M";
+
+    /// <summary>Copying a capture / pin also puts a PNG file on the clipboard (paste in Explorer).</summary>
+    public bool CopyImageAsFile { get; set; } = true;
+
     /// <summary>Translate every capture selection in place (the toolbar's translate toggle remembers it).</summary>
     public bool ImmersiveTranslate { get; set; }
 

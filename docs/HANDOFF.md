@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.04`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.05`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -357,6 +357,22 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
   发布到 `publish_installer/` 后编译到 `dist/`。安装器把运行目录写到 `HKCU\Software\Markshot\SetupDir`，作为默认更新路径。
 - 更新：`Core/UpdateService`，找更新路径里 `Markshot-Setup-<版本>.exe` 中比当前新的（数字逐段比较）；启动 8 秒后及每 2 小时检查，
   每个新版本托盘提醒一次；设置版本号旁 ↻ 检查、“更新 x”按钮运行安装包并退出。
+
+## 8.1.3 0.8.05 变更
+
+- 样式切换统一走 `AnnotationToolbar.PickVariant` → `VariantChanged`：窗口里若选中元素 `AnnotationOps.CanConvert` 则转换
+  （绘图工具下转换后继续用新样式、元素保持选中），不同按钮的工具按普通切换处理。`Tab` = `AnnotationOps.NextVariant`。
+  工具快捷键经 `Toolbar.ChoiceFor` 取该按钮上次的样式；新增 `ToolShapeHotkey`（默认 M）。
+- 元素剪贴板 `AnnotationClipboard`（UI/AnnotationOps.cs）：跨截图/贴图窗口，粘贴每次再偏移 16px，落在画布外则放到中间；马赛克粘贴后按本窗口底图重建。
+- 工具栏显示/隐藏：截图窗口 `ShowToolbar(bool)`，贴图退出编辑时 `Motion.PopOut` 后再隐藏工具栏窗口；`Motion.IsHiding` 判断进行中的隐藏，
+  再显示时 `PopIn` 从当前值反向（可打断）。设置行固定高 32。
+- 贴图：查看模式先处理贴图自己的键（翻转/旋转/还原、T、L），再处理工具字母；拖动贴图时右键还原位置；阴影改为灰色、透明度降低；
+  `UI/PinMagnifier`：鼠标在贴图上时 30ms 轮询 Alt（GetAsyncKeyState，不要求贴图激活），在独立穿透窗口里显示截图同款放大镜。
+- 右键菜单（贴图）按状态增减；托盘菜单“恢复最近贴图 / 取消所有鼠标穿透”只在可用时出现。
+- `ClipboardService.CopyImage`：`CopyImageAsFile`（默认开）时把 PNG 写到 %TEMP%\Markshot\clipboard 并加 FileDrop。
+- 目标框架改为 `net8.0-windows`（不再带 25MB 的 Microsoft.Windows.SDK.NET.dll，未使用任何 WinRT API）。
+  安装包改为发布文件夹 + Inno LZMA2 固实压缩：约 80MB（以前 105MB）。主要体积：.NET 运行时 + WPF/WinForms、onnxruntime/SkiaSharp、OCR 模型 ~30MB。
+- Logo 去掉深色描边（看起来是黑边），32px 以上改为很淡的柔和投影，16~24px 无投影。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

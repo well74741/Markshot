@@ -166,6 +166,9 @@ public static class Motion
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleAnimation);
     }
 
+    /// <summary>True while a PopOut / SetShown(false) is playing (the element is still visible).</summary>
+    public static bool IsHiding(UIElement element) => element.GetValue(HideTokenProperty) != null;
+
     /// <summary>Visibility with a plain fade (base 240 ms for whole blocks, fast for small parts).</summary>
     public static void SetShown(UIElement element, bool shown, Duration? duration = null)
     {

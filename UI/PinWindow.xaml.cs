@@ -16,6 +16,7 @@ public partial class PinWindow : Window
     // The annotation toolbar and the small window that carries it below the pin.
     private readonly AnnotationToolbar Toolbar = new() { Visibility = Visibility.Collapsed };
     private ToolbarHostWindow? _toolbarWindow;
+    private PinMagnifier? _magnifier;
     private Point? _toolbarOffset;   // pixels from the image's top-left once the user dragged it
     private bool _placingToolbar;
     private Annotation? _freshSelection;
@@ -147,6 +148,8 @@ public partial class PinWindow : Window
 
         Loaded += OnLoaded;
         LocationChanged += (_, _) => PlaceToolbar(); // the toolbar window follows the pin
+        // Alt over the pin: the capture magnifier at the pointer.
+        _magnifier = new PinMagnifier(ImageHost, () => CurrentImage, ToPixels);
         Motion.PopOnShow(Toolbar, fromAbove: true);
         Motion.FadeOnShow(PinStatus);
         SourceInitialized += (_, _) => ApplyBounds();
@@ -182,6 +185,7 @@ public partial class PinWindow : Window
             }
 
             _translateCts?.Cancel();
+            _magnifier?.Hide();
             if (_editMode)
             {
                 ExitEditMode(true);
@@ -195,7 +199,25 @@ public partial class PinWindow : Window
         MouseDown += OnMouseDown;
         PreviewMouseRightButtonDown += (_, e) =>
         {
-            if (_editMode && e.LeftButton == MouseButtonState.Pressed && CancelGesture())
+            if (e.LeftButton != MouseButtonState.Pressed)
+            {
+                return;
+            }
+
+            if (_dragging)
+            {
+                // Right-click while dragging the pin: back to where it was.
+                _dragging = false;
+                _left = _dragStartLeft;
+                _top = _dragStartTop;
+                ReleaseMouseCapture();
+                ApplyBounds();
+                _suppressContextMenu = true;
+                e.Handled = true;
+                return;
+            }
+
+            if (_editMode && CancelGesture())
             {
                 _suppressContextMenu = true;
                 e.Handled = true;
@@ -294,9 +316,16 @@ public partial class PinWindow : Window
 
     private void OnToolbarVariantChanged(AnnotationTool tool)
     {
-        if (_tool == AnnotationTool.Select && _selected != null)
+        // A selected element of that button switches to the picked style.
+        if (_selected != null && AnnotationOps.CanConvert(_selected, tool))
         {
             ConvertSelected(tool);
+            return;
+        }
+
+        if (!AnnotationOps.SameVariantFamily(_tool, tool))
+        {
+            OnToolbarToolChanged(tool);
             return;
         }
 
@@ -362,6 +391,29 @@ public partial class PinWindow : Window
         AnnotationStyler.Apply(_selected, Toolbar, _baseImage);
         UpdateUndoButtons();
         Editor.InvalidateVisual();
+    }
+
+    private void PasteAnnotation()
+    {
+        if (AnnotationClipboard.Paste(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight)) is not { } pasted)
+        {
+            return;
+        }
+
+        _history.Checkpoint(Editor.Items);
+        if (pasted is MosaicAnnotation mosaic)
+        {
+            MosaicBuilder.Rebuild(mosaic, _baseImage);
+        }
+
+        Editor.Items.Add(pasted);
+        if (pasted is NumberAnnotation)
+        {
+            _number++;
+        }
+
+        UpdateUndoButtons();
+        SelectQuietly(pasted);
     }
 
     private void ConvertSelected(AnnotationTool variant)
@@ -430,6 +482,17 @@ public partial class PinWindow : Window
         UpdateUndoButtons();
 
         Editor.Items[index] = replacement;
+        if (_tool is not AnnotationTool.None and not AnnotationTool.Select)
+        {
+            // Drawing with the button: keep drawing in the new style, the element stays selected.
+            _tool = variant;
+            Toolbar.SetTool(variant);
+            InputLayer.Cursor = ToolCursors.Get(variant, _thickness, _color);
+            SelectQuietly(replacement);
+            _freshSelection = replacement;
+            return;
+        }
+
         _selected = replacement;
         Editor.Selected = replacement;
         Toolbar.SetTool(AnnotationTool.Select);
@@ -615,8 +678,9 @@ public partial class PinWindow : Window
         FrameBorder.BorderBrush = new SolidColorBrush(color);
         if (ImageShadowLayer != null)
         {
-            ImageShadowLayer.Background = new SolidColorBrush(
-                Color.FromArgb(IsActive ? (byte)200 : (byte)150, color.R, color.G, color.B));
+            // A soft grey shadow (black made the edge hard to read); state colours glow lighter.
+            var shadow = _clickThrough || _locked || IsActive ? color : Color.FromRgb(0x6A, 0x6A, 0x6A);
+            ImageShadowLayer.Background = new SolidColorBrush(Color.FromArgb(IsActive ? (byte)150 : (byte)120, shadow.R, shadow.G, shadow.B));
         }
     }
 
@@ -1052,6 +1116,11 @@ public partial class PinWindow : Window
         // Reset the tool while the toolbar is hidden, so it opens in its final shape.
         SetTool(AnnotationTool.None);
         Toolbar.SetSelection(null);
+        if (Motion.IsHiding(Toolbar))
+        {
+            Motion.PopIn(Toolbar); // still fading out: turn around from where it is
+        }
+
         Toolbar.Visibility = Visibility.Visible;
         ShowToolbarWindow();
         UpdateUndoButtons();
@@ -1089,8 +1158,13 @@ public partial class PinWindow : Window
         Editor.Selected = null;
         Editor.Visibility = Visibility.Collapsed;
         InputLayer.Visibility = Visibility.Collapsed;
-        Toolbar.Visibility = Visibility.Collapsed;
-        _toolbarWindow?.Hide();
+        Motion.PopOut(Toolbar, completed: () =>
+        {
+            if (!_editMode)
+            {
+                _toolbarWindow?.Hide();
+            }
+        });
         _history.Clear();
         UpdateUndoButtons();
         ApplyBounds();
@@ -1141,16 +1215,6 @@ public partial class PinWindow : Window
 
         var key = AnnotationOps.RealKey(e);
 
-        if (!_editMode &&
-            (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0 &&
-            ToolHotkeys.TryMap(key, App.Config, out var hotkeyTool))
-        {
-            EnterEditMode();
-            OnToolbarToolChanged(hotkeyTool);
-            e.Handled = true;
-            return;
-        }
-
         if (MatchesPinKey(App.Config.PinResetHotkey, key) &&
             (!_editMode || _tool is AnnotationTool.None or AnnotationTool.Select) &&
             (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0)
@@ -1181,6 +1245,15 @@ public partial class PinWindow : Window
             if (MatchesPinKey(config.PinRotateHotkey, key))
             {
                 RotatePinImageCounterClockwise();
+                e.Handled = true;
+                return;
+            }
+
+            // Tool letters open the annotation toolbar — except the pin's own T (topmost) / L (lock).
+            if (key is not (Key.T or Key.L) && ToolHotkeys.TryMap(key, config, out var hotkeyTool))
+            {
+                EnterEditMode();
+                OnToolbarToolChanged(Toolbar.ChoiceFor(hotkeyTool));
                 e.Handled = true;
                 return;
             }
@@ -1432,7 +1505,56 @@ public partial class PinWindow : Window
         if (!control && (Keyboard.Modifiers & ModifierKeys.Alt) == 0 &&
             ToolHotkeys.TryMap(key, App.Config, out var toolShortcut))
         {
-            SetTool(toolShortcut);
+            SetTool(Toolbar.ChoiceFor(toolShortcut));
+            e.Handled = true;
+            return;
+        }
+
+        if (key == Key.Tab && !control)
+        {
+            var current = _selected != null && _tool is AnnotationTool.None or AnnotationTool.Select
+                ? AnnotationOps.ToolOf(_selected)
+                : _tool;
+            if (AnnotationOps.NextVariant(current) is { } next)
+            {
+                Toolbar.PickVariant(next);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        if (control && key == Key.C)
+        {
+            if (_selected != null && AnnotationClipboard.CanCopy(_selected))
+            {
+                AnnotationClipboard.Copy(_selected);
+            }
+            else
+            {
+                ClipboardService.CopyImage(ComposeEditedImage());
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        if (control && key == Key.V && AnnotationClipboard.HasContent)
+        {
+            PasteAnnotation();
+            e.Handled = true;
+            return;
+        }
+
+        if (key is Key.Delete or Key.Back && _selected == null && _tool == AnnotationTool.Watermark &&
+            AnnotationOps.FindWatermark(Editor.Items) is { } watermarkToDelete)
+        {
+            _history.Checkpoint(Editor.Items);
+            Editor.Items.Remove(watermarkToDelete);
+            Editor.HoverWatermark = null;
+            SetTool(AnnotationTool.Select);
+            UpdateUndoButtons();
+            Editor.InvalidateVisual();
             e.Handled = true;
             return;
         }
@@ -2720,98 +2842,85 @@ public partial class PinWindow : Window
 
     private void BuildContextMenu()
     {
+        // Only the entries that do something in the current state.
         var menu = new ContextMenu();
+        void Add(string header, Action action, bool? isChecked = null, string? gesture = null)
+        {
+            var item = new MenuItem { Header = header, InputGestureText = gesture ?? "" };
+            if (isChecked is { } value)
+            {
+                item.IsCheckable = true;
+                item.IsChecked = value;
+            }
+
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+        }
+
+        void Separator()
+        {
+            if (menu.Items.Count > 0 && menu.Items[^1] is not System.Windows.Controls.Separator)
+            {
+                menu.Items.Add(new Separator());
+            }
+        }
 
         if (TextLayer.HasSelection)
         {
-            var copyText = new MenuItem { Header = "复制选中文字" };
-            copyText.Click += (_, _) => ClipboardService.CopyText(TextLayer.SelectedText);
-            menu.Items.Add(copyText);
+            Add("复制选中文字", () => ClipboardService.CopyText(TextLayer.SelectedText), gesture: "Ctrl+C");
         }
 
-        var copy = new MenuItem { Header = "复制图片" };
-        copy.Click += (_, _) => Copy();
-        menu.Items.Add(copy);
+        Add("复制图片", Copy, gesture: TextLayer.HasSelection ? null : "Ctrl+C");
+        Add("另存为…", Save, gesture: "Ctrl+S");
+        Separator();
 
-        var save = new MenuItem { Header = "另存为…" };
-        save.Click += (_, _) => Save();
-        menu.Items.Add(save);
-
-        var inPlace = new MenuItem
+        if (_translateCts != null)
         {
-            Header = _translateCts != null ? "正在原位翻译…" : _untranslatedBase != null ? "显示原文" : "原位翻译",
-            IsEnabled = _translateCts == null
-        };
-        inPlace.Click += (_, _) =>
+            menu.Items.Add(new MenuItem { Header = "正在原位翻译…", IsEnabled = false });
+        }
+        else if (_untranslatedBase != null)
         {
-            if (_untranslatedBase != null)
-            {
-                ShowOriginal();
-            }
-            else
-            {
-                TranslateInPlace();
-            }
-        };
-        menu.Items.Add(inPlace);
+            Add("显示原文", ShowOriginal);
+        }
+        else
+        {
+            Add("原位翻译", TranslateInPlace);
+        }
 
-        var translate = new MenuItem { Header = "识别并翻译文字…" };
-        translate.Click += (_, _) => ((App)Application.Current).TranslateImage(CurrentImage, this);
-        menu.Items.Add(translate);
+        Add("文字识别 / 翻译…", () => ((App)Application.Current).TranslateImage(CurrentImage, this));
+        Separator();
 
-        var edit = new MenuItem { Header = _editMode ? "完成标注（空格）" : "编辑标注（空格）" };
-        edit.Click += (_, _) => ToggleEditing();
-        menu.Items.Add(edit);
+        Add(_editMode ? "完成标注" : "编辑标注", ToggleEditing, gesture: "Space");
+        if (Editor.Items.Count > 0)
+        {
+            Add("清除批注内容", ClearAnnotations);
+        }
 
-        var clear = new MenuItem { Header = "清除批注内容", IsEnabled = Editor.Items.Count > 0 };
-        clear.Click += (_, _) => ClearAnnotations();
-        menu.Items.Add(clear);
-
-        var settings = new MenuItem { Header = "设置…" };
-        settings.Click += (_, _) => ((App)Application.Current).ShowSettings();
-        menu.Items.Add(settings);
-
-        var closeAll = new MenuItem { Header = "关闭所有贴图" };
-        closeAll.Click += (_, _) => ((App)Application.Current).CloseAllPins();
-        menu.Items.Add(closeAll);
-
-        menu.Items.Add(new Separator());
-
-        var topmost = new MenuItem { Header = "置顶" };
-        topmost.Click += (_, _) =>
+        Separator();
+        Add("置顶", () =>
         {
             Topmost = !Topmost;
             ApplyBounds();
-        };
-        menu.Items.Add(topmost);
-
-        var lockItem = new MenuItem { Header = "锁定" };
-        lockItem.Click += (_, _) =>
+        }, Topmost, "T");
+        Add("锁定", () =>
         {
             _locked = !_locked;
             UpdateFrame();
-        };
-        menu.Items.Add(lockItem);
-
-        var clickThroughItem = new MenuItem
+        }, _locked, "L");
+        Add("鼠标穿透", () => SetClickThrough(!_clickThrough), _clickThrough);
+        if (Math.Abs(_zoom - 1) > 0.001 || _opacity < 0.999 || _orientation.Count > 0)
         {
-            Header = "鼠标穿透",
-            IsCheckable = true,
-            IsChecked = _clickThrough
-        };
-        clickThroughItem.Click += (_, _) => SetClickThrough(!_clickThrough);
-        menu.Items.Add(clickThroughItem);
+            Add("重置大小和方向", ResetPinImageTransform, gesture: "F");
+        }
 
-        var reset = new MenuItem { Header = "重置大小和透明度" };
-        reset.Click += (_, _) => ResetView();
-        menu.Items.Add(reset);
+        Separator();
+        Add("设置…", () => ((App)Application.Current).ShowSettings());
+        if (((App)Application.Current).PinCount > 1)
+        {
+            Add("关闭所有贴图", () => ((App)Application.Current).CloseAllPins());
+        }
 
-        menu.Items.Add(new Separator());
-
-        var close = new MenuItem { Header = "关闭" };
-        close.Click += (_, _) => Close();
-        menu.Items.Add(close);
-
+        Add("关闭", Close, gesture: "Esc");
         ContextMenu = menu;
     }
 

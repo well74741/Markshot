@@ -5,6 +5,9 @@
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
+#ifndef SourceDir
+  #define SourceDir "..\publish_installer"
+#endif
 #ifndef FileVersion
   #define FileVersion "0.0.0.0"
 #endif
@@ -26,7 +29,9 @@ OutputBaseFilename=Markshot-Setup-{#AppVersion}
 SetupIconFile=..\Assets\markshot.ico
 UninstallDisplayIcon={app}\Markshot.exe
 UninstallDisplayName=Markshot {#AppVersion}
-Compression=lzma2/max
+Compression=lzma2/ultra64
+LZMAUseSeparateProcess=yes
+LZMADictionarySize=262144
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
@@ -43,7 +48,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Name: "startup"; Description: "开机自动启动"; GroupDescription: "附加任务："; Flags: unchecked
 
 [Files]
-Source: "..\publish_installer\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\*"; Excludes: "*.lib,*.pdb"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\Markshot"; Filename: "{app}\Markshot.exe"

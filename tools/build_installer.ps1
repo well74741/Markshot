@@ -1,5 +1,5 @@
 # Builds dist\Markshot-Setup-<version>.exe:
-#   1. publishes a self-contained Markshot.exe into publish_installer\
+#   1. publishes self-contained Markshot (folder layout) into publish_installer\
 #   2. compiles installer\Markshot.iss with Inno Setup 6 (ISCC)
 # Run from anywhere:  powershell -ExecutionPolicy Bypass -File tools\build_installer.ps1
 $ErrorActionPreference = 'Stop'
@@ -19,9 +19,9 @@ $env:DOTNET_NOLOGO = '1'
 
 $out = Join-Path $root 'publish_installer'
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
-& $dotnet publish Markshot.csproj -c Release -r win-x64 --self-contained true `
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
-    -p:DebugType=none -o $out
+# A plain folder, not single-file: Inno's solid LZMA2 packs the loose files far smaller
+# than the already-compressed single-file bundle (about 80 MB instead of 105 MB).
+& $dotnet publish Markshot.csproj -c Release -r win-x64 --self-contained true -p:DebugType=none -o $out
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
 $iscc = @(

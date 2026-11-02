@@ -153,6 +153,62 @@ internal static class AnnotationOps
         return grabbed - press;
     }
 
+    /// <summary>Tools that share one toolbar button (Tab / the button's menu switch between them).</summary>
+    public static int VariantFamily(AnnotationTool tool) => tool switch
+    {
+        AnnotationTool.Rectangle or AnnotationTool.Ellipse => 1,
+        AnnotationTool.Pen or AnnotationTool.Highlighter => 2,
+        AnnotationTool.Arrow or AnnotationTool.Line => 3,
+        AnnotationTool.Mosaic or AnnotationTool.MosaicBrush => 4,
+        AnnotationTool.Text or AnnotationTool.Watermark => 5,
+        _ => 0
+    };
+
+    public static bool SameVariantFamily(AnnotationTool a, AnnotationTool b) =>
+        VariantFamily(a) != 0 && VariantFamily(a) == VariantFamily(b);
+
+    /// <summary>Tab: the other tool of the same button (rectangle ↔ ellipse, pen ↔ highlighter …).</summary>
+    public static AnnotationTool? NextVariant(AnnotationTool tool) => tool switch
+    {
+        AnnotationTool.Rectangle => AnnotationTool.Ellipse,
+        AnnotationTool.Ellipse => AnnotationTool.Rectangle,
+        AnnotationTool.Pen => AnnotationTool.Highlighter,
+        AnnotationTool.Highlighter => AnnotationTool.Pen,
+        AnnotationTool.Arrow => AnnotationTool.Line,
+        AnnotationTool.Line => AnnotationTool.Arrow,
+        AnnotationTool.Mosaic => AnnotationTool.MosaicBrush,
+        AnnotationTool.MosaicBrush => AnnotationTool.Mosaic,
+        AnnotationTool.Text => AnnotationTool.Watermark,
+        AnnotationTool.Watermark => AnnotationTool.Text,
+        _ => null
+    };
+
+    /// <summary>The tool an element was drawn with.</summary>
+    public static AnnotationTool ToolOf(Annotation annotation) => annotation switch
+    {
+        RectAnnotation => AnnotationTool.Rectangle,
+        EllipseAnnotation => AnnotationTool.Ellipse,
+        LineAnnotation => AnnotationTool.Line,
+        ArrowAnnotation => AnnotationTool.Arrow,
+        PenAnnotation { Highlight: true } => AnnotationTool.Highlighter,
+        PenAnnotation => AnnotationTool.Pen,
+        MosaicAnnotation => AnnotationTool.Mosaic,
+        MosaicBrushAnnotation => AnnotationTool.MosaicBrush,
+        WatermarkAnnotation => AnnotationTool.Watermark,
+        TextAnnotation => AnnotationTool.Text,
+        NumberAnnotation => AnnotationTool.Number,
+        _ => AnnotationTool.None
+    };
+
+    /// <summary>Whether a selected element can be switched to another style of its button.</summary>
+    public static bool CanConvert(Annotation annotation, AnnotationTool tool) => annotation switch
+    {
+        RectAnnotation or EllipseAnnotation => tool is AnnotationTool.Rectangle or AnnotationTool.Ellipse,
+        LineAnnotation or ArrowAnnotation => tool is AnnotationTool.Line or AnnotationTool.Arrow,
+        PenAnnotation => tool is AnnotationTool.Pen or AnnotationTool.Highlighter,
+        _ => false
+    } && ToolOf(annotation) != tool;
+
     /// <summary>Ctrl+wheel opacity step: 5 % per notch, never fully invisible.</summary>
     public static double WheelOpacity(double opacity, int delta) =>
         Math.Clamp(Math.Round(opacity + Math.Sign(delta) * 0.05, 2), 0.05, 1);
@@ -433,3 +489,48 @@ internal static class AnnotationOps
         return result;
     }
 }
+
+/// <summary>
+/// Copy / paste of annotation elements (Ctrl+C / Ctrl+V with an element selected), shared by
+/// the capture and pin windows. Freehand strokes and the watermark are not copied.
+/// </summary>
+internal static class AnnotationClipboard
+{
+    private static Annotation? _item;
+    private static int _pastes;
+
+    public static bool HasContent => _item != null;
+
+    public static bool CanCopy(Annotation annotation) =>
+        annotation is not (PenAnnotation or MosaicBrushAnnotation or WatermarkAnnotation);
+
+    public static void Copy(Annotation annotation)
+    {
+        _item = annotation.Clone();
+        _pastes = 0;
+    }
+
+    /// <summary>A copy offset a little further for each paste, kept inside <paramref name="canvas"/>.</summary>
+    public static Annotation? Paste(Rect canvas)
+    {
+        if (_item == null)
+        {
+            return null;
+        }
+
+        _pastes++;
+        var copy = _item.Clone();
+        var offset = 16 * _pastes;
+        copy.Translate(offset, offset);
+        var bounds = copy.Bounds;
+        if (!canvas.IsEmpty && !canvas.Contains(new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2)))
+        {
+            // Pasted into another canvas (capture -> pin …): put it in the middle.
+            copy.Translate(canvas.X + canvas.Width / 2 - (bounds.X + bounds.Width / 2) + offset - 16,
+                canvas.Y + canvas.Height / 2 - (bounds.Y + bounds.Height / 2) + offset - 16);
+        }
+
+        return copy;
+    }
+}
+

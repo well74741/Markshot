@@ -16,15 +16,23 @@ public sealed class TrayService : IDisposable
         Action restoreLastPin,
         Action settings,
         Action disableClickThrough,
-        Action exit)
+        Action exit,
+        Func<bool>? canRestore = null,
+        Func<bool>? anyClickThrough = null)
     {
         _menu = new Forms.ContextMenuStrip();
 
         _menu.Items.Add("截图", null, (_, _) => capture());
         _menu.Items.Add("贴图剪贴板", null, (_, _) => pin());
         _menu.Items.Add(new Forms.ToolStripSeparator());
-        _menu.Items.Add("恢复最近贴图", null, (_, _) => restoreLastPin());
-        _menu.Items.Add("取消所有鼠标穿透", null, (_, _) => disableClickThrough());
+        var restore = _menu.Items.Add("恢复最近贴图", null, (_, _) => restoreLastPin());
+        var clickThrough = _menu.Items.Add("取消所有鼠标穿透", null, (_, _) => disableClickThrough());
+        // Only what applies right now.
+        _menu.Opening += (_, _) =>
+        {
+            restore.Visible = canRestore?.Invoke() ?? true;
+            clickThrough.Visible = anyClickThrough?.Invoke() ?? true;
+        };
         _menu.Items.Add(new Forms.ToolStripSeparator());
         _menu.Items.Add("设置…", null, (_, _) => settings());
         _menu.Items.Add(new Forms.ToolStripSeparator());
