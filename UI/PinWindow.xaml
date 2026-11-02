@@ -23,7 +23,7 @@
               ClipToBounds="False">
             <Border x:Name="ImageShadowLayer" Background="#48000000" IsHitTestVisible="False">
                 <Border.Effect>
-                    <BlurEffect Radius="12" KernelType="Gaussian" />
+                    <BlurEffect x:Name="ShadowBlur" Radius="12" KernelType="Gaussian" />
                 </Border.Effect>
             </Border>
             <Image x:Name="Img" Stretch="Fill" SnapsToDevicePixels="True" />

@@ -8,6 +8,7 @@
 #                             或 https://dotnet.microsoft.com/download/dotnet/8.0
 #   安装包 Inno Setup 6        winget install JRSoftware.InnoSetup
 #                             或 https://jrsoftware.org/isdl.php
+#   可选  代码签名证书 + signtool    设置 MARKSHOT_SIGN_PFX / MARKSHOT_SIGN_PASSWORD 后自动签名（见 sign.ps1）
 #   可选  Python 3 + Pillow   只有改了 tools\make_icon.py / make_toolbar_icons.py 才需要重新生成图标
 #                             pip install pillow
 param(
@@ -18,6 +19,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+. (Join-Path $PSScriptRoot 'sign.ps1')
 
 function Find-Dotnet {
     $userDotnet = Join-Path $env:USERPROFILE '.dotnet\dotnet.exe'
@@ -71,6 +73,12 @@ if ($pillow) {
     Write-Host '  [--] Python+Pillow（可选，仅修改图标脚本时需要：pip install pillow）' -ForegroundColor DarkGray
 }
 
+if ($env:MARKSHOT_SIGN_PFX) {
+    Write-Host "  [OK] 代码签名     $env:MARKSHOT_SIGN_PFX"
+} else {
+    Write-Host '  [--] 代码签名（可选：设置 MARKSHOT_SIGN_PFX / MARKSHOT_SIGN_PASSWORD 后自动签名）' -ForegroundColor DarkGray
+}
+
 if ($missing.Count -gt 0) {
     Write-Host ''
     Write-Host ("缺少：" + ($missing -join '、') + "。装好后重新运行。") -ForegroundColor Red
@@ -98,6 +106,8 @@ if (-not $NoPortable) {
         -p:DebugType=none -o $portable | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish 失败' }
     Get-ChildItem $portable -Filter *.lib -Recurse | Remove-Item -Force
+    Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.md') $portable
+    Invoke-CodeSign @((Join-Path $portable 'Markshot.exe'))
     $zip = Join-Path $dist "Markshot-$version-portable.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path (Join-Path $portable '*') -DestinationPath $zip -CompressionLevel Optimal

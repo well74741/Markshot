@@ -48,6 +48,47 @@ public sealed class AnnotationEditor : FrameworkElement
     /// <summary>Opacity of the live eraser (1 = erases fully).</summary>
     public double LiveEraserStrength { get; set; } = 1;
 
+    /// <summary>Corner radius of the capture area (canvas pixels); 0 = square.</summary>
+    public double SelectionCornerRadius { get; set; }
+
+    /// <summary>Corner radius of the image (a pin made from a rounded capture); elements are clipped to it.</summary>
+    public double SourceCornerRadius { get; set; }
+
+    /// <summary>
+    /// The rounding dots inside the capture area's corners (canvas pixels): just inside the
+    /// arc, so dragging one towards the centre rounds the corners.
+    /// </summary>
+    public static Point[] CornerDots(Rect selection, double radius, double unit)
+    {
+        var inset = 12 * unit + radius * (1 - Math.Sqrt(0.5));
+        inset = Math.Min(inset, Math.Min(selection.Width, selection.Height) / 2);
+        return new[]
+        {
+            new Point(selection.Left + inset, selection.Top + inset),
+            new Point(selection.Right - inset, selection.Top + inset),
+            new Point(selection.Right - inset, selection.Bottom - inset),
+            new Point(selection.Left + inset, selection.Bottom - inset)
+        };
+    }
+
+    /// <summary>Corner radius for a rounding dot dragged to <paramref name="pointer"/> (inverse of CornerDots).</summary>
+    public static double CornerRadiusFor(Rect selection, int corner, Point pointer, double unit)
+    {
+        var (x, y, sx, sy) = corner switch
+        {
+            0 => (selection.Left, selection.Top, 1, 1),
+            1 => (selection.Right, selection.Top, -1, 1),
+            2 => (selection.Right, selection.Bottom, -1, -1),
+            _ => (selection.Left, selection.Bottom, 1, -1)
+        };
+        var inward = ((pointer.X - x) * sx + (pointer.Y - y) * sy) / 2;
+        var radius = (inward - 12 * unit) / (1 - Math.Sqrt(0.5));
+        return Math.Clamp(radius, 0, Math.Min(selection.Width, selection.Height) / 2);
+    }
+
+    /// <summary>False while the editable size box is shown in place of the size label.</summary>
+    public bool SizeLabelVisible { get; set; } = true;
+
     /// <summary>False while the capture is finishing into a pin: the area frame is no longer drawn.</summary>
     public bool ChromeVisible { get; set; } = true;
 
@@ -78,12 +119,12 @@ public sealed class AnnotationEditor : FrameworkElement
         var hasSelection = ShowSelectionChrome && Selection.Width > 0 && Selection.Height > 0;
         if (hasSelection)
         {
-            dc.PushClip(new RectangleGeometry(Selection));
+            dc.PushClip(new RectangleGeometry(Selection, SelectionCornerRadius, SelectionCornerRadius));
         }
         else if (Source != null)
         {
             // Elements never paint outside the image (a pin); frames and grips still may.
-            dc.PushClip(new RectangleGeometry(new Rect(0, 0, Source.PixelWidth, Source.PixelHeight)));
+            dc.PushClip(new RectangleGeometry(new Rect(0, 0, Source.PixelWidth, Source.PixelHeight), SourceCornerRadius, SourceCornerRadius));
         }
 
         var live = LiveEraser is { Count: > 0 } ? EraseStroke.Widen(LiveEraser, LiveEraserWidth) : null;
@@ -264,7 +305,7 @@ public sealed class AnnotationEditor : FrameworkElement
 
     private void DrawHover(DrawingContext dc, Rect bounds, string? label)
     {
-        var unit = 1.0 / Scale;
+        var unit = Scale; // canvas pixels per DIP
 
         dc.DrawRectangle(
             null,
@@ -316,7 +357,7 @@ public sealed class AnnotationEditor : FrameworkElement
             return; // the watermark covers the canvas and has no frame
         }
 
-        var unit = 1.0 / Scale;
+        var unit = Scale; // canvas pixels per DIP
         var frame = SelectionFrame(annotation.Bounds, unit);
         var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
 
@@ -527,17 +568,24 @@ public sealed class AnnotationEditor : FrameworkElement
 
     private void DrawSelectionChrome(DrawingContext dc, Rect selection)
     {
-        var unit = 1.0 / Scale;
+        var unit = Scale; // canvas pixels per DIP
 
         var blue = new SolidColorBrush(Color.FromRgb(0x2F, 0x7B, 0xFF));
+        var corner = SelectionCornerRadius;
         if (SelectionDragging)
         {
             // While dragging: just a bold line.
-            dc.DrawRectangle(null, new Pen(blue, unit * 3.5), selection);
+            dc.DrawRoundedRectangle(null, new Pen(blue, unit * 3.5), selection, corner, corner);
         }
         else
         {
-            dc.DrawRectangle(null, new Pen(blue, unit * 2.6), selection);
+            dc.DrawRoundedRectangle(null, new Pen(blue, unit * 2.6), selection, corner, corner);
+
+            // Rounding dots inside the corners.
+            foreach (var dot in CornerDots(selection, corner, unit))
+            {
+                dc.DrawEllipse(Brushes.White, new Pen(blue, unit * 1.5), dot, 3.6 * unit, 3.6 * unit);
+            }
 
             const double handleDip = 10;
             var handleSize = handleDip * unit;
@@ -550,6 +598,11 @@ public sealed class AnnotationEditor : FrameworkElement
                     handlePen,
                     new Rect(center.X - handleSize / 2, center.Y - handleSize / 2, handleSize, handleSize));
             }
+        }
+
+        if (!SizeLabelVisible)
+        {
+            return;
         }
 
         var label = new FormattedText(

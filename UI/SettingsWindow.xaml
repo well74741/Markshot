@@ -359,6 +359,37 @@
                                     <TextBox x:Name="TextBypassBox" Style="{StaticResource Field}" MaxLength="12" />
                                 </StackPanel>
                             </Grid>
+
+                            <!-- Pin shadow -->
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="阴影大小" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                <DockPanel Grid.Column="1">
+                                    <TextBlock x:Name="ShadowSizeValue" DockPanel.Dock="Right" Width="34" TextAlignment="Right"
+                                               Foreground="#C8C8C8" FontSize="12" VerticalAlignment="Center" />
+                                    <Slider x:Name="ShadowSizeSlider" Minimum="0" Maximum="40" IsMoveToPointEnabled="True"
+                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
+                                </DockPanel>
+                                <TextBlock Grid.Column="2" Text="颜色" Style="{StaticResource RowLabel}" Margin="18,0,8,0" />
+                                <Button Grid.Column="3" x:Name="ShadowColorButton" Style="{StaticResource FooterButton}" MinWidth="0"
+                                        Width="44" Height="26" Padding="0" Click="ShadowColor_Click" ToolTip="阴影颜色">
+                                    <Border x:Name="ShadowColorSwatch" Width="22" Height="14" CornerRadius="3"
+                                            BorderBrush="#55FFFFFF" BorderThickness="1" />
+                                </Button>
+                                <DockPanel Grid.Column="4" Margin="18,0,0,0">
+                                    <TextBlock Text="透明度" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                    <TextBlock x:Name="ShadowOpacityValue" DockPanel.Dock="Right" Width="38" TextAlignment="Right"
+                                               Foreground="#C8C8C8" FontSize="12" VerticalAlignment="Center" />
+                                    <Slider x:Name="ShadowOpacitySlider" Minimum="0" Maximum="100" IsMoveToPointEnabled="True"
+                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
+                                </DockPanel>
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -516,7 +547,7 @@
                                         Click="BrowseUpdate_Click" Margin="8,0,0,0" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="放安装包（Markshot-Setup-版本号.exe）的文件夹，默认是安装包所在位置。发现新版本时版本号旁会出现“更新”。" />
+                                       Text="默认是 GitHub 仓库（下载最新 Release 里的 Markshot-Setup-版本号.exe），也可以填放安装包的文件夹。发现新版本时版本号旁会出现“更新”。" />
                         </StackPanel>
                     </Border>
 

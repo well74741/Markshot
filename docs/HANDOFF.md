@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.06`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.07`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -383,6 +383,20 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 悬停放大：App.xaml 里带 `Hl` 悬停底板的按钮/单选/开关模板，内容 `Cp` 160ms 放大到 1.1（文字分段 1.05）；色块在代码里 1.15。
 - 贴图：方向键微调（Shift 10px）、拖动时 Shift 锁定横/竖方向（`Straighten`）；托盘中键截图。
 - 打包：`tools/package.ps1`（UTF-8 BOM，Windows PowerShell 才能读中文）检查依赖并生成便携 zip + 安装包。
+
+## 8.1.5 0.8.07 变更
+
+- 托盘菜单改为 WPF `ContextMenu`（App.xaml 的暗色圆角样式），右键时在 1×1 透明前台窗口上以 AbsolutePoint 打开（否则点别处不会关闭）。
+- 截图圆角：`OverlayWindow._cornerRadius`（像素），`AnnotationEditor.CornerDots / CornerRadiusFor`（圆点在圆弧内侧 12 DIP，拖动映射回半径），
+  `DragMode.Rounding`；亮区、选区框、元素裁剪、`Compose` 输出都按圆角裁剪；`PinWindow.CornerRadius` 让贴图阴影/边框/合成保持圆角。
+- 截图尺寸框 `SizeBox`：鼠标在框线 ±6 DIP 内出现（离开 14 DIP 外才消失），Enter 应用（左上角不动），Esc 收起。
+- 编辑器单位修正：`unit = Scale`（每 DIP 的画布像素），以前 `1/Scale` 在高 DPI / 贴图缩放下手柄、旋转箭头大小与命中范围不一致。
+- 贴图阴影：`PinShadowSize / PinShadowColor / PinShadowOpacity`；`Pad` = max(16, 阴影 + 4) 决定贴图窗口四周留白。保存设置后已开贴图立即生效。
+- 截图打开动效 `StartDimConverge`：DimLayer 的径向 OpacityMask 半径 320ms 收缩到鼠标处，结束后移除。
+- 工具栏点击后把键盘焦点交回画布（贴图还会激活自己），Tab / Esc 不再被吞；工具栏窗口收到的按键转给贴图。
+- 更新源默认 GitHub（`UpdateService.DefaultRepository`，releases/latest 的 `Markshot-Setup-*.exe` 资产，下载到 %TEMP% 后安装）；
+  私有仓库 API 返回 404，需公开仓库。`.github/workflows/release.yml`：推送 `v*` 标签自动打包并发布 Release。
+- 版权：csproj `Copyright/Company/Product`，安装包 `AppPublisher/AppCopyright`；`THIRD-PARTY-NOTICES.md` 随包分发。可选签名 `tools/sign.ps1`。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

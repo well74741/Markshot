@@ -23,6 +23,9 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 # than the already-compressed single-file bundle (about 80 MB instead of 105 MB).
 & $dotnet publish Markshot.csproj -c Release -r win-x64 --self-contained true -p:DebugType=none -o $out
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
+. (Join-Path $PSScriptRoot 'sign.ps1')
+Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.md') $out
+Invoke-CodeSign @((Join-Path $out 'Markshot.exe'))
 
 $iscc = @(
     (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
@@ -33,4 +36,5 @@ if (-not $iscc) { throw 'Inno Setup 6 (ISCC.exe) not found: https://jrsoftware.o
 
 & $iscc /Q "/DAppVersion=$version" "/DFileVersion=$fileVersion" (Join-Path $root 'installer\Markshot.iss')
 if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
+Invoke-CodeSign @((Join-Path $root "dist\Markshot-Setup-$version.exe"))
 Write-Host "Done: $(Join-Path $root "dist\Markshot-Setup-$version.exe")"

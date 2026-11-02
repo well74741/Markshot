@@ -205,7 +205,7 @@ public partial class App : Application
             {
                 case CaptureAction.Pin:
                     CreatePin(output, (int)overlay.SelectionScreenRect.X, (int)overlay.SelectionScreenRect.Y,
-                        overlay.PinBaseImage, overlay.PinAnnotations);
+                        overlay.PinBaseImage, overlay.PinAnnotations, overlay.PinCornerRadius);
                     break;
                 case CaptureAction.Translate:
                     ShowTranslation(output);
@@ -229,7 +229,7 @@ public partial class App : Application
     }
 
     public PinWindow CreatePin(BitmapSource image, int screenX, int screenY,
-        BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null)
+        BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null, double cornerRadius = 0)
     {
         while (_pins.Count >= MaxPins)
         {
@@ -239,7 +239,7 @@ public partial class App : Application
             _pins.Remove(oldest);
         }
 
-        var pin = new PinWindow(image, screenX, screenY, baseImage, annotations);
+        var pin = new PinWindow(image, screenX, screenY, baseImage, annotations) { CornerRadius = cornerRadius };
 
         pin.Closed += (_, _) =>
         {
@@ -354,7 +354,7 @@ public partial class App : Application
         {
             _updateTimer.Interval = TimeSpan.FromHours(2);
             var folder = UpdateService.EffectivePath(Config);
-            var package = await Task.Run(() => UpdateService.FindNewer(folder));
+            var package = await UpdateService.FindNewerAsync(folder);
             if (package != null && package.Version != _notifiedUpdate)
             {
                 _notifiedUpdate = package.Version;
@@ -412,6 +412,11 @@ public partial class App : Application
             if (saved)
             {
                 Config.Save();
+                foreach (var pin in _pins)
+                {
+                    pin.ApplyShadowSettings();
+                }
+
                 _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {PinHotkeyLabel}");
                 _tray?.ShowBalloon("设置已保存", "快捷键与翻译配置已更新。");
             }

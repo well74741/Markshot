@@ -3,19 +3,29 @@ using Microsoft.Win32;
 namespace Markshot.Core;
 
 /// <summary>
-/// Update by installer package: the update folder holds <c>Markshot-Setup-&lt;版本&gt;.exe</c>
-/// files; one newer than the running version can be installed from the settings window.
-/// The default folder is where the installer was run from (written by the installer to
-/// HKCU\Software\Markshot\SetupDir); it can be changed in the settings.
+/// Update by installer package. The update source is either the GitHub repository (default:
+/// the latest release's <c>Markshot-Setup-&lt;版本&gt;.exe</c> asset) or a folder holding such
+/// files; a package newer than the running version can be installed from the settings window
+/// (a GitHub one is downloaded first). The source can be changed in the settings.
 /// </summary>
 public static class UpdateService
 {
     public const string SetupPrefix = "Markshot-Setup-";
 
-    public sealed record Package(string Path, string Version);
+    /// <summary>Built-in update source: this project's GitHub repository (its releases).</summary>
+    public const string DefaultRepository = "https://github.com/well74741/Markshot";
+
+    /// <param name="Path">Local file, or the download URL of a GitHub release asset.</param>
+    public sealed record Package(string Path, string Version, bool Remote = false);
+
+    public static bool IsGitHub(string source) =>
+        source.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Default update source: the GitHub repository.</summary>
+    public static string DefaultPath() => DefaultRepository;
 
     /// <summary>Folder the installer ran from, or the repository's dist folder for a development build.</summary>
-    public static string DefaultPath()
+    public static string LocalPackageFolder()
     {
         try
         {
@@ -40,6 +50,89 @@ public static class UpdateService
         string.IsNullOrWhiteSpace(config.UpdatePath)
             ? DefaultPath()
             : Environment.ExpandEnvironmentVariables(config.UpdatePath.Trim());
+
+    /// <summary>A newer package from the source (GitHub repository or folder), or null.</summary>
+    public static async Task<Package?> FindNewerAsync(string source, CancellationToken cancellationToken = default)
+    {
+        if (!IsGitHub(source))
+        {
+            return await Task.Run(() => FindNewer(source), cancellationToken);
+        }
+
+        try
+        {
+            var parts = new Uri(source).AbsolutePath.Trim('/').Split('/');
+            if (parts.Length < 2)
+            {
+                return null;
+            }
+
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Markshot/" + AppVersion.Display);
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            var json = await client.GetStringAsync($"https://api.github.com/repos/{parts[0]}/{parts[1].Replace(".git", "")}/releases/latest", cancellationToken);
+            using var document = JsonDocument.Parse(json);
+            Package? best = null;
+            foreach (var asset in document.RootElement.GetProperty("assets").EnumerateArray())
+            {
+                var name = asset.GetProperty("name").GetString() ?? "";
+                if (!name.StartsWith(SetupPrefix, StringComparison.OrdinalIgnoreCase) || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var version = System.IO.Path.GetFileNameWithoutExtension(name)[SetupPrefix.Length..];
+                if (Parse(version).Length > 0 && (best == null || Compare(version, best.Version) > 0))
+                {
+                    best = new Package(asset.GetProperty("browser_download_url").GetString() ?? "", version, Remote: true);
+                }
+            }
+
+            return best != null && Compare(best.Version, AppVersion.Display) > 0 ? best : null;
+        }
+        catch (Exception ex)
+        {
+            // Offline, rate-limited, private repository (404) …: just no update this time.
+            Log.Info("检查 GitHub 更新失败：" + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>Downloads a GitHub package to %TEMP%\Markshot\update and returns the local copy.</summary>
+    public static async Task<Package> DownloadAsync(Package package, IProgress<double>? progress, CancellationToken cancellationToken = default)
+    {
+        if (!package.Remote)
+        {
+            return package;
+        }
+
+        var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Markshot", "update");
+        Directory.CreateDirectory(folder);
+        var target = System.IO.Path.Combine(folder, $"{SetupPrefix}{package.Version}.exe");
+        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Markshot/" + AppVersion.Display);
+        using var response = await client.GetAsync(package.Path, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var total = response.Content.Headers.ContentLength ?? 0;
+        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
+        await using (var output = File.Create(target))
+        {
+            var buffer = new byte[81920];
+            long done = 0;
+            int read;
+            while ((read = await input.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                done += read;
+                if (total > 0)
+                {
+                    progress?.Report((double)done / total);
+                }
+            }
+        }
+
+        return new Package(target, package.Version);
+    }
 
     /// <summary>The newest installer in <paramref name="folder"/> when it is newer than this build.</summary>
     public static Package? FindNewer(string folder)

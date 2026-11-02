@@ -28,7 +28,33 @@ public partial class OverlayWindow : Window
         None,
         Creating,
         Moving,
-        Resizing
+        Resizing,
+        Rounding
+    }
+
+    // Corner radius of the capture (canvas px), set by dragging a rounding dot.
+    private double _cornerRadius;
+    private double _cornerRadiusOrigin;
+    private int _roundingCorner;
+
+    /// <summary>Rounding dot under the point (-1 = none).</summary>
+    private int HitCornerDot(Point point)
+    {
+        if (!_hasSelection || _selection.Width < 40 || _selection.Height < 40)
+        {
+            return -1;
+        }
+
+        var dots = AnnotationEditor.CornerDots(_selection, _cornerRadius, _scale);
+        for (var i = 0; i < dots.Length; i++)
+        {
+            if ((dots[i] - point).Length <= 7 * _scale)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private readonly BitmapSource _screen;
@@ -129,10 +155,21 @@ public partial class OverlayWindow : Window
     /// <summary>For pins: the annotations in pin coordinates, still editable there.</summary>
     public List<Annotation>? PinAnnotations { get; private set; }
 
+    /// <summary>Corner radius (pixels) of a rounded capture handed to the pin.</summary>
+    public double PinCornerRadius { get; private set; }
+
     public OverlayWindow(BitmapSource screen, Int32Rect bounds, bool demo = false)
     {
         InitializeComponent();
         Motion.PopOnShow(Toolbar);
+        // A click on the toolbar must not leave the keyboard focus somewhere that swallows Tab / Esc.
+        Toolbar.PreviewMouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!_closed && _textEditor is not { IsActive: true } && _editingWatermark == null && !WatermarkEditor.IsKeyboardFocusWithin)
+            {
+                Keyboard.Focus(this);
+            }
+        }), System.Windows.Threading.DispatcherPriority.Input);
         PreviewMouseRightButtonDown += (_, e) =>
         {
             if (e.LeftButton == MouseButtonState.Pressed && CancelGesture())
@@ -349,6 +386,43 @@ public partial class OverlayWindow : Window
         ApplyPhysicalBounds();
     }
 
+    /// <summary>
+    /// Opening transition: the dimming starts at the screen edges and closes in on the pointer
+    /// (a clear disc around it shrinks away, 320 ms with the shared curve).
+    /// </summary>
+    private void StartDimConverge()
+    {
+        var cursor = Native.CursorPosition();
+        var center = new Point((cursor.X - _bounds.X) / _scale, (cursor.Y - _bounds.Y) / _scale);
+        var width = _bounds.Width / _scale;
+        var height = _bounds.Height / _scale;
+        var reach = new[] { new Point(0, 0), new Point(width, 0), new Point(0, height), new Point(width, height) }
+            .Max(corner => (corner - center).Length);
+        if (reach < 1)
+        {
+            return;
+        }
+
+        // Clear inside 70 % of the radius, a soft rim, dim outside.
+        var mask = new RadialGradientBrush
+        {
+            MappingMode = BrushMappingMode.Absolute,
+            Center = center,
+            GradientOrigin = center,
+            RadiusX = reach / 0.7,
+            RadiusY = reach / 0.7
+        };
+        mask.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
+        mask.GradientStops.Add(new GradientStop(Colors.Transparent, 0.7));
+        mask.GradientStops.Add(new GradientStop(Colors.Black, 1));
+        DimLayer.OpacityMask = mask;
+
+        var shrink = new System.Windows.Media.Animation.DoubleAnimation(reach / 0.7, 0.5, Motion.Slow) { EasingFunction = Motion.Ease };
+        shrink.Completed += (_, _) => DimLayer.OpacityMask = null;
+        mask.BeginAnimation(RadialGradientBrush.RadiusXProperty, shrink);
+        mask.BeginAnimation(RadialGradientBrush.RadiusYProperty, shrink);
+    }
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ApplyPhysicalBounds();
@@ -362,6 +436,7 @@ public partial class OverlayWindow : Window
         Native.SetForegroundWindow(handle);
 
         PositionHint();
+        StartDimConverge();
 
         if (_demo)
         {
@@ -447,8 +522,10 @@ public partial class OverlayWindow : Window
             _selection.Y / _scale - 1,
             _selection.Width / _scale + 2,
             _selection.Height / _scale + 2);
+        BrightClip.RadiusX = BrightClip.RadiusY = _cornerRadius / _scale;
 
         Editor.Selection = _selection;
+        Editor.SelectionCornerRadius = _cornerRadius;
         Editor.ShowSelectionChrome = true;
         Editor.SelectionDragging = _dragging && _mode is DragMode.Creating or DragMode.Moving or DragMode.Resizing;
         if (AnnotationOps.FindWatermark(Editor.Items) is { } watermark)
@@ -474,12 +551,130 @@ public partial class OverlayWindow : Window
         if (_dragging)
         {
             ShowToolbar(false);
+            HideSizeBox();
+        }
+        else if (SizeBox.Visibility == Visibility.Visible)
+        {
+            PositionSizeBox();
         }
         else
         {
             ShowToolbar(true);
             PositionToolbar();
         }
+    }
+
+    /// <summary>
+    /// The editable size box: shown above the capture while the pointer is on the frame (8 DIP
+    /// hysteresis so it does not flicker), kept while it is hovered or typed in.
+    /// </summary>
+    private void UpdateSizeBox(Point point)
+    {
+        if (!_hasSelection || _closed)
+        {
+            HideSizeBox();
+            return;
+        }
+
+        var near = 6 * _scale;
+        var keep = 14 * _scale;
+        var outer = _selection;
+        outer.Inflate(near, near);
+        var inner = _selection;
+        inner.Inflate(-near, -near);
+        var onFrame = outer.Contains(point) && (inner.Width <= 0 || inner.Height <= 0 || !inner.Contains(point));
+        if (onFrame && SizeBox.Visibility != Visibility.Visible)
+        {
+            ShowSizeBox();
+            return;
+        }
+
+        if (SizeBox.Visibility == Visibility.Visible && !SizeBox.IsMouseOver && !SizeBox.IsKeyboardFocusWithin)
+        {
+            var wide = _selection;
+            wide.Inflate(keep, keep);
+            var deep = _selection;
+            deep.Inflate(-keep, -keep);
+            var stillNear = wide.Contains(point) && (deep.Width <= 0 || deep.Height <= 0 || !deep.Contains(point));
+            if (!stillNear)
+            {
+                HideSizeBox();
+            }
+        }
+    }
+
+    private void ShowSizeBox()
+    {
+        var rect = SnapRect(_selection);
+        SizeWidthBox.Text = ((int)rect.Width).ToString(CultureInfo.InvariantCulture);
+        SizeHeightBox.Text = ((int)rect.Height).ToString(CultureInfo.InvariantCulture);
+        PositionSizeBox();
+        Editor.SizeLabelVisible = false;
+        Editor.InvalidateVisual();
+        Motion.SetShown(SizeBox, true);
+    }
+
+    private void HideSizeBox()
+    {
+        if (SizeBox.Visibility != Visibility.Visible || Motion.IsHiding(SizeBox))
+        {
+            return;
+        }
+
+        Editor.SizeLabelVisible = true;
+        Editor.InvalidateVisual();
+        Motion.SetShown(SizeBox, false);
+        if (SizeBox.IsKeyboardFocusWithin)
+        {
+            Keyboard.Focus(this);
+        }
+    }
+
+    private void PositionSizeBox()
+    {
+        SizeBox.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var left = _selection.X / _scale;
+        var top = _selection.Y / _scale - SizeBox.DesiredSize.Height - 6;
+        if (top < 4)
+        {
+            top = _selection.Y / _scale + 6; // no room above: just inside the top edge
+        }
+
+        Canvas.SetLeft(SizeBox, Math.Max(4, left));
+        Canvas.SetTop(SizeBox, top);
+    }
+
+    private void SizeBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            ApplyTypedSize();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            HideSizeBox();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Resizes the capture to the typed width × height, keeping its top-left corner.</summary>
+    private void ApplyTypedSize()
+    {
+        if (!int.TryParse(SizeWidthBox.Text.Trim(), out var width) || !int.TryParse(SizeHeightBox.Text.Trim(), out var height) ||
+            width < 2 || height < 2)
+        {
+            ShowSizeBox(); // put the current numbers back
+            return;
+        }
+
+        var x = Math.Min(_selection.X, Math.Max(0, _screen.PixelWidth - width));
+        var y = Math.Min(_selection.Y, Math.Max(0, _screen.PixelHeight - height));
+        _selection = ClampToScreen(new Rect(x, y, width, height));
+        _cornerRadius = Math.Min(_cornerRadius, Math.Min(_selection.Width, _selection.Height) / 2);
+        UpdateSelectionVisuals();
+        ShowSizeBox();
+        Keyboard.Focus(this);
     }
 
     /// <summary>Shows / hides the toolbar with the pop transition; reversing mid-way continues from where it is.</summary>
@@ -808,6 +1003,17 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (HitCornerDot(point) is var dot and >= 0 && _selectedAnnotation == null)
+        {
+            // Drag a corner dot towards the centre: rounded corners for the capture.
+            _mode = DragMode.Rounding;
+            _roundingCorner = dot;
+            _cornerRadiusOrigin = _cornerRadius;
+            InputLayer.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
         if (_tool is not (AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Eraser) &&
             _hasSelection && _selection.Contains(point))
         {
@@ -847,6 +1053,7 @@ public partial class OverlayWindow : Window
         {
             _pendingWindow = _hoverLocal;
             _mode = DragMode.Creating;
+            _cornerRadius = 0;
             _handle = -1;
             _selection = Rect.Empty;
             _hasSelection = false;
@@ -862,6 +1069,7 @@ public partial class OverlayWindow : Window
         }
 
         _mode = DragMode.Creating;
+        _cornerRadius = 0;
         _handle = -1;
         _pendingWindow = Rect.Empty;
         _recentRegionIndex = -1;
@@ -1042,6 +1250,7 @@ public partial class OverlayWindow : Window
                 UpdateHover(point);
             }
 
+            UpdateSizeBox(point);
             UpdateCursor(point);
 
             if (_hasSelection && _tool == AnnotationTool.Watermark)
@@ -1103,6 +1312,14 @@ public partial class OverlayWindow : Window
             case DragMode.Resizing:
             {
                 _selection = ClampToScreen(ResizeRect(_dragOrigin, _handle, point));
+                _cornerRadius = Math.Min(_cornerRadius, Math.Min(_selection.Width, _selection.Height) / 2);
+                UpdateSelectionVisuals();
+                break;
+            }
+
+            case DragMode.Rounding:
+            {
+                _cornerRadius = AnnotationEditor.CornerRadiusFor(_selection, _roundingCorner, point, _scale);
                 UpdateSelectionVisuals();
                 break;
             }
@@ -1169,6 +1386,16 @@ public partial class OverlayWindow : Window
             return true;
         }
 
+        if (_mode == DragMode.Rounding)
+        {
+            _cornerRadius = _cornerRadiusOrigin;
+            _mode = DragMode.None;
+            _dragging = false;
+            InputLayer.ReleaseMouseCapture();
+            UpdateSelectionVisuals();
+            return true;
+        }
+
         if (_dragging && _mode is DragMode.Creating or DragMode.Moving or DragMode.Resizing)
         {
             _selection = _dragOrigin;
@@ -1226,6 +1453,14 @@ public partial class OverlayWindow : Window
             _history.Disarm();
             _dragMoved = false;
             _mode = DragMode.None;
+            UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
+            return;
+        }
+
+        if (_mode == DragMode.Rounding)
+        {
+            _mode = DragMode.None;
+            UpdateSelectionVisuals();
             UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
             return;
         }
@@ -1989,7 +2224,8 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        if (_closed || _textEditor.IsActive || _editingWatermark != null || WatermarkEditor.IsKeyboardFocusWithin)
+        if (_closed || _textEditor.IsActive || _editingWatermark != null || WatermarkEditor.IsKeyboardFocusWithin ||
+            SizeBox.IsKeyboardFocusWithin)
         {
             return;
         }
@@ -2653,6 +2889,12 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (HitCornerDot(point) is var cornerDot and >= 0)
+        {
+            InputLayer.Cursor = cornerDot is 0 or 2 ? Cursors.SizeNWSE : Cursors.SizeNESW;
+            return;
+        }
+
         var handle = HitHandle(point);
         InputLayer.Cursor = handle switch
         {
@@ -2797,7 +3039,7 @@ public partial class OverlayWindow : Window
         var height = Math.Max(1, (int)Math.Round(rect.Height));
 
         var translation = VisibleTranslation();
-        if ((!includeAnnotations || Editor.Items.Count == 0) && translation == null)
+        if ((!includeAnnotations || Editor.Items.Count == 0) && translation == null && _cornerRadius < 0.5)
         {
             var cropped = new CroppedBitmap(_screen, new Int32Rect(x, y, width, height));
             cropped.Freeze();
@@ -2809,7 +3051,7 @@ public partial class OverlayWindow : Window
         using (var dc = visual.RenderOpen())
         {
             dc.PushTransform(new TranslateTransform(-x, -y));
-            dc.PushClip(new RectangleGeometry(new Rect(x, y, width, height)));
+            dc.PushClip(new RectangleGeometry(new Rect(x, y, width, height), _cornerRadius, _cornerRadius));
             dc.DrawImage(_screen, new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight));
             if (translation != null)
             {
@@ -2945,6 +3187,7 @@ public partial class OverlayWindow : Window
         // Hand the pin the clean selection plus the annotations so they stay editable there.
         var rect = ClampToScreen(_selection);
         var origin = new Point(Math.Round(rect.X), Math.Round(rect.Y));
+        PinCornerRadius = _cornerRadius;
         PinBaseImage = Compose(includeAnnotations: false);
         PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, origin, PinBaseImage);
         var output = Compose();
@@ -2974,6 +3217,7 @@ public partial class OverlayWindow : Window
         Editor.InvalidateVisual();
         Magnifier.Visibility = Visibility.Collapsed;
         Hint.Visibility = Visibility.Collapsed;
+        SizeBox.Visibility = Visibility.Collapsed;
         Motion.SetShown(TranslateStatus, false);
         Motion.Fade(DimLayer, 0, Motion.Fast);
         Motion.PopOut(Toolbar);

@@ -243,6 +243,9 @@ public partial class PinWindow : Window
 
     public bool IsClickThrough => _clickThrough;
 
+    /// <summary>Corner radius in image pixels (a pin made from a rounded capture).</summary>
+    public double CornerRadius { get; init; }
+
     /// <summary>Everything needed to reopen this pin exactly as it was (image, editable annotations, place, zoom, opacity).</summary>
     public PinSnapshot Snapshot() => new(
         SourceImage,
@@ -552,6 +555,11 @@ public partial class PinWindow : Window
 
         ImageHost.Width = imageWidth;
         ImageHost.Height = imageHeight;
+        // Shadow and frame follow the rounded corners of a rounded capture.
+        var corner = new CornerRadius(CornerRadius * _zoom);
+        ImageShadowLayer.CornerRadius = corner;
+        FrameBorder.CornerRadius = corner;
+        Editor.SourceCornerRadius = CornerRadius;
         Editor.Width = imageWidth;
         Editor.Height = imageHeight;
         Editor.Scale = 1.0 / _zoom;
@@ -560,10 +568,13 @@ public partial class PinWindow : Window
         TextLayer.Scale = 1.0 / _zoom;
         TextLayer.InvalidateVisual();
 
-        var width = imageWidth + 32;
-        var height = imageHeight + 32;
-        var windowLeft = _left - 16;
-        var windowTop = _top - 16;
+        // Room around the image for the shadow (grows with the shadow size setting).
+        var pad = Pad;
+        RootGrid.Margin = new Thickness(pad);
+        var width = imageWidth + pad * 2;
+        var height = imageHeight + pad * 2;
+        var windowLeft = _left - pad;
+        var windowTop = _top - pad;
 
         var virtualX = Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN);
         var virtualY = Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN);
@@ -596,7 +607,7 @@ public partial class PinWindow : Window
     {
         Native.GetWindowRect(new WindowInteropHelper(this).Handle, out var window);
         var dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        var inset = (int)Math.Round(16 * dpi);
+        var inset = (int)Math.Round(Pad * dpi);
         return new Native.RECT
         {
             Left = window.Left + inset,
@@ -647,6 +658,9 @@ public partial class PinWindow : Window
         if (_toolbarWindow == null)
         {
             _toolbarWindow = new ToolbarHostWindow(Toolbar) { Owner = this };
+            // Should it ever get the keys itself, they still belong to the pin.
+            _toolbarWindow.PreviewKeyDown += (_, e) => OnPreviewKeyDown(this, e);
+            Toolbar.PreviewMouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(new Action(ReclaimKeyboard), DispatcherPriority.Input);
             _toolbarWindow.LocationChanged += (_, _) =>
             {
                 // Dragged by its handle: remember where, relative to the image.
@@ -665,6 +679,49 @@ public partial class PinWindow : Window
         PlaceToolbar();
     }
 
+    /// <summary>
+    /// After a click on the toolbar (its own, never-activated window) the keys — Tab, Esc,
+    /// tool letters — must reach the pin: make sure it is the active window and the canvas has
+    /// the keyboard focus (unless a text is being typed).
+    /// </summary>
+    private void ReclaimKeyboard()
+    {
+        if (!_editMode || _textEditor.IsActive || _editingWatermark != null)
+        {
+            return;
+        }
+
+        if (!IsActive)
+        {
+            Activate();
+        }
+
+        InputLayer.Focus();
+        Keyboard.Focus(InputLayer);
+    }
+
+    private static Color ParseColor(string? text, Color fallback)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(text) ? fallback : (Color)ColorConverter.ConvertFromString(text.Trim());
+        }
+        catch (FormatException)
+        {
+            return fallback;
+        }
+    }
+
+    /// <summary>Margin around the image: enough for the configured shadow.</summary>
+    private static int Pad => Math.Max(16, (int)Math.Ceiling(App.Config?.PinShadowSize ?? 12) + 4);
+
+    /// <summary>Settings changed: re-apply the shadow (size, colour, opacity) and the margin it needs.</summary>
+    public void ApplyShadowSettings()
+    {
+        UpdateFrame();
+        ApplyBounds();
+    }
+
     private void UpdateFrame()
     {
         var color = _clickThrough
@@ -678,9 +735,20 @@ public partial class PinWindow : Window
         FrameBorder.BorderBrush = new SolidColorBrush(color);
         if (ImageShadowLayer != null)
         {
-            // A soft grey shadow (black made the edge hard to read); state colours glow lighter.
-            var shadow = _clickThrough || _locked || IsActive ? color : Color.FromRgb(0x6A, 0x6A, 0x6A);
-            ImageShadowLayer.Background = new SolidColorBrush(Color.FromArgb(IsActive ? (byte)150 : (byte)120, shadow.R, shadow.G, shadow.B));
+            // Shadow from the settings (size / colour / opacity); the active, locked and
+            // click-through states tint it with their colour so the state stays visible.
+            var config = App.Config;
+            var size = Math.Clamp(config?.PinShadowSize ?? 12, 0, 60);
+            var opacity = Math.Clamp(config?.PinShadowOpacity ?? 0.47, 0, 1);
+            var shadow = _clickThrough || _locked || IsActive ? color : ParseColor(config?.PinShadowColor, Color.FromRgb(0x6A, 0x6A, 0x6A));
+            if (IsActive)
+            {
+                opacity = Math.Min(1, opacity * 1.25);
+            }
+
+            ShadowBlur.Radius = size;
+            ImageShadowLayer.Visibility = size < 0.5 || opacity < 0.01 ? Visibility.Collapsed : Visibility.Visible;
+            ImageShadowLayer.Background = new SolidColorBrush(Color.FromArgb((byte)Math.Round(opacity * 255), shadow.R, shadow.G, shadow.B));
         }
     }
 
@@ -1196,11 +1264,15 @@ public partial class PinWindow : Window
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
+            // Rounded pins keep their corners transparent, annotations included.
+            dc.PushClip(new RectangleGeometry(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight), CornerRadius, CornerRadius));
             dc.DrawImage(_baseImage, new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight));
             foreach (var annotation in AnnotationEditor.DrawOrder(Editor.Items))
             {
                 AnnotationEditor.DrawItem(dc, annotation);
             }
+
+            dc.Pop();
         }
 
         var bitmap = new RenderTargetBitmap(

@@ -63,6 +63,18 @@
 
             <ui:AnnotationToolbar x:Name="Toolbar" Visibility="Collapsed" />
 
+            <!-- Size of the capture, editable: appears above the area while the pointer is on its frame. -->
+            <Border x:Name="SizeBox" Visibility="Collapsed" Background="#F01C1C1C" BorderBrush="#33FFFFFF"
+                    BorderThickness="1" CornerRadius="6" Padding="4,3">
+                <StackPanel Orientation="Horizontal">
+                    <TextBox x:Name="SizeWidthBox" Style="{StaticResource InputBox}" Width="56" FontSize="12" Padding="3,0"
+                             TextAlignment="Center" ToolTip="宽（像素）" PreviewKeyDown="SizeBox_PreviewKeyDown" />
+                    <TextBlock Text="×" Foreground="#9A9A9A" FontSize="12" Margin="5,0" VerticalAlignment="Center" />
+                    <TextBox x:Name="SizeHeightBox" Style="{StaticResource InputBox}" Width="56" FontSize="12" Padding="3,0"
+                             TextAlignment="Center" ToolTip="高（像素），Enter 应用" PreviewKeyDown="SizeBox_PreviewKeyDown" />
+                </StackPanel>
+            </Border>
+
             <!-- Chrome-style translate bar: [source | target] switch plus progress / error. -->
             <Border x:Name="TranslateStatus" Visibility="Collapsed" Background="#F01C1C1C"
                     BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="7" Padding="4">

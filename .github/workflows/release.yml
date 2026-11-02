@@ -1,0 +1,50 @@
+# Builds the portable zip and the installer on GitHub and attaches them to a Release.
+#   - push a tag:   git tag v0.8.07 && git push origin v0.8.07   -> Release "v0.8.07" with both files
+#   - or run it by hand (Actions -> Release -> Run workflow): the files are kept as build artifacts
+# The app's update check reads the latest Release (Markshot-Setup-<version>.exe), so publishing a
+# Release is all that is needed for installed copies to offer the update.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Package
+        shell: pwsh
+        run: ./tools/package.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: markshot
+          path: |
+            dist/Markshot-Setup-*.exe
+            dist/Markshot-*-portable.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Markshot-Setup-*.exe
+            dist/Markshot-*-portable.zip

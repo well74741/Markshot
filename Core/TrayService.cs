@@ -7,7 +7,8 @@ namespace Markshot.Core;
 public sealed class TrayService : IDisposable
 {
     private readonly Forms.NotifyIcon _notifyIcon;
-    private readonly Forms.ContextMenuStrip _menu;
+    private readonly Func<System.Windows.Controls.ContextMenu> _buildMenu;
+    private Window? _menuHost;
     private bool _disposed;
 
     public TrayService(
@@ -20,30 +21,42 @@ public sealed class TrayService : IDisposable
         Func<bool>? canRestore = null,
         Func<bool>? anyClickThrough = null)
     {
-        _menu = new Forms.ContextMenuStrip();
-
-        _menu.Items.Add("截图", null, (_, _) => capture());
-        _menu.Items.Add("贴图剪贴板", null, (_, _) => pin());
-        _menu.Items.Add(new Forms.ToolStripSeparator());
-        var restore = _menu.Items.Add("恢复最近贴图", null, (_, _) => restoreLastPin());
-        var clickThrough = _menu.Items.Add("取消所有鼠标穿透", null, (_, _) => disableClickThrough());
-        // Only what applies right now.
-        _menu.Opening += (_, _) =>
+        // The tray menu is a WPF menu in the app's dark rounded style (not the system one),
+        // rebuilt on each open so it only lists what applies right now.
+        _buildMenu = () =>
         {
-            restore.Visible = canRestore?.Invoke() ?? true;
-            clickThrough.Visible = anyClickThrough?.Invoke() ?? true;
+            var menu = new System.Windows.Controls.ContextMenu();
+            void Add(string header, Action action, string? gesture = null)
+            {
+                var item = new System.Windows.Controls.MenuItem { Header = header, InputGestureText = gesture ?? "" };
+                item.Click += (_, _) => action();
+                menu.Items.Add(item);
+            }
+
+            Add("截图", capture, App.Config?.CaptureHotkey);
+            Add("贴图剪贴板", pin, App.Config?.PinHotkey);
+            if (canRestore?.Invoke() ?? true)
+            {
+                Add("恢复最近贴图", restoreLastPin, App.Config?.RestorePinHotkey);
+            }
+
+            if (anyClickThrough?.Invoke() ?? false)
+            {
+                Add("取消所有鼠标穿透", disableClickThrough);
+            }
+
+            menu.Items.Add(new System.Windows.Controls.Separator());
+            Add("设置…", settings);
+            menu.Items.Add(new System.Windows.Controls.Separator());
+            Add("退出", exit);
+            return menu;
         };
-        _menu.Items.Add(new Forms.ToolStripSeparator());
-        _menu.Items.Add("设置…", null, (_, _) => settings());
-        _menu.Items.Add(new Forms.ToolStripSeparator());
-        _menu.Items.Add("退出", null, (_, _) => exit());
 
         _notifyIcon = new Forms.NotifyIcon
         {
             Icon = CreateIcon(),
             Text = "Markshot · 截图 / 贴图 / 翻译",
-            Visible = true,
-            ContextMenuStrip = _menu
+            Visible = true
         };
 
         _notifyIcon.DoubleClick += (_, _) => capture();
@@ -54,7 +67,50 @@ public sealed class TrayService : IDisposable
             {
                 capture();
             }
+            else if (e.Button == Forms.MouseButtons.Right)
+            {
+                ShowMenu();
+            }
         };
+    }
+
+    /// <summary>Opens the menu at the pointer (it flips up / left to stay on screen, above the taskbar).</summary>
+    private void ShowMenu()
+    {
+        try
+        {
+            // A tiny invisible foreground window: without it the menu would not close when
+            // clicking elsewhere (tray-menu rule of Windows).
+            _menuHost ??= new Window
+            {
+                WindowStyle = WindowStyle.None,
+                AllowsTransparency = true,
+                Background = System.Windows.Media.Brushes.Transparent,
+                ShowInTaskbar = false,
+                Topmost = true,
+                Width = 1,
+                Height = 1,
+                Left = -32000,
+                Top = -32000
+            };
+            _menuHost.Show();
+            _menuHost.Activate();
+            Native.SetForegroundWindow(new System.Windows.Interop.WindowInteropHelper(_menuHost).Handle);
+
+            var menu = _buildMenu();
+            var cursor = Native.CursorPosition();
+            var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(_menuHost);
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.AbsolutePoint;
+            menu.HorizontalOffset = cursor.X / dpi.DpiScaleX;
+            menu.VerticalOffset = cursor.Y / dpi.DpiScaleY;
+            menu.PlacementTarget = _menuHost;
+            menu.Closed += (_, _) => _menuHost?.Hide();
+            menu.IsOpen = true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("打开托盘菜单失败", ex);
+        }
     }
 
     public void ShowBalloon(string title, string text)
@@ -159,6 +215,6 @@ public sealed class TrayService : IDisposable
         _disposed = true;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
-        _menu.Dispose();
+        _menuHost?.Close();
     }
 }

@@ -23,6 +23,10 @@ public partial class SettingsWindow : Window
         RestorePinHotkeyBox.Text = config.RestorePinHotkey;
         TextBypassBox.Text = config.TextBypassModifier;
         PinFlipHBox.Text = config.PinFlipHorizontalHotkey;
+        _shadowColor = config.PinShadowColor;
+        ShadowSizeSlider.Value = config.PinShadowSize;
+        ShadowOpacitySlider.Value = Math.Round(config.PinShadowOpacity * 100);
+        UpdateShadowPreview();
         PinFlipVBox.Text = config.PinFlipVerticalHotkey;
         PinRotateBox.Text = config.PinRotateHotkey;
         PinResetBox.Text = config.PinResetHotkey;
@@ -340,6 +344,9 @@ public partial class SettingsWindow : Window
         _config.ToolNumberHotkey = numberKey;
         _config.ToolLineHotkey = lineKey;
         _config.ToolShapeHotkey = shapeKey;
+        _config.PinShadowSize = Math.Round(ShadowSizeSlider.Value);
+        _config.PinShadowOpacity = Math.Round(ShadowOpacitySlider.Value) / 100;
+        _config.PinShadowColor = _shadowColor;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
@@ -368,13 +375,72 @@ public partial class SettingsWindow : Window
     /// <summary>True when the window was closed with “保存”.</summary>
     public bool Saved { get; private set; }
 
+    private string _shadowColor = "#6A6A6A";
+
+    private void Shadow_Changed(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateShadowPreview();
+
+    private void UpdateShadowPreview()
+    {
+        if (ShadowSizeValue == null || ShadowOpacityValue == null)
+        {
+            return;
+        }
+
+        ShadowSizeValue.Text = $"{Math.Round(ShadowSizeSlider.Value)}";
+        ShadowOpacityValue.Text = $"{Math.Round(ShadowOpacitySlider.Value)}%";
+        try
+        {
+            ShadowColorSwatch.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_shadowColor));
+        }
+        catch (FormatException)
+        {
+            ShadowColorSwatch.Background = Brushes.Gray;
+        }
+    }
+
+    private void ShadowColor_Click(object sender, RoutedEventArgs e)
+    {
+        Color current;
+        try
+        {
+            current = (Color)ColorConverter.ConvertFromString(_shadowColor);
+        }
+        catch (FormatException)
+        {
+            current = Color.FromRgb(0x6A, 0x6A, 0x6A);
+        }
+
+        var picker = new ColorPickerWindow(Color.FromArgb((byte)Math.Round(ShadowOpacitySlider.Value * 2.55), current.R, current.G, current.B))
+        {
+            Owner = this
+        };
+        picker.ShowDialog();
+        if (picker.Accepted)
+        {
+            var chosen = picker.SelectedColor;
+            _shadowColor = $"#{chosen.R:X2}{chosen.G:X2}{chosen.B:X2}";
+            ShadowOpacitySlider.Value = Math.Round(chosen.A / 2.55); // the picker's alpha is the shadow opacity
+            UpdateShadowPreview();
+        }
+    }
+
     private UpdateService.Package? _update;
 
-    /// <summary>Looks for a newer installer in the update folder shown in the box.</summary>
-    private void RefreshUpdate(bool quiet)
+    /// <summary>Looks for a newer installer at the update source shown in the box (GitHub or a folder).</summary>
+    private async void RefreshUpdate(bool quiet)
     {
         var folder = Environment.ExpandEnvironmentVariables(UpdatePathBox.Text.Trim());
-        _update = UpdateService.FindNewer(folder);
+        if (!quiet)
+        {
+            StatusText.Text = "正在检查更新…";
+        }
+
+        _update = await UpdateService.FindNewerAsync(folder);
+        if (!IsLoaded)
+        {
+            return;
+        }
+
         if (_update != null)
         {
             UpdateButton.Content = $"更新 {_update.Version}";
@@ -387,15 +453,17 @@ public partial class SettingsWindow : Window
         UpdateButton.Visibility = Visibility.Collapsed;
         if (!quiet)
         {
-            StatusText.Text = string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)
-                ? "更新路径不存在，请在“保存与识别 → 更新”里设置。"
-                : $"已是最新版本（{AppVersion.Display}）";
+            StatusText.Text = UpdateService.IsGitHub(folder)
+                ? $"没有找到更新版本（当前 {AppVersion.Display}）。GitHub 仓库需公开，且 Release 里有 Markshot-Setup-版本号.exe。"
+                : string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)
+                    ? "更新路径不存在，请在“保存与识别 → 更新”里设置。"
+                    : $"已是最新版本（{AppVersion.Display}）";
         }
     }
 
     private void CheckUpdate_Click(object sender, RoutedEventArgs e) => RefreshUpdate(quiet: false);
 
-    private void Update_Click(object sender, RoutedEventArgs e)
+    private async void Update_Click(object sender, RoutedEventArgs e)
     {
         if (_update == null)
         {
@@ -404,9 +472,23 @@ public partial class SettingsWindow : Window
 
         var result = MessageBox.Show(this, $"关闭 Markshot 并安装 {_update.Version}？", "更新 Markshot",
             MessageBoxButton.OKCancel, MessageBoxImage.Question);
-        if (result == MessageBoxResult.OK)
+        if (result != MessageBoxResult.OK)
         {
-            UpdateService.Install(_update);
+            return;
+        }
+
+        try
+        {
+            UpdateButton.IsEnabled = false;
+            var progress = new Progress<double>(value => StatusText.Text = $"正在下载更新… {value:P0}");
+            var local = await UpdateService.DownloadAsync(_update, progress);
+            UpdateService.Install(local);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("下载更新失败", ex);
+            StatusText.Text = "下载更新失败：" + ex.Message;
+            UpdateButton.IsEnabled = true;
         }
     }
 

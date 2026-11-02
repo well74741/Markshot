@@ -44,6 +44,13 @@ public sealed class AppConfig
 
     public string ToolShapeHotkey { get; set; } = "M";
 
+    /// <summary>Pin shadow: blur size (DIP, 0 = none), colour (#RRGGBB) and opacity (0–1).</summary>
+    public double PinShadowSize { get; set; } = 12;
+
+    public string PinShadowColor { get; set; } = "#6A6A6A";
+
+    public double PinShadowOpacity { get; set; } = 0.47;
+
     /// <summary>Copying a capture / pin also puts a PNG file on the clipboard (paste in Explorer).</summary>
     public bool CopyImageAsFile { get; set; } = true;
 
