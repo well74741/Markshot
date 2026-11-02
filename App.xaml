@@ -246,6 +246,61 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/pin.png" /></Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="IconConfirmMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/confirm.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconRecordMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/record.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconPauseMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/pause.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconPlayMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/play.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconSpeakerMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/speaker.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconMicMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/mic.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconCountdownMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/countdown.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconExitMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/exit.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconSpeedMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/speed.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconRetakeMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/retake.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconKeysMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/keys.png" /></Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="IconMosaicBrushMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/mosaic_brush.png" /></Setter.Value>

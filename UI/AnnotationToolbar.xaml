@@ -104,7 +104,7 @@
                         <Border Style="{StaticResource IconSaveMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" Tag="Apply" ToolTip="应用 (Ctrl+S)" Foreground="{StaticResource Accent}">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconCheck}" />
+                        <Border Style="{StaticResource IconConfirmMask}" />
                     </Button>
                 </StackPanel>
             </StackPanel>

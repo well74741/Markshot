@@ -275,6 +275,7 @@ public partial class OverlayWindow : Window
             }
 
             Editor.InvalidateVisual();
+            UpdateMagnifier(point); // the loupe follows the pen
             e.Handled = true;
         };
         PreviewMouseRightButtonUp += (_, e) =>
@@ -298,6 +299,12 @@ public partial class OverlayWindow : Window
         };
         PreviewMouseDown += (_, e) =>
         {
+            // Clicking anywhere outside the size label ends typing there (the typed size is applied).
+            if (SizeBox.IsKeyboardFocusWithin && e.OriginalSource is DependencyObject source && !IsInside(source, SizeBox))
+            {
+                CommitSizeBox();
+            }
+
             // Middle click inside the capture: pin it right away.
             if (e.ChangedButton == MouseButton.Middle && _hasSelection && !_finishing &&
                 _selection.Contains(ToPixels(e.GetPosition(InputLayer))))
@@ -765,6 +772,37 @@ public partial class OverlayWindow : Window
             ShowSizeBox(); // the current numbers back
             e.Handled = true;
         }
+    }
+
+    /// <summary>Leaves the size label: applies the typed numbers when they changed, else just drops the focus.</summary>
+    private void CommitSizeBox()
+    {
+        var rect = SnapRect(_selection);
+        if (SizeWidthBox.Text.Trim() != ((int)rect.Width).ToString(CultureInfo.InvariantCulture) ||
+            SizeHeightBox.Text.Trim() != ((int)rect.Height).ToString(CultureInfo.InvariantCulture))
+        {
+            ApplyTypedSize();
+            return;
+        }
+
+        Keyboard.Focus(this);
+    }
+
+    private static bool IsInside(DependencyObject? element, DependencyObject container)
+    {
+        while (element != null)
+        {
+            if (ReferenceEquals(element, container))
+            {
+                return true;
+            }
+
+            element = element is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(element)
+                : LogicalTreeHelper.GetParent(element);
+        }
+
+        return false;
     }
 
     /// <summary>Resizes the capture to the typed width × height, keeping its top-left corner.</summary>

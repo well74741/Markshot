@@ -30,12 +30,12 @@ internal static class ToolbarCatalog
 
     public static UIElement Icon(string key)
     {
-        if (key is "Ocr" or "Apply")
+        if (key is "Ocr")
         {
             return new Path
             {
                 Style = (Style)Application.Current.FindResource("IconPath"),
-                Data = (Geometry)Application.Current.FindResource(key == "Ocr" ? "IconOcr" : "IconCheck")
+                Data = (Geometry)Application.Current.FindResource("IconOcr")
             };
         }
 
@@ -52,6 +52,7 @@ internal static class ToolbarCatalog
             "Pin" => "IconPinMask",
             "Save" => "IconSaveMask",
             "Copy" => "IconCopyMask",
+            "Apply" => "IconConfirmMask",
             _ => "IconTranslateMask"
         };
         return new Border { Style = (Style)Application.Current.FindResource(mask) };

@@ -14,6 +14,9 @@ public sealed class ReorderBehavior
 {
     private static readonly TimeSpan HoldTime = TimeSpan.FromMilliseconds(420);
 
+    /// <summary>Left button state (replaceable in tests).</summary>
+    internal static Func<bool> LeftButtonDown = () => Mouse.LeftButton == MouseButtonState.Pressed;
+
     private readonly Panel _panel;
     private readonly DispatcherTimer _hold = new() { Interval = HoldTime };
     private FrameworkElement? _pressed;
@@ -30,9 +33,11 @@ public sealed class ReorderBehavior
         panel.PreviewMouseLeftButtonDown += OnDown;
         panel.PreviewMouseMove += OnMove;
         panel.PreviewMouseLeftButtonUp += OnUp;
-        panel.LostMouseCapture += (_, _) =>
+        panel.LostMouseCapture += (_, e) =>
         {
-            if (_dragging)
+            // Only the row's own capture: a button inside loses its capture when the row takes it over
+            // (that event bubbles up here too) and must not end the drag that is just starting.
+            if (_dragging && ReferenceEquals(e.OriginalSource, _panel))
             {
                 EndDrag(commit: true);
             }
@@ -64,6 +69,12 @@ public sealed class ReorderBehavior
     private void OnMove(object sender, MouseEventArgs e)
     {
         var point = e.GetPosition(_panel);
+        if (_dragging && !LeftButtonDown())
+        {
+            EndDrag(commit: true); // the release went somewhere else
+            return;
+        }
+
         if (!_dragging)
         {
             // Moving before the hold time: an ordinary press (e.g. dragging a slider), no reorder.
@@ -131,7 +142,7 @@ public sealed class ReorderBehavior
     private void BeginDrag()
     {
         _hold.Stop();
-        if (_pressed == null || Mouse.LeftButton != MouseButtonState.Pressed)
+        if (_pressed == null || !LeftButtonDown())
         {
             return;
         }
@@ -147,10 +158,11 @@ public sealed class ReorderBehavior
         }
 
         _target = _from;
-        _dragging = true;
+        var item = _pressed;
+        _dragging = true; // before the capture: taking it raises a mouse move
         _panel.CaptureMouse(); // the button loses its press: no click on release
-        Panel.SetZIndex(_pressed, 10);
-        Wiggle(_pressed, true);
+        Panel.SetZIndex(item, 10);
+        Wiggle(item, true);
     }
 
     private void EndDrag(bool commit)

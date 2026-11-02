@@ -73,15 +73,17 @@ public partial class SettingsWindow : Window
         PageHotkeys.Visibility = page == "Hotkeys" ? Visibility.Visible : Visibility.Collapsed;
         PageTranslate.Visibility = page == "Translate" ? Visibility.Visible : Visibility.Collapsed;
         PageGeneral.Visibility = page == "General" ? Visibility.Visible : Visibility.Collapsed;
+        PageToolbar.Visibility = page == "Toolbar" ? Visibility.Visible : Visibility.Collapsed;
         Motion.EnterPage(page switch
         {
             "Translate" => PageTranslate,
+            "Toolbar" => PageToolbar,
             "General" => PageGeneral,
             _ => PageHotkeys
         });
     }
 
-    /// <summary>Opens the window on a given page ("Hotkeys", "Translate", "General").</summary>
+    /// <summary>Opens the window on a given page ("Hotkeys", "Translate", "Toolbar", "General").</summary>
     public void ShowPage(string page)
     {
         switch (page)
@@ -91,6 +93,9 @@ public partial class SettingsWindow : Window
                 break;
             case "General":
                 NavGeneral.IsChecked = true;
+                break;
+            case "Toolbar":
+                NavToolbar.IsChecked = true;
                 break;
             default:
                 NavHotkeys.IsChecked = true;
