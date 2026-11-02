@@ -64,10 +64,10 @@
                 <StackPanel x:Name="SetupGroup" Orientation="Horizontal">
                     <Button x:Name="FpsButton" Style="{StaticResource ToolButton}" Height="30" Click="Fps_Click" ToolTip="帧率" />
                     <Border Style="{StaticResource Sep}" />
-                    <TextBox x:Name="WidthBox" Style="{StaticResource SizeLabelField}" FontSize="12.5" MinWidth="34" TextAlignment="Center"
+                    <TextBox x:Name="WidthBox" Style="{StaticResource SizeLabelField}" FontSize="12.5" Width="40" TextAlignment="Center"
                              ToolTip="宽（像素），Enter 应用" PreviewKeyDown="SizeBox_PreviewKeyDown" LostKeyboardFocus="SizeBox_LostFocus" />
                     <TextBlock Text="×" Style="{StaticResource BarText}" Margin="2,0" />
-                    <TextBox x:Name="HeightBox" Style="{StaticResource SizeLabelField}" FontSize="12.5" MinWidth="34" TextAlignment="Center"
+                    <TextBox x:Name="HeightBox" Style="{StaticResource SizeLabelField}" FontSize="12.5" Width="40" TextAlignment="Center"
                              ToolTip="高（像素），Enter 应用" PreviewKeyDown="SizeBox_PreviewKeyDown" LostKeyboardFocus="SizeBox_LostFocus" />
                     <Button Style="{StaticResource ChevronButton}" Click="SizePresets_Click" ToolTip="常用尺寸">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />

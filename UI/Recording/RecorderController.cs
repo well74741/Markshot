@@ -76,6 +76,41 @@ public sealed class RecorderController
         _tick.Tick += (_, _) => Changed?.Invoke();
         _countdown = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _countdown.Tick += (_, _) => CountdownTick();
+        // The taskbar button's right-click menu follows the state.
+        var jumpPhase = RecordPhase.Idle;
+        Changed += () =>
+        {
+            if (Phase != jumpPhase)
+            {
+                jumpPhase = Phase;
+                RecorderCommands.UpdateJumpList(Phase);
+            }
+        };
+    }
+
+    /// <summary>A command from the taskbar menu (start / stop / pause / exit).</summary>
+    public void Command(string command)
+    {
+        if (!IsOpen)
+        {
+            return;
+        }
+
+        switch (command)
+        {
+            case "start" when Phase == RecordPhase.Setup:
+                Start();
+                break;
+            case "stop":
+                _ = StopAsync();
+                break;
+            case "pause":
+                TogglePause();
+                break;
+            case "exit":
+                RequestClose();
+                break;
+        }
     }
 
     public event Action? Changed;
@@ -137,8 +172,9 @@ public sealed class RecorderController
         KeysOn = false;
         _frame = new RecordFrameWindow(this);
         _bar = new RecordBarWindow(this);
+        new RecordDimWindow(Rect).Show(); // first, so the frame and the toolbar stay bright above it
         _frame.Show();
-        _bar.Show();
+        _bar.Show(); // after the frame: above it
         Layout();
         _frame.PlayOpen();
         if (FFmpeg.Path != null)
@@ -374,11 +410,6 @@ public sealed class RecorderController
             _pills.Clear();
         }
 
-        if (_video != null)
-        {
-            _video.DrawKeys = on;
-        }
-
         Changed?.Invoke();
     }
 
@@ -403,7 +434,6 @@ public sealed class RecorderController
         _clock = new RecordClock();
         _video = new ScreenRecorder(Rect, _config.Fps, _clock, Path.Combine(_session, "video.mkv"), _pills, Scale)
         {
-            DrawKeys = KeysOn,
             Synthetic = SyntheticFrames
         };
         _prepare = PrepareAsync(_video, _session);
@@ -606,6 +636,7 @@ public sealed class RecorderController
         _bar?.SetProtected(false);
         _preview = new RecordPreviewWindow(this);
         _preview.Show();
+        _bar?.BringToFront();
         Layout();
         _frame?.Hide();
         Changed?.Invoke();

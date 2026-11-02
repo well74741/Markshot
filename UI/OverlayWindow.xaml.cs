@@ -211,7 +211,7 @@ public partial class OverlayWindow : Window
             if (!_closed && !Toolbar.IsMenuOpen && _textEditor is not { IsActive: true } && _editingWatermark == null &&
                 !WatermarkEditor.IsKeyboardFocusWithin && !SizeBox.IsKeyboardFocusWithin)
             {
-                Keyboard.Focus(this);
+                FocusWindow();
             }
         }), System.Windows.Threading.DispatcherPriority.Input);
         Editor.SizeLabelVisible = false; // the editable SizeBox is the label
@@ -571,7 +571,7 @@ public partial class OverlayWindow : Window
 
         Activate();
         Focus();
-        Keyboard.Focus(this);
+        FocusWindow();
 
         var handle = new WindowInteropHelper(this).Handle;
         Native.SetForegroundWindow(handle);
@@ -743,7 +743,7 @@ public partial class OverlayWindow : Window
         SizeBox.Visibility = Visibility.Collapsed;
         if (SizeBox.IsKeyboardFocusWithin)
         {
-            Keyboard.Focus(this);
+            FocusWindow();
         }
     }
 
@@ -770,10 +770,20 @@ public partial class OverlayWindow : Window
         }
         else if (e.Key == Key.Escape)
         {
-            Keyboard.Focus(this);
+            FocusWindow();
             ShowSizeBox(); // the current numbers back
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// Gives the keyboard to the window itself. The window is a focus scope: focusing it alone would
+    /// hand the focus straight back to the box that had it, so its remembered element is reset first.
+    /// </summary>
+    private void FocusWindow()
+    {
+        FocusManager.SetFocusedElement(this, this);
+        Keyboard.Focus(this);
     }
 
     /// <summary>Leaves the size label: applies the typed numbers when they changed, else just drops the focus.</summary>
@@ -787,7 +797,7 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        Keyboard.Focus(this);
+        FocusWindow();
     }
 
     private static bool IsInside(DependencyObject? element, DependencyObject container)
@@ -813,7 +823,7 @@ public partial class OverlayWindow : Window
         if (!int.TryParse(SizeWidthBox.Text.Trim(), out var width) || !int.TryParse(SizeHeightBox.Text.Trim(), out var height) ||
             width < 2 || height < 2)
         {
-            Keyboard.Focus(this);
+            FocusWindow();
             ShowSizeBox(); // put the current numbers back
             return;
         }
@@ -823,7 +833,7 @@ public partial class OverlayWindow : Window
         _selection = ClampToScreen(new Rect(x, y, width, height));
         _cornerRadius = Math.Min(_cornerRadius, Math.Min(_selection.Width, _selection.Height) / 2);
         _lasso = null; // a typed size makes it a rectangle again
-        Keyboard.Focus(this);
+        FocusWindow();
         UpdateSelectionVisuals();
     }
 
@@ -2306,7 +2316,7 @@ public partial class OverlayWindow : Window
         if (!_closed)
         {
             Focus();
-            Keyboard.Focus(this);
+            FocusWindow();
             UpdateCursorToPointer();
         }
     }
@@ -2354,7 +2364,7 @@ public partial class OverlayWindow : Window
         if (!_closed)
         {
             Focus();
-            Keyboard.Focus(this);
+            FocusWindow();
         }
     }
 
@@ -2363,7 +2373,7 @@ public partial class OverlayWindow : Window
         _editingWatermark = null;
         WatermarkEditor.Visibility = Visibility.Collapsed;
         Focus();
-        Keyboard.Focus(this);
+        FocusWindow();
     }
 
     private void WatermarkEditor_PreviewKeyDown(object sender, KeyEventArgs e)

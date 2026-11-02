@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.10`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.11`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -467,6 +467,21 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 
 另：设置新增「批注栏」页；长按批注栏按钮拖动修复（按钮自身的鼠标捕获丢失事件会冒泡到面板，原先误判为拖动结束）；
 截图尺寸输入框点别处即退出编辑；套索绘制时放大镜跟随；贴图「应用」改用图标库的“确认”图标。
+
+## 8.1.9 0.8.11 变更
+
+- 截图尺寸框：窗口是焦点范围（focus scope），`Keyboard.Focus(window)` 会把焦点还给范围里记住的元素（就是那个输入框），
+  所以点外面、Enter、Esc 都退不出来。改成 `FocusWindow()`：先 `FocusManager.SetFocusedElement(this, this)` 再 `Keyboard.Focus(this)`（overlay 里所有交还焦点处）。
+- 录屏工具栏只在**压在录制区域上**时才设 `WDA_EXCLUDEFROMCAPTURE`（`UpdateProtection`，按窗口矩形与区域相交判断）：被排除的窗口在远程控制 / 屏幕共享里也看不见，
+  用户远程操作时“录屏时工具栏不见了”。区域外的工具栏本来就录不进去。
+- 操作录制改为**画在录制框窗口里**（区域左下角，SketchPlayer keyPills 同一套数值），录像通过 BitBlt(CAPTUREBLT) 直接录到它，屏幕和视频一致；
+  `ScreenRecorder.DrawKeys` 保留但不再使用。录制框窗口在非调框阶段加 `WS_EX_TRANSPARENT`，药丸 / 倒计时不挡点击。`KeyPills.Changed` 触发重绘 + 100 ms 刷新淡出。
+- 拖录制框时工具栏闪：框和工具栏每次移动都 `HWND_TOPMOST` 重新插入 z 序互相压。现在只在创建时定一次层级（工具栏在上，预览出现后 `BringToFront`），
+  移动用 `SWP_NOZORDER`；尺寸输入框固定宽度，拖动时工具栏不再改变大小。
+- 打开录屏时 `RecordDimWindow`：全屏透明点透窗口，区域外压暗 820 ms（0→1 占 20%，保持到 50%，淡出）。暂停时暂停按钮琥珀色闪。
+- 任务栏右键菜单 = 跳转列表（`RecorderCommands.UpdateJumpList`，随阶段变：开始 / 取消 / 停止 / 暂停 / 继续 / 退出）。条目运行
+  `Markshot.exe --recorder <start|stop|pause|exit>`：第二个实例在单实例检查前把命令用命名事件 `Local\Markshot.Recorder.<cmd>` 交给正在运行的 Markshot 后退出；
+  主实例 `RecorderCommands.Listen` → `RecorderController.Command`。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

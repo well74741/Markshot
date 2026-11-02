@@ -37,6 +37,19 @@ public partial class App : Application
         base.OnStartup(e);
         Log.Info("OnStartup begin");
 
+        // A taskbar-menu item of the recorder (Markshot.exe --recorder stop …): hand it to the running Markshot.
+        var recorderIndex = Array.IndexOf(e.Args, "--recorder");
+        if (recorderIndex >= 0)
+        {
+            if (recorderIndex + 1 < e.Args.Length)
+            {
+                UI.Recording.RecorderCommands.Send(e.Args[recorderIndex + 1]);
+            }
+
+            Shutdown();
+            return;
+        }
+
         _mutex = new Mutex(true, @"Local\Markshot.SingleInstance", out var createdNew);
         if (!createdNew)
         {
@@ -98,6 +111,7 @@ public partial class App : Application
 
         ApplyHotkeys();
         StartUpdateChecks();
+        UI.Recording.RecorderCommands.Listen(Dispatcher, command => _recorder?.Command(command));
 
         _tray.ShowBalloon(
             "Markshot 已启动",

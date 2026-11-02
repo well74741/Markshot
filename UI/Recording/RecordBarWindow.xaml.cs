@@ -101,8 +101,51 @@ public partial class RecordBarWindow : Window
         }
     }
 
-    /// <summary>While recording the toolbar is left out of the video (it may sit inside a full-screen area).</summary>
-    public void SetProtected(bool on) => RecordNative.ExcludeFromCapture(new WindowInteropHelper(this).Handle, on);
+    private bool _protectWanted;
+    private bool? _protectedNow;
+    private bool _placed;
+
+    /// <summary>
+    /// While recording, the toolbar is kept out of the video — but only when it actually sits on the
+    /// area (a full-screen area): an excluded window also vanishes from screen sharing / remote
+    /// control, where the user would lose the toolbar while recording.
+    /// </summary>
+    public void SetProtected(bool on)
+    {
+        _protectWanted = on;
+        UpdateProtection();
+    }
+
+    private void UpdateProtection()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        Native.GetWindowRect(handle, out var bar);
+        var r = _controller.Rect;
+        var overlaps = bar.Left < r.X + r.Width && bar.Right > r.X && bar.Top < r.Y + r.Height && bar.Bottom > r.Y;
+        var on = _protectWanted && overlaps;
+        if (_protectedNow == on)
+        {
+            return;
+        }
+
+        _protectedNow = on;
+        RecordNative.ExcludeFromCapture(handle, on);
+    }
+
+    /// <summary>On top of the frame and the preview (only when they are created; moving keeps the order).</summary>
+    public void BringToFront()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle != IntPtr.Zero)
+        {
+            Native.SetWindowPos(handle, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        }
+    }
 
     // ------------------------------------------------------------------ placement
 
@@ -140,7 +183,11 @@ public partial class RecordBarWindow : Window
         }
 
         var x = Math.Clamp(r.X + r.Width / 2 - bar.Width / 2, work.X + 4, Math.Max(work.X + 4, work.X + work.Width - bar.Width - 4));
-        Native.SetWindowPos(handle, Native.HWND_TOPMOST, x, y, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        // Re-inserting the window on top at every move made it flicker while the area was dragged.
+        Native.SetWindowPos(handle, _placed ? IntPtr.Zero : Native.HWND_TOPMOST, x, y, 0, 0,
+            Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | (_placed ? Native.SWP_NOZORDER : 0));
+        _placed = true;
+        UpdateProtection();
     }
 
     // ------------------------------------------------------------------ state → controls
@@ -180,7 +227,8 @@ public partial class RecordBarWindow : Window
         MicToggle.IsChecked = config.Microphone;
         KeysToggle.IsChecked = _controller.KeysOn;
         PauseToggle.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
-        PauseToggle.IsChecked = phase == RecordPhase.Paused;
+        PauseToggle.IsChecked = false;
+        SetPauseBlink(phase == RecordPhase.Paused);
         PauseIcon.Style = (Style)FindResource(phase == RecordPhase.Paused ? "IconPlayMask" : "IconPauseMask");
         StartButton.IsEnabled = phase != RecordPhase.Finishing;
         var stopping = phase is RecordPhase.Countdown or RecordPhase.Starting or RecordPhase.Recording or RecordPhase.Paused;
@@ -273,6 +321,34 @@ public partial class RecordBarWindow : Window
         if (_preview.PlaybackError is { } error && StatusText.Text != error)
         {
             ShowStatus(error);
+        }
+    }
+
+    private bool _blinking;
+
+    /// <summary>Paused: the pause button blinks amber.</summary>
+    private void SetPauseBlink(bool on)
+    {
+        if (on == _blinking)
+        {
+            return;
+        }
+
+        _blinking = on;
+        if (on)
+        {
+            PauseToggle.Foreground = new SolidColorBrush(RecordFrameWindow.Amber);
+            PauseToggle.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(1, 0.35, TimeSpan.FromMilliseconds(520))
+            {
+                AutoReverse = true,
+                RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever
+            });
+        }
+        else
+        {
+            PauseToggle.BeginAnimation(OpacityProperty, null);
+            PauseToggle.Opacity = 1;
+            PauseToggle.ClearValue(ForegroundProperty);
         }
     }
 

@@ -3,6 +3,7 @@
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
+using Markshot.Core.Recording;
 
 namespace Markshot.UI.Recording;
 
@@ -50,7 +51,22 @@ internal sealed class RecordFrameWindow : Window
             SetWindowLong(handle, Native.GWL_EXSTYLE, style | WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW);
         };
         controller.Changed += OnChanged;
-        Closed += (_, _) => controller.Changed -= OnChanged;
+        controller.Pills.Changed += OnPills;
+        _pillTimer.Tick += (_, _) =>
+        {
+            // Redraw while pills fade out; stop when none is left.
+            _view.InvalidateVisual();
+            if (_controller.Pills.Snapshot().Count == 0)
+            {
+                _pillTimer.Stop();
+            }
+        };
+        Closed += (_, _) =>
+        {
+            controller.Changed -= OnChanged;
+            controller.Pills.Changed -= OnPills;
+            _pillTimer.Stop();
+        };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(Place);
     }
 
@@ -59,6 +75,16 @@ internal sealed class RecordFrameWindow : Window
     public bool Dragging => _drag != null;
 
     public bool Hovering { get; private set; }
+
+    private readonly DispatcherTimer _pillTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
+    private bool _clickThrough;
+
+    /// <summary>A key / mouse press (from the hook thread): show it now and keep redrawing while it fades.</summary>
+    private void OnPills() => Dispatcher.BeginInvoke(() =>
+    {
+        _view.InvalidateVisual();
+        _pillTimer.Start();
+    });
 
     private void OnChanged()
     {
@@ -74,6 +100,22 @@ internal sealed class RecordFrameWindow : Window
         {
             EndDrag();
         }
+
+        // Outside setup nothing here takes the mouse: the pills / countdown must not block clicks.
+        SetClickThrough(!interactive);
+    }
+
+    private void SetClickThrough(bool on)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || on == _clickThrough)
+        {
+            return;
+        }
+
+        _clickThrough = on;
+        var style = GetWindowLong(handle, Native.GWL_EXSTYLE);
+        SetWindowLong(handle, Native.GWL_EXSTYLE, on ? style | Native.WS_EX_TRANSPARENT : style & ~Native.WS_EX_TRANSPARENT);
     }
 
     /// <summary>Band width in physical pixels for the area's monitor.</summary>
@@ -89,8 +131,9 @@ internal sealed class RecordFrameWindow : Window
 
         var r = _controller.Rect;
         var band = BandPixels;
-        Native.SetWindowPos(handle, Native.HWND_TOPMOST, r.X - band, r.Y - band, r.Width + band * 2, r.Height + band * 2,
-            Native.SWP_NOACTIVATE);
+        // Moving keeps the stacking order (re-inserting it on top each time made the toolbar over it flicker).
+        Native.SetWindowPos(handle, IntPtr.Zero, r.X - band, r.Y - band, r.Width + band * 2, r.Height + band * 2,
+            Native.SWP_NOACTIVATE | Native.SWP_NOZORDER);
         _view.InvalidateVisual();
     }
 
@@ -316,6 +359,11 @@ internal sealed class RecordFrameWindow : Window
                 }
             }
 
+            if (controller.KeysOn)
+            {
+                DrawPills(dc, area, controller.Pills.Snapshot());
+            }
+
             if (phase == RecordPhase.Countdown && controller.Count > 0)
             {
                 var size = Math.Clamp(area.Height * 0.35, 48, 160);
@@ -335,6 +383,38 @@ internal sealed class RecordFrameWindow : Window
                     text.Width + 28, text.Height + 16);
                 dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(0xE6, 0x1C, 0x1C, 0x1C)), null, box, 8, 8);
                 dc.DrawText(text, new Point(box.X + 14, box.Y + 8));
+            }
+        }
+
+        /// <summary>
+        /// 操作录制: the pills in the area's bottom-left, newest at the bottom. They are inside the
+        /// area, so the recording picks them up exactly as shown (same layout as SketchPlayer's keyPills).
+        /// </summary>
+        private void DrawPills(DrawingContext dc, Rect area, List<(string Label, double Alpha)> pills)
+        {
+            if (pills.Count == 0)
+            {
+                return;
+            }
+
+            var typeface = new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+            var pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            var y = area.Bottom - KeyPills.Margin;
+            for (var i = pills.Count - 1; i >= 0; i--)
+            {
+                var (label, alpha) = pills[i];
+                var text = new FormattedText(label, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, typeface, KeyPills.FontSize,
+                    new SolidColorBrush(Color.FromArgb((byte)(255 * alpha), 255, 255, 255)), pixelsPerDip);
+                var box = new Rect(area.X + KeyPills.Margin, y - KeyPills.PillHeight, text.Width + KeyPills.Padding * 2, KeyPills.PillHeight);
+                if (box.Top < area.Top)
+                {
+                    break;
+                }
+
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb((byte)(214 * alpha), 18, 18, 18)),
+                    new Pen(new SolidColorBrush(Color.FromArgb((byte)(56 * alpha), 255, 255, 255)), 1), box, KeyPills.Radius, KeyPills.Radius);
+                dc.DrawText(text, new Point(box.X + KeyPills.Padding, box.Y + (box.Height - text.Height) / 2));
+                y = box.Top - KeyPills.Gap;
             }
         }
 
