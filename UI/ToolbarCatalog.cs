@@ -6,7 +6,7 @@ namespace Markshot.UI;
 internal static class ToolbarCatalog
 {
     public static readonly string[] Tools = { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
-    public static readonly string[] CaptureActions = { "Ocr", "Close", "Pin", "Save", "Copy", "Translate" };
+    public static readonly string[] CaptureActions = { "Record", "Ocr", "Close", "Pin", "Save", "Copy", "Translate" };
     public static readonly string[] PinActions = { "Save", "Apply" };
 
     public static string Label(string key) => key switch
@@ -25,6 +25,7 @@ internal static class ToolbarCatalog
         "Copy" => "复制",
         "Translate" => "原位翻译",
         "Apply" => "应用",
+        "Record" => "录屏",
         _ => key
     };
 
@@ -53,6 +54,7 @@ internal static class ToolbarCatalog
             "Save" => "IconSaveMask",
             "Copy" => "IconCopyMask",
             "Apply" => "IconConfirmMask",
+            "Record" => "IconRecordMask",
             _ => "IconTranslateMask"
         };
         return new Border { Style = (Style)Application.Current.FindResource(mask) };
@@ -78,6 +80,10 @@ internal static class ToolbarCatalog
             if (at >= 0)
             {
                 keys.Insert(at + 1, key);
+            }
+            else if (before < 0)
+            {
+                keys.Insert(0, key); // first by default: stays first
             }
             else
             {

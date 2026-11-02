@@ -101,6 +101,7 @@ public partial class AnnotationToolbar : UserControl
     public event Action? OcrRequested;
     public event Action? CloseRequested;
     public event Action? ApplyRequested;
+    public event Action? RecordRequested;
     public event Action<bool>? TranslateToggled;
 
     public AnnotationToolbar()
@@ -1088,6 +1089,8 @@ public partial class AnnotationToolbar : UserControl
     private void Save_Click(object sender, RoutedEventArgs e) => SaveRequested?.Invoke();
 
     private void Pin_Click(object sender, RoutedEventArgs e) => PinRequested?.Invoke();
+
+    private void Record_Click(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
 
     private void Translate_Click(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke();
 

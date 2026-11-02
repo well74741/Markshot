@@ -19,7 +19,8 @@ public sealed class TrayService : IDisposable
         Action disableClickThrough,
         Action exit,
         Func<bool>? canRestore = null,
-        Func<bool>? anyClickThrough = null)
+        Func<bool>? anyClickThrough = null,
+        Action? record = null)
     {
         // The tray menu is a WPF menu in the app's dark rounded style (not the system one),
         // rebuilt on each open so it only lists what applies right now.
@@ -35,6 +36,11 @@ public sealed class TrayService : IDisposable
 
             Add("截图", capture, App.Config?.CaptureHotkey);
             Add("贴图剪贴板", pin, App.Config?.PinHotkey);
+            if (record != null)
+            {
+                Add("录屏", record, App.Config?.RecordHotkey);
+            }
+
             if (canRestore?.Invoke() ?? true)
             {
                 Add("恢复最近贴图", restoreLastPin, App.Config?.RestorePinHotkey);

@@ -11,7 +11,8 @@ public enum CaptureAction
     Copy,
     Save,
     Pin,
-    Translate
+    Translate,
+    Record
 }
 
 public partial class OverlayWindow : Window
@@ -387,6 +388,7 @@ public partial class OverlayWindow : Window
         Toolbar.SaveRequested += SaveAndClose;
         Toolbar.PinRequested += PinAndClose;
         Toolbar.TranslateRequested += TranslateAndClose;
+        Toolbar.RecordRequested += RecordAndClose;
         Toolbar.OcrRequested += OcrAndClose;
         _autoTranslate = App.Config.ImmersiveTranslate;
         Toolbar.SetTranslateEnabled(_autoTranslate);
@@ -3812,6 +3814,17 @@ public partial class OverlayWindow : Window
         encoder.Frames.Add(BitmapFrame.Create(image));
         using var stream = File.Create(path);
         encoder.Save(stream);
+    }
+
+    /// <summary>录屏: the selected area becomes the recording area.</summary>
+    private void RecordAndClose()
+    {
+        if (!_hasSelection)
+        {
+            return;
+        }
+
+        CloseWith(CaptureAction.Record, _screen);
     }
 
     private void OcrAndClose()

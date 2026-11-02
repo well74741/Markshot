@@ -77,6 +77,9 @@
                 <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
 
                 <StackPanel x:Name="CaptureActions" Orientation="Horizontal">
+                    <Button Style="{StaticResource IconToolButton}" Click="Record_Click" Tag="Record" ToolTip="录屏：录制这个区域">
+                        <Border Style="{StaticResource IconRecordMask}" />
+                    </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Ocr_Click" Tag="Ocr" ToolTip="文字识别">
                         <Path Style="{StaticResource IconPath}" Data="{StaticResource IconOcr}" />
                     </Button>

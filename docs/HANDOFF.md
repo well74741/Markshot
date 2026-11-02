@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.09`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.10`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -432,6 +432,41 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 配置新增 `CaptureActionOrder/Hidden`、`PinActionOrder/Hidden`；`UI/ToolbarCatalog.cs` 统一键、名称、图标与 `Order()` 清洗。
 - 设置 → 保存与识别 → 批注栏按钮：两行（截图模式 / 贴图模式），每行工具 + 动作两组方块（无模板 Border，避免模板资源问题），
   单击切换隐藏、长按拖动排序；保存时写回四组 order/hidden，打开的贴图经 `ApplyShadowSettings` 同步。
+
+## 8.1.8 0.8.10 变更：录屏（from SketchPlayer）
+
+移植自作者 SketchPlayer 项目的录屏（参考其 `docs/技术文档_录屏.md`），按 WPF 重写；代码文件头都注明 “from SketchPlayer”。
+
+- `Core/Recording/`
+  - `FFmpeg`：找 `ffmpeg\ffmpeg.exe`（随附，次选 PATH）；`DetectH264Async` 按 nvenc → qsv → amf → mf 用 lavfi 黑帧试编，失败退 libx264（缓存）；
+    `QualityArgs` 三档（crf 28/23/18 等）；`Atempo` 级联；`MuxPreviewAsync`（视频 copy + 各音轨 amix → AAC）；`ExportAsync`（`-ss/-t` 输入裁剪、
+    `setpts` 变速、`fps`、偶数 scale；GIF 单命令 palettegen/paletteuse；`-progress pipe:1` 出进度；硬编失败退软编）。
+  - `ScreenRecorder`：GDI `BitBlt(SRCCOPY|CAPTUREBLT)` 抓区域（物理像素、虚拟桌面坐标，跨屏天然拼好）到 DIB，`DrawIconEx` 画鼠标，
+    按需 GDI+ 画按键药丸，`bgr0` rawvideo 管道写给 ffmpeg（录制时用“高清”档；libx264 时 ultrafast）。帧跟 `RecordClock`：
+    来不及抓就重复上一帧补齐，视频时长 = 录制时间（暂停不计）。`Synthetic` 供测试用合成画面。
+  - `AudioTrack`：NAudio `WasapiLoopbackCapture` / `WasapiCapture` 各写一个 WAV；按时钟补静音（回环在没声音时不给数据）、暂停丢弃、
+    关闭开关写静音（只改“增益”）；`Audible` 决定是否混进成片。
+  - `InputDisplay`：`KeyPills`（合并 ×n、最多 5 条、1.5 s + 0.4 s 淡出、排版数值同 SketchPlayer）与 `InputHook`（独立线程上的 WH_KEYBOARD_LL / WH_MOUSE_LL，
+    只在“操作录制”开着时运行）。`Monitors`：物理像素的屏幕 / 工作区 / 缩放。
+- `UI/Recording/`
+  - `RecorderController`：唯一状态（区域、阶段 Setup/Countdown/Starting/Recording/Paused/Finishing/Preview、选项、Take），
+    `Open/Start/TogglePause/StopAsync/Retake/RequestClose/Close/ExportAsync/CopyAsync/SetUiHidden/Toggle`；`_generation` 让过期的异步回调作废。
+    偏好存 `AppConfig.Recorder`（操作录制不记）。临时目录 `%TEMP%\markshot-rec-*`，关闭后 1.5 s 删除，打开时清理一天前的残留。
+  - `RecordFrameWindow`：每像素透明窗口（比区域大一圈 12 DIP），线画在区域外；准备阶段外圈 + 内侧 8 DIP 用 alpha=1 接鼠标（拖动 = 移动，
+    八把手 = 缩放，对边钉住），其余透明穿透；倒计时数字、“正在生成预览…”。
+  - `RecordBarWindow`：**普通不透明窗口**——WPF 的 AllowsTransparency 窗口 `SetWindowDisplayAffinity` 会失败（实测返回 false），
+    只有普通窗口能在录制期间设 `WDA_EXCLUDEFROMCAPTURE`。放置：区域下方 → 上方 → 区域内底边；兼任任务栏按钮（加 WS_MINIMIZEBOX：
+    点任务栏 = 最小化 = 收起录制框和预览；关闭 = 退出录屏，没保存先问）。
+  - `RecordPreviewWindow`：区域原位的 MediaElement 预览（有效区循环、倍速、静音），单击播放、按住 300 ms 或挪动 > 5 px 拖动整套界面；右键菜单。
+  - `TrimBar`：时间条（琥珀三角剪头尾、白色播放头）。
+- 入口：托盘「录屏」、截图工具栏 `Record` 按钮（`CaptureAction.Record` → 用选区打开）、`AppConfig.RecordHotkey`（打开 → 开始 → 停止）。
+- 打包：`tools/get_ffmpeg.ps1` 把 ffmpeg 放进 `tools/deps/ffmpeg`（gitignore；优先 `MARKSHOT_FFMPEG`，否则下载 ffmpeg-static b6.1.1），
+  csproj 有它时作为 Content 输出到 `ffmpeg\`（单文件发布时也在 exe 旁边）；`package.ps1` 依赖检查会调用它，CI 同样自动下载。
+- 测试：harness `reccore`（合成画面 → 编码 → 混音 → 导出 / GIF / 按键规则）、`recflow`（控制器全流程：打开、改尺寸、录制 + 暂停、预览、导出、
+  未保存询问、倒计时、重录、取消）。真实抓屏、系统声音、麦克风未进自动测试。
+
+另：设置新增「批注栏」页；长按批注栏按钮拖动修复（按钮自身的鼠标捕获丢失事件会冒泡到面板，原先误判为拖动结束）；
+截图尺寸输入框点别处即退出编辑；套索绘制时放大镜跟随；贴图「应用」改用图标库的“确认”图标。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

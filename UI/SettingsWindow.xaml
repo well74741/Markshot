@@ -292,6 +292,8 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="8" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="截图" Style="{StaticResource RowLabel}" />
@@ -307,6 +309,11 @@
                                 <TextBlock Grid.Row="2" Grid.Column="3" Text="恢复贴图" Style="{StaticResource RowLabel}"
                                            ToolTip="重新打开最近关闭的贴图" />
                                 <TextBox Grid.Row="2" Grid.Column="4" x:Name="RestorePinHotkeyBox" Style="{StaticResource HotkeyField}"
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
+
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="录屏" Style="{StaticResource RowLabel}"
+                                           ToolTip="打开录屏；录屏打开时按一下开始，录制中再按一下停止" />
+                                <TextBox Grid.Row="4" Grid.Column="1" x:Name="RecordHotkeyBox" Style="{StaticResource HotkeyField}"
                                          GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"

@@ -24,6 +24,11 @@ public partial class App : Application
     private Mutex? _mutex;
     private HotkeyManager? _hotkeys;
     private TrayService? _tray;
+    private UI.Recording.RecorderController? _recorder;
+
+    /// <summary>录屏 (one recorder for the app).</summary>
+    public UI.Recording.RecorderController Recorder =>
+        _recorder ??= new UI.Recording.RecorderController(Config.Recorder, () => Config.Save());
     private bool _capturing;
     private bool _shuttingDown;
 
@@ -88,7 +93,8 @@ public partial class App : Application
             DisableClickThrough,
             ShutdownApp,
             () => _closedPins.Count > 0 || History.Last != null,
-            () => _pins.Any(pin => pin.IsClickThrough));
+            () => _pins.Any(pin => pin.IsClickThrough),
+            () => OpenRecorder());
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -191,6 +197,15 @@ public partial class App : Application
                     source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow)
             };
             overlay.ShowDialog();
+
+            if (overlay.Result == CaptureAction.Record)
+            {
+                // 录屏 from the capture toolbar: record the selected area.
+                var area = overlay.SelectionScreenRect;
+                Dispatcher.BeginInvoke(new Action(() => OpenRecorder(new Int32Rect((int)area.X, (int)area.Y, (int)area.Width, (int)area.Height))),
+                    DispatcherPriority.Background);
+                return;
+            }
 
             if (overlay.PinnedDirectly)
             {
@@ -472,6 +487,25 @@ public partial class App : Application
         _settings.Activate();
     }
 
+    /// <summary>Opens the recorder (on an area, e.g. the capture selection).</summary>
+    public void OpenRecorder(Int32Rect? area = null)
+    {
+        if (_capturing)
+        {
+            return;
+        }
+
+        try
+        {
+            Recorder.Open(area);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("打开录屏失败", ex);
+            MessageBox.Show("打开录屏失败：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     public void ApplyHotkeys()
     {
         if (_hotkeys == null)
@@ -499,6 +533,11 @@ public partial class App : Application
             bindings.Add((Config.RestorePinHotkey, RestoreLastPin));
         }
 
+        if (!string.IsNullOrWhiteSpace(Config.RecordHotkey))
+        {
+            bindings.Add((Config.RecordHotkey, () => Recorder.Toggle()));
+        }
+
         var errors = _hotkeys.RegisterAll(bindings.ToArray());
 
         foreach (var error in errors)
@@ -521,6 +560,7 @@ public partial class App : Application
 
         _shuttingDown = true;
         Log.Info("Markshot 退出");
+        _recorder?.Close();
 
         foreach (var pin in _pins.ToArray())
         {

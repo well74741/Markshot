@@ -31,13 +31,18 @@ public sealed class AppConfig
     public string PinToolHidden { get; set; } = "";
 
     /// <summary>Order / hidden of the action buttons on the right of the annotation bar.</summary>
-    public string CaptureActionOrder { get; set; } = "Ocr,Close,Pin,Save,Copy,Translate";
+    public string CaptureActionOrder { get; set; } = "Record,Ocr,Close,Pin,Save,Copy,Translate";
 
     public string CaptureActionHidden { get; set; } = "";
 
     public string PinActionOrder { get; set; } = "Save,Apply";
 
     public string PinActionHidden { get; set; } = "";
+
+    /// <summary>录屏: opens the recorder (start / stop while it is open). Empty = no hotkey.</summary>
+    public string RecordHotkey { get; set; } = "";
+
+    public RecorderConfig Recorder { get; set; } = new();
 
     public string ToolPenHotkey { get; set; } = "B";
 
@@ -85,6 +90,7 @@ public sealed class AppConfig
     public void EnsureDefaults()
     {
         RecentRegions ??= new List<CaptureRegion>();
+        Recorder ??= new RecorderConfig();
     }
 
     public void RememberRegion(Rect region)
@@ -257,6 +263,40 @@ public sealed class CaptureRegion
     public int Height { get; set; }
 
     public Rect ToRect() => new(X, Y, Width, Height);
+}
+
+/// <summary>Remembered 录屏 choices (the key display is not remembered: it starts off every time).</summary>
+public sealed class RecorderConfig
+{
+    public int Fps { get; set; } = 30;
+
+    public bool DelayOn { get; set; }
+
+    public int Delay { get; set; } = 3;
+
+    public bool SystemAudio { get; set; } = true;
+
+    public bool Microphone { get; set; }
+
+    /// <summary>Where recordings are saved / copied; empty = Videos\Markshot 录屏.</summary>
+    public string Directory { get; set; } = "";
+
+    public bool ExportGif { get; set; }
+
+    /// <summary>0 = 流畅, 1 = 清晰, 2 = 高清.</summary>
+    public int Quality { get; set; } = 1;
+
+    /// <summary>Export frame rate; 0 = the recording's.</summary>
+    public int ExportFps { get; set; }
+
+    /// <summary>Last recording area (physical pixels).</summary>
+    public int LastX { get; set; }
+
+    public int LastY { get; set; }
+
+    public int LastWidth { get; set; }
+
+    public int LastHeight { get; set; }
 }
 
 public static class Log

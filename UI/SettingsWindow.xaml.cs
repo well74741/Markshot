@@ -21,6 +21,7 @@ public partial class SettingsWindow : Window
         PinHotkeyBox.Text = config.PinHotkey;
         MouseThroughHotkeyBox.Text = config.MouseThroughHotkey;
         RestorePinHotkeyBox.Text = config.RestorePinHotkey;
+        RecordHotkeyBox.Text = config.RecordHotkey;
         TextBypassBox.Text = config.TextBypassModifier;
         PinFlipHBox.Text = config.PinFlipHorizontalHotkey;
         _shadowColor = config.PinShadowColor;
@@ -334,7 +335,24 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        var hasRecord = !string.IsNullOrWhiteSpace(RecordHotkeyBox.Text);
+        var record = default(HotkeyGesture);
+        if (hasRecord && !HotkeyGesture.TryParse(RecordHotkeyBox.Text, out record, out error))
+        {
+            MessageBox.Show(this, "录屏快捷键无效：" + error, "Markshot",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (hasRecord && string.Equals(capture.Text, record.Text, StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this, "截图和录屏不能使用同一个快捷键。", "Markshot",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         _config.CaptureHotkey = capture.Text;
+        _config.RecordHotkey = hasRecord ? record.Text : "";
         _config.PinHotkey = hasPinHotkey ? pin.Text : "";
         _config.MouseThroughHotkey = hasMouseThrough ? mouseThrough.Text : "";
         _config.RestorePinHotkey = hasRestore ? restore.Text : "";

@@ -8,6 +8,7 @@
 #                             或 https://dotnet.microsoft.com/download/dotnet/8.0
 #   安装包 Inno Setup 6        winget install JRSoftware.InnoSetup
 #                             或 https://jrsoftware.org/isdl.php
+#   录屏  ffmpeg              首次打包自动下载到 tools\deps\ffmpeg（或设置 MARKSHOT_FFMPEG=本地 ffmpeg.exe）
 #   可选  代码签名证书 + signtool    设置 MARKSHOT_SIGN_PFX / MARKSHOT_SIGN_PASSWORD 后自动签名（见 sign.ps1）
 #   可选  Python 3 + Pillow   只有改了 tools\make_icon.py / make_toolbar_icons.py 才需要重新生成图标
 #                             pip install pillow
@@ -71,6 +72,14 @@ if ($pillow) {
     Write-Host '  [OK] Python+Pillow（可选，仅重新生成图标时用）'
 } else {
     Write-Host '  [--] Python+Pillow（可选，仅修改图标脚本时需要：pip install pillow）' -ForegroundColor DarkGray
+}
+
+# ffmpeg for 录屏 (downloaded once into tools\deps\ffmpeg; MARKSHOT_FFMPEG = use a local ffmpeg.exe)
+try {
+    & (Join-Path $PSScriptRoot 'get_ffmpeg.ps1')
+} catch {
+    Write-Host "  [缺] ffmpeg（录屏需要）：$($_.Exception.Message)。可设置 MARKSHOT_FFMPEG=本地 ffmpeg.exe 路径" -ForegroundColor Yellow
+    $missing += 'ffmpeg'
 }
 
 if ($env:MARKSHOT_SIGN_PFX) {

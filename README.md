@@ -2,7 +2,7 @@
 
 Windows 截图 / 贴图 / 批注 / 截图翻译工具，交互对标 PixPin 的基础工作流。
 
-> 当前版本 **0.8.09**（从 0.8 起按两位小数递增：0.8.01、0.8.02…）。长截图、录屏不在本阶段范围。
+> 当前版本 **0.8.10**（从 0.8 起按两位小数递增：0.8.01、0.8.02…）。长截图、录屏不在本阶段范围。
 
 > 原位翻译：打开工具栏的翻译开关后，选区里的文字会像 Chrome 网页翻译一样直接替换成译文（保留位置、底色、颜色、字号），复制/保存/贴图得到的就是译文图。贴图右键也可“原位翻译 / 显示原文”。
 
@@ -89,6 +89,17 @@ Windows 截图 / 贴图 / 批注 / 截图翻译工具，交互对标 PixPin 的�
 - 鼠标穿透后可从托盘“取消所有鼠标穿透”
 - 剪贴板没有图片时，可把纯文本渲染成卡片贴出
 
+### 录屏（from SketchPlayer）
+- 托盘菜单「录屏」、截图工具栏的录屏按钮（录制选中的区域）或设置里的录屏快捷键打开；蓝色录制框（录制中变红、暂停变琥珀色），
+  拖边框移动、八个把手调大小，框内照常操作电脑；框线画在区域外面，不会录进视频
+- 工具栏：时间 · 帧率（15/24/30/60）· 尺寸（物理像素，可直接填，三档常用尺寸）· 延时（1–10 秒倒计时）· 开始 / 停止 · 暂停 ·
+  系统声音 · 麦克风 · 操作录制（在录像左下角显示按键和鼠标键）· 重录 · 退出；录制期间工具栏本身不会出现在录像里
+- 停止后录制框原地变成预览：时间条拖三角剪头尾、倍速、静音，保存 MP4 / GIF（流畅 / 清晰 / 高清 + 帧率），
+  或「复制」直接把视频文件放进剪贴板（可粘贴到聊天 / 文件夹）；没保存就退出会先询问
+- 任务栏单独一个「Markshot 录屏」：点它收起 / 展开录屏界面（录制照常），关闭 = 退出录屏
+- 编码 / 导出用随附的 ffmpeg（自动选用 NVENC / QSV / AMF / Media Foundation 硬件编码，失败退回 x264）；声音用 WASAPI
+- 这一功能移植自作者的另一个项目 SketchPlayer 的录屏（见其《技术文档_录屏》）
+
 ### OCR 与翻译
 - OCR 使用 RapidOcrNet（ONNX Runtime + PP-OCRv5），与 PixPin 同属 PaddleOCR 模型体系；本地推理，图片不出本机
 - 翻译服务为任意 OpenAI 兼容 `/chat/completions` 接口（DeepSeek / OpenAI / Moonshot / Ollama / LM Studio / one-api 等）
@@ -151,6 +162,7 @@ Windows 截图 / 贴图 / 批注 / 截图翻译工具，交互对标 PixPin 的�
 | --- | --- |
 | 截图 | `F1` |
 | 贴图剪贴板 | `F3` |
+| 录屏 | 默认未设置（打开录屏；打开后按一下开始，录制中再按停止） |
 
 > 设置里的快捷键是录制框：点击输入框后直接按下组合键即可；`Backspace` 清除，`Esc` 取消。若组合键被系统或别的软件占用，勾选“手动输入”后直接键入，例如 `Ctrl+Shift+S`。设置窗口打开期间会临时注销全局热键，避免按 `F1` 又触发截图。
 
@@ -167,6 +179,7 @@ Windows 截图 / 贴图 / 批注 / 截图翻译工具，交互对标 PixPin 的�
 | .NET 8 SDK | 编译（必需） | `winget install Microsoft.DotNet.SDK.8` 或 https://dotnet.microsoft.com/download/dotnet/8.0 |
 | Inno Setup 6 | 生成安装包 | `winget install JRSoftware.InnoSetup` 或 https://jrsoftware.org/isdl.php |
 | Python 3 + Pillow | 仅在修改图标脚本时重新生成图标（可选） | `pip install pillow` |
+| ffmpeg | 录屏编码 / 导出（随程序发布） | 打包时 `tools\get_ffmpeg.ps1` 自动下载到 `tools\deps\ffmpeg`（不进仓库）；或设置 `MARKSHOT_FFMPEG` 指向本地 ffmpeg.exe |
 
 使用者不需要安装任何依赖（.NET 运行时已打包在内）。
 
@@ -334,7 +347,7 @@ Markshot/
 - 选中元素时滚轮可直接调粗细/字号；鼠标移到调整框边线或手柄会变成对应缩放光标
 - 截图拖动/调整边框时放大镜保持显示，松手后隐藏
 - 自定义颜色只在当前进程内记忆，不写入配置
-- 长截图、录屏、开机启动、自动更新尚未实现
+- 长截图尚未实现；录屏的真实画面 / 系统声音 / 麦克风需在桌面上手动验证（自动测试用合成画面）
 - PP-OCRv5 对极小字号、低对比度和艺术字仍可能误识；当前按检测行返回文本，没有版面/表格结构分析
 - 翻译按整段文本处理，暂不支持把译文按原版式回填图片
 - API Key 以明文保存在本地配置文件中，后续可接 DPAPI
@@ -344,7 +357,7 @@ Markshot/
 
 ## Roadmap
 
-1. **P1**：长截图、录屏、像素级橡皮擦、折线、贴图历史缩略图列表
+1. **P1**：长截图、像素级橡皮擦、折线、贴图历史缩略图列表
 2. **P2**：OCR 版面分析、表格/公式识别、译文原位覆盖、术语表、增量翻译
 3. **P3**：开机启动、自动更新、多语言 UI
 
@@ -359,6 +372,8 @@ Markshot/
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) | MIT | 本地推理 |
 | [SkiaSharp](https://github.com/mono/SkiaSharp) | MIT | 图像解码与缩放 |
 | Clipper2 | BSL-1.0 | 多边形裁剪（RapidOcrNet 依赖） |
+| [NAudio](https://github.com/naudio/NAudio) | MIT | 录屏的系统声音 / 麦克风（WASAPI） |
+| [FFmpeg](https://ffmpeg.org)（gyan.dev 6.1.1 essentials 构建） | GPL v3 | 录屏编码与导出；作为独立程序 `ffmpeg\ffmpeg.exe` 随附，许可与源码说明见同目录 `ffmpeg.exe.LICENSE` / `ffmpeg.exe.README` |
 
 `models/v5/ch_PP-OCRv5_rec_mobile.onnx`（16.6 MB）来自 RapidOCR 的 PP-OCRv5 模型发布，随仓库一起分发；其余检测/分类/英文模型由 RapidOcrNet 包提供。
 
