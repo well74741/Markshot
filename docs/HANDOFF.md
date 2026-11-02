@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.03`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.04`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -337,6 +337,26 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 图标：`tools/make_toolbar_icons.py` 生成 arrow.png（加粗、与其它图标同框同笔宽）和 undo.png（参考图：左箭头 + U 形回弯），撤销按钮改用 `IconUndoMask`。
 - 文字识别窗口重排：标题区、两张卡片（原文/译文，各带复制）、底部状态点 + 按钮；`FooterButton/PrimaryButton` 移到 App.xaml 共用；
   Ctrl+Enter 翻译；“贴到屏幕”没有译文时贴原文。
+
+## 8.1.2 0.8.04 变更
+
+- 绘制顺序 `AnnotationEditor.DrawOrder`：水印画在最后一个马赛克之后（马赛克不打码水印），其余顺序不变；画布、截图合成、贴图合成共用。
+- 水印 `Shift`（图案偏移）：水印工具下按住拖动移动图案（撤销/右键撤回同普通移动），双击编辑文字。水印从独立按钮收进文字按钮展开项。
+- 工具按钮显示上次选的样式（`AnnotationToolbar.ShowChoice`，按钮 Tag 也换成该工具）；分段/菜单切换样式后会重新配置设置行（画笔马赛克以前缺粗细就是因为没重配）。
+- 橡皮：`Toolbar.EraserOpacity`；`EraseStroke.Strength` < 1 的笔画用 `PushOpacityMask` 擦淡（`PartialMasks`），满强度仍用裁剪；
+  只有满强度擦除会让元素点不中。橡皮宽度 = 工具栏粗细（不再 ×2）。
+- 调整手柄点击不再“变大”：`AnnotationOps.ResizeGrab` 把按下点换算成元素本身的手柄位置，并有 3 DIP 死区；贴图里画图工具下缩放/旋转以前不记撤销，已修。
+- 右键撤回：`AnnotationHistory.CancelGesture`（弹出本次手势提交的快照、不进重做栈）；两个窗口的 `CancelGesture()` 覆盖所有拖动状态，
+  截图窗口还会把拖动中的截图区域还原。`InlineTextEditor.CancelFrameDrag` 撤回文字框拖动。
+- 贴图：`AnnotationEditor` 有 `Source` 且无截图选区时把元素裁剪到图片内（框和旋转箭头不裁）；阴影 `#48000000`。
+  工具栏放在 `ToolbarHostWindow`（无激活、透明、随内容大小，归属贴图），默认在图片下方，拖动后记住相对图片的偏移，贴图移动时跟随。
+- 截图区域：拖动时 3.5 DIP 粗线无手柄，松手后 2.6 DIP + 10 DIP 手柄（`AnnotationEditor.SelectionDragging`）。
+- `SizeTransitionHost`：隐藏期间的变化在重新显示时直接到位（以前首次弹出“一帧出现”、再次打开从两排收成一排）。
+- 文字识别窗：目标语言下拉（自动 + 9 种主流语言），自动 = 识别到中文译英文、其它译简体中文。
+- 安装包：`installer/Markshot.iss`（Inno Setup 6，中文向导文本 `installer/ChineseSimplified.isl`，UTF-8 BOM），`tools/build_installer.ps1`
+  发布到 `publish_installer/` 后编译到 `dist/`。安装器把运行目录写到 `HKCU\Software\Markshot\SetupDir`，作为默认更新路径。
+- 更新：`Core/UpdateService`，找更新路径里 `Markshot-Setup-<版本>.exe` 中比当前新的（数字逐段比较）；启动 8 秒后及每 2 小时检查，
+  每个新版本托盘提醒一次；设置版本号旁 ↻ 检查、“更新 x”按钮运行安装包并退出。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

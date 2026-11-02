@@ -51,6 +51,35 @@ public sealed class AnnotationHistory
     public void Arm(IReadOnlyList<Annotation> items)
     {
         _armed = Snapshot(items);
+        _armedCommitted = false;
+    }
+
+    // True while the last undo entry is the armed snapshot of the gesture still in progress.
+    private bool _armedCommitted;
+
+    /// <summary>
+    /// Right-click during a drag: puts the elements back as they were when the gesture was
+    /// armed. Returns true when something had changed (the items were replaced by copies).
+    /// </summary>
+    public bool CancelGesture(List<Annotation> items)
+    {
+        if (_armed != null)
+        {
+            _armed = null; // nothing changed yet
+            return false;
+        }
+
+        if (!_armedCommitted || _undo.Count == 0)
+        {
+            return false;
+        }
+
+        _armedCommitted = false;
+        var snapshot = _undo[^1];
+        _undo.RemoveAt(_undo.Count - 1);
+        items.Clear();
+        items.AddRange(snapshot.Select(item => item.Clone()));
+        return true;
     }
 
     public void CommitArmed()
@@ -62,6 +91,7 @@ public sealed class AnnotationHistory
 
         Push(_armed);
         _armed = null;
+        _armedCommitted = true;
     }
 
     public void Disarm() => _armed = null;

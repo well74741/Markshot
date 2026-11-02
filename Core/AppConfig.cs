@@ -22,11 +22,11 @@ public sealed class AppConfig
 
     public string PinResetHotkey { get; set; } = "F";
 
-    public string CaptureToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Watermark,Eraser";
+    public string CaptureToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Eraser";
 
     public string CaptureToolHidden { get; set; } = "";
 
-    public string PinToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Watermark,Eraser";
+    public string PinToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Eraser";
 
     public string PinToolHidden { get; set; } = "";
 
@@ -47,6 +47,9 @@ public sealed class AppConfig
 
     /// <summary>Empty means Pictures\Markshot.</summary>
     public string SaveDirectory { get; set; } = "";
+
+    /// <summary>Folder with installer packages for updates; empty = where the installer ran from.</summary>
+    public string UpdatePath { get; set; } = "";
 
     /// <summary>Empty means "use the system/user-profile OCR language".</summary>
     public string OcrLanguage { get; set; } = "";

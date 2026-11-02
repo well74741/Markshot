@@ -50,6 +50,7 @@ public partial class AnnotationToolbar : UserControl
     private double _mosaicLevel = 12;
     private double _watermarkOpacity = 0.25;
     private double _watermarkAngle = -24;
+    private double _eraserOpacity = 1;
     private double _opacity = 1;
 
     // Each tool remembers its own opacity too (Ctrl+wheel presets it).
@@ -74,7 +75,18 @@ public partial class AnnotationToolbar : UserControl
         [AnnotationTool.Number] = 14,
         [AnnotationTool.Mosaic] = 12,
         [AnnotationTool.MosaicBrush] = 24,
-        [AnnotationTool.Watermark] = 24
+        [AnnotationTool.Watermark] = 24,
+        [AnnotationTool.Eraser] = 16
+    };
+
+    // Variant last chosen per tool button: the button shows it and activates it.
+    private readonly Dictionary<ToolFamily, AnnotationTool> _familyChoice = new()
+    {
+        [ToolFamily.Shape] = AnnotationTool.Rectangle,
+        [ToolFamily.Pen] = AnnotationTool.Pen,
+        [ToolFamily.Line] = AnnotationTool.Arrow,
+        [ToolFamily.Text] = AnnotationTool.Text,
+        [ToolFamily.Mosaic] = AnnotationTool.Mosaic
     };
 
     public event Action<AnnotationTool>? ToolChanged;
@@ -120,7 +132,7 @@ public partial class AnnotationToolbar : UserControl
 
     public bool AutoTranslate => TranslateToggle.IsChecked == true;
 
-    public bool StrokeEnabled => StrokeToggle.IsChecked == true;
+    public bool StrokeEnabled => _strokeWidth > 0;
 
     public Color StrokeColor => _strokeColor;
 
@@ -136,6 +148,9 @@ public partial class AnnotationToolbar : UserControl
     public double WatermarkOpacity => _watermarkOpacity;
 
     public double WatermarkAngle => _watermarkAngle;
+
+    /// <summary>How strongly the eraser erases (its opacity), 0.05–1.</summary>
+    public double EraserOpacity => _eraserOpacity;
 
     /// <summary>Opacity of new / selected elements (0.05–1).</summary>
     public double ElementOpacity => _opacity;
@@ -200,10 +215,9 @@ public partial class AnnotationToolbar : UserControl
             ["Text"] = new FrameworkElement[] { ToolText, TextChevron },
             ["Number"] = new FrameworkElement[] { ToolNumber },
             ["Mosaic"] = new FrameworkElement[] { ToolMosaic, MosaicChevron },
-            ["Watermark"] = new FrameworkElement[] { ToolWatermark },
             ["Eraser"] = new FrameworkElement[] { ToolEraser }
         };
-        var defaults = new[] { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Watermark", "Eraser" };
+        var defaults = new[] { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
         var keys = (order ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(groups.ContainsKey)
@@ -246,6 +260,7 @@ public partial class AnnotationToolbar : UserControl
     {
         _configuring = true;
         _tool = tool;
+        ShowChoice(tool);
         CheckMainButton(tool);
         ConfigureForTool(tool, _selection);
         _configuring = false;
@@ -266,7 +281,6 @@ public partial class AnnotationToolbar : UserControl
         ToolText.IsChecked = false;
         ToolNumber.IsChecked = false;
         ToolMosaic.IsChecked = false;
-        ToolWatermark.IsChecked = false;
         ToolEraser.IsChecked = false;
         SettingsHost.IsOpen = false;
         _configuring = false;
@@ -338,7 +352,6 @@ public partial class AnnotationToolbar : UserControl
         _configuring = true;
         _strokeColor = color;
         _strokeWidth = enabled ? Math.Clamp(width, 0.5, 8) : 0;
-        StrokeToggle.IsChecked = enabled;
         StrokeSlider.Value = _strokeWidth;
         StrokeValue.Text = ((int)Math.Round(_strokeWidth)).ToString(CultureInfo.InvariantCulture);
         StrokeColorCircle.Fill = new SolidColorBrush(_strokeColor);
@@ -410,10 +423,9 @@ public partial class AnnotationToolbar : UserControl
         ToolShape.IsChecked = family == ToolFamily.Shape;
         ToolPen.IsChecked = family == ToolFamily.Pen;
         ToolArrow.IsChecked = family == ToolFamily.Line;
-        ToolText.IsChecked = family == ToolFamily.Text;
+        ToolText.IsChecked = family is ToolFamily.Text or ToolFamily.Watermark;
         ToolNumber.IsChecked = family == ToolFamily.Number;
         ToolMosaic.IsChecked = family == ToolFamily.Mosaic;
-        ToolWatermark.IsChecked = family == ToolFamily.Watermark;
         ToolEraser.IsChecked = family == ToolFamily.Eraser;
     }
 
@@ -425,7 +437,7 @@ public partial class AnnotationToolbar : UserControl
             family = FamilyOf(annotation);
         }
 
-        if (family is ToolFamily.None or ToolFamily.Eraser or ToolFamily.Select)
+        if (family is ToolFamily.None or ToolFamily.Select)
         {
             SettingsHost.IsOpen = false; // slides closed with its current content
             return;
@@ -449,10 +461,17 @@ public partial class AnnotationToolbar : UserControl
         switch (family)
         {
             case ToolFamily.None:
-            case ToolFamily.Eraser:
             case ToolFamily.Select:
                 SettingsHost.IsOpen = false;
                 return;
+
+            case ToolFamily.Eraser:
+                // Eraser: width and opacity (how strongly it erases).
+                WidthSlider.Minimum = 4;
+                WidthSlider.Maximum = 80;
+                OpacityGroup.Visibility = Visibility.Visible;
+                ColorSection.Visibility = Visibility.Collapsed;
+                break;
 
             case ToolFamily.Shape:
                 RectVariants.Visibility = Visibility.Visible;
@@ -529,8 +548,9 @@ public partial class AnnotationToolbar : UserControl
             BackgroundToggle.IsChecked = _textBackground;
             LevelSlider.Value = Math.Clamp(_mosaicLevel, LevelSlider.Minimum, LevelSlider.Maximum);
             LevelValue.Text = ((int)Math.Round(_mosaicLevel)).ToString(CultureInfo.InvariantCulture);
-            OpacitySlider.Value = Math.Round(_watermarkOpacity * 100);
-            OpacityValue.Text = $"{Math.Round(_watermarkOpacity * 100)}%";
+            var shownOpacity = tool == AnnotationTool.Eraser ? _eraserOpacity : _watermarkOpacity;
+            OpacitySlider.Value = Math.Round(shownOpacity * 100);
+            OpacityValue.Text = $"{Math.Round(shownOpacity * 100)}%";
             AngleSlider.Value = _watermarkAngle;
             AngleValue.Text = $"{Math.Round(_watermarkAngle)}°";
             WidthSlider.Value = Math.Clamp(_thickness, WidthSlider.Minimum, WidthSlider.Maximum);
@@ -655,7 +675,6 @@ public partial class AnnotationToolbar : UserControl
         CornerSlider.Value = Math.Clamp(_corner, 0, 40);
         CornerValue.Text = ((int)Math.Round(CornerSlider.Value)).ToString(CultureInfo.InvariantCulture);
         FillToggle.IsChecked = _fill;
-        StrokeToggle.IsChecked = _strokeWidth > 0;
         StrokeSlider.Value = Math.Clamp(_strokeWidth, 0, 8);
         StrokeValue.Text = ((int)Math.Round(StrokeSlider.Value)).ToString(CultureInfo.InvariantCulture);
         StrokeColorCircle.Fill = new SolidColorBrush(_strokeColor);
@@ -696,7 +715,8 @@ public partial class AnnotationToolbar : UserControl
             return;
         }
 
-        if (_tool == tool)
+        if (_tool == tool || (FamilyOf(_tool) == FamilyOf(tool) && FamilyOf(tool) != ToolFamily.None) ||
+            (tool == AnnotationTool.Text && _tool == AnnotationTool.Watermark) || (tool == AnnotationTool.Watermark && _tool == AnnotationTool.Text))
         {
             DeactivateTools();
             return;
@@ -717,28 +737,8 @@ public partial class AnnotationToolbar : UserControl
     private void MosaicMenu_Click(object sender, RoutedEventArgs e) =>
         ShowVariantMenu((Button)sender, ("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush));
 
-    private void TextMenu_Click(object sender, RoutedEventArgs e)
-    {
-        var menu = new ContextMenu { PlacementTarget = (Button)sender };
-        foreach (var (label, size) in new[] { ("小 16", 16.0), ("中 20", 20.0), ("大 28", 28.0), ("特大 40", 40.0), ("标题 56", 56.0) })
-        {
-            var item = new MenuItem { Header = label, IsChecked = Math.Abs(_thickness - size) < 0.1 };
-            var value = size;
-            item.Click += (_, _) =>
-            {
-                if (_tool != AnnotationTool.Text)
-                {
-                    SetTool(AnnotationTool.Text, notify: true);
-                }
-
-                SetThickness(value);
-                SettingsChanged?.Invoke();
-            };
-            menu.Items.Add(item);
-        }
-
-        menu.IsOpen = true;
-    }
+    private void TextMenu_Click(object sender, RoutedEventArgs e) =>
+        ShowVariantMenu((Button)sender, ("文字", AnnotationTool.Text), ("水印", AnnotationTool.Watermark));
 
     private void ShowVariantMenu(Button anchor, params (string Label, AnnotationTool Tool)[] items)
     {
@@ -752,6 +752,7 @@ public partial class AnnotationToolbar : UserControl
                 SetTool(target, notify: false);
                 ToolChanged?.Invoke(target);
             };
+            item.IsChecked = _tool == tool;
             menu.Items.Add(item);
         }
 
@@ -768,7 +769,42 @@ public partial class AnnotationToolbar : UserControl
         }
 
         _tool = tool;
+        if (_selection == null)
+        {
+            _configuring = true;
+            ConfigureForTool(tool, null);
+            _configuring = false;
+        }
+
+        ShowChoice(tool);
         VariantChanged?.Invoke(tool);
+    }
+
+    /// <summary>The tool button of a family shows (and activates) the variant chosen last.</summary>
+    private void ShowChoice(AnnotationTool tool)
+    {
+        var family = FamilyOf(tool);
+        if (family == ToolFamily.Watermark)
+        {
+            family = ToolFamily.Text;
+        }
+
+        if (!_familyChoice.ContainsKey(family))
+        {
+            return;
+        }
+
+        _familyChoice[family] = tool;
+        var (button, icon, style) = family switch
+        {
+            ToolFamily.Shape => (ToolShape, ToolShapeIcon, tool == AnnotationTool.Ellipse ? "IconEllipseMask" : "IconRectMask"),
+            ToolFamily.Pen => (ToolPen, ToolPenIcon, tool == AnnotationTool.Highlighter ? "IconHighlighterMask" : "IconPenMask"),
+            ToolFamily.Line => (ToolArrow, ToolArrowIcon, tool == AnnotationTool.Line ? "IconLineMask" : "IconArrowMask"),
+            ToolFamily.Text => (ToolText, ToolTextIcon, tool == AnnotationTool.Watermark ? "IconWatermarkMask" : "IconTextMask"),
+            _ => (ToolMosaic, ToolMosaicIcon, tool == AnnotationTool.MosaicBrush ? "IconMosaicBrushMask" : "IconMosaicMask")
+        };
+        button.Tag = tool.ToString();
+        icon.Style = (Style)FindResource(style);
     }
 
     private void Width_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -860,7 +896,15 @@ public partial class AnnotationToolbar : UserControl
             return;
         }
 
-        _watermarkOpacity = Math.Clamp(e.NewValue / 100, 0.05, 1);
+        if (_tool == AnnotationTool.Eraser && _selection == null)
+        {
+            _eraserOpacity = Math.Clamp(e.NewValue / 100, 0.05, 1);
+        }
+        else
+        {
+            _watermarkOpacity = Math.Clamp(e.NewValue / 100, 0.05, 1);
+        }
+
         OpacityValue.Text = $"{Math.Round(e.NewValue)}%";
         SettingsChanged?.Invoke();
     }
@@ -895,18 +939,6 @@ public partial class AnnotationToolbar : UserControl
         SettingsChanged?.Invoke();
     }
 
-    private void Stroke_Click(object sender, RoutedEventArgs e)
-    {
-        if (_configuring)
-        {
-            return;
-        }
-
-        _strokeWidth = StrokeToggle.IsChecked == true ? Math.Max(2, StrokeSlider.Value) : 0;
-        StrokeSlider.Value = _strokeWidth;
-        SettingsChanged?.Invoke();
-    }
-
     private void Stroke_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_configuring || StrokeValue == null)
@@ -914,7 +946,7 @@ public partial class AnnotationToolbar : UserControl
             return;
         }
 
-        _strokeWidth = StrokeToggle.IsChecked == true ? e.NewValue : 0;
+        _strokeWidth = e.NewValue < 0.25 ? 0 : e.NewValue; // 0 = no outline
         StrokeValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
         SettingsChanged?.Invoke();
     }

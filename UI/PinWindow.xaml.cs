@@ -12,7 +12,18 @@ public partial class PinWindow : Window
 {
     private bool _fadingOut;
     private bool _fadedOut;
+
+    // The annotation toolbar and the small window that carries it below the pin.
+    private readonly AnnotationToolbar Toolbar = new() { Visibility = Visibility.Collapsed };
+    private ToolbarHostWindow? _toolbarWindow;
+    private Point? _toolbarOffset;   // pixels from the image's top-left once the user dragged it
+    private bool _placingToolbar;
     private Annotation? _freshSelection;
+    private WatermarkAnnotation? _draggingWatermark;
+    private Point _watermarkLast;
+    private Point _transformPress;
+    private Vector _resizeGrab;
+    private bool _transformStarted;
 
     /// <summary>Closes right away, skipping the fade-out (pin limit, app exit).</summary>
     public void CloseImmediately()
@@ -135,6 +146,7 @@ public partial class PinWindow : Window
         _top = screenY;
 
         Loaded += OnLoaded;
+        LocationChanged += (_, _) => PlaceToolbar(); // the toolbar window follows the pin
         Motion.PopOnShow(Toolbar, fromAbove: true);
         Motion.FadeOnShow(PinStatus);
         SourceInitialized += (_, _) => ApplyBounds();
@@ -181,6 +193,14 @@ public partial class PinWindow : Window
         MouseLeftButtonUp += OnMouseLeftButtonUp;
         MouseWheel += OnMouseWheel;
         MouseDown += OnMouseDown;
+        PreviewMouseRightButtonDown += (_, e) =>
+        {
+            if (_editMode && e.LeftButton == MouseButtonState.Pressed && CancelGesture())
+            {
+                _suppressContextMenu = true;
+                e.Handled = true;
+            }
+        };
         MouseUp += OnMouseUp;
         ContextMenuOpening += (_, args) =>
         {
@@ -247,7 +267,7 @@ public partial class PinWindow : Window
         {
             if (_editMode)
             {
-                Dispatcher.BeginInvoke(new Action(ApplyBounds), DispatcherPriority.Loaded);
+                Dispatcher.BeginInvoke(new Action(PlaceToolbar), DispatcherPriority.Loaded);
             }
         };
 
@@ -477,19 +497,8 @@ public partial class PinWindow : Window
         TextLayer.Scale = 1.0 / _zoom;
         TextLayer.InvalidateVisual();
 
-        var toolbarWidth = 0;
-        var toolbarHeight = 0;
-        if (_editMode)
-        {
-            Toolbar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            toolbarWidth = (int)Math.Ceiling(Toolbar.DesiredSize.Width);
-            toolbarHeight = (int)Math.Ceiling(Toolbar.DesiredSize.Height);
-        }
-
-        var width = _editMode
-            ? Math.Max(imageWidth + 32, toolbarWidth + 32)
-            : imageWidth + 32;
-        var height = imageHeight + 32 + (_editMode ? toolbarHeight + 8 : 0);
+        var width = imageWidth + 32;
+        var height = imageHeight + 32;
         var windowLeft = _left - 16;
         var windowTop = _top - 16;
 
@@ -516,6 +525,81 @@ public partial class PinWindow : Window
             width,
             height,
             Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+        PlaceToolbar();
+    }
+
+    /// <summary>Screen rectangle of the image in physical pixels.</summary>
+    private Native.RECT ImageScreenRect()
+    {
+        Native.GetWindowRect(new WindowInteropHelper(this).Handle, out var window);
+        var dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        var inset = (int)Math.Round(16 * dpi);
+        return new Native.RECT
+        {
+            Left = window.Left + inset,
+            Top = window.Top + inset,
+            Right = window.Right - inset,
+            Bottom = window.Bottom - inset
+        };
+    }
+
+    /// <summary>
+    /// Puts the toolbar window under the image (above it when there is no room below), or
+    /// where the user dragged it relative to the image.
+    /// </summary>
+    private void PlaceToolbar()
+    {
+        if (!_editMode || _toolbarWindow is not { IsVisible: true } host || host.Handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var image = ImageScreenRect();
+        var bar = host.PixelBounds;
+        int x, y;
+        if (_toolbarOffset is { } offset)
+        {
+            x = image.Left + (int)offset.X;
+            y = image.Top + (int)offset.Y;
+        }
+        else
+        {
+            var gap = (int)Math.Round(6 * VisualTreeHelper.GetDpi(this).DpiScaleY);
+            x = image.Left;
+            y = image.Bottom + gap;
+            var screenBottom = Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN) + Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN);
+            if (y + bar.Height > screenBottom)
+            {
+                y = image.Top - gap - bar.Height;
+            }
+        }
+
+        _placingToolbar = true;
+        host.MoveTo(x, y);
+        _placingToolbar = false;
+    }
+
+    private void ShowToolbarWindow()
+    {
+        if (_toolbarWindow == null)
+        {
+            _toolbarWindow = new ToolbarHostWindow(Toolbar) { Owner = this };
+            _toolbarWindow.LocationChanged += (_, _) =>
+            {
+                // Dragged by its handle: remember where, relative to the image.
+                if (_placingToolbar || !_editMode || !_toolbarWindow.IsVisible)
+                {
+                    return;
+                }
+
+                var image = ImageScreenRect();
+                var bar = _toolbarWindow.PixelBounds;
+                _toolbarOffset = new Point(bar.Left - image.Left, bar.Top - image.Top);
+            };
+        }
+
+        _toolbarWindow.Show();
+        PlaceToolbar();
     }
 
     private void UpdateFrame()
@@ -676,12 +760,6 @@ public partial class PinWindow : Window
         if (UpdateTextPress(ToPixels(e.GetPosition(ImageHost))))
         {
             return;
-        }
-
-        if ((_rotatingAnnotation || _resizingAnnotation || _movingSelected) && _selected != null)
-        {
-            _history.CommitArmed();
-            UpdateUndoButtons();
         }
 
         if (TransformSelected(ToPixels(e.GetPosition(ImageHost))))
@@ -971,9 +1049,11 @@ public partial class PinWindow : Window
         Editor.Scale = 1.0 / _zoom;
         Editor.Visibility = Visibility.Visible;
         InputLayer.Visibility = Visibility.Visible;
-        Toolbar.Visibility = Visibility.Visible;
+        // Reset the tool while the toolbar is hidden, so it opens in its final shape.
         SetTool(AnnotationTool.None);
         Toolbar.SetSelection(null);
+        Toolbar.Visibility = Visibility.Visible;
+        ShowToolbarWindow();
         UpdateUndoButtons();
         ApplyBounds();
         InputLayer.Focus();
@@ -1010,6 +1090,7 @@ public partial class PinWindow : Window
         Editor.Visibility = Visibility.Collapsed;
         InputLayer.Visibility = Visibility.Collapsed;
         Toolbar.Visibility = Visibility.Collapsed;
+        _toolbarWindow?.Hide();
         _history.Clear();
         UpdateUndoButtons();
         ApplyBounds();
@@ -1031,7 +1112,7 @@ public partial class PinWindow : Window
         using (var dc = visual.RenderOpen())
         {
             dc.DrawImage(_baseImage, new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight));
-            foreach (var annotation in Editor.Items)
+            foreach (var annotation in AnnotationEditor.DrawOrder(Editor.Items))
             {
                 AnnotationEditor.DrawItem(dc, annotation);
             }
@@ -1223,7 +1304,7 @@ public partial class PinWindow : Window
 
     private static bool IsCtrlDown => (Keyboard.Modifiers & ModifierKeys.Control) != 0;
 
-    private double EraserWidth => Math.Max(8, _thickness * 2);
+    private double EraserWidth => Math.Max(2, _thickness);
 
     /// <summary>Rotate / resize / E-rotate / R-scale of the selected element. True when it consumed the move.</summary>
     private bool TransformSelected(Point point)
@@ -1231,6 +1312,23 @@ public partial class PinWindow : Window
         if (_selected == null)
         {
             return false;
+        }
+
+        if ((_rotatingAnnotation || _resizingAnnotation) && !_transformStarted)
+        {
+            // A click on a handle / grip without a real drag changes nothing.
+            if ((point - _transformPress).Length * _zoom < 3)
+            {
+                return true;
+            }
+
+            _transformStarted = true;
+        }
+
+        if (_rotatingAnnotation || _resizingAnnotation || (_movingSelected && (_dragRotate || _dragScale)))
+        {
+            _history.CommitArmed();
+            UpdateUndoButtons();
         }
 
         if (_rotatingAnnotation || (_movingSelected && _dragRotate))
@@ -1250,7 +1348,7 @@ public partial class PinWindow : Window
         if (_resizingAnnotation)
         {
             var target = AnnotationOps.ResizeFromHandle(
-                _annotationStartBounds, _selected.Rotation, _annotationHandle, point, IsShiftDown);
+                _annotationStartBounds, _selected.Rotation, _annotationHandle, point + _resizeGrab, IsShiftDown);
             AnnotationOps.Resize(_selected, target, _annotationHandle);
             Editor.InvalidateVisual();
             return true;
@@ -1535,6 +1633,16 @@ public partial class PinWindow : Window
             {
                 BeginWatermarkEdit(watermark);
             }
+            else if (AnnotationOps.FindWatermark(Editor.Items) is { } dragged)
+            {
+                // Press and drag moves the watermark pattern.
+                _draggingWatermark = dragged;
+                _watermarkLast = point;
+                _pressPoint = point;
+                _dragMoved = false;
+                _history.Arm(Editor.Items);
+                InputLayer.CaptureMouse();
+            }
 
             e.Handled = true;
             return;
@@ -1596,6 +1704,7 @@ public partial class PinWindow : Window
             _erasing = true;
             Editor.LiveEraser = _eraserPath.Points;
             Editor.LiveEraserWidth = _eraserPath.Thickness;
+            Editor.LiveEraserStrength = Toolbar.EraserOpacity;
             Editor.InvalidateVisual();
             InputLayer.CaptureMouse();
             e.Handled = true;
@@ -1624,6 +1733,27 @@ public partial class PinWindow : Window
         if (_gesture != null)
         {
             _gesture.Move(point, IsShiftDown, IsCtrlDown);
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        if (_draggingWatermark != null)
+        {
+            if (!_dragMoved && (point - _pressPoint).Length * _zoom < 3)
+            {
+                return;
+            }
+
+            if (!_dragMoved)
+            {
+                _dragMoved = true;
+                _history.CommitArmed();
+                UpdateUndoButtons();
+                InputLayer.Cursor = Cursors.SizeAll;
+            }
+
+            _draggingWatermark.Translate(point.X - _watermarkLast.X, point.Y - _watermarkLast.Y);
+            _watermarkLast = point;
             Editor.InvalidateVisual();
             return;
         }
@@ -1674,6 +1804,64 @@ public partial class PinWindow : Window
         UpdateAnnotationHover(point);
     }
 
+    /// <summary>
+    /// Right-click while the left button is still down undoes the gesture in progress
+    /// (drawing, erasing, moving / resizing / rotating, dragging a text or the watermark).
+    /// </summary>
+    private bool CancelGesture()
+    {
+        if (_textEditor.IsFraming)
+        {
+            _textEditor.CancelFrameDrag();
+            return true;
+        }
+
+        if (_active != null || _erasing)
+        {
+            Editor.Preview = null;
+            Editor.LiveEraser = null;
+            _active = null;
+            _gesture = null;
+            _erasing = false;
+            _eraserPath = null;
+            InputLayer.ReleaseMouseCapture();
+            Editor.InvalidateVisual();
+            return true;
+        }
+
+        if (_resizingAnnotation || _rotatingAnnotation || _movingSelected || _textPress != null || _draggingWatermark != null)
+        {
+            var target = _selected ?? _textPress;
+            var index = target != null ? Editor.Items.IndexOf(target) : -1;
+            var reverted = _history.CancelGesture(Editor.Items);
+            _resizingAnnotation = false;
+            _rotatingAnnotation = false;
+            _movingSelected = false;
+            _textPress = null;
+            _draggingWatermark = null;
+            _dragRotate = false;
+            _dragScale = false;
+            _pendingTextClick = false;
+            _dragMoved = false;
+            InputLayer.ReleaseMouseCapture();
+            ReleaseMouseCapture();
+            if (reverted)
+            {
+                ClearSelection();
+                if (index >= 0 && index < Editor.Items.Count && Editor.Items[index] is not WatermarkAnnotation)
+                {
+                    SelectQuietly(Editor.Items[index]);
+                }
+            }
+
+            UpdateUndoButtons();
+            Editor.InvalidateVisual();
+            return true;
+        }
+
+        return false;
+    }
+
     private void Input_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (_active == null && !_erasing)
@@ -1705,6 +1893,14 @@ public partial class PinWindow : Window
         _dragRotate = false;
         _dragScale = false;
 
+        if (_draggingWatermark != null)
+        {
+            _draggingWatermark = null;
+            _history.Disarm();
+            _dragMoved = false;
+            return;
+        }
+
         if (_erasing)
         {
             _erasing = false;
@@ -1714,7 +1910,7 @@ public partial class PinWindow : Window
             {
                 // The state before the stroke becomes the undo step, but only if it erased something.
                 var before = Editor.Items.Select(item => item.Clone()).ToList();
-                if (AnnotationOps.BindEraser(Editor.Items, _eraserPath.Points, _eraserPath.Thickness))
+                if (AnnotationOps.BindEraser(Editor.Items, _eraserPath.Points, _eraserPath.Thickness, Toolbar.EraserOpacity))
                 {
                     _history.Checkpoint(before);
                     UpdateUndoButtons();
@@ -2016,11 +2212,14 @@ public partial class PinWindow : Window
         _annotationCenter = center;
         _annotationStartBounds = bounds;
         _lastPoint = point;
+        _transformPress = point;
+        _transformStarted = false;
 
         if (hit.IsHandle)
         {
             _resizingAnnotation = true;
             _annotationHandle = hit.Handle;
+            _resizeGrab = AnnotationOps.ResizeGrab(bounds, _selected.Rotation, hit.Handle, point);
             return true;
         }
 
@@ -2160,6 +2359,7 @@ public partial class PinWindow : Window
             AnnotationTool.Number => Math.Clamp(_thickness + step, 8, 40),
             AnnotationTool.MosaicBrush => Math.Clamp(_thickness + step * 2, 4, 80),
             AnnotationTool.Watermark => Math.Clamp(_thickness + step * 2, 10, 120),
+            AnnotationTool.Eraser => Math.Clamp(_thickness + step * 2, 4, 80),
             _ => Math.Clamp(_thickness + step * 0.5, 1, 16)
         };
 

@@ -70,6 +70,27 @@ def undo():
     save(mask, "undo.png")
 
 
+def mosaic_brush():
+    # Like mosaic.png (outlined frame, two filled quarter cells) but in a round frame.
+    mask, draw = canvas()
+    c, r = 32.0, 26.0
+    ring = [(c + r * math.cos(a), c + r * math.sin(a)) for a in [i * 2 * math.pi / 96 for i in range(97)]]
+    stroke(draw, ring)
+    cells = Image.new("L", mask.size, 0)
+    cd = ImageDraw.Draw(cells)
+    inner = r - WIDTH / 2 - 2.5
+    cd.ellipse([(c - inner) * S, (c - inner) * S, (c + inner) * S, (c + inner) * S], fill=255)
+    quarters = Image.new("L", mask.size, 0)
+    qd = ImageDraw.Draw(quarters)
+    gap = 1.5
+    qd.rectangle([(c + gap) * S, 0, SIZE * S, (c - gap) * S], fill=255)        # top right
+    qd.rectangle([0, (c + gap) * S, (c - gap) * S, SIZE * S], fill=255)        # bottom left
+    from PIL import ImageChops
+    mask = ImageChops.lighter(mask, ImageChops.multiply(cells, quarters))
+    save(mask, "mosaic_brush.png")
+
+
 if __name__ == "__main__":
     arrow()
     undo()
+    mosaic_brush()

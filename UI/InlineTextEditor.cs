@@ -39,6 +39,10 @@ public sealed class InlineTextEditor
     private Point _dragLast;
     private double _dragStartRotation;
     private double _dragStartAngle;
+    private Point _dragPress;
+    private Vector _dragGrab;
+    private bool _dragStarted;
+    private (Point Position, double FontSize, double Rotation) _dragStartState;
 
     public InlineTextEditor(TextBox box, AnnotationEditor canvas)
     {
@@ -132,6 +136,10 @@ public sealed class InlineTextEditor
         _dragLast = pixel;
         _dragStartRotation = target.Rotation;
         _dragStartAngle = Math.Atan2(pixel.Y - _dragCenter.Y, pixel.X - _dragCenter.X) * 180 / Math.PI;
+        _dragPress = pixel;
+        _dragStarted = false;
+        _dragGrab = hit.IsHandle ? AnnotationOps.ResizeGrab(_dragStartBounds, target.Rotation, hit.Handle, pixel) : default;
+        _dragStartState = (target.Position, target.FontSize, target.Rotation);
         _framing = _box.CaptureMouse();
         if (_framing)
         {
@@ -148,6 +156,17 @@ public sealed class InlineTextEditor
             return;
         }
 
+        if (!_dragStarted)
+        {
+            // A click on the frame (no real drag) changes nothing.
+            if ((pixel - _dragPress).Length < 3 * Unit)
+            {
+                return;
+            }
+
+            _dragStarted = true;
+        }
+
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
         if (_dragHit.Rotate)
         {
@@ -162,7 +181,7 @@ public sealed class InlineTextEditor
         }
         else if (_dragHit.IsHandle)
         {
-            var rect = AnnotationOps.ResizeFromHandle(_dragStartBounds, target.Rotation, _dragHit.Handle, pixel, shift);
+            var rect = AnnotationOps.ResizeFromHandle(_dragStartBounds, target.Rotation, _dragHit.Handle, pixel + _dragGrab, shift);
             AnnotationOps.Resize(target, rect, _dragHit.Handle);
             StyleChanged?.Invoke(target); // the toolbar's size follows
         }
@@ -174,6 +193,20 @@ public sealed class InlineTextEditor
 
         Dirty = true;
         Refresh();
+    }
+
+    /// <summary>Right-click during a frame drag: back to where the drag started.</summary>
+    public void CancelFrameDrag()
+    {
+        if (!_framing || Target is not { } target)
+        {
+            return;
+        }
+
+        (target.Position, target.FontSize, target.Rotation) = _dragStartState;
+        Refresh();
+        StyleChanged?.Invoke(target);
+        EndFrameDrag();
     }
 
     private void EndFrameDrag()

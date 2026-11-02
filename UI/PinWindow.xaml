@@ -17,15 +17,11 @@
         PreviewKeyDown="OnPreviewKeyDown"
         PreviewKeyUp="OnPreviewKeyUp">
 
+    <!-- The annotation toolbar lives in its own window (ToolbarHostWindow) so it can be dragged alone. -->
     <Grid x:Name="RootGrid" Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <Grid x:Name="ImageHost" Grid.Row="0" HorizontalAlignment="Left" VerticalAlignment="Top"
+        <Grid x:Name="ImageHost" HorizontalAlignment="Left" VerticalAlignment="Top"
               ClipToBounds="False">
-            <Border x:Name="ImageShadowLayer" Background="#B0000000" IsHitTestVisible="False">
+            <Border x:Name="ImageShadowLayer" Background="#48000000" IsHitTestVisible="False">
                 <Border.Effect>
                     <BlurEffect Radius="12" KernelType="Gaussian" />
                 </Border.Effect>
@@ -56,7 +52,5 @@
             </Border>
         </Grid>
 
-        <ui:AnnotationToolbar x:Name="Toolbar" Grid.Row="1" Visibility="Collapsed" Margin="0,6,0,0"
-                              HorizontalAlignment="Left" />
     </Grid>
 </Window>

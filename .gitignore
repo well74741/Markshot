@@ -18,3 +18,7 @@ docs/*.png
 docs/*.txt
 tools/__pycache__/
 publish_next/
+
+# Installer build output
+publish_installer/
+dist/

@@ -89,6 +89,7 @@ public partial class App : Application
             ShutdownApp);
 
         ApplyHotkeys();
+        StartUpdateChecks();
 
         _tray.ShowBalloon(
             "Markshot 已启动",
@@ -336,6 +337,27 @@ public partial class App : Application
 
         History.Remove(last);
         CreatePinAtCursor(image);
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _updateTimer;
+    private string? _notifiedUpdate;
+
+    /// <summary>Checks the update folder shortly after start and every two hours; reminds once per version.</summary>
+    private void StartUpdateChecks()
+    {
+        _updateTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+        _updateTimer.Tick += async (_, _) =>
+        {
+            _updateTimer.Interval = TimeSpan.FromHours(2);
+            var folder = UpdateService.EffectivePath(Config);
+            var package = await Task.Run(() => UpdateService.FindNewer(folder));
+            if (package != null && package.Version != _notifiedUpdate)
+            {
+                _notifiedUpdate = package.Version;
+                _tray?.ShowBalloon($"Markshot {package.Version} 可以更新", "打开设置，点版本号旁的“更新”即可安装。");
+            }
+        };
+        _updateTimer.Start();
     }
 
     public void DisableClickThrough()

@@ -16,7 +16,13 @@ public partial class TranslationWindow : Window
         InitializeComponent();
         _image = image;
         _autoTranslate = autoTranslate;
-        TargetBox.Text = App.Config.Translation.TargetLanguage;
+        foreach (var language in Languages)
+        {
+            TargetBox.Items.Add(language);
+        }
+
+        TargetBox.SelectedIndex = 0; // 自动
+        TargetBox.SelectionChanged += (_, _) => UpdateMeta();
         if (!autoTranslate)
         {
             Title = "Markshot 文字识别";
@@ -45,6 +51,27 @@ public partial class TranslationWindow : Window
         }
     }
 
+    private const string Auto = "自动（中↔英）";
+
+    private static readonly string[] Languages =
+    {
+        Auto, "简体中文", "繁體中文", "English", "日本語", "한국어", "Français", "Deutsch", "Español", "Русский"
+    };
+
+    /// <summary>
+    /// The language to translate into. Auto: Chinese source → English, anything else → 简体中文.
+    /// </summary>
+    private string ResolveTarget()
+    {
+        var chosen = TargetBox.SelectedItem as string ?? Auto;
+        if (chosen != Auto)
+        {
+            return chosen;
+        }
+
+        return ImmersiveTranslator.DetectLanguage(SourceBox.Text) == "中文" ? "English" : "简体中文";
+    }
+
     private enum StatusKind
     {
         Idle,
@@ -70,7 +97,9 @@ public partial class TranslationWindow : Window
         var source = SourceBox.Text.Trim();
         SourceMeta.Text = source.Length == 0 ? "识别结果，可编辑" : $"{source.Length} 字 · 可编辑";
         var result = ResultBox.Text.Trim();
-        ResultMeta.Text = result.Length == 0 ? "" : $"{result.Length} 字";
+        var auto = (TargetBox.SelectedItem as string ?? Auto) == Auto;
+        var target = source.Length == 0 && auto ? "自动" : ResolveTarget() + (auto ? "（自动）" : "");
+        ResultMeta.Text = result.Length == 0 ? $"译成 {target}" : $"{result.Length} 字 · {target}";
         ResultPlaceholder.Visibility = result.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -156,9 +185,7 @@ public partial class TranslationWindow : Window
 
         try
         {
-            var target = string.IsNullOrWhiteSpace(TargetBox.Text)
-                ? App.Config.Translation.TargetLanguage
-                : TargetBox.Text.Trim();
+            var target = ResolveTarget();
 
             var provider = TranslationService.Create(App.Config.Translation);
             var result = await provider.TranslateAsync(text, target, _cts.Token);
@@ -223,7 +250,7 @@ public partial class TranslationWindow : Window
             return;
         }
 
-        var target = string.IsNullOrWhiteSpace(TargetBox.Text) ? "译文" : TargetBox.Text.Trim();
+        var target = ResolveTarget();
         var card = TextCardRenderer.Render(translated ? $"译文 · {target}" : "识别文字", text);
         ((App)Application.Current).CreatePinAtCursor(card);
         SetStatus(translated ? "译文已贴到屏幕" : "原文已贴到屏幕", StatusKind.Done);

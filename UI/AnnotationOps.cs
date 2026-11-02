@@ -141,6 +141,18 @@ internal static class AnnotationOps
         return AnnotationEditor.HitFrame(selected, point, unit, handlesOnly: true);
     }
 
+    /// <summary>
+    /// Offset from the pressed point to the grabbed handle of the element itself (the frame
+    /// is drawn a few pixels outside the element). Adding it to the pointer keeps a click on a
+    /// handle from making the element jump to the pointer.
+    /// </summary>
+    public static Vector ResizeGrab(Rect bounds, double rotation, int handle, Point press)
+    {
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var grabbed = AnnotationEditor.RotatePoint(AnnotationEditor.HandleCenters(bounds)[handle], center, rotation);
+        return grabbed - press;
+    }
+
     /// <summary>Ctrl+wheel opacity step: 5 % per notch, never fully invisible.</summary>
     public static double WheelOpacity(double opacity, int delta) =>
         Math.Clamp(Math.Round(opacity + Math.Sign(delta) * 0.05, 2), 0.05, 1);
@@ -161,7 +173,7 @@ internal static class AnnotationOps
     /// Binds a finished eraser stroke to every element it touches (SketchPlayer
     /// notes §4.2). Returns false when it touched nothing, so no undo step is needed.
     /// </summary>
-    public static bool BindEraser(IReadOnlyList<Annotation> items, IReadOnlyList<Point> points, double width)
+    public static bool BindEraser(IReadOnlyList<Annotation> items, IReadOnlyList<Point> points, double width, double strength = 1)
     {
         if (points.Count == 0)
         {
@@ -185,7 +197,7 @@ internal static class AnnotationOps
                 continue;
             }
 
-            item.AddEraseStroke(points, width);
+            item.AddEraseStroke(points, width, strength);
             touched = true;
         }
 

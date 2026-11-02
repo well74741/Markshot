@@ -17,6 +17,11 @@ public enum CaptureAction
 public partial class OverlayWindow : Window
 {
     private Annotation? _freshSelection;
+    private WatermarkAnnotation? _draggingWatermark;
+    private Point _watermarkLast;
+    private Point _transformPress;
+    private Vector _resizeGrab;
+    private bool _transformStarted;
 
     private enum DragMode
     {
@@ -128,6 +133,14 @@ public partial class OverlayWindow : Window
     {
         InitializeComponent();
         Motion.PopOnShow(Toolbar);
+        PreviewMouseRightButtonDown += (_, e) =>
+        {
+            if (e.LeftButton == MouseButtonState.Pressed && CancelGesture())
+            {
+                _suppressContextMenu = true;
+                e.Handled = true;
+            }
+        };
         Motion.PopOnShow(TranslateStatus);
         Motion.FadeOnShow(TranslatedImage);
 
@@ -430,6 +443,7 @@ public partial class OverlayWindow : Window
 
         Editor.Selection = _selection;
         Editor.ShowSelectionChrome = true;
+        Editor.SelectionDragging = _dragging && _mode is DragMode.Creating or DragMode.Moving or DragMode.Resizing;
         if (AnnotationOps.FindWatermark(Editor.Items) is { } watermark)
         {
             watermark.Rect = _selection;
@@ -741,6 +755,7 @@ public partial class OverlayWindow : Window
             _erasing = true;
             Editor.LiveEraser = _eraserPath.Points;
             Editor.LiveEraserWidth = _eraserPath.Thickness;
+            Editor.LiveEraserStrength = Toolbar.EraserOpacity;
             Editor.InvalidateVisual();
             InputLayer.CaptureMouse();
             e.Handled = true;
@@ -749,6 +764,16 @@ public partial class OverlayWindow : Window
 
         if (_tool == AnnotationTool.Watermark)
         {
+            if (AnnotationOps.FindWatermark(Editor.Items) is { } dragged)
+            {
+                _draggingWatermark = dragged;
+                _watermarkLast = point;
+                _dragStart = point;
+                _dragMoved = false;
+                _history.Arm(Editor.Items);
+                InputLayer.CaptureMouse();
+            }
+
             e.Handled = true;
             return;
         }
@@ -864,6 +889,38 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (_draggingWatermark != null)
+        {
+            if (!_dragMoved && (point - _dragStart).Length < 3 * _scale)
+            {
+                return;
+            }
+
+            if (!_dragMoved)
+            {
+                _dragMoved = true;
+                _history.CommitArmed();
+                UpdateUndoButtons();
+                InputLayer.Cursor = Cursors.SizeAll;
+            }
+
+            _draggingWatermark.Translate(point.X - _watermarkLast.X, point.Y - _watermarkLast.Y);
+            _watermarkLast = point;
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        if ((_rotatingAnnotation || _resizingAnnotation) && !_transformStarted)
+        {
+            // A click on a handle / grip without a real drag changes nothing.
+            if ((point - _transformPress).Length < 3 * _scale)
+            {
+                return;
+            }
+
+            _transformStarted = true;
+        }
+
         if (_textPress != null)
         {
             if (!_textPressMoved && (point - _textPressPoint).Length * 1 / _scale < 3)
@@ -909,7 +966,7 @@ public partial class OverlayWindow : Window
         if (_resizingAnnotation && _selectedAnnotation != null)
         {
             var target = AnnotationOps.ResizeFromHandle(
-                _annotationStartBounds, _selectedAnnotation.Rotation, _annotationHandle, point, IsShiftDown);
+                _annotationStartBounds, _selectedAnnotation.Rotation, _annotationHandle, point + _resizeGrab, IsShiftDown);
             AnnotationOps.Resize(_selectedAnnotation, target, _annotationHandle);
             Editor.InvalidateVisual();
             return;
@@ -1022,6 +1079,82 @@ public partial class OverlayWindow : Window
         }
     }
 
+    /// <summary>
+    /// Right-click while the left button is still down undoes the gesture in progress:
+    /// drawing, erasing, moving / resizing / rotating an element, dragging a text or the
+    /// watermark, and moving / resizing the capture area.
+    /// </summary>
+    private bool CancelGesture()
+    {
+        if (_textEditor.IsFraming)
+        {
+            _textEditor.CancelFrameDrag();
+            return true;
+        }
+
+        if (_active != null || _erasing)
+        {
+            Editor.Preview = null;
+            Editor.LiveEraser = null;
+            _active = null;
+            _gesture = null;
+            _erasing = false;
+            _eraserPath = null;
+            _dragging = false;
+            _spaceDrag = false;
+            _mode = DragMode.None;
+            InputLayer.ReleaseMouseCapture();
+            Editor.InvalidateVisual();
+            return true;
+        }
+
+        if (_resizingAnnotation || _rotatingAnnotation || _draggingAnnotation || _textPress != null || _draggingWatermark != null)
+        {
+            var target = _selectedAnnotation ?? _textPress;
+            var index = target != null ? Editor.Items.IndexOf(target) : -1;
+            var reverted = _history.CancelGesture(Editor.Items);
+            _resizingAnnotation = false;
+            _rotatingAnnotation = false;
+            _draggingAnnotation = false;
+            _textPress = null;
+            _draggingWatermark = null;
+            _dragRotate = false;
+            _dragScale = false;
+            _pendingTextClick = false;
+            _dragMoved = false;
+            _dragging = false;
+            _mode = DragMode.None;
+            InputLayer.ReleaseMouseCapture();
+            if (reverted)
+            {
+                ClearAnnotationSelection();
+                if (index >= 0 && index < Editor.Items.Count && Editor.Items[index] is not WatermarkAnnotation)
+                {
+                    SelectQuietly(Editor.Items[index]);
+                }
+            }
+
+            UpdateUndoButtons();
+            Editor.InvalidateVisual();
+            return true;
+        }
+
+        if (_dragging && _mode is DragMode.Creating or DragMode.Moving or DragMode.Resizing)
+        {
+            _selection = _dragOrigin;
+            _hasSelection = !_dragOrigin.IsEmpty && _dragOrigin.Width > 0 && _dragOrigin.Height > 0;
+            _dragging = false;
+            _spaceDrag = false;
+            _mode = DragMode.None;
+            Magnifier.Visibility = Visibility.Collapsed;
+            InputLayer.ReleaseMouseCapture();
+            UpdateSelectionVisuals();
+            return true;
+        }
+
+        return false;
+    }
+
     private void Input_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (_active == null && !_erasing)
@@ -1057,6 +1190,16 @@ public partial class OverlayWindow : Window
         _spaceDrag = false;
         _dragRotate = false;
         _dragScale = false;
+        if (_draggingWatermark != null)
+        {
+            _draggingWatermark = null;
+            _history.Disarm();
+            _dragMoved = false;
+            _mode = DragMode.None;
+            UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
+            return;
+        }
+
         var endedTransform = _resizingAnnotation || _rotatingAnnotation || _draggingAnnotation;
         _resizingAnnotation = false;
         _rotatingAnnotation = false;
@@ -1093,7 +1236,7 @@ public partial class OverlayWindow : Window
             {
                 // The state before the stroke becomes the undo step, but only if it erased something.
                 var before = Editor.Items.Select(item => item.Clone()).ToList();
-                if (AnnotationOps.BindEraser(Editor.Items, _eraserPath.Points, _eraserPath.Thickness))
+                if (AnnotationOps.BindEraser(Editor.Items, _eraserPath.Points, _eraserPath.Thickness, Toolbar.EraserOpacity))
                 {
                     _history.Checkpoint(before);
                     UpdateUndoButtons();
@@ -1244,7 +1387,7 @@ public partial class OverlayWindow : Window
 
     private static bool IsCtrlDown => (Keyboard.Modifiers & ModifierKeys.Control) != 0;
 
-    private double EraserWidth => Math.Max(8, _thickness * 2);
+    private double EraserWidth => Math.Max(2, _thickness);
 
     private void UpdateWatermarkHover(Point point)
     {
@@ -1380,11 +1523,14 @@ public partial class OverlayWindow : Window
         _annotationCenter = center;
         _annotationStartBounds = bounds;
         _lastAnnotationPoint = point;
+        _transformPress = point;
+        _transformStarted = false;
 
         if (hit.IsHandle)
         {
             _resizingAnnotation = true;
             _annotationHandle = hit.Handle;
+            _resizeGrab = AnnotationOps.ResizeGrab(bounds, _selectedAnnotation.Rotation, hit.Handle, point);
             return true;
         }
 
@@ -2261,6 +2407,7 @@ public partial class OverlayWindow : Window
             AnnotationTool.Number => Math.Clamp(_thickness + step, 8, 40),
             AnnotationTool.MosaicBrush => Math.Clamp(_thickness + step * 2, 4, 80),
             AnnotationTool.Watermark => Math.Clamp(_thickness + step * 2, 10, 120),
+            AnnotationTool.Eraser => Math.Clamp(_thickness + step * 2, 4, 80),
             _ => Math.Clamp(_thickness + step * 0.5, 1, 16)
         };
 
@@ -2561,7 +2708,7 @@ public partial class OverlayWindow : Window
 
             if (includeAnnotations)
             {
-                foreach (var annotation in Editor.Items)
+                foreach (var annotation in AnnotationEditor.DrawOrder(Editor.Items))
                 {
                     AnnotationEditor.DrawItem(dc, annotation);
                 }

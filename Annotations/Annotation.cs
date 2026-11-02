@@ -70,6 +70,11 @@ public abstract class Annotation
             return null;
         }
 
+        if (!EraseMasks.Any(stroke => stroke.Full))
+        {
+            return null;
+        }
+
         var key = $"{bounds.X:F2},{bounds.Y:F2},{bounds.Width:F2},{bounds.Height:F2},{EraseMasks.Count}";
         if (MaskCache != null && MaskCacheKey == key)
         {
@@ -77,12 +82,9 @@ public abstract class Annotation
         }
 
         var group = new GeometryGroup { FillRule = FillRule.Nonzero };
-        foreach (var stroke in EraseMasks)
+        foreach (var stroke in EraseMasks.Where(stroke => stroke.Full))
         {
-            var sx = Math.Max(1, bounds.Width) / Math.Max(1, stroke.RecordedSize.Width);
-            var sy = Math.Max(1, bounds.Height) / Math.Max(1, stroke.RecordedSize.Height);
-            var points = stroke.Points.Select(p => new Point(bounds.X + p.X * sx, bounds.Y + p.Y * sy)).ToList();
-            group.Children.Add(EraseStroke.Widen(points, stroke.Width * Math.Sqrt(sx * sy)));
+            group.Children.Add(StrokeGeometry(stroke, bounds));
         }
 
         group.Freeze();
@@ -91,8 +93,36 @@ public abstract class Annotation
         return group;
     }
 
+    /// <summary>Partly erasing strokes (eraser opacity below 100 %), each with its strength.</summary>
+    public IEnumerable<(Geometry Geometry, double Strength)> PartialMasks()
+    {
+        if (EraseMasks is not { Count: > 0 })
+        {
+            yield break;
+        }
+
+        var bounds = Bounds;
+        if (bounds.IsEmpty)
+        {
+            yield break;
+        }
+
+        foreach (var stroke in EraseMasks.Where(stroke => !stroke.Full))
+        {
+            yield return (StrokeGeometry(stroke, bounds), stroke.Strength);
+        }
+    }
+
+    private static Geometry StrokeGeometry(EraseStroke stroke, Rect bounds)
+    {
+        var sx = Math.Max(1, bounds.Width) / Math.Max(1, stroke.RecordedSize.Width);
+        var sy = Math.Max(1, bounds.Height) / Math.Max(1, stroke.RecordedSize.Height);
+        var points = stroke.Points.Select(p => new Point(bounds.X + p.X * sx, bounds.Y + p.Y * sy)).ToList();
+        return EraseStroke.Widen(points, stroke.Width * Math.Sqrt(sx * sy));
+    }
+
     /// <summary>Binds a canvas-space eraser stroke to this element.</summary>
-    public void AddEraseStroke(IReadOnlyList<Point> canvasPoints, double width)
+    public void AddEraseStroke(IReadOnlyList<Point> canvasPoints, double width, double strength = 1)
     {
         var bounds = Bounds;
         if (bounds.IsEmpty || canvasPoints.Count == 0)
@@ -106,7 +136,7 @@ public abstract class Annotation
             .Select(p => new Point(p.X - bounds.X, p.Y - bounds.Y))
             .ToList();
         EraseMasks ??= new List<EraseStroke>();
-        EraseMasks.Add(new EraseStroke(local, width, new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height))));
+        EraseMasks.Add(new EraseStroke(local, width, new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height)), strength));
         MaskCache = null;
     }
 
@@ -474,6 +504,9 @@ public sealed class WatermarkAnnotation : Annotation
     /// <summary>Tilt of the repeated text in degrees.</summary>
     public double Angle { get; set; } = -24;
 
+    /// <summary>Shift of the tile pattern (dragging the watermark moves it).</summary>
+    public Vector Shift { get; set; }
+
     public override bool Erasable => false;
 
     public override void Draw(DrawingContext dc) => Draw(dc, null);
@@ -512,10 +545,8 @@ public sealed class WatermarkAnnotation : Annotation
 
     public override Rect Bounds => Rect;
 
-    public override void Translate(double dx, double dy)
-    {
-        // The watermark is anchored to the canvas, not moved with the mouse.
-    }
+    /// <summary>The watermark covers the canvas; moving it shifts the tile pattern inside it.</summary>
+    public override void Translate(double dx, double dy) => Shift += new Vector(dx, dy);
 
     /// <summary>True when the point is on one of the repeated texts (not the gaps between them).</summary>
     public override bool HitTest(Point point, double tolerance)
@@ -555,11 +586,14 @@ public sealed class WatermarkAnnotation : Annotation
         var stepY = Math.Max(40, text.Height + FontSize * 2.5);
         // Extend past the edges: the tiles are rotated.
         var margin = Math.Max(stepX, stepY) * 2;
+        // The shift wraps by whole periods (two rows, since odd rows are staggered).
+        var shiftX = Shift.X % stepX;
+        var shiftY = Shift.Y % (stepY * 2);
         var row = 0;
-        for (var y = Rect.Top - margin; y < Rect.Bottom + margin; y += stepY, row++)
+        for (var y = Rect.Top - margin + shiftY; y < Rect.Bottom + margin + Math.Abs(shiftY); y += stepY, row++)
         {
             var offset = row % 2 == 0 ? 0 : stepX / 2;
-            for (var x = Rect.Left - margin; x < Rect.Right + margin; x += stepX)
+            for (var x = Rect.Left - margin + shiftX; x < Rect.Right + margin + Math.Abs(shiftX); x += stepX)
             {
                 yield return new Point(x + offset, y);
             }
@@ -740,12 +774,18 @@ public sealed class NumberAnnotation : Annotation
 /// <summary>One eraser stroke stored in an element's local frame.</summary>
 public sealed class EraseStroke
 {
-    public EraseStroke(List<Point> points, double width, Size recordedSize)
+    public EraseStroke(List<Point> points, double width, Size recordedSize, double strength = 1)
     {
         Points = points;
         Width = width;
         RecordedSize = recordedSize;
+        Strength = Math.Clamp(strength, 0.05, 1);
     }
+
+    /// <summary>How much the stroke erases (the eraser's opacity): 1 = fully.</summary>
+    public double Strength { get; }
+
+    public bool Full => Strength >= 0.999;
 
     public List<Point> Points { get; }
 
@@ -753,7 +793,7 @@ public sealed class EraseStroke
 
     public Size RecordedSize { get; }
 
-    public EraseStroke Clone() => new(new List<Point>(Points), Width, RecordedSize);
+    public EraseStroke Clone() => new(new List<Point>(Points), Width, RecordedSize, Strength);
 
     /// <summary>The area a round brush of <paramref name="width"/> covers along the points.</summary>
     public static Geometry Widen(IReadOnlyList<Point> points, double width)

@@ -204,7 +204,7 @@ public static class ToolCursors
         // The ring matches what the brush paints: eraser 2x (EraserWidth), highlighter 4x (PenAnnotation).
         var width = tool switch
         {
-            AnnotationTool.Eraser => Math.Max(8, thickness * 2),
+            AnnotationTool.Eraser => Math.Max(2, thickness),
             AnnotationTool.Highlighter => thickness * 4,
             _ => thickness
         };

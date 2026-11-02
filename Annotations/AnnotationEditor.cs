@@ -45,6 +45,12 @@ public sealed class AnnotationEditor : FrameworkElement
 
     public double LiveEraserWidth { get; set; }
 
+    /// <summary>Opacity of the live eraser (1 = erases fully).</summary>
+    public double LiveEraserStrength { get; set; } = 1;
+
+    /// <summary>The capture area is being dragged: a bold outline without handles.</summary>
+    public bool SelectionDragging { get; set; }
+
     public Rect HoverBounds { get; set; } = Rect.Empty;
 
     public string? HoverLabel { get; set; }
@@ -71,16 +77,26 @@ public sealed class AnnotationEditor : FrameworkElement
         {
             dc.PushClip(new RectangleGeometry(Selection));
         }
+        else if (Source != null)
+        {
+            // Elements never paint outside the image (a pin); frames and grips still may.
+            dc.PushClip(new RectangleGeometry(new Rect(0, 0, Source.PixelWidth, Source.PixelHeight)));
+        }
 
         var live = LiveEraser is { Count: > 0 } ? EraseStroke.Widen(LiveEraser, LiveEraserWidth) : null;
-        foreach (var annotation in Items)
+        foreach (var annotation in DrawOrder(Items))
         {
-            DrawItem(dc, annotation, live, ReferenceEquals(annotation, HoverWatermark) ? Accent : null);
+            DrawItem(dc, annotation, live, ReferenceEquals(annotation, HoverWatermark) ? Accent : null, LiveEraserStrength);
         }
 
         if (Preview != null)
         {
             DrawItem(dc, Preview);
+        }
+
+        if (!hasSelection && Source != null)
+        {
+            dc.Pop();
         }
 
         if (ShowHover && HoverBounds.Width > 0)
@@ -111,7 +127,8 @@ public sealed class AnnotationEditor : FrameworkElement
     /// bounds centre, with its bound eraser strokes (and an optional live eraser)
     /// cut out. Used by the canvas, the capture output and the pin composition.
     /// </summary>
-    public static void DrawItem(DrawingContext dc, Annotation annotation, Geometry? liveEraser = null, Brush? highlight = null)
+    public static void DrawItem(DrawingContext dc, Annotation annotation, Geometry? liveEraser = null, Brush? highlight = null,
+        double liveStrength = 1)
     {
         var bounds = annotation.Bounds;
         var pops = 0;
@@ -121,7 +138,7 @@ public sealed class AnnotationEditor : FrameworkElement
             area.Inflate(annotation.Thickness * 2 + 4, annotation.Thickness * 2 + 4);
             if (area.IntersectsWith(liveEraser.Bounds))
             {
-                dc.PushClip(Geometry.Combine(new RectangleGeometry(Room(area)), liveEraser, GeometryCombineMode.Exclude, null));
+                PushErase(dc, liveEraser, liveStrength, Room(area));
                 pops++;
             }
         }
@@ -137,6 +154,13 @@ public sealed class AnnotationEditor : FrameworkElement
         if (mask != null)
         {
             dc.PushClip(Geometry.Combine(new RectangleGeometry(Room(bounds)), mask, GeometryCombineMode.Exclude, null));
+            pops++;
+        }
+
+        // Strokes of a semi-transparent eraser only fade what they cover.
+        foreach (var (geometry, strength) in annotation.PartialMasks())
+        {
+            PushErase(dc, geometry, strength, Room(bounds));
             pops++;
         }
 
@@ -160,6 +184,50 @@ public sealed class AnnotationEditor : FrameworkElement
         {
             dc.Pop();
         }
+    }
+
+    /// <summary>
+    /// Paint order: as listed, except that the watermark is painted right after the mosaics
+    /// (so a mosaic never pixelates it) instead of under everything.
+    /// </summary>
+    public static IEnumerable<Annotation> DrawOrder(IReadOnlyList<Annotation> items)
+    {
+        var watermark = items.OfType<WatermarkAnnotation>().FirstOrDefault();
+        if (watermark == null)
+        {
+            return items;
+        }
+
+        var rest = items.Where(item => !ReferenceEquals(item, watermark)).ToList();
+        var lastMosaic = rest.FindLastIndex(item => item is MosaicAnnotation or MosaicBrushAnnotation);
+        rest.Insert(lastMosaic + 1, watermark);
+        return rest;
+    }
+
+    /// <summary>Erases <paramref name="area"/> fully (clip) or partly (opacity mask) for what is drawn next.</summary>
+    private static void PushErase(DrawingContext dc, Geometry area, double strength, Rect room)
+    {
+        if (strength >= 0.999)
+        {
+            dc.PushClip(Geometry.Combine(new RectangleGeometry(room), area, GeometryCombineMode.Exclude, null));
+            return;
+        }
+
+        var keep = new DrawingGroup();
+        keep.Children.Add(new GeometryDrawing(Brushes.White, null,
+            Geometry.Combine(new RectangleGeometry(room), area, GeometryCombineMode.Exclude, null)));
+        keep.Children.Add(new GeometryDrawing(
+            new SolidColorBrush(Color.FromArgb((byte)Math.Round((1 - strength) * 255), 255, 255, 255)), null, area));
+        var brush = new DrawingBrush(keep)
+        {
+            Stretch = Stretch.Fill,
+            ViewboxUnits = BrushMappingMode.Absolute,
+            Viewbox = room,
+            ViewportUnits = BrushMappingMode.Absolute,
+            Viewport = room
+        };
+        brush.Freeze();
+        dc.PushOpacityMask(brush);
     }
 
     /// <summary>Axis-aligned box around the element after rotation.</summary>
@@ -456,18 +524,26 @@ public sealed class AnnotationEditor : FrameworkElement
         var unit = 1.0 / Scale;
 
         var blue = new SolidColorBrush(Color.FromRgb(0x2F, 0x7B, 0xFF));
-        dc.DrawRectangle(null, new Pen(blue, unit * 2), selection);
-
-        const double handleDip = 9;
-        var handleSize = handleDip * unit;
-        var handlePen = new Pen(Brushes.White, unit * 1.2);
-
-        foreach (var center in HandleCenters(selection))
+        if (SelectionDragging)
         {
-            dc.DrawRectangle(
-                blue,
-                handlePen,
-                new Rect(center.X - handleSize / 2, center.Y - handleSize / 2, handleSize, handleSize));
+            // While dragging: just a bold line.
+            dc.DrawRectangle(null, new Pen(blue, unit * 3.5), selection);
+        }
+        else
+        {
+            dc.DrawRectangle(null, new Pen(blue, unit * 2.6), selection);
+
+            const double handleDip = 10;
+            var handleSize = handleDip * unit;
+            var handlePen = new Pen(Brushes.White, unit * 1.5);
+
+            foreach (var center in HandleCenters(selection))
+            {
+                dc.DrawRectangle(
+                    blue,
+                    handlePen,
+                    new Rect(center.X - handleSize / 2, center.Y - handleSize / 2, handleSize, handleSize));
+            }
         }
 
         var label = new FormattedText(

@@ -33,6 +33,8 @@ public partial class SettingsWindow : Window
         NumberKeyBox.Text = config.ToolNumberHotkey;
         LineKeyBox.Text = config.ToolLineHotkey;
         SaveDirBox.Text = config.SaveDirectory;
+        UpdatePathBox.Text = UpdateService.EffectivePath(config);
+        Loaded += (_, _) => RefreshUpdate(quiet: true);
         OcrLanguageBox.Text = config.OcrLanguage;
         BaseUrlBox.Text = config.Translation.BaseUrl;
         ApiKeyPassword.Password = config.Translation.ApiKey;
@@ -336,6 +338,9 @@ public partial class SettingsWindow : Window
         _config.ToolLineHotkey = lineKey;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
+        // Keep following the installer's folder unless another one was entered.
+        var updatePath = UpdatePathBox.Text.Trim();
+        _config.UpdatePath = string.Equals(updatePath, UpdateService.DefaultPath(), StringComparison.OrdinalIgnoreCase) ? "" : updatePath;
         _config.OcrLanguage = OcrLanguageBox.Text.Trim();
 
         _config.Translation.BaseUrl = BaseUrlBox.Text.Trim();
@@ -357,6 +362,63 @@ public partial class SettingsWindow : Window
 
     /// <summary>True when the window was closed with “保存”.</summary>
     public bool Saved { get; private set; }
+
+    private UpdateService.Package? _update;
+
+    /// <summary>Looks for a newer installer in the update folder shown in the box.</summary>
+    private void RefreshUpdate(bool quiet)
+    {
+        var folder = Environment.ExpandEnvironmentVariables(UpdatePathBox.Text.Trim());
+        _update = UpdateService.FindNewer(folder);
+        if (_update != null)
+        {
+            UpdateButton.Content = $"更新 {_update.Version}";
+            UpdateButton.ToolTip = _update.Path;
+            UpdateButton.Visibility = Visibility.Visible;
+            Motion.PopIn(UpdateButton, fromAbove: false);
+            return;
+        }
+
+        UpdateButton.Visibility = Visibility.Collapsed;
+        if (!quiet)
+        {
+            StatusText.Text = string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)
+                ? "更新路径不存在，请在“保存与识别 → 更新”里设置。"
+                : $"已是最新版本（{AppVersion.Display}）";
+        }
+    }
+
+    private void CheckUpdate_Click(object sender, RoutedEventArgs e) => RefreshUpdate(quiet: false);
+
+    private void Update_Click(object sender, RoutedEventArgs e)
+    {
+        if (_update == null)
+        {
+            return;
+        }
+
+        var result = MessageBox.Show(this, $"关闭 Markshot 并安装 {_update.Version}？", "更新 Markshot",
+            MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (result == MessageBoxResult.OK)
+        {
+            UpdateService.Install(_update);
+        }
+    }
+
+    private void BrowseUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "选择放安装包的文件夹",
+            InitialDirectory = UpdatePathBox.Text.Trim()
+        };
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            UpdatePathBox.Text = dialog.FolderName;
+            RefreshUpdate(quiet: false);
+        }
+    }
 
     private void Browse_Click(object sender, RoutedEventArgs e)
     {

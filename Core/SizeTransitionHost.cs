@@ -26,11 +26,20 @@ public sealed class SizeTransitionHost : Decorator
     private Size _from;
     private Size _to;
     private Size _content;
-    private bool _initialized;
+    private bool _snapNext = true;
 
     public SizeTransitionHost()
     {
         ClipToBounds = true;
+        // While hidden nothing is measured; whatever changed meanwhile must not play
+        // as an animation when it shows again.
+        IsVisibleChanged += (_, e) =>
+        {
+            if (!(bool)e.NewValue)
+            {
+                _snapNext = true;
+            }
+        };
     }
 
     public bool IsOpen
@@ -67,10 +76,10 @@ public sealed class SizeTransitionHost : Decorator
         }
 
         var target = IsOpen ? _content : new Size(0, 0);
-        if (!_initialized || !IsLoaded)
+        if (_snapNext || !IsVisible)
         {
-            // First layout / not on screen yet: no animation.
-            _initialized = IsLoaded;
+            // First layout or (re)shown after being hidden: no animation.
+            _snapNext = !IsVisible;
             _from = _to = target;
             BeginAnimation(ProgressProperty, null);
             SetCurrentValue(ProgressProperty, 1.0);

@@ -246,6 +246,11 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/pin.png" /></Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="IconMosaicBrushMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/mosaic_brush.png" /></Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="IconUndoMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/undo.png" /></Setter.Value>
