@@ -45,6 +45,11 @@ foreach ($suite in $Suites) {
         $failed += $suite
         Write-Host ("  [FAIL] {0,-12} {1} pass" -f $suite, $passes) -ForegroundColor Red
         $fails | ForEach-Object { Write-Host "         $_" -ForegroundColor Red }
+        if ($env:GITHUB_ACTIONS) {
+            # Annotations are readable on the run page without downloading the logs.
+            $first = ($fails + ($text -split "`n" | Select-String 'Unhandled|   at ' | Select-Object -First 4 | ForEach-Object { $_.Line })) -join ' | '
+            Write-Host "::error title=$suite::$first"
+        }
         if ($crashed) { Write-Host ($text -split "`n" | Select-String 'Unhandled|   at Markshot' | Select-Object -First 6 | Out-String) -ForegroundColor Red }
     } else {
         Write-Host ("  [OK]   {0,-12} {1} pass" -f $suite, $passes) -ForegroundColor Green
