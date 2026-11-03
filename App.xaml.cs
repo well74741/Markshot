@@ -111,7 +111,8 @@ public partial class App : Application
             () => _closedPins.Count > 0 || History.Last != null,
             () => _pins.Any(pin => pin.IsClickThrough),
             RecorderMenuItems,
-            ExportDiagnostics);
+            ExportDiagnostics,
+            ShowPinHistory);
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -304,7 +305,8 @@ public partial class App : Application
                 History.Add(entry);
                 PinStore.Save(entry, pin.SourceImage);
                 _closedPins.Add((pin.Snapshot(), entry));
-                if (_closedPins.Count > 10)
+                _pinHistoryWindow?.Refresh();
+                if (_closedPins.Count > 30)
                 {
                     _closedPins.RemoveAt(0);
                 }
@@ -415,6 +417,64 @@ public partial class App : Application
 
         History.Remove(last);
         CreatePinAtCursor(image);
+    }
+
+    private UI.PinHistoryWindow? _pinHistoryWindow;
+
+    /// <summary>Tray 贴图历史…: thumbnails of the recently closed pins.</summary>
+    public void ShowPinHistory()
+    {
+        if (_pinHistoryWindow != null)
+        {
+            _pinHistoryWindow.Refresh();
+            _pinHistoryWindow.Activate();
+            return;
+        }
+
+        _pinHistoryWindow = new UI.PinHistoryWindow(PinHistoryEntries, RestorePinEntry, DeletePinEntry, ClearPinHistory);
+        _pinHistoryWindow.Closed += (_, _) => _pinHistoryWindow = null;
+        _pinHistoryWindow.Show();
+    }
+
+    public IReadOnlyList<PinEntry> PinHistoryEntries() => History.Items;
+
+    /// <summary>Pins a history entry again: as it was (annotations, zoom) when closed in this session.</summary>
+    public void RestorePinEntry(PinEntry entry)
+    {
+        var index = _closedPins.FindIndex(closed => ReferenceEquals(closed.Entry, entry));
+        History.Remove(entry);
+        if (index >= 0)
+        {
+            var (snapshot, _) = _closedPins[index];
+            _closedPins.RemoveAt(index);
+            var restored = CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
+                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null);
+            restored.RestoreView(snapshot.Zoom, snapshot.Opacity);
+            return;
+        }
+
+        if (entry.LoadImage() is { } image)
+        {
+            CreatePinAtCursor(image);
+        }
+    }
+
+    public void DeletePinEntry(PinEntry entry)
+    {
+        History.Remove(entry);
+        _closedPins.RemoveAll(closed => ReferenceEquals(closed.Entry, entry));
+        PinStore.Delete(entry);
+    }
+
+    public void ClearPinHistory()
+    {
+        foreach (var entry in History.Items.ToList())
+        {
+            PinStore.Delete(entry);
+        }
+
+        History.Clear();
+        _closedPins.Clear();
     }
 
     private System.Windows.Threading.DispatcherTimer? _updateTimer;
@@ -554,6 +614,11 @@ public partial class App : Application
             default:
                 yield return ("显示录屏", () => r!.Command("show"));
                 break;
+        }
+
+        if (phase is UI.Recording.RecordPhase.Setup or UI.Recording.RecordPhase.Preview)
+        {
+            yield return ("录屏区域回中", () => r!.Recenter());
         }
 
         yield return ("退出录屏", () => r!.Command("exit"));

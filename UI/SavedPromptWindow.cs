@@ -25,7 +25,8 @@ internal sealed class SavedPromptWindow : Window
         ShowInTaskbar = false;
         FontFamily = new FontFamily("Microsoft YaHei UI");
 
-        var title = new TextBlock { Text = "图片已保存", Foreground = Theme.Brush(0xFFF5F5F5), FontSize = 14, FontWeight = FontWeights.SemiBold };
+        var video = Path.GetExtension(path).ToLowerInvariant() is ".mp4" or ".gif";
+        var title = new TextBlock { Text = video ? "录像已保存" : "图片已保存", Foreground = Theme.Brush(0xFFF5F5F5), FontSize = 14, FontWeight = FontWeights.SemiBold };
         var file = new TextBlock
         {
             Text = path,
@@ -45,6 +46,26 @@ internal sealed class SavedPromptWindow : Window
         var close = new Button { Content = "关闭", Style = (Style)Application.Current.FindResource("FooterButton"), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
         close.Click += (_, _) => Close();
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        if (video)
+        {
+            // A recording: play it right away with the default player.
+            var play = new Button { Content = "播放", Style = (Style)Application.Current.FindResource("FooterButton"), Margin = new Thickness(0, 0, 8, 0) };
+            play.Click += (_, _) =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(_path) { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("播放录像失败", ex);
+                }
+
+                Close();
+            };
+            buttons.Children.Add(play);
+        }
+
         buttons.Children.Add(open);
         buttons.Children.Add(close);
         _ask = new CheckBox

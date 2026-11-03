@@ -21,7 +21,8 @@ public sealed class TrayService : IDisposable
         Func<bool>? canRestore = null,
         Func<bool>? anyClickThrough = null,
         Func<IEnumerable<(string Header, Action Action)>>? recorderItems = null,
-        Action? diagnostics = null)
+        Action? diagnostics = null,
+        Action? pinHistory = null)
     {
         // The tray menu is a WPF menu in the app's dark rounded style (not the system one),
         // rebuilt on each open so it only lists what applies right now.
@@ -50,6 +51,11 @@ public sealed class TrayService : IDisposable
             if (canRestore?.Invoke() ?? true)
             {
                 Add("恢复最近贴图", restoreLastPin, App.Config?.RestorePinHotkey);
+            }
+
+            if (pinHistory != null)
+            {
+                Add("贴图历史…", pinHistory);
             }
 
             if (anyClickThrough?.Invoke() ?? false)

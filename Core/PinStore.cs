@@ -5,7 +5,7 @@ namespace Markshot.Core;
 /// <summary>Persists closed pins under %APPDATA%\Markshot\pins (or next to the exe).</summary>
 public static class PinStore
 {
-    private const int MaxEntries = 10;
+    private const int MaxEntries = 30;
     private static readonly object Gate = new();
     private static string? _root;
 
@@ -124,6 +124,31 @@ public static class PinStore
             catch (Exception ex)
             {
                 Log.Error("保存贴图历史失败", ex);
+            }
+        }
+    }
+
+    /// <summary>Removes a pin from the history on disk (its file and its record).</summary>
+    public static void Delete(PinEntry entry)
+    {
+        lock (Gate)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entry.FilePath))
+                {
+                    return;
+                }
+
+                var name = Path.GetFileName(entry.FilePath);
+                var records = ReadRecords();
+                records.RemoveAll(record => string.Equals(record.File, name, StringComparison.OrdinalIgnoreCase));
+                WriteRecords(records);
+                TryDelete(entry.FilePath);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("删除贴图历史失败", ex);
             }
         }
     }

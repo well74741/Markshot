@@ -343,6 +343,30 @@ public sealed class RecorderController
         SetRect(new Int32Rect(cx - width / 2, cy - height / 2, width, height));
     }
 
+    /// <summary>录屏区域回中: the area (or the preview) to the middle of the monitor under the mouse, shrunk to fit.</summary>
+    public void Recenter()
+    {
+        if (Phase is not (RecordPhase.Setup or RecordPhase.Preview))
+        {
+            return;
+        }
+
+        RevealUi();
+        var cursor = Native.CursorPosition();
+        var work = Monitors.At(cursor.X, cursor.Y).WorkArea;
+        var margin = (int)(20 * Monitors.At(cursor.X, cursor.Y).Scale);
+        var k = Math.Min(1, Math.Min((work.Width - margin * 2) / (double)Rect.Width, (work.Height - margin * 2) / (double)Rect.Height));
+        // A finished take keeps its size (the preview shows the recording); only setup may shrink.
+        if (Phase == RecordPhase.Preview)
+        {
+            k = 1;
+        }
+
+        var width = (int)(Rect.Width * k);
+        var height = (int)(Rect.Height * k);
+        SetRect(new Int32Rect(work.X + (work.Width - width) / 2, work.Y + (work.Height - height) / 2, width, height));
+    }
+
     /// <summary>Moves the area (setup) or the whole preview by a distance in physical pixels.</summary>
     public void MoveTo(Int32Rect origin, int dx, int dy)
     {

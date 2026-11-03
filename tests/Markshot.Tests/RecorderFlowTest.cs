@@ -119,6 +119,12 @@ static class RecorderFlowTest
         controller.SetSize(600, 340);
         Check(controller.Rect.Width == 600 && controller.Rect.Height == 340, $"typed size applies ({controller.Rect.Width}x{controller.Rect.Height})");
         controller.SetSize(640, 360);
+        controller.Recenter();
+        var cursor = System.Windows.Forms.Cursor.Position;
+        var work = Monitors.At(cursor.X, cursor.Y).WorkArea;
+        var c = controller.Rect;
+        Check(Math.Abs(c.X + c.Width / 2 - (work.X + work.Width / 2)) <= 2 && Math.Abs(c.Y + c.Height / 2 - (work.Y + work.Height / 2)) <= 2,
+            $"录屏区域回中: centred on the monitor ({c.X},{c.Y} {c.Width}x{c.Height})");
 
         // ---- record 1.2 s, pause 0.4 s, record 0.5 s
         controller.Start();

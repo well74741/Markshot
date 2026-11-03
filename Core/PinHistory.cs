@@ -45,7 +45,7 @@ public sealed class PinHistory
 {
     private readonly List<PinEntry> _items = new();
 
-    public int Capacity { get; } = 10;
+    public int Capacity { get; } = 30;
 
     public IReadOnlyList<PinEntry> Items => _items;
 
