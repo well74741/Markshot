@@ -93,6 +93,31 @@ static class ImageOpsTest
         outward[4] = new Point(80, 0);
         Check(At(ImageOps.MeshWarp(halvesForMesh, outward, 4, 4), 95, 1).A == 0, "mesh: pulled in from the corner, transparent outside");
 
+        // 网格形变 like Photoshop: curved edges, a crosswise split, the canvas fits the result
+        var plain = new WarpMesh(100, 60);
+        var unchanged = ImageOps.Warp(halvesForMesh, plain, out var plainOrigin);
+        Check(unchanged.PixelWidth == 100 && unchanged.PixelHeight == 60 && plainOrigin == new Point(0, 0) && At(unchanged, 49, 30).R == 220 && At(unchanged, 51, 30).B == 220,
+            "warp: untouched = the picture, same size");
+        var split = new WarpMesh(100, 60);
+        var (row, column) = split.SplitAt(0.5, 0.5);
+        Check(row == 1 && column == 1 && (split.Anchors[1, 1] - new Point(50, 30)).Length < 0.01 && split.Rows == 2 && split.Columns == 2, "split crosswise: a crossing at the point");
+        var afterSplit = ImageOps.Warp(halvesForMesh, split, out _);
+        Check(At(afterSplit, 48, 30).R == 220 && At(afterSplit, 52, 30).B == 220, "a split alone changes nothing");
+        split.MoveAnchor(1, 1, new Point(70, 30));
+        Check((split.Across[1, 0, 1] - new Point(70 - 50 / 3.0, 30)).Length < 0.5, "a crossing carries its handles");
+        var pulledWarp = ImageOps.Warp(halvesForMesh, split, out _);
+        Check(At(pulledWarp, 65, 30).R == 220 && At(pulledWarp, 51, 2).B == 220, "warp: the red half follows the dragged crossing");
+        split.MoveHandle(false, 1, 0, 1, new Point(60, 20));
+        var mirrored = split.Across[1, 1, 0] - split.Anchors[1, 1];
+        var dragged = split.Across[1, 0, 1] - split.Anchors[1, 1];
+        Check(Math.Abs(Vector.CrossProduct(mirrored, dragged)) < 0.01 && Vector.Multiply(mirrored, dragged) < 0, "the handle across an inner crossing turns along (smooth curve)");
+        var bulge = new WarpMesh(100, 60);
+        bulge.MoveHandle(false, 0, 0, 0, new Point(33, -30));
+        bulge.MoveHandle(false, 0, 0, 1, new Point(66, -30));
+        var bulged = ImageOps.Warp(halvesForMesh, bulge, out var bulgeOrigin);
+        Check(bulgeOrigin.Y < -10 && bulged.PixelHeight > 70 && bulged.PixelWidth == 100, $"the canvas grows to hold a bulging edge ({bulged.PixelWidth}×{bulged.PixelHeight} at {bulgeOrigin})");
+        Check(split.Locate(split.Evaluate(0.3, 0.7)) is { } found && Math.Abs(found.U - 0.3) < 0.01 && Math.Abs(found.V - 0.7) < 0.01, "a warped point is found back");
+
         var halves = Halves(100, 60);
         var small = ImageOps.Resize(halves, 50, 30);
         Check(small.PixelWidth == 50 && small.PixelHeight == 30 && At(small, 10, 15).R > 200 && At(small, 40, 15).B > 200, "resize");

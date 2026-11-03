@@ -40,16 +40,9 @@ public sealed class EditorOverlay : FrameworkElement
         // A keystone starts a little inside the image, so the corners are easy to grab.
         var inset = Math.Min(w, h) * 0.08;
         Quad = new[] { new Point(inset, inset), new Point(w - inset, inset), new Point(w - inset, h - inset), new Point(inset, h - inset) };
-        Mesh = new Point[(MeshColumns + 1) * (MeshRows + 1)];
-        for (var r = 0; r <= MeshRows; r++)
-        {
-            for (var c = 0; c <= MeshColumns; c++)
-            {
-                Mesh[r * (MeshColumns + 1) + c] = new Point(w * c / MeshColumns, h * r / MeshRows);
-            }
-        }
+        Warp = new WarpMesh(w, h);
 
-        Cursor = mode == EditorOverlayMode.Crop ? Cursors.Cross : mode == EditorOverlayMode.Path ? Cursors.Pen : Cursors.Arrow;
+        Cursor = mode is EditorOverlayMode.Crop or EditorOverlayMode.Mesh ? Cursors.Cross : mode == EditorOverlayMode.Path ? Cursors.Pen : Cursors.Arrow;
     }
 
     public EditorOverlayMode Mode { get; }
@@ -62,18 +55,16 @@ public sealed class EditorOverlay : FrameworkElement
     /// <summary>Keystone corners: top-left, top-right, bottom-right, bottom-left.</summary>
     public Point[] Quad { get; }
 
-    public const int MeshColumns = 4;
+    /// <summary>网格形变: the warp being edited (image pixels).</summary>
+    public WarpMesh Warp { get; }
 
-    public const int MeshRows = 4;
+    /// <summary>The warped picture and where it goes (image pixels); a small copy is fine.</summary>
+    public Func<WarpMesh, (BitmapSource Image, Rect Place)>? WarpPreview { get; set; }
 
-    /// <summary>网格形变: the grid points (row by row), in image pixels.</summary>
-    public Point[] Mesh { get; }
-
-    /// <summary>The warped picture for the current grid (a small copy is fine: it is stretched over the image).</summary>
-    public Func<IReadOnlyList<Point>, BitmapSource>? MeshPreview { get; set; }
-
-    private BitmapSource? _meshImage;
-    private bool _meshDirty = true;
+    private (BitmapSource Image, Rect Place)? _warpImage;
+    private bool _warpDirty = true;
+    private (int Kind, int R, int C, int End) _warpGrab = (-1, 0, 0, 0); // kind 0 crossing, 1 across handle, 2 down handle
+    private Point? _hover;
 
     /// <summary>The cut-out path.</summary>
     public List<Point> PathPoints { get; } = new();
@@ -83,7 +74,7 @@ public sealed class EditorOverlay : FrameworkElement
     {
         EditorOverlayMode.Path => !_drawing && PathPoints.Count >= 3,
         EditorOverlayMode.Crop => Crop.Width >= 2 && Crop.Height >= 2,
-        EditorOverlayMode.Mesh => Moved,
+        EditorOverlayMode.Mesh => Warp.Changed,
         _ => true
     };
 
@@ -160,48 +151,8 @@ public sealed class EditorOverlay : FrameworkElement
             }
 
             case EditorOverlayMode.Mesh:
-            {
-                if (_meshDirty && MeshPreview != null)
-                {
-                    _meshImage = MeshPreview(Mesh);
-                    _meshDirty = false;
-                }
-
-                // The warped picture covers the original (which shows through nowhere).
-                dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1A)), null, all);
-                if (_meshImage != null)
-                {
-                    dc.DrawImage(_meshImage, all);
-                }
-
-                var thin = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0xFF, 0xFF, 0xFF)), 1);
-                var shade = new Pen(new SolidColorBrush(Color.FromArgb(0x70, 0, 0, 0)), 2.6);
-                for (var r = 0; r <= MeshRows; r++)
-                {
-                    for (var c = 0; c <= MeshColumns; c++)
-                    {
-                        var at = ToDip(MeshPoint(c, r));
-                        if (c < MeshColumns)
-                        {
-                            dc.DrawLine(shade, at, ToDip(MeshPoint(c + 1, r)));
-                            dc.DrawLine(thin, at, ToDip(MeshPoint(c + 1, r)));
-                        }
-
-                        if (r < MeshRows)
-                        {
-                            dc.DrawLine(shade, at, ToDip(MeshPoint(c, r + 1)));
-                            dc.DrawLine(thin, at, ToDip(MeshPoint(c, r + 1)));
-                        }
-                    }
-                }
-
-                foreach (var point in Mesh)
-                {
-                    dc.DrawEllipse(Brushes.White, accent, ToDip(point), Grip, Grip);
-                }
-
+                DrawWarp(dc, all, accent);
                 break;
-            }
 
             case EditorOverlayMode.Keystone:
             {
@@ -232,32 +183,198 @@ public sealed class EditorOverlay : FrameworkElement
         }
     }
 
-    private Point MeshPoint(int column, int row) => Mesh[row * (MeshColumns + 1) + column];
-
-    /// <summary>A grid point was moved away from where it started.</summary>
-    public bool Moved { get; private set; }
-
-    /// <summary>Moves a grid point (tests and dragging); the preview follows.</summary>
-    public void MoveMeshPoint(int index, Point to)
+    private void DrawWarp(DrawingContext dc, Rect all, Pen accent)
     {
-        Mesh[index] = new Point(Math.Clamp(to.X, -_imageWidth, _imageWidth * 2), Math.Clamp(to.Y, -_imageHeight, _imageHeight * 2));
-        Moved = true;
-        _meshDirty = true;
+        if (_warpDirty && WarpPreview != null)
+        {
+            _warpImage = WarpPreview(Warp);
+            _warpDirty = false;
+        }
+
+        // The warped picture covers the original (which shows through nowhere).
+        dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1A)), null, all);
+        if (_warpImage is { } warped)
+        {
+            dc.DrawImage(warped.Image, ToDip(warped.Place));
+        }
+
+        var edges = new StreamGeometry();
+        using (var context = edges.Open())
+        {
+            for (var r = 0; r <= Warp.Rows; r++)
+            {
+                for (var c = 0; c < Warp.Columns; c++)
+                {
+                    context.BeginFigure(ToDip(Warp.Anchors[r, c]), false, false);
+                    context.BezierTo(ToDip(Warp.Across[r, c, 0]), ToDip(Warp.Across[r, c, 1]), ToDip(Warp.Anchors[r, c + 1]), true, false);
+                }
+            }
+
+            for (var r = 0; r < Warp.Rows; r++)
+            {
+                for (var c = 0; c <= Warp.Columns; c++)
+                {
+                    context.BeginFigure(ToDip(Warp.Anchors[r, c]), false, false);
+                    context.BezierTo(ToDip(Warp.Down[r, c, 0]), ToDip(Warp.Down[r, c, 1]), ToDip(Warp.Anchors[r + 1, c]), true, false);
+                }
+            }
+        }
+
+        edges.Freeze();
+        dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(0x70, 0, 0, 0)), 3), edges);
+        dc.DrawGeometry(null, accent, edges);
+
+        // Before a split: the cross that a click would add, along the warped grid.
+        if (_hover is { } hover && _warpGrab.Kind < 0 && WarpHit(ToDip(hover)).Kind < 0 && Warp.Locate(hover, 60) is { } at)
+        {
+            var guide = new Pen(new SolidColorBrush(Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), 1) { DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0) };
+            var cross = new StreamGeometry();
+            using (var context = cross.Open())
+            {
+                context.BeginFigure(ToDip(Warp.Evaluate(at.U, 0)), false, false);
+                context.PolyLineTo(Enumerable.Range(1, 48).Select(i => ToDip(Warp.Evaluate(at.U, i / 48.0))).ToList(), true, false);
+                context.BeginFigure(ToDip(Warp.Evaluate(0, at.V)), false, false);
+                context.PolyLineTo(Enumerable.Range(1, 48).Select(i => ToDip(Warp.Evaluate(i / 48.0, at.V))).ToList(), true, false);
+            }
+
+            cross.Freeze();
+            dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)), 2.4), cross);
+            dc.DrawGeometry(null, guide, cross);
+        }
+
+        var handleLine = new Pen(new SolidColorBrush(Color.FromArgb(0xA0, 0x4C, 0x8D, 0xFF)), 1);
+        var handleFill = new SolidColorBrush(Color.FromRgb(0x4C, 0x8D, 0xFF));
+        foreach (var (anchor, handle) in Handles())
+        {
+            dc.DrawLine(handleLine, ToDip(anchor), ToDip(handle));
+            dc.DrawEllipse(handleFill, null, ToDip(handle), 3.5, 3.5);
+        }
+
+        for (var r = 0; r <= Warp.Rows; r++)
+        {
+            for (var c = 0; c <= Warp.Columns; c++)
+            {
+                dc.DrawEllipse(Brushes.White, accent, ToDip(Warp.Anchors[r, c]), Grip - 1, Grip - 1);
+            }
+        }
+    }
+
+    /// <summary>Every handle with the crossing it belongs to.</summary>
+    private IEnumerable<(Point Anchor, Point Handle)> Handles()
+    {
+        for (var r = 0; r <= Warp.Rows; r++)
+        {
+            for (var c = 0; c < Warp.Columns; c++)
+            {
+                yield return (Warp.Anchors[r, c], Warp.Across[r, c, 0]);
+                yield return (Warp.Anchors[r, c + 1], Warp.Across[r, c, 1]);
+            }
+        }
+
+        for (var r = 0; r < Warp.Rows; r++)
+        {
+            for (var c = 0; c <= Warp.Columns; c++)
+            {
+                yield return (Warp.Anchors[r, c], Warp.Down[r, c, 0]);
+                yield return (Warp.Anchors[r + 1, c], Warp.Down[r, c, 1]);
+            }
+        }
+    }
+
+    /// <summary>What is under the mouse: a crossing first, then a handle.</summary>
+    private (int Kind, int R, int C, int End) WarpHit(Point dip)
+    {
+        for (var r = 0; r <= Warp.Rows; r++)
+        {
+            for (var c = 0; c <= Warp.Columns; c++)
+            {
+                if ((ToDip(Warp.Anchors[r, c]) - dip).Length <= Grip + 4)
+                {
+                    return (0, r, c, 0);
+                }
+            }
+        }
+
+        for (var r = 0; r <= Warp.Rows; r++)
+        {
+            for (var c = 0; c < Warp.Columns; c++)
+            {
+                for (var k = 0; k < 2; k++)
+                {
+                    if ((ToDip(Warp.Across[r, c, k]) - dip).Length <= 7)
+                    {
+                        return (1, r, c, k);
+                    }
+                }
+            }
+        }
+
+        for (var r = 0; r < Warp.Rows; r++)
+        {
+            for (var c = 0; c <= Warp.Columns; c++)
+            {
+                for (var k = 0; k < 2; k++)
+                {
+                    if ((ToDip(Warp.Down[r, c, k]) - dip).Length <= 7)
+                    {
+                        return (2, r, c, k);
+                    }
+                }
+            }
+        }
+
+        return (-1, 0, 0, 0);
+    }
+
+    /// <summary>A click on the picture (not on a point): 交叉拆分 there; the new crossing is then dragged. Null = off the picture.</summary>
+    public (int Row, int Column)? SplitWarpAt(Point pixel)
+    {
+        if (Warp.Locate(pixel) is not { } at)
+        {
+            return null;
+        }
+
+        var crossing = Warp.SplitAt(at.U, at.V);
+        WarpChanged();
+        return crossing;
+    }
+
+    /// <summary>A crossing or handle dragged to <paramref name="pixel"/> (tests and the mouse).</summary>
+    public void DragWarp((int Kind, int R, int C, int End) grab, Point pixel)
+    {
+        var to = new Point(Math.Clamp(pixel.X, -_imageWidth, _imageWidth * 2.0), Math.Clamp(pixel.Y, -_imageHeight, _imageHeight * 2.0));
+        switch (grab.Kind)
+        {
+            case 0:
+                Warp.MoveAnchor(grab.R, grab.C, to);
+                break;
+            case 1:
+                Warp.MoveHandle(false, grab.R, grab.C, grab.End, to);
+                break;
+            case 2:
+                Warp.MoveHandle(true, grab.R, grab.C, grab.End, to);
+                break;
+            default:
+                return;
+        }
+
+        WarpChanged();
+    }
+
+    private void WarpChanged()
+    {
+        _warpDirty = true;
         InvalidateVisual();
         Changed?.Invoke();
     }
 
-    private int MeshHit(Point dip)
+    protected override void OnMouseLeave(MouseEventArgs e)
     {
-        for (var i = 0; i < Mesh.Length; i++)
+        if (_hover != null)
         {
-            if ((ToDip(Mesh[i]) - dip).Length <= Grip + 6)
-            {
-                return i;
-            }
+            _hover = null;
+            InvalidateVisual();
         }
-
-        return -1;
     }
 
     private static Point Lerp(Point a, Point b, double t) => new(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t);
@@ -344,7 +461,12 @@ public sealed class EditorOverlay : FrameworkElement
                 _corner = CornerHit(dip);
                 break;
             case EditorOverlayMode.Mesh:
-                _corner = MeshHit(dip);
+                _warpGrab = WarpHit(dip);
+                if (_warpGrab.Kind < 0 && SplitWarpAt(new Point(dip.X / Zoom, dip.Y / Zoom)) is { } crossing)
+                {
+                    _warpGrab = (0, crossing.Row, crossing.Column, 0); // the new crossing follows the drag
+                }
+
                 break;
         }
 
@@ -389,14 +511,17 @@ public sealed class EditorOverlay : FrameworkElement
             case EditorOverlayMode.Keystone:
                 Cursor = CornerHit(dip) >= 0 ? Cursors.SizeAll : Cursors.Arrow;
                 break;
-            case EditorOverlayMode.Mesh when pressed && _corner >= 0:
-                // Free to leave the picture a little (the warp may pull an edge in or out).
-                MoveMeshPoint(_corner, new Point(dip.X / Zoom, dip.Y / Zoom));
+            case EditorOverlayMode.Mesh when pressed && _warpGrab.Kind >= 0:
+                // Free to leave the picture (the canvas grows to hold the result).
+                DragWarp(_warpGrab, new Point(dip.X / Zoom, dip.Y / Zoom));
                 e.Handled = true;
                 return;
             case EditorOverlayMode.Mesh:
-                Cursor = MeshHit(dip) >= 0 ? Cursors.SizeAll : Cursors.Arrow;
-                break;
+                Cursor = WarpHit(dip).Kind >= 0 ? Cursors.SizeAll : Cursors.Cross;
+                _hover = new Point(dip.X / Zoom, dip.Y / Zoom);
+                InvalidateVisual();
+                e.Handled = true;
+                return;
             default:
                 return;
         }
@@ -423,6 +548,7 @@ public sealed class EditorOverlay : FrameworkElement
             _drawing = false;
         }
 
+        _warpGrab = (-1, 0, 0, 0);
         _drag = null;
         _corner = -1;
         ReleaseMouseCapture();

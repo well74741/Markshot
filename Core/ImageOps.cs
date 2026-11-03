@@ -303,11 +303,13 @@ public static class ImageOps
     /// cells, each cell stretched onto the quadrilateral of its four (moved) grid points. Points are in
     /// output pixels, row by row ((columns + 1) per row). Same size as the source; outside = transparent.
     /// </summary>
-    public static BitmapSource MeshWarp(BitmapSource source, IReadOnlyList<Point> points, int columns, int rows)
+    public static BitmapSource MeshWarp(BitmapSource source, IReadOnlyList<Point> points, int columns, int rows, int outputWidth = 0, int outputHeight = 0)
     {
-        var (input, width, height) = ReadPixels(source);
+        var (input, sourceWidth, sourceHeight) = ReadPixels(source);
+        var width = outputWidth > 0 ? outputWidth : sourceWidth;
+        var height = outputHeight > 0 ? outputHeight : sourceHeight;
         var output = new byte[width * height * 4];
-        double cellW = width / (double)columns, cellH = height / (double)rows;
+        double cellW = sourceWidth / (double)columns, cellH = sourceHeight / (double)rows;
         Point P(int c, int r) => points[r * (columns + 1) + c];
         var cells = new List<(int C, int R)>();
         for (var r = 0; r < rows; r++)
@@ -335,13 +337,31 @@ public static class ImageOps
                 {
                     if (InverseBilinear(new Point(x + 0.5, y + 0.5), a, b, cc, d, out var u, out var v))
                     {
-                        Sample(input, width, height, (c + u) * cellW - 0.5, (r + v) * cellH - 0.5, output, (y * width + x) * 4);
+                        Sample(input, sourceWidth, sourceHeight, (c + u) * cellW - 0.5, (r + v) * cellH - 0.5, output, (y * width + x) * 4);
                     }
                 }
             });
         }
 
         return FromPixels(output, width, height);
+    }
+
+    /// <summary>
+    /// 网格形变 (Photoshop-style warp): the picture follows the curved grid of <paramref name="mesh"/>.
+    /// The canvas is exactly as big as the warped picture (<paramref name="origin"/>: where its corner is
+    /// in the original's pixels), so nothing is cut off and no empty border is added.
+    /// </summary>
+    public static BitmapSource Warp(BitmapSource source, WarpMesh mesh, out Point origin, int fine = 64)
+    {
+        var points = mesh.FineGrid(fine);
+        double w = source.PixelWidth, h = source.PixelHeight;
+        var left = Math.Floor(Math.Clamp(points.Min(p => p.X), -w * 2, w * 3));
+        var top = Math.Floor(Math.Clamp(points.Min(p => p.Y), -h * 2, h * 3));
+        var right = Math.Ceiling(Math.Clamp(points.Max(p => p.X), -w * 2, w * 3));
+        var bottom = Math.Ceiling(Math.Clamp(points.Max(p => p.Y), -h * 2, h * 3));
+        origin = new Point(left, top);
+        var shifted = points.Select(p => new Point(p.X - left, p.Y - top)).ToList();
+        return MeshWarp(source, shifted, fine, fine, Math.Max(1, (int)(right - left)), Math.Max(1, (int)(bottom - top)));
     }
 
     /// <summary>The (u, v) in [0, 1]² for which the bilinear patch a-b-c-d (clockwise from top-left) passes through p.</summary>

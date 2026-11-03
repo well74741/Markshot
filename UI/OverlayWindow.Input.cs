@@ -327,7 +327,7 @@ public partial class OverlayWindow
         }
 
 
-        if (_spaceDrag && _mode == DragMode.Creating)
+        if (_spaceDrag && _mode is DragMode.Creating or DragMode.Resizing)
         {
             var dx = point.X - _spaceAnchor.X;
             var dy = point.Y - _spaceAnchor.Y;
@@ -974,7 +974,8 @@ public partial class OverlayWindow
             return;
         }
 
-        if (key == Key.Space && _dragging && _mode == DragMode.Creating && !_spaceDrag)
+        // Space while drawing or resizing the area: the whole area moves with the mouse; released, the drag goes on.
+        if (key == Key.Space && _dragging && _mode is DragMode.Creating or DragMode.Resizing && !_spaceDrag)
         {
             _spaceDrag = true;
             var cursor = Native.CursorPosition();
@@ -1338,6 +1339,12 @@ public partial class OverlayWindow
         if (key == Key.Space && _spaceDrag)
         {
             _spaceDrag = false;
+            if (_mode == DragMode.Resizing)
+            {
+                // The grabbed edge / corner moved with the mouse: resizing goes on from here.
+                _dragOrigin = _selection;
+            }
+
             e.Handled = true;
         }
     }

@@ -70,6 +70,9 @@ static class ImageEditorTest
         enc.Save(f);
     }
 
+    // The picture with its annotations merged (what an angle turns).
+    static BitmapSource Flat(BitmapSource composed) => ImageOps.Normalize(composed);
+
     static object Field(object o, string name) =>
         typeof(PinWindow).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(o)
         ?? typeof(ImageEditorWindow).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(o);
@@ -187,7 +190,14 @@ static class ImageEditorTest
         editor.RotateBy(30);
         Pump(30);
         Check(editor.ImageWidth > 400 && At(editor.Composite, 1, 1).A == 0, "任意角度 (the canvas grows, corners transparent)");
-        editor.UndoStep();
+        editor.RotateBy(30);
+        editor.RotateBy(30);
+        Pump(30);
+        Check(editor.ImageWidth == 300 && editor.ImageHeight == 400, $"three times 30° = 90°: no growing border ({editor.ImageWidth}×{editor.ImageHeight})");
+        editor.RotateBy(-90);
+        Pump(30);
+        Check(editor.ImageWidth == 400 && editor.ImageHeight == 300 && Same(editor.Composite, Flat(clean)), "turned back: exactly the picture again");
+        editor.UndoStep(); editor.UndoStep(); editor.UndoStep(); editor.UndoStep();
         Pump(30);
 
         // ---- crop keeps annotations editable at their place on the picture
@@ -308,20 +318,24 @@ static class ImageEditorTest
         Call(editor, "UpdateHint");
         Check(editor.Hint.Contains("Alt+滚轮 笔刷大小"), "status bar: the pen's keys");
         Call(editor, "StartSession", EditorOverlayMode.Mesh);
-        Check(editor.Hint.Contains("网格点") && editor.Hint.Contains("Enter 应用"), "status bar: the mesh session");
+        Check(editor.Hint.Contains("交叉拆分") && editor.Hint.Contains("Enter 应用"), "status bar: the warp session");
         Call(editor, "CancelSession");
         typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, new object[] { AnnotationTool.None });
 
         // ---- 网格形变 in the editor, 色相 and 曲线
         Call(editor, "StartSession", EditorOverlayMode.Mesh);
         var mesh = (EditorOverlay)Field(editor, "_overlay");
-        Check(!mesh.Ready, "mesh: nothing to apply before a point moves");
-        mesh.MoveMeshPoint(12, new Point(260, 150));
+        Check(!mesh.Ready, "warp: nothing to apply before a split or a drag");
+        var crossing = mesh.SplitWarpAt(new Point(200, 150));
+        Check(crossing == (1, 1) && mesh.Warp.Rows == 2 && mesh.Warp.Columns == 2, "warp: a click splits the grid crosswise there");
+        mesh.DragWarp((0, 1, 1, 0), new Point(260, 150));
+        mesh.DragWarp((1, 0, 0, 1), new Point(140, -30)); // the top edge's handle bends it up
         Pump(50);
         Shot((FrameworkElement)editor.Content, "editor_mesh.png");
         Call(editor, "ApplySession");
         Pump(50);
-        Check(editor.ImageWidth == 400 && At(editor.Composite, 230, 150).R == 200, "mesh applied: the red half reaches the dragged point");
+        Check(At(editor.Composite, 230 - 0, 150 + editor.ImageHeight - 300).R == 200, "warp applied: the red half reaches the dragged crossing");
+        Check(editor.ImageHeight > 300 && editor.ImageWidth == 400, $"the canvas grew to hold the bent top edge ({editor.ImageWidth}×{editor.ImageHeight})");
         editor.UndoStep();
         Pump(30);
         Check(Same(editor.Composite, clean), "undo the mesh");

@@ -426,7 +426,7 @@ public sealed class ImageEditorWindow : PinWindow
         cutRow.Children.Add(TextButton("矩形裁切", "拖出要保留的区域（批注保持可编辑）", () => StartSession(EditorOverlayMode.Crop)));
         cutRow.Children.Add(TextButton("路径裁切", "沿手绘路径抠图，路径外变透明", () => StartSession(EditorOverlayMode.Path)));
         cutRow.Children.Add(TextButton("梯形校正", "拖动四个角对准倾斜的矩形，校正为正矩形", () => StartSession(EditorOverlayMode.Keystone)));
-        cutRow.Children.Add(TextButton("网格形变", "拖动网格点，图片跟着弯曲变形（4×4 网格）", () => StartSession(EditorOverlayMode.Mesh)));
+        cutRow.Children.Add(TextButton("网格形变", "像 PS 的变形：单击图片交叉拆分网格，拖动交点、边角和手柄弯曲图片", () => StartSession(EditorOverlayMode.Mesh)));
 
         var colour = new StackPanel();
         colour.Children.Add(AdjustSlider("亮度", "Brightness", -100, 100, 0));
@@ -704,7 +704,7 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 EditorOverlayMode.Crop => "拖出保留区域 · 拖边角调整 · 拖框内移动",
                 EditorOverlayMode.Path => "按住沿边缘画一圈 · Shift 直线段",
-                EditorOverlayMode.Mesh => "拖动网格点让图片弯曲",
+                EditorOverlayMode.Mesh => "单击图片交叉拆分（虚线预览位置）· 拖交点 / 边角移动 · 拖蓝色手柄弯曲边线",
                 _ => "拖四个角对准倾斜的矩形"
             } + " · Enter 应用 · Esc 取消 · " + view;
         }
@@ -842,6 +842,7 @@ public sealed class ImageEditorWindow : PinWindow
         _history.Clear();
         _beforeGroup.Clear();
         _lastGroup = null;
+        _rotationBase = null;
         _savedChange = _history.ChangeCount;
         _hasImage = true;
         _path = path;
@@ -1089,11 +1090,31 @@ public sealed class ImageEditorWindow : PinWindow
         RefreshPanel();
     }
 
+    /// <summary>
+    /// 应用角度. Several angles in a row turn the picture as it was before the first of them by the
+    /// sum, so the canvas only ever holds the turned picture (it used to turn the previous result,
+    /// transparent corners included, and grew each time).
+    /// </summary>
     public void RotateBy(double degrees)
     {
-        GeometryStep(EditGroup.Turn, () => ImageOps.Rotate(Flattened(), degrees));
+        var continuing = _rotationBase != null && _history.ChangeCount == _rotationChange;
+        var total = (continuing ? _rotationTotal : 0) + degrees;
+        total = Math.IEEERemainder(total, 360);
+        var from = continuing ? _rotationBase : null;
+        GeometryStep(EditGroup.Turn, () =>
+        {
+            var source = from ?? Flattened();
+            _rotationBase = source;
+            return Math.Abs(total) < 0.01 ? source : ImageOps.Rotate(source, total);
+        });
+        _rotationTotal = total;
+        _rotationChange = _history.ChangeCount;
         Fit();
     }
+
+    private BitmapSource? _rotationBase;
+    private double _rotationTotal;
+    private long _rotationChange = -1;
 
     public void CropTo(Int32Rect rect)
     {
@@ -1121,10 +1142,11 @@ public sealed class ImageEditorWindow : PinWindow
         Fit();
     }
 
-    /// <summary>网格形变 with the grid points of <see cref="EditorOverlay.Mesh"/> (annotations go into the pixels).</summary>
-    public void MeshWarpTo(IReadOnlyList<Point> points)
+    /// <summary>网格形变 with a warp (annotations go into the pixels); the canvas fits the warped picture.</summary>
+    public void WarpTo(WarpMesh mesh)
     {
-        GeometryStep(EditGroup.Cut, () => ImageOps.MeshWarp(Flattened(), points, EditorOverlay.MeshColumns, EditorOverlay.MeshRows));
+        GeometryStep(EditGroup.Cut, () => ImageOps.Warp(Flattened(), mesh, out _));
+        Fit();
     }
 
     /// <summary>曲线: the curve window; the picture follows while points are dragged, 取消 puts it back.</summary>
@@ -1246,8 +1268,11 @@ public sealed class ImageEditorWindow : PinWindow
             var side = Math.Max(whole.PixelWidth, whole.PixelHeight);
             var small = side <= 700 ? whole : ImageOps.Resize(whole, Math.Max(1, whole.PixelWidth * 700 / side), Math.Max(1, whole.PixelHeight * 700 / side));
             var scale = small.PixelWidth / (double)whole.PixelWidth;
-            _overlay.MeshPreview = points => ImageOps.MeshWarp(small, points.Select(p => new Point(p.X * scale, p.Y * scale)).ToList(),
-                EditorOverlay.MeshColumns, EditorOverlay.MeshRows);
+            _overlay.WarpPreview = mesh =>
+            {
+                var image = ImageOps.Warp(small, mesh.Scaled(scale), out var origin, 32);
+                return (image, new Rect(origin.X / scale, origin.Y / scale, image.PixelWidth / scale, image.PixelHeight / scale));
+            };
         }
 
         ImageHost.Children.Add(_overlay);
@@ -1255,7 +1280,7 @@ public sealed class ImageEditorWindow : PinWindow
         {
             EditorOverlayMode.Crop => "拖出要保留的区域，拖边角调整。Enter 应用，Esc 取消",
             EditorOverlayMode.Path => "按住鼠标沿要保留的部分画一圈（按住 Shift 走直线）。Enter 应用，Esc 取消",
-            EditorOverlayMode.Mesh => "拖动网格点，图片跟着弯曲变形。Enter 应用，Esc 取消",
+            EditorOverlayMode.Mesh => "单击图片交叉拆分网格，拖动交点、边角和蓝色手柄弯曲图片。Enter 应用，Esc 取消",
             _ => "拖动四个角对准图中倾斜的矩形。Enter 应用，Esc 取消"
         };
         _sessionBar.Visibility = Visibility.Visible;
@@ -1290,7 +1315,7 @@ public sealed class ImageEditorWindow : PinWindow
                 PathCropTo(overlay.PathPoints);
                 break;
             case EditorOverlayMode.Mesh:
-                MeshWarpTo(overlay.Mesh);
+                WarpTo(overlay.Warp);
                 break;
             default:
                 KeystoneTo(overlay.Quad);
