@@ -704,7 +704,9 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 EditorOverlayMode.Crop => "拖出保留区域 · 拖边角调整 · 拖框内移动",
                 EditorOverlayMode.Path => "按住沿边缘画一圈 · Shift 直线段",
-                EditorOverlayMode.Mesh => "单击图片交叉拆分（虚线预览位置）· 拖交点 / 边角移动 · 拖蓝色手柄弯曲边线",
+                EditorOverlayMode.Mesh => _overlay.WarpSplit
+                    ? "拖动图片带动最近的交点 · 拖交点 / 边角移动 · 拖蓝色手柄弯曲边线"
+                    : "单击图片交叉拆分一次（虚线预览位置），之后只需拖动",
                 _ => "拖四个角对准倾斜的矩形"
             } + " · Enter 应用 · Esc 取消 · " + view;
         }
@@ -1261,6 +1263,7 @@ public sealed class ImageEditorWindow : PinWindow
         Toolbar.SetTool(AnnotationTool.None);
         _overlay = new EditorOverlay(mode, _baseImage.PixelWidth, _baseImage.PixelHeight, _zoom);
         _overlay.Changed += UpdateSessionBar;
+        _overlay.Changed += UpdateHint;
         if (mode == EditorOverlayMode.Mesh)
         {
             // The warp is previewed on a small copy of the picture with its annotations.
@@ -1280,7 +1283,7 @@ public sealed class ImageEditorWindow : PinWindow
         {
             EditorOverlayMode.Crop => "拖出要保留的区域，拖边角调整。Enter 应用，Esc 取消",
             EditorOverlayMode.Path => "按住鼠标沿要保留的部分画一圈（按住 Shift 走直线）。Enter 应用，Esc 取消",
-            EditorOverlayMode.Mesh => "单击图片交叉拆分网格，拖动交点、边角和蓝色手柄弯曲图片。Enter 应用，Esc 取消",
+            EditorOverlayMode.Mesh => "先单击图片交叉拆分一次，然后拖动交点、边角和蓝色手柄弯曲图片。Enter 应用，Esc 取消",
             _ => "拖动四个角对准图中倾斜的矩形。Enter 应用，Esc 取消"
         };
         _sessionBar.Visibility = Visibility.Visible;

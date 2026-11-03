@@ -328,6 +328,10 @@ static class ImageEditorTest
         Check(!mesh.Ready, "warp: nothing to apply before a split or a drag");
         var crossing = mesh.SplitWarpAt(new Point(200, 150));
         Check(crossing == (1, 1) && mesh.Warp.Rows == 2 && mesh.Warp.Columns == 2, "warp: a click splits the grid crosswise there");
+        Check(mesh.WarpSplit && mesh.SplitWarpAt(new Point(100, 80)) == null && mesh.Warp.Rows == 2, "warp: split only once, further clicks do not split");
+        Check(mesh.PressWarp(new Point(180, 130)) == (0, 1, 1, 0), "warp: then a press away from the points takes the nearest crossing");
+        mesh.DragWarpTo(new Point(200, 130));
+        Check((mesh.Warp.Anchors[1, 1] - new Point(220, 150)).Length < 0.01, "it moves with the drag, without jumping to the pointer");
         mesh.DragWarp((0, 1, 1, 0), new Point(260, 150));
         mesh.DragWarp((1, 0, 0, 1), new Point(140, -30)); // the top edge's handle bends it up
         Pump(50);

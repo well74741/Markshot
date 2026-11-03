@@ -65,6 +65,10 @@ public sealed class EditorOverlay : FrameworkElement
     private bool _warpDirty = true;
     private (int Kind, int R, int C, int End) _warpGrab = (-1, 0, 0, 0); // kind 0 crossing, 1 across handle, 2 down handle
     private Point? _hover;
+    private Vector _warpOffset; // grabbed point minus the mouse: the point does not jump to the pointer
+
+    /// <summary>The one 交叉拆分 of this session is done: from now on the mouse only drags.</summary>
+    public bool WarpSplit { get; private set; }
 
     /// <summary>The cut-out path.</summary>
     public List<Point> PathPoints { get; } = new();
@@ -225,7 +229,7 @@ public sealed class EditorOverlay : FrameworkElement
         dc.DrawGeometry(null, accent, edges);
 
         // Before a split: the cross that a click would add, along the warped grid.
-        if (_hover is { } hover && _warpGrab.Kind < 0 && WarpHit(ToDip(hover)).Kind < 0 && Warp.Locate(hover, 60) is { } at)
+        if (!WarpSplit && _hover is { } hover && _warpGrab.Kind < 0 && WarpHit(ToDip(hover)).Kind < 0 && Warp.Locate(hover, 60) is { } at)
         {
             var guide = new Pen(new SolidColorBrush(Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), 1) { DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0) };
             var cross = new StreamGeometry();
@@ -326,17 +330,83 @@ public sealed class EditorOverlay : FrameworkElement
         return (-1, 0, 0, 0);
     }
 
-    /// <summary>A click on the picture (not on a point): 交叉拆分 there; the new crossing is then dragged. Null = off the picture.</summary>
+    /// <summary>
+    /// The first click on the picture: 交叉拆分 there (once per session); the new crossing is then dragged.
+    /// Null = off the picture, or already split.
+    /// </summary>
     public (int Row, int Column)? SplitWarpAt(Point pixel)
     {
-        if (Warp.Locate(pixel) is not { } at)
+        if (WarpSplit || Warp.Locate(pixel) is not { } at)
         {
             return null;
         }
 
         var crossing = Warp.SplitAt(at.U, at.V);
+        WarpSplit = true;
         WarpChanged();
         return crossing;
+    }
+
+    /// <summary>After the split, a press away from the points takes the nearest crossing (dragged from where it is).</summary>
+    private (int Kind, int R, int C, int End) NearestCrossing(Point pixel)
+    {
+        var best = (Kind: -1, R: 0, C: 0, End: 0);
+        var distance = double.MaxValue;
+        for (var r = 0; r <= Warp.Rows; r++)
+        {
+            for (var c = 0; c <= Warp.Columns; c++)
+            {
+                var d = (Warp.Anchors[r, c] - pixel).LengthSquared;
+                if (d < distance)
+                {
+                    distance = d;
+                    best = (0, r, c, 0);
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private Point GrabbedPoint((int Kind, int R, int C, int End) grab) => grab.Kind switch
+    {
+        0 => Warp.Anchors[grab.R, grab.C],
+        1 => Warp.Across[grab.R, grab.C, grab.End],
+        2 => Warp.Down[grab.R, grab.C, grab.End],
+        _ => default
+    };
+
+    /// <summary>A press at <paramref name="pixel"/> (tests and the mouse): split first, then grab; returns what is dragged.</summary>
+    public (int Kind, int R, int C, int End) PressWarp(Point pixel)
+    {
+        var grab = WarpHit(ToDip(pixel));
+        if (grab.Kind < 0)
+        {
+            if (!WarpSplit)
+            {
+                if (SplitWarpAt(pixel) is { } crossing)
+                {
+                    grab = (0, crossing.Row, crossing.Column, 0); // the new crossing follows the drag
+                }
+            }
+            else
+            {
+                grab = NearestCrossing(pixel); // drag mode: the nearest crossing comes along
+            }
+        }
+
+        _warpGrab = grab;
+        _warpOffset = grab.Kind >= 0 ? GrabbedPoint(grab) - pixel : default;
+        return grab;
+    }
+
+    /// <summary>The mouse moved to <paramref name="pixel"/> with the button down.</summary>
+    public void DragWarpTo(Point pixel)
+    {
+        if (_warpGrab.Kind >= 0)
+        {
+            DragWarp(_warpGrab, pixel + _warpOffset);
+        }
     }
 
     /// <summary>A crossing or handle dragged to <paramref name="pixel"/> (tests and the mouse).</summary>
@@ -461,12 +531,7 @@ public sealed class EditorOverlay : FrameworkElement
                 _corner = CornerHit(dip);
                 break;
             case EditorOverlayMode.Mesh:
-                _warpGrab = WarpHit(dip);
-                if (_warpGrab.Kind < 0 && SplitWarpAt(new Point(dip.X / Zoom, dip.Y / Zoom)) is { } crossing)
-                {
-                    _warpGrab = (0, crossing.Row, crossing.Column, 0); // the new crossing follows the drag
-                }
-
+                PressWarp(new Point(dip.X / Zoom, dip.Y / Zoom));
                 break;
         }
 
@@ -513,11 +578,12 @@ public sealed class EditorOverlay : FrameworkElement
                 break;
             case EditorOverlayMode.Mesh when pressed && _warpGrab.Kind >= 0:
                 // Free to leave the picture (the canvas grows to hold the result).
-                DragWarp(_warpGrab, new Point(dip.X / Zoom, dip.Y / Zoom));
+                DragWarpTo(new Point(dip.X / Zoom, dip.Y / Zoom));
                 e.Handled = true;
                 return;
             case EditorOverlayMode.Mesh:
-                Cursor = WarpHit(dip).Kind >= 0 ? Cursors.SizeAll : Cursors.Cross;
+                // Before the split: a cross to place it; after it: dragging only.
+                Cursor = WarpHit(dip).Kind >= 0 ? Cursors.SizeAll : WarpSplit ? Cursors.Hand : Cursors.Cross;
                 _hover = new Point(dip.X / Zoom, dip.Y / Zoom);
                 InvalidateVisual();
                 e.Handled = true;

@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.20`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.21`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -621,6 +621,10 @@ un.ps1 batch1 menu`。
 - 网格形变改为 PS 式变形：`Core/WarpMesh`（交点 `Anchors`、横边手柄 `Across`、竖边手柄 `Down`，每格是四条三次贝塞尔边的 Coons 面）。
   `SplitAt(u, v)` 交叉拆分（被切的边 de Casteljau 分割，新线过 1/3、2/3 处的点求手柄）；`MoveAnchor` 带手柄，`MoveHandle` 在内部交点镜像对侧手柄；`Locate` 采样 + 细化求逆。
   `ImageOps.Warp` = 64×64 细网格 + `MeshWarp`（加了输出尺寸），画布取变形后的外接框。`EditorOverlay` 的 Mesh 模式画曲线边、手柄、交点和虚线十字预览。
+
+## 8.1.21 0.8.21 变更
+
+- 网格形变每次只交叉拆分一次（`EditorOverlay.WarpSplit`）；之后在空白处按下 = 抓最近的交点拖动（`PressWarp` / `DragWarpTo`，记住抓取偏移，不跳到指针），光标变手形，不再显示拆分十字。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 
