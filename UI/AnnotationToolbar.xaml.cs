@@ -841,16 +841,29 @@ public partial class AnnotationToolbar : UserControl
     private void TextMenu_Click(object sender, RoutedEventArgs e) =>
         ShowVariantMenu((Button)sender, ("文字", AnnotationTool.Text), ("水印", AnnotationTool.Watermark));
 
+    private ContextMenu? _openMenu;
     private Button? _menuClosedAnchor;
     private long _menuClosedAt;
+    private bool _suppressMenuOpen;
+    private readonly HashSet<Button> _menuAnchors = new();
 
     private void ShowVariantMenu(Button anchor, params (string Label, AnnotationTool Tool)[] items)
     {
-        // A click on the arrow while its menu is open closes the menu first (click outside); that
-        // same click must not open it again — the arrow works as an open / close switch.
-        if (ReferenceEquals(_menuClosedAnchor, anchor) && Environment.TickCount64 - _menuClosedAt < 300)
+        // The arrow is an open / close switch. A press on it while its menu is open closes the menu;
+        // the click that follows must not open it again. Which comes first (the menu's Closed or the
+        // button's Click) varies, so the press itself is noted too.
+        if (_menuAnchors.Add(anchor))
         {
+            anchor.PreviewMouseLeftButtonDown += (_, _) =>
+                _suppressMenuOpen = _openMenu != null ||
+                                    (ReferenceEquals(_menuClosedAnchor, anchor) && Environment.TickCount64 - _menuClosedAt < 300);
+        }
+
+        if (_suppressMenuOpen || (ReferenceEquals(_menuClosedAnchor, anchor) && Environment.TickCount64 - _menuClosedAt < 300))
+        {
+            _suppressMenuOpen = false;
             _menuClosedAnchor = null;
+            _openMenu?.SetCurrentValue(ContextMenu.IsOpenProperty, false);
             return;
         }
 
@@ -866,9 +879,15 @@ public partial class AnnotationToolbar : UserControl
 
         // While a style menu is open the windows must not take the focus back (it would close it).
         IsMenuOpen = true;
+        _openMenu = menu;
         menu.Closed += (_, _) =>
         {
-            IsMenuOpen = false;
+            if (ReferenceEquals(_openMenu, menu))
+            {
+                _openMenu = null;
+            }
+
+            IsMenuOpen = _openMenu != null;
             _menuClosedAnchor = anchor;
             _menuClosedAt = Environment.TickCount64;
         };

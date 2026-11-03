@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.13`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.14`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -515,6 +515,11 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
   截图提示 / 尺寸框 / 翻译条、录屏工具栏与弹出面板、保存提示；菜单和提示气泡用类处理器在打开时挂上。
 - 设置新增「样式」页：主题、界面大小、贴图阴影（从快捷键页挪来）。选择即预览；未保存关闭时 App 重新应用已保存的主题和大小。
 - 修复：录屏预览不再用 MediaElement 报的时长替换 ffmpeg 的（Windows 播放器有时报短，导致出点提前、导出少了结尾）。
+
+## 8.1.12 0.8.14 变更
+
+- 批注按钮旁 ▾ 的开 / 关：菜单打开时点箭头，菜单的 Closed 与按钮的 Click 先后顺序不固定，先 Click 时会立刻开出第二个菜单再被关掉（闪一下）。
+  现在箭头的 PreviewMouseLeftButtonDown 记下“菜单开着 / 刚关”（`_suppressMenuOpen`），随后的 Click 只关不开；`_openMenu` 记当前菜单。harness `menu` 覆盖两种顺序。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 
