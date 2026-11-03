@@ -525,9 +525,17 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 
 - `tests/Markshot.Tests`：原先放在 %TEMP% 的 harness，按模式运行（`Markshot.Tests.exe batch1` …），路径经 `Repo.Root` 找仓库根目录。
   `Markshot.csproj` 里 `Compile/Page/None Remove="tests\**"`，测试代码不会编进程序。
-- `tests/run.ps1`：每个套件单独进程运行，出现 `FAIL` 行、崩溃或非零退出即失败；截图与日志写到 `tests/out/`（gitignore）。可只跑部分：`testsun.ps1 batch1 menu`。
+- `tests/run.ps1`：每个套件单独进程运行，出现 `FAIL` 行、崩溃或非零退出即失败；截图与日志写到 `tests/out/`（gitignore）。可只跑部分：`tests
+un.ps1 batch1 menu`。
 - CI：`.github/workflows/ci.yml` 在 push main / PR 时跑全部套件；`release.yml` 打包前先跑测试，不通过就不发布。
 - 不进默认列表的：translate（要本地 mock LLM，`tools/mock_llm.py`）、真实抓屏 / 系统声音 / 麦克风（会录到真实内容）。
+
+## 8.1.14 大文件拆分（只搬代码，行为不变）
+
+- `OverlayWindow`：`.xaml.cs`（字段、构造、生命周期）+ `.Selection.cs`（选区 / 套索 / 尺寸框 / 提示 / 工具栏摆放 / 放大镜）+ `.Input.cs`（鼠标键盘）
+  + `.Annotations.cs`（批注工具、元素选择、文字水印、撤销）+ `.Finish.cs`（合成与关闭：复制 / 保存 / 贴图 / 翻译 / 录屏 / OCR）+ `.Translation.cs`（原位翻译）。
+- `PinWindow`：`.xaml.cs`（显示、缩放、拖动、阴影、快照）+ `.Editing.cs` + `.Toolbar.cs` + `.Orientation.cs`（翻转旋转、光带）+ `.Translation.cs` + `.Menu.cs`。
+- 拆分前后逐个标识符计数一致（只多了新文件的类声明）。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 
