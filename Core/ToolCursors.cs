@@ -17,7 +17,11 @@ public static class ToolCursors
     private static readonly List<CursorHandle> Handles = new();
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr LoadCursorFromFile(string fileName);
+    private static extern IntPtr LoadImage(IntPtr instance, string name, uint type, int width, int height, uint load);
+
+    private const uint IMAGE_CURSOR = 2;
+    private const uint LR_LOADFROMFILE = 0x10;
+    private const uint LR_DEFAULTSIZE = 0x40;
 
     [DllImport("user32.dll")]
     private static extern bool DestroyCursor(IntPtr cursor);
@@ -100,7 +104,7 @@ public static class ToolCursors
                 dc.DrawEllipse(line.Brush, null, new Point(16, 16), 1.2, 1.2);
             }
 
-            return SaveCursor(visual, 32, 16, 16, "rotate-light.cur");
+            return SaveCursor(visual, 32, 16, 16, "rotate-light.cur", trueSize: false);
         }
         catch (Exception ex)
         {
@@ -127,7 +131,8 @@ public static class ToolCursors
         return head;
     }
 
-    private static Cursor? SaveCursor(Visual visual, int size, int hotX, int hotY, string fileName)
+    /// <param name="trueSize">Brush rings must show at their real pixel size; small symbols follow the system cursor size.</param>
+    private static Cursor? SaveCursor(Visual visual, int size, int hotX, int hotY, string fileName, bool trueSize = true)
     {
         var bitmap = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(visual);
@@ -166,7 +171,11 @@ public static class ToolCursors
 
         var file = Path.Combine(directory, fileName);
         File.WriteAllBytes(file, cur.ToArray());
-        var handle = LoadCursorFromFile(file);
+        // At its real size: LoadCursorFromFile scales a cursor to the system cursor size, which made the
+        // brush ring smaller than what the eraser / pen really covers once the ring outgrew 64 px.
+        var handle = trueSize
+            ? LoadImage(IntPtr.Zero, file, IMAGE_CURSOR, size, size, LR_LOADFROMFILE)
+            : LoadImage(IntPtr.Zero, file, IMAGE_CURSOR, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
         if (handle == IntPtr.Zero)
         {
             return null;

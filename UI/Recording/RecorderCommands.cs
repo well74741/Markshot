@@ -11,10 +11,13 @@ namespace Markshot.UI.Recording;
 /// </summary>
 public static class RecorderCommands
 {
-    public static readonly string[] Names = { "start", "stop", "pause", "exit" };
+    public static readonly string[] Names = { "start", "stop", "pause", "exit", "show" };
     private static readonly List<(EventWaitHandle Handle, RegisteredWaitHandle Wait)> Listeners = new();
 
-    private static string EventName(string command) => @"Local\Markshot.Recorder." + command;
+    /// <summary>Event name prefix (tests use their own so they never reach a running Markshot).</summary>
+    internal static string Prefix = @"Local\Markshot.Recorder.";
+
+    private static string EventName(string command) => Prefix + command;
 
     /// <summary>Second instance: pass the command on. False when no Markshot is listening.</summary>
     public static bool Send(string command)

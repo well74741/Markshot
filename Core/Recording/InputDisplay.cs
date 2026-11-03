@@ -103,8 +103,8 @@ public sealed class KeyPills
             var w = textSize.Width + Padding * 2 * k;
             y -= h;
             using (var path = RoundedRect(x, y, w, h, Radius * k))
-            using (var fill = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb((int)(214 * alpha), 18, 18, 18)))
-            using (var stroke = new System.Drawing.Pen(System.Drawing.Color.FromArgb((int)(56 * alpha), 255, 255, 255), (float)Math.Max(1, k)))
+            using (var fill = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb((int)(150 * alpha), 18, 18, 18)))
+            using (var stroke = new System.Drawing.Pen(System.Drawing.Color.FromArgb((int)(40 * alpha), 255, 255, 255), (float)Math.Max(1, k)))
             {
                 graphics.FillPath(fill, path);
                 graphics.DrawPath(stroke, path);

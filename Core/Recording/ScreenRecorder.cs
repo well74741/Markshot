@@ -276,7 +276,7 @@ public sealed class ScreenRecorder : IDisposable
     /// <summary>Starts writing frames (the clock has just started).</summary>
     public void Go()
     {
-        _thread = new Thread(Run) { IsBackground = true, Name = "Markshot screen recorder", Priority = ThreadPriority.AboveNormal };
+        _thread = new Thread(Run) { IsBackground = true, Name = "Markshot screen recorder" };
         _thread.Start();
     }
 
@@ -410,8 +410,10 @@ public sealed class ScreenRecorder : IDisposable
             var screen = RecordNative.GetDC(IntPtr.Zero);
             try
             {
-                RecordNative.BitBlt(_memoryDc, 0, 0, _rect.Width, _rect.Height, screen, _rect.X, _rect.Y,
-                    RecordNative.SRCCOPY | RecordNative.CAPTUREBLT);
+                // No CAPTUREBLT: it makes Windows hide and re-show the mouse pointer on every grab, and
+                // the pointer stuttered / felt slow while recording. With desktop composition the
+                // composed screen (layered windows included) is read either way.
+                RecordNative.BitBlt(_memoryDc, 0, 0, _rect.Width, _rect.Height, screen, _rect.X, _rect.Y, RecordNative.SRCCOPY);
             }
             finally
             {

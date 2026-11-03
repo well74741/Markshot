@@ -380,6 +380,7 @@ public partial class OverlayWindow : Window
     {
         Toolbar.SetMode(AnnotationToolbarMode.Capture);
         Toolbar.ToolChanged += OnToolbarToolChanged;
+        Toolbar.WatermarkToggled += OnWatermarkToggled;
         Toolbar.VariantChanged += OnToolbarVariantChanged;
         Toolbar.SettingsChanged += ApplyToolbarSettings;
         Toolbar.UndoRequested += Undo;
@@ -425,6 +426,7 @@ public partial class OverlayWindow : Window
     private void OnToolbarToolChanged(AnnotationTool tool)
     {
         _textEditor.Commit();
+        _watermarkOff = false; // choosing the watermark tool means: show one
         _tool = tool;
         _thickness = Toolbar.Thickness;
         ClearAnnotationSelection();
@@ -464,10 +466,36 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (_watermarkOff)
+        {
+            Toolbar.SetWatermarkOn(AnnotationOps.FindWatermark(Editor.Items) != null);
+            return;
+        }
+
         var watermark = AnnotationOps.EnsureWatermark(Editor.Items, SnapRect(_selection), Toolbar, _history);
         Toolbar.SyncFrom(watermark);
+        Toolbar.SetWatermarkOn(true);
         UpdateUndoButtons();
         Editor.InvalidateVisual();
+    }
+
+    private bool _watermarkOff;
+
+    /// <summary>The watermark switch: off takes the watermark away (undoable), on brings one back.</summary>
+    private void OnWatermarkToggled(bool on)
+    {
+        _watermarkOff = !on;
+        if (!on && AnnotationOps.FindWatermark(Editor.Items) is { } watermark)
+        {
+            _history.Checkpoint(Editor.Items);
+            Editor.Items.Remove(watermark);
+            Editor.HoverWatermark = null;
+            UpdateUndoButtons();
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        ActivateWatermarkIfNeeded();
     }
 
     private void ApplyToolbarSettings()
@@ -860,11 +888,55 @@ public partial class OverlayWindow : Window
         }
     }
 
+    private readonly List<Border> _extraHints = new();
+
+    /// <summary>The hint sits at the top centre of every monitor (copies follow the first one's visibility).</summary>
     private void PositionHint()
     {
         Hint.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        Canvas.SetLeft(Hint, Math.Max(8, (ActualWidth - Hint.DesiredSize.Width) / 2));
-        Canvas.SetTop(Hint, 28);
+        var monitors = Core.Recording.Monitors.All()
+            .Where(m => m.Bounds.X < _bounds.X + _bounds.Width && m.Bounds.X + m.Bounds.Width > _bounds.X &&
+                        m.Bounds.Y < _bounds.Y + _bounds.Height && m.Bounds.Y + m.Bounds.Height > _bounds.Y)
+            .ToList();
+        if (monitors.Count <= 1)
+        {
+            Canvas.SetLeft(Hint, Math.Max(8, (ActualWidth - Hint.DesiredSize.Width) / 2));
+            Canvas.SetTop(Hint, 28);
+            return;
+        }
+
+        while (_extraHints.Count < monitors.Count - 1)
+        {
+            var copy = new Border
+            {
+                Background = Hint.Background,
+                BorderBrush = Hint.BorderBrush,
+                BorderThickness = Hint.BorderThickness,
+                CornerRadius = Hint.CornerRadius,
+                Padding = Hint.Padding,
+                IsHitTestVisible = false,
+                Child = new TextBlock
+                {
+                    Text = ((TextBlock)Hint.Child).Text,
+                    Foreground = ((TextBlock)Hint.Child).Foreground,
+                    FontSize = ((TextBlock)Hint.Child).FontSize
+                }
+            };
+            copy.SetBinding(VisibilityProperty, new System.Windows.Data.Binding(nameof(Visibility)) { Source = Hint });
+            copy.SetBinding(OpacityProperty, new System.Windows.Data.Binding(nameof(Opacity)) { Source = Hint });
+            UiLayer.Children.Insert(UiLayer.Children.IndexOf(Hint) + 1, copy);
+            _extraHints.Add(copy);
+        }
+
+        for (var i = 0; i < monitors.Count; i++)
+        {
+            var element = i == 0 ? Hint : _extraHints[i - 1];
+            var b = monitors[i].Bounds;
+            var left = (b.X - _bounds.X) / _scale;
+            var width = b.Width / _scale;
+            Canvas.SetLeft(element, left + Math.Max(8, (width - Hint.DesiredSize.Width) / 2));
+            Canvas.SetTop(element, (b.Y - _bounds.Y) / _scale + 28);
+        }
     }
 
     private void PositionToolbar()

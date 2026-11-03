@@ -144,6 +144,22 @@
                         </RadioButton>
                     </StackPanel>
 
+                    <!-- The text button's two styles: 文字 / 水印 (also in its ▾ menu and with Tab). -->
+                    <StackPanel x:Name="TextVariants" Orientation="Horizontal" Visibility="Collapsed">
+                        <RadioButton x:Name="VariantText" Style="{StaticResource IconToolRadio}" Tag="Text" GroupName="Variant" Checked="Variant_Checked" ToolTip="文字">
+                            <Border Style="{StaticResource IconTextMask}" />
+                        </RadioButton>
+                        <RadioButton x:Name="VariantWatermark" Style="{StaticResource IconToolRadio}" Tag="Watermark" GroupName="Variant" Checked="Variant_Checked" ToolTip="水印">
+                            <Border Style="{StaticResource IconWatermarkMask}" />
+                        </RadioButton>
+                    </StackPanel>
+
+                    <StackPanel x:Name="WatermarkGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <ToggleButton x:Name="WatermarkToggle" Style="{StaticResource ToolToggle}" Content="开启"
+                                      Click="WatermarkToggle_Click" ToolTip="水印开关：关闭即去掉水印（可撤销）" />
+                    </StackPanel>
+
                     <StackPanel x:Name="MosaicVariants" Orientation="Horizontal" Visibility="Collapsed">
                         <TextBlock Text="类型" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" Margin="4,0,6,0" />
                         <Border Background="#FF2A2A2A" CornerRadius="5" Padding="2" VerticalAlignment="Center">

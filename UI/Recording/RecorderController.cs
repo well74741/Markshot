@@ -110,6 +110,10 @@ public sealed class RecorderController
             case "exit":
                 RequestClose();
                 break;
+            case "show":
+                RevealUi();
+                _bar?.Activate();
+                break;
         }
     }
 
@@ -152,7 +156,8 @@ public sealed class RecorderController
     // ------------------------------------------------------------------ open / close
 
     /// <summary>Opens the recorder on an area (or the last / a default one); already open: brings it up.</summary>
-    public void Open(Int32Rect? area = null)
+    /// <param name="fromCapture">The capture selection turns into the area: no dimming, the frame just changes colour.</param>
+    public void Open(Int32Rect? area = null, bool fromCapture = false)
     {
         if (IsOpen)
         {
@@ -172,11 +177,18 @@ public sealed class RecorderController
         KeysOn = false;
         _frame = new RecordFrameWindow(this);
         _bar = new RecordBarWindow(this);
-        new RecordDimWindow(Rect).Show(); // first, so the frame and the toolbar stay bright above it
+        if (!fromCapture)
+        {
+            new RecordDimWindow(Rect).Show(); // first, so the frame and the toolbar stay bright above it
+        }
+
         _frame.Show();
         _bar.Show(); // after the frame: above it
         Layout();
-        _frame.PlayOpen();
+        if (!fromCapture)
+        {
+            _frame.PlayOpen();
+        }
         if (FFmpeg.Path != null)
         {
             _ = FFmpeg.DetectH264Async(); // warm up: picking the encoder takes a moment the first time
@@ -345,9 +357,25 @@ public sealed class RecorderController
     /// <summary>Places the frame, the preview and the toolbar around the area.</summary>
     public void Layout()
     {
-        _frame?.Place();
-        _preview?.Place();
-        _bar?.Place();
+        var moves = new List<WindowMove>();
+        if (_frame?.Target() is { } frame)
+        {
+            moves.Add(frame);
+        }
+
+        if (_preview?.Target() is { } preview)
+        {
+            moves.Add(preview);
+        }
+
+        if (_bar?.Target() is { } bar)
+        {
+            moves.Add(bar);
+        }
+
+        WindowMoves.Apply(moves);
+        _frame?.Placed();
+        _bar?.Placed();
     }
 
     // ------------------------------------------------------------------ options
@@ -642,7 +670,7 @@ public sealed class RecorderController
         Changed?.Invoke();
     }
 
-    /// <summary>重录: throws this take away and records again with the same settings.</summary>
+    /// <summary>重录: throws this take away and goes back to setting up (recording starts when 开始 is pressed).</summary>
     public void Retake()
     {
         if (Phase == RecordPhase.Preview && Take is { Saved: false, Copied: false })
@@ -673,14 +701,6 @@ public sealed class RecorderController
         _bar?.SetProtected(false);
         Layout();
         Changed?.Invoke();
-        var generation = _generation;
-        _ = Task.Delay(250).ContinueWith(_ =>
-        {
-            if (generation == _generation && Phase == RecordPhase.Setup)
-            {
-                Start();
-            }
-        }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     private void Fail(string message)

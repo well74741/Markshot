@@ -67,7 +67,17 @@ public partial class RecordBarWindow : Window
             var border = 0x00333333;
             DwmSetWindowAttribute(handle, DWMWA_BORDER_COLOR, ref border, sizeof(int));
         };
-        SizeChanged += (_, _) => Place();
+        // Off screen until laid out, then straight to its place (it used to show up elsewhere first).
+        Left = -32000;
+        Top = -32000;
+        ContentRendered += (_, _) => Place();
+        SizeChanged += (_, _) =>
+        {
+            if (_placed)
+            {
+                Place();
+            }
+        };
         StateChanged += (_, _) => _controller.SetUiHidden(WindowState == WindowState.Minimized);
         Closing += (_, e) =>
         {
@@ -152,10 +162,27 @@ public partial class RecordBarWindow : Window
     /// <summary>Below the area when it fits, else above, else inside along its bottom; centred, on the work area.</summary>
     public void Place()
     {
-        var handle = new WindowInteropHelper(this).Handle;
-        if (handle == IntPtr.Zero || WindowState == WindowState.Minimized)
+        if (Target(force: true) is not { } move)
         {
             return;
+        }
+
+        // The first time it also goes on top (above the frame); later moves keep the order.
+        Native.SetWindowPos(move.Handle, _placed ? IntPtr.Zero : Native.HWND_TOPMOST, move.X, move.Y, 0, 0,
+            Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | (_placed ? Native.SWP_NOZORDER : 0));
+        _placed = true;
+        Placed();
+    }
+
+    public void Placed() => UpdateProtection();
+
+    /// <summary>Where the toolbar goes for the current area (null until it has been laid out once).</summary>
+    internal WindowMove? Target(bool force = false)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || WindowState == WindowState.Minimized || (!_placed && !force))
+        {
+            return null;
         }
 
         Native.GetWindowRect(handle, out var bar);
@@ -183,11 +210,7 @@ public partial class RecordBarWindow : Window
         }
 
         var x = Math.Clamp(r.X + r.Width / 2 - bar.Width / 2, work.X + 4, Math.Max(work.X + 4, work.X + work.Width - bar.Width - 4));
-        // Re-inserting the window on top at every move made it flicker while the area was dragged.
-        Native.SetWindowPos(handle, _placed ? IntPtr.Zero : Native.HWND_TOPMOST, x, y, 0, 0,
-            Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | (_placed ? Native.SWP_NOZORDER : 0));
-        _placed = true;
-        UpdateProtection();
+        return new WindowMove(handle, x, y, 0, 0, false);
     }
 
     // ------------------------------------------------------------------ state → controls
@@ -216,8 +239,8 @@ public partial class RecordBarWindow : Window
         FpsButton.Content = $"{config.Fps} fps";
         if (!WidthBox.IsKeyboardFocusWithin && !HeightBox.IsKeyboardFocusWithin)
         {
-            WidthBox.Text = _controller.Rect.Width.ToString(CultureInfo.InvariantCulture);
-            HeightBox.Text = _controller.Rect.Height.ToString(CultureInfo.InvariantCulture);
+            SetText(WidthBox, _controller.Rect.Width.ToString(CultureInfo.InvariantCulture));
+            SetText(HeightBox, _controller.Rect.Height.ToString(CultureInfo.InvariantCulture));
         }
 
         DelayToggle.IsChecked = config.DelayOn;
@@ -241,12 +264,16 @@ public partial class RecordBarWindow : Window
             _ => "开始"
         };
         StartGlyph.CornerRadius = new CornerRadius(stopping ? 2 : 5);
-        RecDot.Fill = new SolidColorBrush(phase switch
+        var dot = phase switch
         {
             RecordPhase.Recording => RecordFrameWindow.Red,
             RecordPhase.Paused => RecordFrameWindow.Amber,
             _ => Color.FromRgb(0x7A, 0x7A, 0x7A)
-        });
+        };
+        if (RecDot.Fill is not SolidColorBrush { } current || current.Color != dot)
+        {
+            RecDot.Fill = new SolidColorBrush(dot);
+        }
         TimeText.Text = FormatTime(_controller.Elapsed, false);
         RetakeButton.IsEnabled = phase != RecordPhase.Finishing;
 
@@ -264,6 +291,14 @@ public partial class RecordBarWindow : Window
                 StatusText.Visibility = Visibility.Visible;
                 _statusTimer.Stop();
             }
+        }
+    }
+
+    private static void SetText(TextBox box, string text)
+    {
+        if (box.Text != text)
+        {
+            box.Text = text;
         }
     }
 

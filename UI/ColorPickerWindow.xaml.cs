@@ -25,6 +25,30 @@ public partial class ColorPickerWindow : Window
 
         SelectedColor = color;
         SetFromColor(color);
+        // Esc: stop picking a colour on screen, or close the panel (same as 取消); Enter confirms.
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape)
+            {
+                if (_shield != null)
+                {
+                    _shield.End(false);
+                }
+                else
+                {
+                    Cancel_Click(this, new RoutedEventArgs());
+                }
+
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter && _shield != null)
+            {
+                _shield.End(true, true);
+                e.Handled = true;
+            }
+        };
+        // Clicking the panel itself while picking ends it, keeping the live colour.
+        PreviewMouseDown += (_, _) => _shield?.End(true);
         Loaded += (_, _) =>
         {
             if (Content is FrameworkElement root)
@@ -289,6 +313,7 @@ public partial class ColorPickerWindow : Window
         EyedropperButton.Background = (Brush)FindResource("Accent");
         Mouse.OverrideCursor = Cursors.Cross;
         _shield.Show();
+        Activate(); // the panel keeps the keyboard (Esc / Enter); the layer never takes the focus
 
         // Keep the panel above the layer so it stays visible.
         var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
@@ -317,24 +342,22 @@ public partial class ColorPickerWindow : Window
             // (GetPixel then differs from the real pixel by at most one level).
             Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
             ShowInTaskbar = false;
+            ShowActivated = false;
             Topmost = true;
             ResizeMode = ResizeMode.NoResize;
             Cursor = Cursors.Cross;
-            Focusable = true;
             SourceInitialized += (_, _) =>
             {
                 var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                // Never activated: the colour panel is modal and took the focus straight back, which
+                // ended picking at once (the cross vanished as soon as it left the panel).
+                SetWindowLong(handle, -20, GetWindowLong(handle, -20) | 0x08000000 /* WS_EX_NOACTIVATE */ | Native.WS_EX_TOOLWINDOW);
                 Native.SetWindowPos(handle, Native.HWND_TOPMOST,
                     Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN),
                     Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN),
                     Native.GetSystemMetrics(Native.SM_CXVIRTUALSCREEN),
                     Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN),
                     Native.SWP_SHOWWINDOW);
-            };
-            Loaded += (_, _) =>
-            {
-                Activate();
-                Keyboard.Focus(this);
             };
             MouseMove += (_, _) => Sample();
             // The layer keeps the whole click (down and up), so the window underneath never
@@ -362,26 +385,16 @@ public partial class ColorPickerWindow : Window
                 e.Handled = true;
                 Finish(false);
             };
-            KeyDown += (_, e) =>
-            {
-                if (e.Key == Key.Escape)
-                {
-                    Finish(false);
-                }
-                else if (e.Key == Key.Enter)
-                {
-                    Finish(true, true);
-                }
-            };
-            Deactivated += (_, _) =>
-            {
-                // Alt+Tab or clicking the panel's own controls ends picking, keeping the live colour.
-                if (!_done && IsLoaded && !_pressed)
-                {
-                    Finish(true);
-                }
-            };
         }
+
+        /// <summary>Ends picking from the panel (Esc / Enter / a click on the panel).</summary>
+        public void End(bool picked, bool clicked = false) => Finish(picked, clicked);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+        private static extern int GetWindowLong(IntPtr hWnd, int index);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
+        private static extern int SetWindowLong(IntPtr hWnd, int index, int value);
 
         private void Sample()
         {

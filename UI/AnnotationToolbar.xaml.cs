@@ -102,6 +102,9 @@ public partial class AnnotationToolbar : UserControl
     public event Action? CloseRequested;
     public event Action? ApplyRequested;
     public event Action? RecordRequested;
+
+    /// <summary>The watermark switch: true = show a watermark, false = remove it.</summary>
+    public event Action<bool>? WatermarkToggled;
     public event Action<bool>? TranslateToggled;
 
     public AnnotationToolbar()
@@ -545,6 +548,11 @@ public partial class AnnotationToolbar : UserControl
                 break;
 
             case ToolFamily.Text:
+                if (annotation == null)
+                {
+                    TextVariants.Visibility = Visibility.Visible; // 文字 / 水印
+                }
+
                 WidthLabel.Text = "字号";
                 WidthSlider.Minimum = 10;
                 WidthSlider.Maximum = 96;
@@ -553,7 +561,9 @@ public partial class AnnotationToolbar : UserControl
                 break;
 
             case ToolFamily.Watermark:
-                // Watermark: size, tilt, opacity and colour.
+                // Watermark: 文字 / 水印, the on / off switch, size, tilt, opacity and colour.
+                TextVariants.Visibility = Visibility.Visible;
+                WatermarkGroup.Visibility = Visibility.Visible;
                 WidthLabel.Text = "大小";
                 WidthSlider.Minimum = 10;
                 WidthSlider.Maximum = 120;
@@ -619,8 +629,31 @@ public partial class AnnotationToolbar : UserControl
         }
     }
 
+    /// <summary>Shows whether the canvas has a watermark (the switch in the watermark settings).</summary>
+    public void SetWatermarkOn(bool on)
+    {
+        _configuring = true;
+        WatermarkToggle.IsChecked = on;
+        WatermarkToggle.Content = on ? "开启" : "关闭";
+        _configuring = false;
+    }
+
+    private void WatermarkToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_configuring)
+        {
+            return;
+        }
+
+        var on = WatermarkToggle.IsChecked == true;
+        WatermarkToggle.Content = on ? "开启" : "关闭";
+        WatermarkToggled?.Invoke(on);
+    }
+
     private void HideVariants()
     {
+        TextVariants.Visibility = Visibility.Collapsed;
+        WatermarkGroup.Visibility = Visibility.Collapsed;
         RectVariants.Visibility = Visibility.Collapsed;
         LineVariants.Visibility = Visibility.Collapsed;
         PenVariants.Visibility = Visibility.Collapsed;
@@ -638,6 +671,8 @@ public partial class AnnotationToolbar : UserControl
         VariantHighlighter.IsChecked = tool == AnnotationTool.Highlighter;
         VariantMosaic.IsChecked = tool == AnnotationTool.Mosaic;
         VariantMosaicBrush.IsChecked = tool == AnnotationTool.MosaicBrush;
+        VariantText.IsChecked = tool == AnnotationTool.Text;
+        VariantWatermark.IsChecked = tool == AnnotationTool.Watermark;
         _configuring = false;
     }
 
@@ -797,8 +832,19 @@ public partial class AnnotationToolbar : UserControl
     private void TextMenu_Click(object sender, RoutedEventArgs e) =>
         ShowVariantMenu((Button)sender, ("文字", AnnotationTool.Text), ("水印", AnnotationTool.Watermark));
 
+    private Button? _menuClosedAnchor;
+    private long _menuClosedAt;
+
     private void ShowVariantMenu(Button anchor, params (string Label, AnnotationTool Tool)[] items)
     {
+        // A click on the arrow while its menu is open closes the menu first (click outside); that
+        // same click must not open it again — the arrow works as an open / close switch.
+        if (ReferenceEquals(_menuClosedAnchor, anchor) && Environment.TickCount64 - _menuClosedAt < 300)
+        {
+            _menuClosedAnchor = null;
+            return;
+        }
+
         var menu = new ContextMenu { PlacementTarget = anchor };
         foreach (var (label, tool) in items)
         {
@@ -811,7 +857,12 @@ public partial class AnnotationToolbar : UserControl
 
         // While a style menu is open the windows must not take the focus back (it would close it).
         IsMenuOpen = true;
-        menu.Closed += (_, _) => IsMenuOpen = false;
+        menu.Closed += (_, _) =>
+        {
+            IsMenuOpen = false;
+            _menuClosedAnchor = anchor;
+            _menuClosedAt = Environment.TickCount64;
+        };
         anchor.ContextMenu = menu;
         menu.IsOpen = true;
     }

@@ -298,6 +298,7 @@ public partial class PinWindow : Window
     {
         Toolbar.SetMode(AnnotationToolbarMode.Pin);
         Toolbar.ToolChanged += OnToolbarToolChanged;
+        Toolbar.WatermarkToggled += OnWatermarkToggled;
         Toolbar.VariantChanged += OnToolbarVariantChanged;
         Toolbar.SettingsChanged += ApplyToolbarSettings;
         Toolbar.UndoRequested += Undo;
@@ -325,6 +326,7 @@ public partial class PinWindow : Window
     private void OnToolbarToolChanged(AnnotationTool tool)
     {
         _textEditor.Commit();
+        _watermarkOff = false; // choosing the watermark tool means: show one
         _tool = tool;
         _thickness = Toolbar.Thickness;
         ClearSelection();
@@ -370,10 +372,36 @@ public partial class PinWindow : Window
         }
 
         var canvas = new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight);
+        if (_watermarkOff)
+        {
+            Toolbar.SetWatermarkOn(AnnotationOps.FindWatermark(Editor.Items) != null);
+            return;
+        }
+
         var watermark = AnnotationOps.EnsureWatermark(Editor.Items, canvas, Toolbar, _history);
         Toolbar.SyncFrom(watermark);
+        Toolbar.SetWatermarkOn(true);
         UpdateUndoButtons();
         Editor.InvalidateVisual();
+    }
+
+    private bool _watermarkOff;
+
+    /// <summary>The watermark switch: off takes the watermark away (undoable), on brings one back.</summary>
+    private void OnWatermarkToggled(bool on)
+    {
+        _watermarkOff = !on;
+        if (!on && AnnotationOps.FindWatermark(Editor.Items) is { } watermark)
+        {
+            _history.Checkpoint(Editor.Items);
+            Editor.Items.Remove(watermark);
+            Editor.HoverWatermark = null;
+            UpdateUndoButtons();
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        ActivateWatermarkIfNeeded();
     }
 
     private void ApplyToolbarSettings()
@@ -2782,6 +2810,11 @@ public partial class PinWindow : Window
             // Never outside the pin (rounded corners included).
             Clip = new RectangleGeometry(new Rect(0, 0, width, height), CornerRadius * _zoom, CornerRadius * _zoom)
         };
+        if (ShapedShadow && Img.Source is { } picture)
+        {
+            // A freehand (lasso) pin: the light only crosses the cut-out shape, not its bounding box.
+            layer.OpacityMask = new ImageBrush(picture) { Stretch = Stretch.Fill };
+        }
         Canvas.SetTop(band, (height - bandHeight) / 2);
         layer.Children.Add(band);
         ImageHost.Children.Add(layer);

@@ -389,15 +389,10 @@ public sealed class HotkeyManager : IDisposable
             };
         }
 
-        if (_mouseBindings.Count > 0)
+        if (_mouseBindings.Count > 0 && !StartMouseHook())
         {
-            _mouseProc = MouseHook;
-            _mouseHook = SetWindowsHookEx(WhMouseLl, _mouseProc, GetModuleHandle(null), 0);
-            if (_mouseHook == IntPtr.Zero)
-            {
-                errors.Add("鼠标按键快捷键：无法安装鼠标钩子");
-                _mouseBindings.Clear();
-            }
+            errors.Add("鼠标按键快捷键：无法安装鼠标钩子");
+            _mouseBindings.Clear();
         }
 
         return errors;
@@ -430,7 +425,7 @@ public sealed class HotkeyManager : IDisposable
                 else
                 {
                     var modifiers = CurrentModifiers();
-                    foreach (var (gesture, action) in _mouseBindings)
+                    foreach (var (gesture, action) in _mouseSnapshot)
                     {
                         if (gesture.VirtualKey == vk && gesture.Modifiers == modifiers)
                         {
@@ -459,6 +454,88 @@ public sealed class HotkeyManager : IDisposable
     }
 
     private delegate IntPtr LowLevelMouseProc(int code, IntPtr wParam, IntPtr lParam);
+
+    // The low-level mouse hook runs on its own thread: every mouse move in the whole system waits
+    // for the hook, so on the (sometimes busy) UI thread it made the pointer lag — e.g. while recording.
+    private Thread? _hookThread;
+    private uint _hookThreadId;
+    private (HotkeyGesture Gesture, Action Action)[] _mouseSnapshot = Array.Empty<(HotkeyGesture, Action)>();
+
+    private bool StartMouseHook()
+    {
+        _mouseSnapshot = _mouseBindings.ToArray();
+        var installed = false;
+        using var ready = new ManualResetEventSlim();
+        _hookThread = new Thread(() =>
+        {
+            _hookThreadId = GetCurrentThreadId();
+            _mouseProc = MouseHook;
+            _mouseHook = SetWindowsHookEx(WhMouseLl, _mouseProc, GetModuleHandle(null), 0);
+            installed = _mouseHook != IntPtr.Zero;
+            ready.Set();
+            if (!installed)
+            {
+                return;
+            }
+
+            while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                TranslateMessage(ref msg);
+                DispatchMessage(ref msg);
+            }
+
+            UnhookWindowsHookEx(_mouseHook);
+            _mouseHook = IntPtr.Zero;
+        })
+        { IsBackground = true, Name = "Markshot mouse hotkeys" };
+        _hookThread.Start();
+        ready.Wait(2000);
+        if (!installed)
+        {
+            _hookThread = null;
+        }
+
+        return installed;
+    }
+
+    private void StopMouseHook()
+    {
+        if (_hookThread == null)
+        {
+            return;
+        }
+
+        PostThreadMessage(_hookThreadId, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+        _hookThread.Join(1000);
+        _hookThread = null;
+        _swallowUp.Clear();
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HookMsg
+    {
+        public IntPtr Hwnd;
+        public uint Message;
+        public IntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public Native.POINT Point;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern int GetMessage(out HookMsg msg, IntPtr hwnd, uint min, uint max);
+
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref HookMsg msg);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref HookMsg msg);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostThreadMessage(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MouseHookData
@@ -505,14 +582,9 @@ public sealed class HotkeyManager : IDisposable
         }
 
         _handlers.Clear();
-        if (_mouseHook != IntPtr.Zero)
-        {
-            UnhookWindowsHookEx(_mouseHook);
-            _mouseHook = IntPtr.Zero;
-        }
-
+        StopMouseHook();
         _mouseBindings.Clear();
-        _swallowUp.Clear();
+        _mouseSnapshot = Array.Empty<(HotkeyGesture, Action)>();
     }
 
     public void Dispose()

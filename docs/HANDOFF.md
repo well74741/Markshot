@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.11`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.12`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -482,6 +482,25 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 任务栏右键菜单 = 跳转列表（`RecorderCommands.UpdateJumpList`，随阶段变：开始 / 取消 / 停止 / 暂停 / 继续 / 退出）。条目运行
   `Markshot.exe --recorder <start|stop|pause|exit>`：第二个实例在单实例检查前把命令用命名事件 `Local\Markshot.Recorder.<cmd>` 交给正在运行的 Markshot 后退出；
   主实例 `RecorderCommands.Listen` → `RecorderController.Command`。
+
+## 8.1.10 0.8.12 变更
+
+- 录屏窗口在显示前就放好位置（框 / 预览在 SourceInitialized 里 Place；工具栏先放在屏幕外，ContentRendered 后归位），不再从别处闪过来。
+- 拖动录制框时三个窗口用 `WindowMoves`（BeginDeferWindowPos / DeferWindowPos / EndDeferWindowPos）一次挪完，工具栏不再闪；
+  工具栏 Refresh 只在值真的变了才赋值（拖动时每次鼠标移动都会刷新）。
+- 鼠标变慢 / 漂移：① 抓屏去掉 `CAPTUREBLT`（它每次抓屏都隐藏再显示鼠标指针）；② 鼠标键快捷键的 WH_MOUSE_LL 钩子从 UI 线程挪到独立线程
+  （`HotkeyManager.StartMouseHook`，SketchPlayer 文档 8.1 #11 的教训：钩子在忙碌的主线程上会拖慢全系统鼠标）；③ 抓屏线程不再提高优先级。
+  ⚠ 去掉 CAPTUREBLT 后，录像里的按键药丸靠 DWM 合成后的屏幕读到分层窗口——需要真机确认药丸仍在录像里。
+- 重录 = 回到调框，不自动开始；从截图进入录屏（`Open(area, fromCapture: true)`）不压暗、不做缩放入场。
+- 托盘菜单录屏项随阶段变化（`App.RecorderMenuItems`）；跳转列表命令新增 `show`。`RecorderCommands.Prefix` 可替换（测试用，避免发到正在运行的 Markshot）。
+- 操作录制药丸底色更透明（alpha 0.84 → 0.59，描边 0.22 → 0.16）。
+- 套索贴图的光带用贴图本身（ImageBrush）做 OpacityMask，只划过抠出的形状。
+- 截图顶部提示在每块显示器顶部各一份（副本绑定主提示的 Visibility / Opacity）。
+- 画笔圈光标改用 `LoadImage(..., size, size, LR_LOADFROMFILE)` 按真实尺寸加载：`LoadCursorFromFile` 会缩到系统光标尺寸，圈超过 64px 后比实际擦除范围小；
+  旋转光标仍按系统尺寸（`trueSize: false`）。
+- 文字工具设置栏加「文字 / 水印」切换（`TextVariants`）；水印设置加开关（`WatermarkGroup`，关 = 去掉水印、可撤销，`_watermarkOff` 期间不自动重建）。
+- 取色器：吸管遮罩层不再激活（WS_EX_NOACTIVATE）——颜色面板是模态的，焦点被抢回导致吸色立刻结束；Esc / Enter 由面板处理（Esc 先退出吸色，再按关闭面板）。
+- 批注按钮旁的 ▾：菜单打开时再点同一个箭头 = 关闭（300 ms 内刚关的菜单不再立即重开）。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

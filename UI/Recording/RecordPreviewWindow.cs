@@ -100,6 +100,7 @@ internal sealed class RecordPreviewWindow : Window
             var handle = new WindowInteropHelper(this).Handle;
             var style = GetWindowLong(handle, Native.GWL_EXSTYLE);
             SetWindowLong(handle, Native.GWL_EXSTYLE, style | Native.WS_EX_TOOLWINDOW);
+            Place(); // over the area before it first shows
         };
         Loaded += (_, _) =>
         {
@@ -144,6 +145,13 @@ internal sealed class RecordPreviewWindow : Window
     {
         get => _media.IsMuted;
         set => _media.IsMuted = value;
+    }
+
+    public WindowMove? Target()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        var r = _controller.Rect;
+        return handle == IntPtr.Zero || !IsVisible ? null : new WindowMove(handle, r.X, r.Y, r.Width, r.Height, true);
     }
 
     public void Place()

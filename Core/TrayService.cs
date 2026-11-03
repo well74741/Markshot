@@ -20,7 +20,7 @@ public sealed class TrayService : IDisposable
         Action exit,
         Func<bool>? canRestore = null,
         Func<bool>? anyClickThrough = null,
-        Action? record = null)
+        Func<IEnumerable<(string Header, Action Action)>>? recorderItems = null)
     {
         // The tray menu is a WPF menu in the app's dark rounded style (not the system one),
         // rebuilt on each open so it only lists what applies right now.
@@ -36,9 +36,14 @@ public sealed class TrayService : IDisposable
 
             Add("截图", capture, App.Config?.CaptureHotkey);
             Add("贴图剪贴板", pin, App.Config?.PinHotkey);
-            if (record != null)
+            if (recorderItems != null)
             {
-                Add("录屏", record, App.Config?.RecordHotkey);
+                var first = true;
+                foreach (var (header, action) in recorderItems())
+                {
+                    Add(header, action, first ? App.Config?.RecordHotkey : null);
+                    first = false;
+                }
             }
 
             if (canRestore?.Invoke() ?? true)

@@ -49,6 +49,7 @@ internal sealed class RecordFrameWindow : Window
             var handle = new WindowInteropHelper(this).Handle;
             var style = GetWindowLong(handle, Native.GWL_EXSTYLE);
             SetWindowLong(handle, Native.GWL_EXSTYLE, style | WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW);
+            Place(); // in place before it first shows (it used to appear elsewhere and jump over)
         };
         controller.Changed += OnChanged;
         controller.Pills.Changed += OnPills;
@@ -121,21 +122,31 @@ internal sealed class RecordFrameWindow : Window
     /// <summary>Band width in physical pixels for the area's monitor.</summary>
     private int BandPixels => (int)Math.Ceiling(BandOut * _controller.Scale);
 
-    public void Place()
+    /// <summary>Where the window goes: the area plus the band around it.</summary>
+    public WindowMove? Target()
     {
         var handle = new WindowInteropHelper(this).Handle;
         if (handle == IntPtr.Zero)
         {
-            return;
+            return null;
         }
 
         var r = _controller.Rect;
         var band = BandPixels;
-        // Moving keeps the stacking order (re-inserting it on top each time made the toolbar over it flicker).
-        Native.SetWindowPos(handle, IntPtr.Zero, r.X - band, r.Y - band, r.Width + band * 2, r.Height + band * 2,
-            Native.SWP_NOACTIVATE | Native.SWP_NOZORDER);
-        _view.InvalidateVisual();
+        return new WindowMove(handle, r.X - band, r.Y - band, r.Width + band * 2, r.Height + band * 2, true);
     }
+
+    public void Place()
+    {
+        if (Target() is { } move)
+        {
+            WindowMoves.Apply(new[] { move });
+        }
+
+        Placed();
+    }
+
+    public void Placed() => _view.InvalidateVisual();
 
     /// <summary>The frame settles in when the recorder opens (1.035 → 1, fading in).</summary>
     public void PlayOpen()
@@ -411,8 +422,8 @@ internal sealed class RecordFrameWindow : Window
                     break;
                 }
 
-                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb((byte)(214 * alpha), 18, 18, 18)),
-                    new Pen(new SolidColorBrush(Color.FromArgb((byte)(56 * alpha), 255, 255, 255)), 1), box, KeyPills.Radius, KeyPills.Radius);
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb((byte)(150 * alpha), 18, 18, 18)),
+                    new Pen(new SolidColorBrush(Color.FromArgb((byte)(40 * alpha), 255, 255, 255)), 1), box, KeyPills.Radius, KeyPills.Radius);
                 dc.DrawText(text, new Point(box.X + KeyPills.Padding, box.Y + (box.Height - text.Height) / 2));
                 y = box.Top - KeyPills.Gap;
             }

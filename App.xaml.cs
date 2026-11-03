@@ -107,7 +107,7 @@ public partial class App : Application
             ShutdownApp,
             () => _closedPins.Count > 0 || History.Last != null,
             () => _pins.Any(pin => pin.IsClickThrough),
-            () => OpenRecorder());
+            RecorderMenuItems);
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -216,7 +216,7 @@ public partial class App : Application
             {
                 // 录屏 from the capture toolbar: record the selected area.
                 var area = overlay.SelectionScreenRect;
-                Dispatcher.BeginInvoke(new Action(() => OpenRecorder(new Int32Rect((int)area.X, (int)area.Y, (int)area.Width, (int)area.Height))),
+                Dispatcher.BeginInvoke(new Action(() => OpenRecorder(new Int32Rect((int)area.X, (int)area.Y, (int)area.Width, (int)area.Height), fromCapture: true)),
                     DispatcherPriority.Background);
                 return;
             }
@@ -501,8 +501,40 @@ public partial class App : Application
         _settings.Activate();
     }
 
+    /// <summary>The tray menu's 录屏 entries follow the recorder: 录屏 → 开始 / 停止 / 暂停 / 继续 / 退出录屏.</summary>
+    private IEnumerable<(string Header, Action Action)> RecorderMenuItems()
+    {
+        var phase = _recorder?.Phase ?? UI.Recording.RecordPhase.Idle;
+        var r = _recorder;
+        switch (phase)
+        {
+            case UI.Recording.RecordPhase.Idle:
+                yield return ("录屏", () => OpenRecorder());
+                yield break;
+            case UI.Recording.RecordPhase.Setup:
+                yield return ("开始录屏", () => r!.Command("start"));
+                break;
+            case UI.Recording.RecordPhase.Countdown or UI.Recording.RecordPhase.Starting:
+                yield return ("取消开始", () => r!.Command("stop"));
+                break;
+            case UI.Recording.RecordPhase.Recording:
+                yield return ("停止录屏", () => r!.Command("stop"));
+                yield return ("暂停录屏", () => r!.Command("pause"));
+                break;
+            case UI.Recording.RecordPhase.Paused:
+                yield return ("停止录屏", () => r!.Command("stop"));
+                yield return ("继续录屏", () => r!.Command("pause"));
+                break;
+            default:
+                yield return ("显示录屏", () => r!.Command("show"));
+                break;
+        }
+
+        yield return ("退出录屏", () => r!.Command("exit"));
+    }
+
     /// <summary>Opens the recorder (on an area, e.g. the capture selection).</summary>
-    public void OpenRecorder(Int32Rect? area = null)
+    public void OpenRecorder(Int32Rect? area = null, bool fromCapture = false)
     {
         if (_capturing)
         {
@@ -511,7 +543,7 @@ public partial class App : Application
 
         try
         {
-            Recorder.Open(area);
+            Recorder.Open(area, fromCapture);
         }
         catch (Exception ex)
         {
