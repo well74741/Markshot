@@ -77,6 +77,21 @@ public sealed class AppConfig
     /// <summary>Copying a capture / pin also puts a PNG file on the clipboard (paste in Explorer).</summary>
     public bool CopyImageAsFile { get; set; } = true;
 
+    /// <summary>截图: the mouse pointer is part of the screenshot (toggled with <see cref="CaptureCursorKey"/>, remembered).</summary>
+    public bool CaptureShowCursor { get; set; }
+
+    /// <summary>截图: shows / hides the mouse pointer in the screenshot.</summary>
+    public string CaptureCursorKey { get; set; } = "Ctrl+M";
+
+    /// <summary>截图: shows / hides the crosshair through the mouse (a lone modifier = tap it).</summary>
+    public string CrosshairKey { get; set; } = "Alt";
+
+    /// <summary>截图识别: hovering frames the window under the mouse.</summary>
+    public bool DetectWindows { get; set; } = true;
+
+    /// <summary>截图识别: hovering frames the UI element under the mouse (text, picture, table, button …).</summary>
+    public bool DetectElements { get; set; } = true;
+
     /// <summary>After saving an image, ask whether to open its folder.</summary>
     public bool AskOpenFolderAfterSave { get; set; } = true;
 

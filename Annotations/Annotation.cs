@@ -15,7 +15,17 @@ public enum AnnotationTool
     Text,
     Number,
     Eraser,
-    MosaicBrush
+    MosaicBrush,
+    Polyline
+}
+
+/// <summary>Head of an arrow: 尖头 (swept, pointed tail), 线形 (open head), 三角 (filled head), 双向 (heads at both ends).</summary>
+public enum ArrowStyle
+{
+    Sharp,
+    Open,
+    Triangle,
+    Double
 }
 
 public abstract class Annotation
@@ -230,6 +240,8 @@ public sealed class ArrowAnnotation : Annotation
 
     public Point End { get; set; }
 
+    public ArrowStyle Style { get; set; }
+
     public override void Draw(DrawingContext dc)
     {
         var direction = End - Start;
@@ -240,6 +252,12 @@ public sealed class ArrowAnnotation : Annotation
         }
 
         var unit = direction / length;
+        if (Style != ArrowStyle.Sharp)
+        {
+            DrawStyled(dc, unit, length);
+            return;
+        }
+
         var headLength = Math.Max(18, Thickness * 5.5);
         var headWidth = headLength * 0.78;
         var brush = new SolidColorBrush(Color);
@@ -268,6 +286,62 @@ public sealed class ArrowAnnotation : Annotation
 
         geometry.Freeze();
         dc.DrawGeometry(brush, null, geometry);
+    }
+
+    /// <summary>The other heads: an even shaft with an open or filled head (or one at each end).</summary>
+    private void DrawStyled(DrawingContext dc, Vector unit, double length)
+    {
+        var brush = new SolidColorBrush(Color);
+        var perpendicular = new Vector(-unit.Y, unit.X);
+        if (Style == ArrowStyle.Open)
+        {
+            var open = Math.Min(Math.Max(12, Thickness * 4), length * 0.6);
+            var pen = new Pen(brush, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+            var head = new StreamGeometry();
+            using (var context = head.Open())
+            {
+                context.BeginFigure(End - unit * open + perpendicular * (open * 0.55), false, false);
+                context.LineTo(End, true, true);
+                context.LineTo(End - unit * open - perpendicular * (open * 0.55), true, true);
+                context.BeginFigure(Start, false, false);
+                context.LineTo(End, true, false);
+            }
+
+            head.Freeze();
+            dc.DrawGeometry(null, pen, head);
+            return;
+        }
+
+        var both = Style == ArrowStyle.Double;
+        var headLength = Math.Min(Math.Max(14, Thickness * 4.5), length / (both ? 2.2 : 1.2));
+        var halfWidth = headLength * 0.5;
+        var shaftStart = both ? Start + unit * (headLength * 0.9) : Start;
+        var shaftEnd = End - unit * (headLength * 0.9);
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            AddHead(context, End, unit, perpendicular, headLength, halfWidth);
+            if (both)
+            {
+                AddHead(context, Start, -unit, perpendicular, headLength, halfWidth);
+            }
+        }
+
+        geometry.Freeze();
+        dc.DrawGeometry(brush, null, geometry);
+        if ((shaftEnd - shaftStart) * unit > 0)
+        {
+            var shaft = new Pen(brush, Thickness) { StartLineCap = both ? PenLineCap.Flat : PenLineCap.Round, EndLineCap = PenLineCap.Flat };
+            dc.DrawLine(shaft, shaftStart, shaftEnd);
+        }
+    }
+
+    private static void AddHead(StreamGeometryContext context, Point tip, Vector unit, Vector perpendicular, double length, double halfWidth)
+    {
+        var headBase = tip - unit * length;
+        context.BeginFigure(tip, true, true);
+        context.LineTo(headBase + perpendicular * halfWidth, true, false);
+        context.LineTo(headBase - perpendicular * halfWidth, true, false);
     }
 
     public override Rect Bounds => new(Start, End);
@@ -315,7 +389,7 @@ public sealed class LineAnnotation : Annotation
     }
 }
 
-public sealed class PenAnnotation : Annotation
+public class PenAnnotation : Annotation
 {
     public List<Point> Points { get; private set; } = new();
 
@@ -429,6 +503,115 @@ public sealed class PenAnnotation : Annotation
     public override bool HitTest(Point point, double tolerance)
     {
         return GeometryUtil.DistanceToPolyline(point, Points) <= tolerance + Thickness * (Highlight ? 2 : 1);
+    }
+}
+
+/// <summary>
+/// 折线: straight segments between clicked corners. A pen stroke underneath, so moving, resizing,
+/// mirroring, cropping and erasing treat it like one.
+/// </summary>
+public sealed class PolylineAnnotation : PenAnnotation
+{
+    public override void Draw(DrawingContext dc)
+    {
+        if (Points.Count < 2)
+        {
+            return;
+        }
+
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            context.BeginFigure(Points[0], false, false);
+            context.PolyLineTo(Points.Skip(1).ToList(), true, true);
+        }
+
+        geometry.Freeze();
+        var pen = new Pen(new SolidColorBrush(Color), Thickness)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round
+        };
+        dc.DrawGeometry(null, pen, geometry);
+    }
+}
+
+/// <summary>
+/// A polyline being placed: a click fixes a corner and the last point follows the mouse; a drag
+/// draws a segment too. Double-click / Enter / right click ends it, Backspace takes a corner back,
+/// Shift keeps a segment at 45° steps.
+/// </summary>
+public sealed class PolylineDraft
+{
+    private Point _press;
+
+    public PolylineDraft(PolylineAnnotation target, Point start)
+    {
+        Target = target;
+        target.Points.Clear();
+        target.Points.Add(start);
+        target.Points.Add(start); // follows the mouse
+        _press = start;
+    }
+
+    public PolylineAnnotation Target { get; }
+
+    /// <summary>A click: the point under the mouse becomes a corner.</summary>
+    public void Press(Point point, bool shift)
+    {
+        Move(point, shift);
+        _press = point;
+        Target.Points.Add(Target.Points[^1]);
+    }
+
+    /// <summary>Release after dragging: the dragged segment ends in a corner.</summary>
+    public void Release(Point point, bool shift, double slop)
+    {
+        if ((point - _press).Length > slop)
+        {
+            Press(point, shift);
+        }
+    }
+
+    public void Move(Point point, bool shift) =>
+        Target.Points[^1] = shift ? Snap(Target.Points[^2], point) : point;
+
+    /// <summary>Backspace: the last corner goes. False when only the start is left.</summary>
+    public bool RemoveLast()
+    {
+        if (Target.Points.Count <= 2)
+        {
+            return false;
+        }
+
+        Target.Points.RemoveAt(Target.Points.Count - 2);
+        return true;
+    }
+
+    /// <summary>Done: the point that followed the mouse and repeated points go. False = no line left.</summary>
+    public bool Finish()
+    {
+        var points = Target.Points;
+        points.RemoveAt(points.Count - 1);
+        for (var i = points.Count - 1; i > 0; i--)
+        {
+            if ((points[i] - points[i - 1]).Length < 0.5)
+            {
+                points.RemoveAt(i);
+            }
+        }
+
+        return points.Count >= 2;
+    }
+
+    /// <summary>The nearest 45° direction from <paramref name="from"/>.</summary>
+    public static Point Snap(Point from, Point to)
+    {
+        var delta = to - from;
+        var angle = Math.Round(Math.Atan2(delta.Y, delta.X) / (Math.PI / 4)) * (Math.PI / 4);
+        var length = delta.Length;
+        return new Point(from.X + Math.Cos(angle) * length, from.Y + Math.Sin(angle) * length);
     }
 }
 

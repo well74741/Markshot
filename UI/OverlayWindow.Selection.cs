@@ -544,63 +544,248 @@ public partial class OverlayWindow
 
     private void UpdateHover(Point point)
     {
-        if (_hasSelection || _dragging ||
+        var config = App.Config;
+        if (_hasSelection || _dragging || (!config.DetectWindows && !config.DetectElements) ||
             (_tool != AnnotationTool.None && _tool != AnnotationTool.Select))
         {
             ClearHover();
             return;
         }
 
-        if (_hoverTarget != null && _hoverLocal.Contains(point))
+        // Still inside the smallest frame found: nothing new under the mouse.
+        if (_hoverTarget != null && _hoverInner.Contains(point))
         {
             return;
         }
 
         var screenX = _bounds.X + (int)Math.Round(point.X);
         var screenY = _bounds.Y + (int)Math.Round(point.Y);
-        var target = WindowDetector.Detect(screenX, screenY, _preferChild);
-
-        if (target == null || target.Bounds.Width < 4 || target.Bounds.Height < 4)
+        _hoverScreenPoint = (screenX, screenY);
+        var target = WindowDetector.Detect(screenX, screenY, _preferChild && !config.DetectElements);
+        var window = target == null ? Rect.Empty : ToLocal(target.Bounds);
+        if (target == null || window.IsEmpty)
         {
             ClearHover();
             return;
         }
 
-        var local = new Rect(
-            target.Bounds.X - _bounds.X,
-            target.Bounds.Y - _bounds.Y,
-            target.Bounds.Width,
-            target.Bounds.Height);
-
-        var screenRect = new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight);
-        local = Rect.Intersect(local, screenRect);
-        if (local.Width < 4 || local.Height < 4)
-        {
-            ClearHover();
-            return;
-        }
-
+        var sameWindow = _hoverTarget?.Handle == target.Handle;
         _hoverTarget = target;
-        _hoverLocal = local;
-        Editor.HoverBounds = local;
-        Editor.HoverLabel = $"{target.Label}  {Math.Round(local.Width)} × {Math.Round(local.Height)}";
-        Editor.ShowHover = true;
+        if (!config.DetectElements)
+        {
+            SetHoverChain(new List<HoverCandidate> { new(window, target.Label) });
+            return;
+        }
+
+        if (!sameWindow)
+        {
+            // Another window: its frame until its elements are known.
+            SetHoverChain(config.DetectWindows ? new List<HoverCandidate> { new(window, target.Label) } : new List<HoverCandidate>());
+        }
+
+        _hoverInner = Rect.Empty;
+        RequestElements(target.Handle, screenX, screenY);
+    }
+
+    /// <summary>A frame offered on hover: an element or the window, in this window's pixels.</summary>
+    private sealed record HoverCandidate(Rect Local, string Label);
+
+    /// <summary>A screen rectangle (physical pixels) in this window's pixels, cut to the screen; empty when too small.</summary>
+    private Rect ToLocal(Rect screen)
+    {
+        var local = Rect.Intersect(new Rect(screen.X - _bounds.X, screen.Y - _bounds.Y, screen.Width, screen.Height),
+            new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight));
+        return local.IsEmpty || local.Width < 4 || local.Height < 4 ? Rect.Empty : local;
+    }
+
+    /// <summary>Looks up the elements off the UI thread; only the latest mouse position is looked up next.</summary>
+    private void RequestElements(IntPtr handle, int x, int y)
+    {
+        _elementWanted = (handle, x, y);
+        if (!_elementBusy)
+        {
+            RunElementDetection();
+        }
+    }
+
+    private async void RunElementDetection()
+    {
+        _elementBusy = true;
+        try
+        {
+            while (_elementWanted is { } wanted && !_closed)
+            {
+                _elementWanted = null;
+                List<DetectedElement> found;
+                try
+                {
+                    found = await Task.Run(() => ElementDetector.Detect(wanted.Handle, wanted.X, wanted.Y));
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("元素识别失败", ex);
+                    found = new List<DetectedElement>();
+                }
+
+                if (_closed || _hoverTarget?.Handle != wanted.Handle || _hasSelection || _dragging)
+                {
+                    continue;
+                }
+
+                // A newer position waits and this result is not under the mouse any more: skip it.
+                var (mx, my) = _hoverScreenPoint;
+                if (_elementWanted != null && (found.Count == 0 || !found[0].Bounds.Contains(new Point(mx, my))))
+                {
+                    continue;
+                }
+
+                SetHoverChain(BuildHoverChain(found));
+            }
+        }
+        finally
+        {
+            _elementBusy = false;
+        }
+    }
+
+    private List<HoverCandidate> BuildHoverChain(IReadOnlyList<DetectedElement> elements)
+    {
+        var chain = new List<HoverCandidate>();
+        var window = _hoverTarget == null ? Rect.Empty : ToLocal(_hoverTarget.Bounds);
+        foreach (var element in elements)
+        {
+            var local = ToLocal(element.Bounds);
+            if (!local.IsEmpty && !window.IsEmpty)
+            {
+                local = Rect.Intersect(local, window);
+            }
+
+            if (!local.IsEmpty && local.Width >= 4 && local.Height >= 4 &&
+                !chain.Any(seen => ElementDetector.Same(seen.Local, local)) && !ElementDetector.Same(local, window))
+            {
+                chain.Add(new HoverCandidate(local, element.Label));
+            }
+        }
+
+        if (App.Config.DetectWindows && !window.IsEmpty && _hoverTarget != null)
+        {
+            chain.Add(new HoverCandidate(window, _hoverTarget.Label));
+        }
+
+        return chain;
+    }
+
+    /// <summary>New frames under the mouse. The level the wheel chose stays when its frame is still offered.</summary>
+    private void SetHoverChain(List<HoverCandidate> chain)
+    {
+        var shown = _hoverLevel < _hoverChain.Count ? _hoverChain[_hoverLevel].Local : Rect.Empty;
+        _hoverChain = chain;
+        if (chain.Count == 0)
+        {
+            _hoverInner = Rect.Empty;
+            HideHoverFrame();
+            return;
+        }
+
+        var keep = chain.FindIndex(candidate => ElementDetector.Same(candidate.Local, shown));
+        _hoverLevel = keep >= 0 && _hoverLevel > 0 ? keep : 0;
+        _hoverInner = chain[0].Local;
+        ShowHoverLevel();
+    }
+
+    /// <summary>Wheel over a hover frame: up = the element around it, down = back in. False when there is no choice.</summary>
+    private bool StepHoverLevel(int delta)
+    {
+        if (_hoverChain.Count < 2)
+        {
+            return false;
+        }
+
+        _hoverLevel = Math.Clamp(_hoverLevel + (delta > 0 ? 1 : -1), 0, _hoverChain.Count - 1);
+        ShowHoverLevel();
+        return true;
+    }
+
+    private void ShowHoverLevel()
+    {
+        var candidate = _hoverChain[_hoverLevel];
+        _hoverLocal = candidate.Local;
+        Editor.HoverLabel = $"{candidate.Label}  {Math.Round(candidate.Local.Width)} × {Math.Round(candidate.Local.Height)}";
+        var from = Editor.HoverBounds;
+        if (!Editor.ShowHover || from.IsEmpty || ElementDetector.Same(from, candidate.Local))
+        {
+            StopHoverAnimation();
+            Editor.HoverBounds = candidate.Local;
+            Editor.ShowHover = true;
+            Editor.InvalidateVisual();
+            return;
+        }
+
+        // The frame slides / resizes to the new element.
+        _hoverFrom = from;
+        _hoverTo = candidate.Local;
+        _hoverClock.Restart();
+        if (!_hoverAnimating)
+        {
+            _hoverAnimating = true;
+            CompositionTarget.Rendering += OnHoverFrame;
+        }
+    }
+
+    private const double HoverMs = 140;
+
+    private void OnHoverFrame(object? sender, EventArgs e)
+    {
+        var t = Motion.Bezier(Math.Min(1, _hoverClock.Elapsed.TotalMilliseconds / HoverMs));
+        Editor.HoverBounds = new Rect(
+            _hoverFrom.X + (_hoverTo.X - _hoverFrom.X) * t,
+            _hoverFrom.Y + (_hoverTo.Y - _hoverFrom.Y) * t,
+            _hoverFrom.Width + (_hoverTo.Width - _hoverFrom.Width) * t,
+            _hoverFrom.Height + (_hoverTo.Height - _hoverFrom.Height) * t);
+        Editor.InvalidateVisual();
+        if (t >= 1)
+        {
+            StopHoverAnimation();
+        }
+    }
+
+    private void StopHoverAnimation()
+    {
+        if (_hoverAnimating)
+        {
+            _hoverAnimating = false;
+            CompositionTarget.Rendering -= OnHoverFrame;
+        }
+    }
+
+    private void HideHoverFrame()
+    {
+        StopHoverAnimation();
+        _hoverLocal = Rect.Empty;
+        if (!Editor.ShowHover)
+        {
+            return;
+        }
+
+        Editor.ShowHover = false;
+        Editor.HoverBounds = Rect.Empty;
+        Editor.HoverLabel = null;
         Editor.InvalidateVisual();
     }
 
     private void ClearHover()
     {
+        _elementWanted = null;
         if (_hoverTarget == null && !Editor.ShowHover)
         {
             return;
         }
 
         _hoverTarget = null;
-        _hoverLocal = Rect.Empty;
-        Editor.ShowHover = false;
-        Editor.HoverBounds = Rect.Empty;
-        Editor.HoverLabel = null;
-        Editor.InvalidateVisual();
+        _hoverChain = new List<HoverCandidate>();
+        _hoverLevel = 0;
+        _hoverInner = Rect.Empty;
+        HideHoverFrame();
     }
 
     private void UpdateMagnifier(Point point)

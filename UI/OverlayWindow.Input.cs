@@ -45,6 +45,24 @@ public partial class OverlayWindow
             CommitWatermark();
         }
 
+        if (_polyline != null)
+        {
+            // Each click is a corner; a double-click ends the line.
+            if (e.ClickCount == 2)
+            {
+                FinishPolyline();
+            }
+            else
+            {
+                _polyline.Press(point, IsShiftDown);
+                InputLayer.CaptureMouse(); // dragging from here draws the next segment
+            }
+
+            Editor.InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
         _dragStart = point;
         _dragOrigin = _selection;
         _dragging = true;
@@ -254,8 +272,8 @@ public partial class OverlayWindow
 
         ClearAnnotationSelection();
 
-        // Clicking a highlighted window selects it; dragging starts a manual selection.
-        if (_hoverTarget != null && !_hasSelection)
+        // Clicking a highlighted window / element selects it; dragging starts a manual selection.
+        if (_hoverTarget != null && !_hoverLocal.IsEmpty && !_hasSelection)
         {
             _pendingWindow = _hoverLocal;
             _mode = DragMode.Creating;
@@ -325,6 +343,13 @@ public partial class OverlayWindow
             _dragStart = new Point(_spaceDragStartOrigin.X + dx, _spaceDragStartOrigin.Y + dy);
             _hasSelection = true;
             UpdateSelectionVisuals();
+            return;
+        }
+
+        if (_polyline != null)
+        {
+            _polyline.Move(point, IsShiftDown);
+            Editor.InvalidateVisual();
             return;
         }
 
@@ -547,6 +572,12 @@ public partial class OverlayWindow
             return true;
         }
 
+        if (_polyline != null)
+        {
+            DropPolyline();
+            return true;
+        }
+
         if (_active != null || _erasing)
         {
             Editor.Preview = null;
@@ -667,6 +698,13 @@ public partial class OverlayWindow
         _spaceDrag = false;
         _dragRotate = false;
         _dragScale = false;
+        if (_polyline != null)
+        {
+            _polyline.Release(ToPixels(e.GetPosition(InputLayer)), IsShiftDown, 4 * _scale);
+            _mode = DragMode.None;
+            Editor.InvalidateVisual();
+            return;
+        }
         if (_draggingWatermark != null)
         {
             _draggingWatermark = null;
@@ -832,7 +870,14 @@ public partial class OverlayWindow
             return;
         }
 
-        // PixPin switches between the window and its child element with the wheel.
+        // PixPin: the wheel steps between the element and what is around it (up = outer).
+        if (StepHoverLevel(e.Delta))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        // Without element detection: the window or its child control.
         _preferChild = !_preferChild;
         ClearHover();
         UpdateHover(ToPixels(e.GetPosition(InputLayer)));
@@ -863,6 +908,17 @@ public partial class OverlayWindow
         var key = AnnotationOps.RealKey(e);
         var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+        if (CaptureKeyDown(key, e.IsRepeat))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (_polyline != null)
+        {
+            e.Handled = PolylineKey(key);
+            return;
+        }
 
         // While a selected element is being dragged, E rotates and R scales it;
         // every other key belongs to the drag and must not switch tools.
@@ -1235,6 +1291,12 @@ public partial class OverlayWindow
     private void OnPreviewKeyUp(object sender, KeyEventArgs e)
     {
         var key = AnnotationOps.RealKey(e);
+        if (!_closed && CaptureKeyUp(key))
+        {
+            e.Handled = true;
+            return;
+        }
+
         var pointer = ToPixels(Mouse.GetPosition(InputLayer));
 
         if (_gesture != null)

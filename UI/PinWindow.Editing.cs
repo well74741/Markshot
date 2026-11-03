@@ -216,7 +216,7 @@ public partial class PinWindow
             case (LineAnnotation line, AnnotationTool.Arrow):
                 replacement = new ArrowAnnotation
                 {
-                    Start = line.Start, End = line.End, Color = line.Color, Thickness = line.Thickness
+                    Start = line.Start, End = line.End, Color = line.Color, Thickness = line.Thickness, Style = Toolbar.ArrowStyle
                 };
                 break;
             case (ArrowAnnotation arrow, AnnotationTool.Line):
@@ -328,6 +328,7 @@ public partial class PinWindow
         ExitEditMode(true);
         ((App)Application.Current).OpenEditor(_baseImage, annotations: Editor.Items.Select(item => item.Clone()).ToList(), sourcePin: this);
         _parked = true;
+        LeaveGroup();
         Hide();
     }
 
@@ -349,6 +350,7 @@ public partial class PinWindow
             return;
         }
 
+        FinishPolyline();
         if (_active != null)
         {
             CommitAnnotation();
@@ -379,7 +381,7 @@ public partial class PinWindow
                 _toolbarWindow?.Hide();
             }
         });
-        _history.Clear();
+        // The steps stay: the next edit session can still undo them (from the capture on).
         UpdateUndoButtons();
         ApplyBounds();
         TextLayer.Visibility = Visibility.Visible;
@@ -391,6 +393,7 @@ public partial class PinWindow
 
     private protected virtual BitmapSource ComposeEditedImage()
     {
+        FinishPolyline();
         if (Editor.Items.Count == 0)
         {
             return _baseImage;
@@ -491,6 +494,11 @@ public partial class PinWindow
         }
 
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+        if (_polyline != null)
+        {
+            e.Handled = PolylineKey(key);
+            return;
+        }
 
         // While a selected element is being dragged, E rotates and R scales it;
         // every other key belongs to the drag and must not switch tools.
@@ -706,6 +714,7 @@ public partial class PinWindow
 
     private protected void SetTool(AnnotationTool tool)
     {
+        FinishPolyline();
         _textEditor.Commit();
         _tool = tool;
         Toolbar.SetTool(tool);
@@ -722,6 +731,13 @@ public partial class PinWindow
         InputLayer.IsHitTestVisible = active;
         InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale) : Cursors.Arrow;
         ClearAnnotationHover();
+    }
+
+    /// <summary>The capture's undo steps (in this pin's space): Ctrl+Z in the pin goes on from there.</summary>
+    public void AdoptHistory(AnnotationHistory history)
+    {
+        _history.Adopt(history);
+        UpdateUndoButtons();
     }
 
     private protected void Undo() => ApplyHistory(_history.Undo);
@@ -769,6 +785,24 @@ public partial class PinWindow
                 e.Handled = true;
                 return;
             }
+        }
+
+        if (_polyline != null)
+        {
+            // Each click is a corner; a double-click ends the line.
+            if (e.ClickCount == 2)
+            {
+                FinishPolyline();
+            }
+            else
+            {
+                _polyline.Press(point, IsShiftDown);
+                InputLayer.CaptureMouse(); // dragging from here draws the next segment
+            }
+
+            Editor.InvalidateVisual();
+            e.Handled = true;
+            return;
         }
 
         if (_selected != null)
@@ -896,6 +930,13 @@ public partial class PinWindow
             return;
         }
 
+        if (_polyline != null)
+        {
+            _polyline.Move(point, IsShiftDown);
+            Editor.InvalidateVisual();
+            return;
+        }
+
         if (_gesture != null)
         {
             _gesture.Move(point, IsShiftDown, IsCtrlDown);
@@ -982,6 +1023,12 @@ public partial class PinWindow
             return true;
         }
 
+        if (_polyline != null)
+        {
+            DropPolyline();
+            return true;
+        }
+
         if (_active != null || _erasing)
         {
             Editor.Preview = null;
@@ -1030,6 +1077,14 @@ public partial class PinWindow
 
     private void Input_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (_polyline != null)
+        {
+            FinishPolyline(); // right click ends the polyline
+            _suppressContextMenu = true;
+            e.Handled = true;
+            return;
+        }
+
         if (_active == null && !_erasing)
         {
             return;
@@ -1058,6 +1113,12 @@ public partial class PinWindow
         InputLayer.ReleaseMouseCapture();
         _dragRotate = false;
         _dragScale = false;
+        if (_polyline != null)
+        {
+            _polyline.Release(ToPixels(e.GetPosition(InputLayer)), IsShiftDown, 4 / _zoom);
+            Editor.InvalidateVisual();
+            return;
+        }
 
         if (_draggingWatermark != null)
         {
@@ -1126,10 +1187,63 @@ public partial class PinWindow
             return;
         }
 
+        if (_active is PolylineAnnotation polyline)
+        {
+            // Placed click by click, not in one drag.
+            _active = null;
+            _polyline = new PolylineDraft(polyline, point);
+            Editor.Preview = polyline;
+            Editor.InvalidateVisual();
+            return;
+        }
+
         _gesture = new CreationGesture(_active, point);
         _gesture.Apply();
         Editor.Preview = _active;
         Editor.InvalidateVisual();
+    }
+
+    /// <summary>折线 done (double-click, Enter, right click, another tool): it becomes an element.</summary>
+    private protected void FinishPolyline()
+    {
+        if (_polyline is not { } draft)
+        {
+            return;
+        }
+
+        _polyline = null;
+        InputLayer.ReleaseMouseCapture();
+        _active = draft.Finish() ? draft.Target : null;
+        CommitAnnotation();
+    }
+
+    private void DropPolyline()
+    {
+        _polyline = null;
+        Editor.Preview = null;
+        InputLayer.ReleaseMouseCapture();
+        Editor.InvalidateVisual();
+    }
+
+    /// <summary>Keys while a polyline is being placed: Enter ends it, Esc drops it, Backspace takes a corner back.</summary>
+    private bool PolylineKey(Key key)
+    {
+        if (_polyline == null)
+        {
+            return false;
+        }
+
+        if (key == Key.Enter)
+        {
+            FinishPolyline();
+        }
+        else if (key == Key.Escape || (key == Key.Back && !_polyline.RemoveLast()))
+        {
+            DropPolyline();
+        }
+
+        Editor.InvalidateVisual();
+        return !AnnotationOps.IsModifier(key);
     }
 
     private void CommitAnnotation()
@@ -1458,6 +1572,7 @@ public partial class PinWindow
             annotation is RectAnnotation or EllipseAnnotation,
         AnnotationTool.Line or AnnotationTool.Arrow =>
             annotation is LineAnnotation or ArrowAnnotation,
+        AnnotationTool.Polyline => annotation is PolylineAnnotation,
         AnnotationTool.Pen or AnnotationTool.Highlighter => false,
         AnnotationTool.Mosaic or AnnotationTool.Watermark =>
             annotation is MosaicAnnotation or WatermarkAnnotation,

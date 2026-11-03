@@ -226,7 +226,7 @@ public partial class OverlayWindow
             case (LineAnnotation line, AnnotationTool.Arrow):
                 replacement = new ArrowAnnotation
                 {
-                    Start = line.Start, End = line.End, Color = line.Color, Thickness = line.Thickness
+                    Start = line.Start, End = line.End, Color = line.Color, Thickness = line.Thickness, Style = Toolbar.ArrowStyle
                 };
                 break;
             case (ArrowAnnotation arrow, AnnotationTool.Line):
@@ -373,6 +373,16 @@ public partial class OverlayWindow
         _active = AnnotationOps.Create(_tool, point, Toolbar, _numberCounter, EffectiveScreen);
         if (_active == null)
         {
+            return;
+        }
+
+        if (_active is PolylineAnnotation polyline)
+        {
+            // Placed click by click, not in one drag.
+            _active = null;
+            _polyline = new PolylineDraft(polyline, point);
+            Editor.Preview = polyline;
+            Editor.InvalidateVisual();
             return;
         }
 
@@ -532,6 +542,7 @@ public partial class OverlayWindow
 
     private void SetTool(AnnotationTool tool)
     {
+        FinishPolyline();
         _textEditor.Commit();
         _tool = tool;
         Toolbar.SetTool(tool);
@@ -587,6 +598,7 @@ public partial class OverlayWindow
             annotation is RectAnnotation or EllipseAnnotation,
         AnnotationTool.Line or AnnotationTool.Arrow =>
             annotation is LineAnnotation or ArrowAnnotation,
+        AnnotationTool.Polyline => annotation is PolylineAnnotation,
         AnnotationTool.Pen or AnnotationTool.Highlighter => false,
         AnnotationTool.Mosaic or AnnotationTool.Watermark =>
             annotation is MosaicAnnotation or WatermarkAnnotation,
@@ -652,8 +664,53 @@ public partial class OverlayWindow
 
     private void Redo_Click(object sender, RoutedEventArgs e) => Redo();
 
+
+    /// <summary>折线 done (double-click, Enter, right click, another tool): it becomes an element.</summary>
+    private void FinishPolyline()
+    {
+        if (_polyline is not { } draft)
+        {
+            return;
+        }
+
+        _polyline = null;
+        InputLayer.ReleaseMouseCapture();
+        _active = draft.Finish() ? draft.Target : null;
+        CommitAnnotation();
+    }
+
+    private void DropPolyline()
+    {
+        _polyline = null;
+        Editor.Preview = null;
+        InputLayer.ReleaseMouseCapture();
+        Editor.InvalidateVisual();
+    }
+
+    /// <summary>Keys while a polyline is being placed: Enter ends it, Esc drops it, Backspace takes a corner back.</summary>
+    private bool PolylineKey(Key key)
+    {
+        if (_polyline == null)
+        {
+            return false;
+        }
+
+        if (key == Key.Enter)
+        {
+            FinishPolyline();
+        }
+        else if (key == Key.Escape || (key == Key.Back && !_polyline.RemoveLast()))
+        {
+            DropPolyline();
+        }
+
+        Editor.InvalidateVisual();
+        return !AnnotationOps.IsModifier(key);
+    }
+
     private void CommitPendingText()
     {
+        FinishPolyline();
         _textEditor.Commit();
         CommitWatermark();
     }

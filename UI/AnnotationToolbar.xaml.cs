@@ -70,6 +70,7 @@ public partial class AnnotationToolbar : UserControl
         [AnnotationTool.Ellipse] = 3,
         [AnnotationTool.Line] = 3,
         [AnnotationTool.Arrow] = 4,
+        [AnnotationTool.Polyline] = 3,
         [AnnotationTool.Pen] = 3,
         [AnnotationTool.Highlighter] = 4,
         [AnnotationTool.Text] = 20,
@@ -556,7 +557,16 @@ public partial class AnnotationToolbar : UserControl
                 break;
 
             case ToolFamily.Line:
-                LineVariants.Visibility = Visibility.Visible;
+                if (annotation is not PolylineAnnotation)
+                {
+                    LineVariants.Visibility = Visibility.Visible;
+                }
+
+                if (tool == AnnotationTool.Arrow || annotation is ArrowAnnotation)
+                {
+                    ArrowStyleGroup.Visibility = Visibility.Visible;
+                }
+
                 break;
 
             case ToolFamily.Pen:
@@ -672,6 +682,7 @@ public partial class AnnotationToolbar : UserControl
         WatermarkGroup.Visibility = Visibility.Collapsed;
         RectVariants.Visibility = Visibility.Collapsed;
         LineVariants.Visibility = Visibility.Collapsed;
+        ArrowStyleGroup.Visibility = Visibility.Collapsed;
         PenVariants.Visibility = Visibility.Collapsed;
         MosaicVariants.Visibility = Visibility.Collapsed;
     }
@@ -683,6 +694,8 @@ public partial class AnnotationToolbar : UserControl
         VariantEllipse.IsChecked = tool == AnnotationTool.Ellipse;
         VariantLine.IsChecked = tool == AnnotationTool.Line;
         VariantArrow.IsChecked = tool == AnnotationTool.Arrow;
+        VariantPolyline.IsChecked = tool == AnnotationTool.Polyline;
+        SyncArrowStyle();
         VariantPen.IsChecked = tool == AnnotationTool.Pen;
         VariantHighlighter.IsChecked = tool == AnnotationTool.Highlighter;
         VariantMosaic.IsChecked = tool == AnnotationTool.Mosaic;
@@ -763,8 +776,13 @@ public partial class AnnotationToolbar : UserControl
             case LineAnnotation:
                 VariantLine.IsChecked = true;
                 break;
-            case ArrowAnnotation:
+            case ArrowAnnotation arrow:
                 VariantArrow.IsChecked = true;
+                _arrowStyle = arrow.Style;
+                SyncArrowStyle();
+                break;
+            case PolylineAnnotation:
+                VariantPolyline.IsChecked = true;
                 break;
             case PenAnnotation pen:
                 VariantPen.IsChecked = !pen.Highlight;
@@ -793,7 +811,7 @@ public partial class AnnotationToolbar : UserControl
     {
         AnnotationTool.Select => ToolFamily.Select,
         AnnotationTool.Rectangle or AnnotationTool.Ellipse => ToolFamily.Shape,
-        AnnotationTool.Line or AnnotationTool.Arrow => ToolFamily.Line,
+        AnnotationTool.Line or AnnotationTool.Arrow or AnnotationTool.Polyline => ToolFamily.Line,
         AnnotationTool.Pen or AnnotationTool.Highlighter => ToolFamily.Pen,
         AnnotationTool.Mosaic or AnnotationTool.MosaicBrush => ToolFamily.Mosaic,
         AnnotationTool.Watermark => ToolFamily.Watermark,
@@ -806,7 +824,7 @@ public partial class AnnotationToolbar : UserControl
     private static ToolFamily FamilyOf(Annotation annotation) => annotation switch
     {
         RectAnnotation or EllipseAnnotation => ToolFamily.Shape,
-        LineAnnotation or ArrowAnnotation => ToolFamily.Line,
+        LineAnnotation or ArrowAnnotation or PolylineAnnotation => ToolFamily.Line,
         PenAnnotation => ToolFamily.Pen,
         MosaicAnnotation or MosaicBrushAnnotation => ToolFamily.Mosaic,
         WatermarkAnnotation => ToolFamily.Watermark,
@@ -841,6 +859,33 @@ public partial class AnnotationToolbar : UserControl
 
     private void ArrowMenu_Click(object sender, RoutedEventArgs e) =>
         ShowVariantMenu((Button)sender, ("箭头", AnnotationTool.Arrow), ("直线", AnnotationTool.Line));
+
+    private ArrowStyle _arrowStyle;
+
+    /// <summary>Head of new arrows (and of a selected one when changed).</summary>
+    public ArrowStyle ArrowStyle => _arrowStyle;
+
+    private void SyncArrowStyle()
+    {
+        var configuring = _configuring;
+        _configuring = true;
+        ArrowSharp.IsChecked = _arrowStyle == ArrowStyle.Sharp;
+        ArrowOpen.IsChecked = _arrowStyle == ArrowStyle.Open;
+        ArrowTriangle.IsChecked = _arrowStyle == ArrowStyle.Triangle;
+        ArrowDouble.IsChecked = _arrowStyle == ArrowStyle.Double;
+        _configuring = configuring;
+    }
+
+    private void ArrowStyle_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_configuring || sender is not RadioButton { Tag: string tag } || !Enum.TryParse<ArrowStyle>(tag, out var style))
+        {
+            return;
+        }
+
+        _arrowStyle = style;
+        SettingsChanged?.Invoke();
+    }
 
     private void MosaicMenu_Click(object sender, RoutedEventArgs e) =>
         ShowVariantMenu((Button)sender, ("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush));
@@ -997,7 +1042,12 @@ public partial class AnnotationToolbar : UserControl
         {
             ToolFamily.Shape => (ToolShape, ToolShapeIcon, tool == AnnotationTool.Ellipse ? "IconEllipseMask" : "IconRectMask"),
             ToolFamily.Pen => (ToolPen, ToolPenIcon, tool == AnnotationTool.Highlighter ? "IconHighlighterMask" : "IconPenMask"),
-            ToolFamily.Line => (ToolArrow, ToolArrowIcon, tool == AnnotationTool.Line ? "IconLineMask" : "IconArrowMask"),
+            ToolFamily.Line => (ToolArrow, ToolArrowIcon, tool switch
+            {
+                AnnotationTool.Line => "IconLineMask",
+                AnnotationTool.Polyline => "IconPolylineMask",
+                _ => "IconArrowMask"
+            }),
             ToolFamily.Text => (ToolText, ToolTextIcon, tool == AnnotationTool.Watermark ? "IconWatermarkMask" : "IconTextMask"),
             _ => (ToolMosaic, ToolMosaicIcon, tool == AnnotationTool.MosaicBrush ? "IconMosaicBrushMask" : "IconMosaicMask")
         };
@@ -1033,6 +1083,7 @@ public partial class AnnotationToolbar : UserControl
         EllipseAnnotation => AnnotationTool.Ellipse,
         LineAnnotation => AnnotationTool.Line,
         ArrowAnnotation => AnnotationTool.Arrow,
+        PolylineAnnotation => AnnotationTool.Polyline,
         PenAnnotation { Highlight: true } => AnnotationTool.Highlighter,
         PenAnnotation => AnnotationTool.Pen,
         TextAnnotation => AnnotationTool.Text,

@@ -61,6 +61,12 @@ internal static class AnnotationStyler
                 annotation.Fill = toolbar.FillEnabled;
                 break;
 
+            case ArrowAnnotation arrow:
+                arrow.Color = toolbar.Color;
+                arrow.Thickness = toolbar.Thickness;
+                arrow.Style = toolbar.ArrowStyle;
+                break;
+
             default:
                 annotation.Color = toolbar.Color;
                 annotation.Thickness = toolbar.Thickness;

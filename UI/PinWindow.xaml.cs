@@ -60,6 +60,7 @@ public partial class PinWindow : Window
     private bool _movingSelected;
     private bool _erasing;
     private PenAnnotation? _eraserPath;
+    private PolylineDraft? _polyline; // 折线 being placed
     private CreationGesture? _gesture;
     // E / R pressed while dragging a selected element: rotate / scale about its centre.
     private bool _dragRotate;
@@ -159,6 +160,7 @@ public partial class PinWindow : Window
         _top = screenY;
 
         Loaded += OnLoaded;
+        Closed += (_, _) => LeaveGroup();
         LocationChanged += (_, _) => PlaceToolbar(); // the toolbar window follows the pin
         // Alt over the pin: the capture magnifier at the pointer.
         _magnifier = new PinMagnifier(ImageHost, () => CurrentImage, ToPixels);
@@ -224,6 +226,8 @@ public partial class PinWindow : Window
                 _top = _dragStartTop;
                 ReleaseMouseCapture();
                 ApplyBounds();
+                MoveGroup(0, 0);
+                EndGroupDrag(moved: true);
                 _suppressContextMenu = true;
                 e.Handled = true;
                 return;
@@ -353,6 +357,7 @@ public partial class PinWindow : Window
         var corner = new CornerRadius(CornerRadius * _zoom);
         ImageShadowLayer.CornerRadius = corner;
         FrameBorder.CornerRadius = corner;
+        GroupMark.RadiusX = GroupMark.RadiusY = CornerRadius * _zoom;
         Editor.SourceCornerRadius = CornerRadius;
         Editor.Width = imageWidth;
         Editor.Height = imageHeight;
@@ -492,8 +497,16 @@ public partial class PinWindow : Window
 
         if (!_editMode)
         {
+            if (!IsEditor && GroupPress(Keyboard.Modifiers))
+            {
+                Focus();
+                e.Handled = true;
+                return;
+            }
+
             var pixel = ToPixels(e.GetPosition(ImageHost));
-            if (!IsTextBypassHeld() && TextLayer.IsOverText(pixel))
+            var picking = (Keyboard.Modifiers & ModifierKeys.Shift) != 0; // Shift+press picks / drags pins, not text
+            if (!picking && !IsTextBypassHeld() && TextLayer.IsOverText(pixel))
             {
                 // Over recognised text: drag selects it, double-click selects the line.
                 if (e.ClickCount == 2)
@@ -596,6 +609,7 @@ public partial class PinWindow : Window
         _dragStartLeft = _left;
         _dragStartTop = _top;
         _dragging = true;
+        BeginGroupDrag();
         CaptureMouse();
         e.Handled = true;
     }
@@ -697,6 +711,7 @@ public partial class PinWindow : Window
         _left = _dragStartLeft + moveX;
         _top = _dragStartTop + moveY;
         ApplyBounds();
+        MoveGroup(moveX, moveY); // pins picked with this one come along
     }
 
     /// <summary>With Shift held a pin moves only horizontally or only vertically (the larger direction).</summary>
@@ -763,6 +778,7 @@ public partial class PinWindow : Window
 
         _dragging = false;
         ReleaseMouseCapture();
+        EndGroupDrag(_left != _dragStartLeft || _top != _dragStartTop);
         RefreshTransformCursor(e.GetPosition(ImageHost));
         e.Handled = true;
     }
@@ -979,7 +995,7 @@ public partial class PinWindow : Window
                 }
                 else
                 {
-                    Close();
+                    CloseWithGroup();
                 }
 
                 e.Handled = true;
@@ -1005,7 +1021,7 @@ public partial class PinWindow : Window
                 e.Handled = true;
                 break;
             case Key.W when control:
-                Close();
+                CloseWithGroup();
                 e.Handled = true;
                 break;
             case Key.T:
@@ -1032,9 +1048,7 @@ public partial class PinWindow : Window
             {
                 // Arrow keys nudge the pin by a pixel (Shift: 10).
                 var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 10 : 1;
-                _left += key == Key.Left ? -step : key == Key.Right ? step : 0;
-                _top += key == Key.Up ? -step : key == Key.Down ? step : 0;
-                ApplyBounds();
+                NudgeWithGroup(key == Key.Left ? -step : key == Key.Right ? step : 0, key == Key.Up ? -step : key == Key.Down ? step : 0);
                 e.Handled = true;
                 break;
             }

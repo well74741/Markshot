@@ -43,6 +43,9 @@
                          PreviewKeyDown="WatermarkEditor_PreviewKeyDown" />
             </Canvas>
             <Border x:Name="FrameBorder" BorderThickness="0" BorderBrush="Transparent" IsHitTestVisible="False" />
+            <!-- Picked together with other pins (Shift+click). -->
+            <Rectangle x:Name="GroupMark" Stroke="#4C8DFF" StrokeThickness="2" StrokeDashArray="3 2"
+                       Visibility="Collapsed" IsHitTestVisible="False" />
             <Border x:Name="PinStatus" Visibility="Collapsed" IsHitTestVisible="False"
                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
                     Background="{DynamicResource T_E61C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"

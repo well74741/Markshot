@@ -105,63 +105,100 @@ public partial class PinWindow
         var transformed = new TransformedBitmap(_baseImage, transform);
         transformed.Freeze();
 
-        foreach (var annotation in Editor.Items)
+        // One pattern per mosaic strength: the stored undo steps share it with the live elements.
+        var patterns = new Dictionary<double, (BitmapSource? Pattern, Rect Area)>();
+        (BitmapSource? Pattern, Rect Area) PatternFor(double block)
         {
-            AnnotationOps.ReorientMasks(annotation, op);
-            if (op is 'H' or 'V')
+            if (!patterns.TryGetValue(block, out var built))
             {
-                annotation.Rotation = -annotation.Rotation; // a mirrored rotated box turns the other way
+                patterns[block] = built = MosaicBuilder.BuildCanvas(transformed, block);
             }
 
-            switch (annotation)
+            return built;
+        }
+
+        void SetPattern(Annotation mosaic, double block)
+        {
+            switch (mosaic)
             {
-                case RectAnnotation rect:
-                    rect.Rect = MapRect(rect.Rect, map);
-                    break;
-                case EllipseAnnotation ellipse:
-                    ellipse.Rect = MapRect(ellipse.Rect, map);
-                    break;
-                case LineAnnotation line:
-                    line.Start = map(line.Start);
-                    line.End = map(line.End);
-                    break;
-                case ArrowAnnotation arrow:
-                    arrow.Start = map(arrow.Start);
-                    arrow.End = map(arrow.End);
-                    break;
-                case PenAnnotation pen:
-                    for (var i = 0; i < pen.Points.Count; i++)
-                    {
-                        pen.Points[i] = map(pen.Points[i]);
-                    }
-                    break;
-                case TextAnnotation text:
-                {
-                    // Text stays readable: move its centre, do not mirror the glyphs.
-                    var bounds = text.Bounds;
-                    var center = map(new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
-                    text.Translate(center.X - (bounds.X + bounds.Width / 2), center.Y - (bounds.Y + bounds.Height / 2));
-                    break;
-                }
-                case NumberAnnotation number:
-                    number.Center = map(number.Center);
-                    break;
-                case WatermarkAnnotation watermark:
-                    watermark.Rect = new Rect(0, 0, newWidth, newHeight);
-                    break;
-                case MosaicAnnotation mosaic:
-                    mosaic.Rect = MapRect(mosaic.Rect, map);
-                    MosaicBuilder.Rebuild(mosaic, transformed);
+                case MosaicAnnotation box:
+                    (box.Pattern, box.PatternRect) = PatternFor(block);
                     break;
                 case MosaicBrushAnnotation brush:
-                    for (var i = 0; i < brush.Points.Count; i++)
-                    {
-                        brush.Points[i] = map(brush.Points[i]);
-                    }
-
-                    MosaicBuilder.Rebuild(brush, transformed);
+                    (brush.Pattern, brush.PatternRect) = PatternFor(block);
                     break;
             }
+        }
+
+        void Map(Annotation annotation)
+        {
+        AnnotationOps.ReorientMasks(annotation, op);
+        if (op is 'H' or 'V')
+        {
+            annotation.Rotation = -annotation.Rotation; // a mirrored rotated box turns the other way
+        }
+
+        switch (annotation)
+        {
+            case RectAnnotation rect:
+                rect.Rect = MapRect(rect.Rect, map);
+                break;
+            case EllipseAnnotation ellipse:
+                ellipse.Rect = MapRect(ellipse.Rect, map);
+                break;
+            case LineAnnotation line:
+                line.Start = map(line.Start);
+                line.End = map(line.End);
+                break;
+            case ArrowAnnotation arrow:
+                arrow.Start = map(arrow.Start);
+                arrow.End = map(arrow.End);
+                break;
+            case PenAnnotation pen:
+                for (var i = 0; i < pen.Points.Count; i++)
+                {
+                    pen.Points[i] = map(pen.Points[i]);
+                }
+                break;
+            case TextAnnotation text:
+            {
+                // Text stays readable: move its centre, do not mirror the glyphs.
+                var bounds = text.Bounds;
+                var center = map(new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+                text.Translate(center.X - (bounds.X + bounds.Width / 2), center.Y - (bounds.Y + bounds.Height / 2));
+                break;
+            }
+            case NumberAnnotation number:
+                number.Center = map(number.Center);
+                break;
+            case WatermarkAnnotation watermark:
+                watermark.Rect = new Rect(0, 0, newWidth, newHeight);
+                break;
+            case MosaicAnnotation mosaic:
+                mosaic.Rect = MapRect(mosaic.Rect, map);
+                SetPattern(mosaic, mosaic.BlockSize);
+                break;
+            case MosaicBrushAnnotation brush:
+                for (var i = 0; i < brush.Points.Count; i++)
+                {
+                    brush.Points[i] = map(brush.Points[i]);
+                }
+
+                SetPattern(brush, brush.BlockSize);
+                break;
+        }
+        }
+
+        foreach (var annotation in Editor.Items)
+        {
+            Map(annotation);
+        }
+
+        if (!IsEditor)
+        {
+            // A pin's flip / turn is no undo step: undo after it lands in the new orientation.
+            // (In the editor it is a step of its own, stored with the picture it belongs to.)
+            _history.ForEachStored(Map);
         }
 
         _baseImage = transformed;

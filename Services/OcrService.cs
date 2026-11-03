@@ -69,7 +69,104 @@ public static class OcrService
         }
     }
 
+    /// <summary>The text with its layout: lines as on the image, columns (tables) tab-separated, paragraphs apart.</summary>
     private static string Recognize(BitmapSource image, string languageTag)
+    {
+        var blocks = RecognizeBlocks(image, languageTag);
+        return blocks.Count > 0 ? Layout(blocks) : RecognizeFlat(image, languageTag);
+    }
+
+    /// <summary>
+    /// Rebuilds the layout from the text boxes: boxes sharing a row become one line (left to right),
+    /// a wide gap inside a row is a column break (tab, so a table pastes into a spreadsheet), a
+    /// line starting further right is indented, and a tall gap between rows leaves an empty line.
+    /// </summary>
+    public static string Layout(IReadOnlyList<OcrTextBlock> blocks)
+    {
+        var items = blocks.Where(block => !string.IsNullOrWhiteSpace(block.Text)).ToList();
+        if (items.Count == 0)
+        {
+            return "";
+        }
+
+        var lineHeight = Median(items.Select(block => (double)block.Box.Height));
+        var rows = new List<List<OcrTextBlock>>();
+        foreach (var block in items.OrderBy(block => block.Box.Y + block.Box.Height / 2.0))
+        {
+            var center = block.Box.Y + block.Box.Height / 2.0;
+            var row = rows.LastOrDefault(candidate =>
+            {
+                var top = candidate.Min(item => item.Box.Y);
+                var bottom = candidate.Max(item => item.Box.Y + item.Box.Height);
+                return center > top && center < bottom &&
+                       Math.Abs(center - (top + bottom) / 2.0) < Math.Max(block.Box.Height, bottom - top) * 0.5;
+            });
+            if (row == null)
+            {
+                rows.Add(new List<OcrTextBlock> { block });
+            }
+            else
+            {
+                row.Add(block);
+            }
+        }
+
+        var left = items.Min(block => block.Box.X);
+        var text = new System.Text.StringBuilder();
+        var previousBottom = (double?)null;
+        foreach (var row in rows)
+        {
+            row.Sort((a, b) => a.Box.X.CompareTo(b.Box.X));
+            var top = row.Min(item => item.Box.Y);
+            if (previousBottom is { } bottom)
+            {
+                text.Append(Environment.NewLine);
+                if (top - bottom > lineHeight * 1.1)
+                {
+                    text.Append(Environment.NewLine); // a paragraph gap
+                }
+            }
+
+            var indent = (int)Math.Round((row[0].Box.X - left) / Math.Max(1, lineHeight));
+            if (indent > 0)
+            {
+                text.Append(' ', Math.Min(indent * 2, 40));
+            }
+
+            for (var i = 0; i < row.Count; i++)
+            {
+                if (i > 0)
+                {
+                    var gap = row[i].Box.X - (row[i - 1].Box.X + row[i - 1].Box.Width);
+                    var cjk = IsCjk(row[i - 1].Text[^1]) || IsCjk(row[i].Text[0]);
+                    if (gap > lineHeight * 1.5)
+                    {
+                        text.Append('\t'); // another column
+                    }
+                    else if (!cjk || gap > lineHeight * 0.6)
+                    {
+                        text.Append(' ');
+                    }
+                }
+
+                text.Append(row[i].Text.Trim());
+            }
+
+            previousBottom = row.Max(item => item.Box.Y + item.Box.Height);
+        }
+
+        return text.ToString();
+    }
+
+    private static bool IsCjk(char c) => c is >= '\u4e00' and <= '\u9fff' or >= '\u3000' and <= '\u303f' or >= '\uff00' and <= '\uffef';
+
+    private static double Median(IEnumerable<double> values)
+    {
+        var sorted = values.OrderBy(value => value).ToList();
+        return sorted.Count == 0 ? 16 : sorted[sorted.Count / 2];
+    }
+
+    private static string RecognizeFlat(BitmapSource image, string languageTag)
     {
         if (image.CanFreeze && !image.IsFrozen)
         {

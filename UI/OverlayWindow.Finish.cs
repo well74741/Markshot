@@ -168,6 +168,8 @@ public partial class OverlayWindow
         PinShapedShadow = _lasso != null;
         PinBaseImage = Compose(includeAnnotations: false);
         PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, origin, PinBaseImage);
+        var pinBase = PinBaseImage;
+        PinHistory = _history.Convert(step => AnnotationOps.ToPinSpace(step, origin, pinBase));
         var output = Compose();
         SelectionScreenRect = new Rect(_bounds.X + _selection.X, _bounds.Y + _selection.Y, _selection.Width, _selection.Height);
 
@@ -398,7 +400,10 @@ public partial class OverlayWindow
         CommitPendingText();
         var rect = ClampToScreen(_selection);
         PinBaseImage = Compose(includeAnnotations: false);
-        PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, new Point(Math.Round(rect.X), Math.Round(rect.Y)), PinBaseImage);
+        var origin = new Point(Math.Round(rect.X), Math.Round(rect.Y));
+        PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, origin, PinBaseImage);
+        var pinBase = PinBaseImage;
+        PinHistory = _history.Convert(step => AnnotationOps.ToPinSpace(step, origin, pinBase));
         CloseWith(CaptureAction.Edit, PinBaseImage);
     }
 

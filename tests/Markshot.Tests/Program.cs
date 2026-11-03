@@ -47,6 +47,8 @@ static class Program
         if (mode == "stitch") StitchTest.Run();
         if (mode == "imageops") ImageOpsTest.Run();
         if (mode == "imageeditor") ImageEditorTest.Run();
+        if (mode == "annotate") AnnotateTest.Run();
+        if (mode == "capture") CaptureTest.Run();
         if (mode == "firstopen") FirstOpenProbe.Run();
         if (mode == "cornerprobe") CornerProbe.Run();
     }

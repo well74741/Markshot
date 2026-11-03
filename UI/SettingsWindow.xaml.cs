@@ -46,6 +46,11 @@ public partial class SettingsWindow : Window
         LineKeyBox.Text = config.ToolLineHotkey;
         ShapeKeyBox.Text = config.ToolShapeHotkey;
         CopyFileCheck.IsChecked = config.CopyImageAsFile;
+        DetectElementsCheck.IsChecked = config.DetectElements;
+        DetectWindowsCheck.IsChecked = config.DetectWindows;
+        CaptureCursorCheck.IsChecked = config.CaptureShowCursor;
+        CaptureCursorKeyBox.Text = config.CaptureCursorKey;
+        CrosshairKeyBox.Text = config.CrosshairKey;
         AutoStartCheck.IsChecked = AutoStart.IsEnabled;
         FillToolbarRow(CaptureToolsRow, ToolbarCatalog.Tools, config.CaptureToolOrder, config.CaptureToolHidden);
         FillToolbarRow(CaptureActionsRow, ToolbarCatalog.CaptureActions, config.CaptureActionOrder, config.CaptureActionHidden);
@@ -217,6 +222,42 @@ public partial class SettingsWindow : Window
         // Alt combinations arrive as Key.System; the real key is in SystemKey.
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         e.Handled = HandleHotkeyKey(box, key, Keyboard.Modifiers);
+    }
+
+    /// <summary>Capture-window keys: a combination, or a lone Alt / Ctrl / Shift (set when it is released alone).</summary>
+    private void CaptureKeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox box)
+        {
+            return;
+        }
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        e.Handled = HandleHotkeyKey(box, key, Keyboard.Modifiers);
+    }
+
+    private void CaptureKeyBox_PreviewKeyUp(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox box || !box.Text.EndsWith("…", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        box.Text = key switch
+        {
+            Key.LeftAlt or Key.RightAlt => "Alt",
+            Key.LeftCtrl or Key.RightCtrl => "Ctrl",
+            Key.LeftShift or Key.RightShift => "Shift",
+            _ => box.Tag as string ?? ""
+        };
+        e.Handled = true;
+    }
+
+    private static string CaptureKeyText(TextBox box, string previous)
+    {
+        var text = box.Text.Trim();
+        return text.EndsWith("…", StringComparison.Ordinal) ? previous : text;
     }
 
     private bool HandleHotkeyKey(TextBox box, Key key, ModifierKeys modifiers)
@@ -405,6 +446,11 @@ public partial class SettingsWindow : Window
         _config.Theme = _theme;
         _config.UiSize = _uiSize;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
+        _config.DetectElements = DetectElementsCheck.IsChecked == true;
+        _config.DetectWindows = DetectWindowsCheck.IsChecked == true;
+        _config.CaptureShowCursor = CaptureCursorCheck.IsChecked == true;
+        _config.CaptureCursorKey = CaptureKeyText(CaptureCursorKeyBox, _config.CaptureCursorKey);
+        _config.CrosshairKey = CaptureKeyText(CrosshairKeyBox, _config.CrosshairKey);
         if ((AutoStartCheck.IsChecked == true) != AutoStart.IsEnabled)
         {
             AutoStart.Set(AutoStartCheck.IsChecked == true);

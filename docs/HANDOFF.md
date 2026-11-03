@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.16`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.17`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -563,6 +563,24 @@ un.ps1 batch1 menu`。
 - 长截图：`ScrollStitcher` 改为在已拼内容里定位当前帧（上一位置前后一屏内逐行比较），来回滚动不重复追加；横向 = 帧转置后用同一算法；窗口显示前定位（`PlaceBeforeShow`）。
   `ScrollCaptureSession` 期间注册全局 Tab / Esc（`RegisterHotKey`，结束即注销）。取消 = `StartCapture(selection: area)` 回到截图。
 - 测试：`imageops`（像素运算、文件往返）、`imageeditor`（集成：打开、调色、撤销、几何、裁切、贴图交接）、`stitch`（来回滚动）。
+
+## 8.1.17 0.8.17 变更：标注补齐、元素识别、贴图多选
+
+- 折线 `PolylineAnnotation : PenAnnotation`（直线段绘制；移动、缩放、镜像、裁切、橡皮都按画笔处理，但能被选中 / 复制）。
+  放置过程是 `PolylineDraft`（单击放拐点、拖动也成段、Shift 45°、Backspace 撤回、Finish 去掉跟随点）；截图窗口和贴图窗口各有 `_polyline`，
+  `FinishPolyline / DropPolyline / PolylineKey`，换工具、写回、合成前都会先结束折线。折线是箭头按钮副栏里的小类型，`Tab` 只在箭头 ↔ 直线间切换。
+- 箭头样式 `ArrowStyle { Sharp, Open, Triangle, Double }`，副栏「样式」分段按钮（`ArrowStyleGroup`），选中箭头时改样式会改该箭头。
+- 撤销交接：`AnnotationHistory.Convert / Adopt / ForEachStored`。截图转贴图 / 编辑器时把每一步换算到贴图坐标（`OverlayWindow.PinHistory`），
+  `App.WithHistory` / `ImageEditorWindow.AdoptHistory` 接上；贴图退出编辑不再清空撤销；贴图翻转 / 旋转时同步映射已存的步骤（编辑器里几何操作本身是撤销步骤，不映射）。
+- 元素识别 `Core/ElementDetector`：UI Automation 从窗口往下逐层找包含鼠标的最小子元素（带缓存请求，400 ms 预算，后台线程），结果由小到大；
+  截图窗口 `_hoverChain / _hoverLevel`，滚轮切层级，框位置用 `CompositionTarget.Rendering` 做 140 ms 过渡。`AppConfig.DetectElements / DetectWindows`。
+- 显示鼠标 `Core/CursorCapture`：抓屏时同时取指针（黑底 / 白底各画一次求透明度），截图窗口 `SetShowCursor` 在原图和带指针图之间切换
+  （屏幕、高亮、放大镜、马赛克、合成都用同一张）。`AppConfig.CaptureShowCursor / CaptureCursorKey`（默认 Ctrl+M）。
+- 辅助线：`CrossH / CrossV` 两条 1 物理像素线，`CrosshairKey` 默认 Alt。`CaptureKey`：组合键按下生效；单个 Alt / Ctrl / Shift 在松开且期间没按别的键时生效。
+- 截图窗口拦截 `WM_SYSCOMMAND / SC_KEYMENU`：以前单按 Alt 会让窗口进入菜单模式，鼠标移动事件停掉，放大镜不跟手。
+- 贴图多选 `UI/PinWindow.Group.cs`：静态 `Group`，Shift 单击加选（连同上一次点的贴图）、Ctrl 单击减选，`GroupMark` 虚线框；拖动 / 方向键 / Esc / 右键关闭作用于整组。
+- OCR：`OcrService.Layout` 按文字框重建版面（行聚类、列间距 > 1.5 行高用 Tab、缩进、段落空行），`RecognizeAsync` 默认走它。
+- 测试：`annotate`（折线、箭头样式、撤销交接、贴图多选、OCR 版面）、`capture`（元素识别、悬停层级、显示鼠标、辅助线按键）。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

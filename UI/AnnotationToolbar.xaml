@@ -163,6 +163,23 @@
                         <RadioButton x:Name="VariantArrow" Style="{StaticResource IconToolRadio}" Tag="Arrow" GroupName="Variant" Checked="Variant_Checked" ToolTip="箭头">
                             <Border Style="{StaticResource IconArrowMask}" />
                         </RadioButton>
+                        <RadioButton x:Name="VariantPolyline" Style="{StaticResource IconToolRadio}" Tag="Polyline" GroupName="Variant" Checked="Variant_Checked"
+                                     ToolTip="折线：单击放拐点，双击 / Enter / 右键结束，Backspace 撤回一个拐点，Shift 45°">
+                            <Border Style="{StaticResource IconPolylineMask}" />
+                        </RadioButton>
+                    </StackPanel>
+
+                    <!-- Arrow heads (a small style of the arrow; Tab only switches 箭头 / 直线). -->
+                    <StackPanel x:Name="ArrowStyleGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <TextBlock Text="样式" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" Margin="6,0,6,0" />
+                        <Border Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="ArrowSharp" Style="{StaticResource SegmentRadio}" Tag="Sharp" GroupName="ArrowStyle" Checked="ArrowStyle_Checked" Content="尖头" ToolTip="尖头箭头" />
+                                <RadioButton x:Name="ArrowOpen" Style="{StaticResource SegmentRadio}" Tag="Open" GroupName="ArrowStyle" Checked="ArrowStyle_Checked" Content="线形" ToolTip="线形箭头" />
+                                <RadioButton x:Name="ArrowTriangle" Style="{StaticResource SegmentRadio}" Tag="Triangle" GroupName="ArrowStyle" Checked="ArrowStyle_Checked" Content="三角" ToolTip="三角箭头" />
+                                <RadioButton x:Name="ArrowDouble" Style="{StaticResource SegmentRadio}" Tag="Double" GroupName="ArrowStyle" Checked="ArrowStyle_Checked" Content="双向" ToolTip="双向箭头" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                     <StackPanel x:Name="PenVariants" Orientation="Horizontal" Visibility="Collapsed">

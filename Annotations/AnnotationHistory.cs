@@ -37,6 +37,43 @@ public sealed class AnnotationHistory
 
     public bool CanRedo => _redo.Count > 0;
 
+    /// <summary>A copy of every step with its elements converted (a capture's steps in the pin's space).</summary>
+    public AnnotationHistory Convert(Func<IReadOnlyList<Annotation>, List<Annotation>> convert)
+    {
+        var copy = new AnnotationHistory();
+        copy._undo.AddRange(_undo.Select(step => convert(step)));
+        foreach (var step in _redo.Reverse())
+        {
+            copy._redo.Push(convert(step));
+        }
+
+        return copy;
+    }
+
+    /// <summary>Continues another history: its steps become this one's (the pin goes on with the capture's undo).</summary>
+    public void Adopt(AnnotationHistory other)
+    {
+        _undo.Clear();
+        _undo.AddRange(other._undo);
+        _redo.Clear();
+        foreach (var step in other._redo.Reverse())
+        {
+            _redo.Push(step);
+        }
+
+        _armed = null;
+        _coalesceKey = null;
+    }
+
+    /// <summary>Changes every stored element the same way as the live ones (a pin flipped / turned under them).</summary>
+    public void ForEachStored(Action<Annotation> change)
+    {
+        foreach (var annotation in _undo.Concat(_redo).SelectMany(step => step).Concat(_armed ?? Enumerable.Empty<Annotation>()))
+        {
+            change(annotation);
+        }
+    }
+
     /// <summary>Records the current state as one undo step.</summary>
     public void Checkpoint(IReadOnlyList<Annotation> items)
     {

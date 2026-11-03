@@ -211,18 +211,25 @@ public partial class App : Application
         try
         {
             var (image, bounds) = ScreenCapture.CaptureVirtualScreen();
+            var cursor = CursorCapture.Grab(bounds.X, bounds.Y);
             var overlay = new OverlayWindow(image, bounds, demo)
             {
                 // The pin is created while the capture is still on screen (no gap, no flicker).
                 InitialSelection = selection,
-                PinNow = (source, output) => CreatePin(output, (int)source.SelectionScreenRect.X, (int)source.SelectionScreenRect.Y,
-                    source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow)
+                CursorShot = cursor,
+                PinNow = (source, output) => WithHistory(CreatePin(output, (int)source.SelectionScreenRect.X, (int)source.SelectionScreenRect.Y,
+                    source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow), source)
             };
             overlay.ShowDialog();
 
             if (overlay.Result == CaptureAction.Edit && overlay.PinBaseImage != null)
             {
-                OpenEditor(overlay.PinBaseImage, annotations: overlay.PinAnnotations);
+                var editor = OpenEditor(overlay.PinBaseImage, annotations: overlay.PinAnnotations);
+                if (overlay.PinHistory != null)
+                {
+                    editor.AdoptHistory(overlay.PinHistory); // Ctrl+Z goes on with the capture's steps
+                }
+
                 return;
             }
 
@@ -269,8 +276,8 @@ public partial class App : Application
                     ShowSavedPrompt(overlay.SavedPath);
                     break;
                 case CaptureAction.Pin:
-                    CreatePin(output, (int)overlay.SelectionScreenRect.X, (int)overlay.SelectionScreenRect.Y,
-                        overlay.PinBaseImage, overlay.PinAnnotations, overlay.PinCornerRadius);
+                    WithHistory(CreatePin(output, (int)overlay.SelectionScreenRect.X, (int)overlay.SelectionScreenRect.Y,
+                        overlay.PinBaseImage, overlay.PinAnnotations, overlay.PinCornerRadius), overlay);
                     break;
                 case CaptureAction.Translate:
                     ShowTranslation(output);
@@ -643,6 +650,17 @@ public partial class App : Application
     private readonly List<UI.ImageEditorWindow> _editors = new();
 
     /// <summary>Opens the image editor (empty, or on an image with its editable annotations).</summary>
+    /// <summary>A pin made from a capture goes on with the capture's undo steps.</summary>
+    private static UI.PinWindow WithHistory(UI.PinWindow pin, UI.OverlayWindow source)
+    {
+        if (source.PinHistory != null)
+        {
+            pin.AdoptHistory(source.PinHistory);
+        }
+
+        return pin;
+    }
+
     public UI.ImageEditorWindow OpenEditor(BitmapSource? image = null, string? path = null,
         List<Annotations.Annotation>? annotations = null, UI.PinWindow? sourcePin = null)
     {

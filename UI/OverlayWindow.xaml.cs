@@ -50,7 +50,13 @@ public partial class OverlayWindow : Window
     private double _cornerRadiusOrigin;
     private int _roundingCorner;
 
-    private readonly BitmapSource _screen;
+    private BitmapSource _screen; // what the capture shows: the screenshot, with the pointer when 显示鼠标 is on
+    private readonly BitmapSource _screenPlain;
+    private BitmapSource? _screenWithCursor;
+    private CursorShot? _cursorShot;
+    private bool _showCursor;
+    private bool _crosshair;
+    private Key? _tapKey; // a lone modifier pressed with nothing else (yet)
     private readonly Int32Rect _bounds;
     private readonly bool _demo;
 
@@ -92,6 +98,17 @@ public partial class OverlayWindow : Window
     private readonly byte[] _pixelBuffer = new byte[4];
     private WindowTarget? _hoverTarget;
     private Rect _hoverLocal = Rect.Empty;
+    // Element / window frames under the mouse, smallest first; the wheel picks the level.
+    private List<HoverCandidate> _hoverChain = new();
+    private int _hoverLevel;
+    private Rect _hoverInner = Rect.Empty; // moves inside it need no new lookup
+    private (IntPtr Handle, int X, int Y)? _elementWanted;
+    private bool _elementBusy;
+    private (int X, int Y) _hoverScreenPoint;
+    private Rect _hoverFrom;
+    private Rect _hoverTo;
+    private readonly Stopwatch _hoverClock = new();
+    private bool _hoverAnimating;
     private Rect _pendingWindow = Rect.Empty;
     private bool _preferChild;
     private bool _hexColor = true;
@@ -102,6 +119,7 @@ public partial class OverlayWindow : Window
     private Point _lastAnnotationPoint;
     private bool _erasing;
     private PenAnnotation? _eraserPath;
+    private PolylineDraft? _polyline; // 折线 being placed
     private CreationGesture? _gesture;
     // E / R pressed while dragging a selected element: rotate / scale about its centre.
     private bool _dragRotate;
@@ -151,6 +169,9 @@ public partial class OverlayWindow : Window
     /// <summary>For pins: the annotations in pin coordinates, still editable there.</summary>
     public List<Annotation>? PinAnnotations { get; private set; }
 
+    /// <summary>The capture's undo steps in pin coordinates: the pin / editor goes on with them.</summary>
+    public AnnotationHistory? PinHistory { get; private set; }
+
     /// <summary>File written by 保存 / 快速保存 (for the "open folder?" prompt).</summary>
     public string? SavedPath { get; private set; }
 
@@ -178,6 +199,14 @@ public partial class OverlayWindow : Window
         {
             if (_finishing)
             {
+                e.Handled = true;
+                return;
+            }
+
+            if (_polyline != null)
+            {
+                FinishPolyline(); // right click ends the polyline
+                _suppressContextMenu = true;
                 e.Handled = true;
                 return;
             }
@@ -277,7 +306,12 @@ public partial class OverlayWindow : Window
         Motion.FadeOnShow(TranslatedImage);
 
         _screen = screen;
+        _screenPlain = screen;
         _bounds = bounds;
+        HintText.Text = $"拖拽选择区域　·　右键拖动手绘截图（Shift 直线）　·　点击窗口 / 元素直接选中　·　{KeyLabel(App.Config.CrosshairKey)} 辅助线　·　" +
+                        $"{KeyLabel(App.Config.CaptureCursorKey)} 显示鼠标　·　R 上次区域　·　双击复制　·　Esc 取消";
+        PreviewMouseMove += (_, e) => UpdateCrosshair(e.GetPosition(Root));
+        PreviewMouseDown += (_, _) => _tapKey = null; // Alt+drag and the like is no tap
         _demo = demo;
 
         ScreenImage.Source = screen;
@@ -386,6 +420,17 @@ public partial class OverlayWindow : Window
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         var handle = new WindowInteropHelper(this).Handle;
+        // A lone Alt would put the window in menu mode (SC_KEYMENU): the mouse moves stop arriving
+        // and the magnifier stands still. There is no menu here, so that never starts.
+        HwndSource.FromHwnd(handle)?.AddHook((IntPtr _, int message, IntPtr wParam, IntPtr _, ref bool handled) =>
+        {
+            if (message == 0x0112 /* WM_SYSCOMMAND */ && (wParam.ToInt64() & 0xFFF0) == 0xF100 /* SC_KEYMENU */)
+            {
+                handled = true;
+            }
+
+            return IntPtr.Zero;
+        });
         var style = Native.GetWindowLongPtr(handle, Native.GWL_EXSTYLE).ToInt64();
         Native.SetWindowLongPtr(handle, Native.GWL_EXSTYLE, new IntPtr(style | 0x00000080));
         ApplyPhysicalBounds();
@@ -525,9 +570,170 @@ public partial class OverlayWindow : Window
         UpdateUndoButtons();
     }
 
+    /// <summary>The pointer as it was when the capture started (显示鼠标 shows it in the screenshot).</summary>
+    public CursorShot? CursorShot
+    {
+        get => _cursorShot;
+        set
+        {
+            _cursorShot = value;
+            _screenWithCursor = null;
+            SetShowCursor(App.Config.CaptureShowCursor);
+        }
+    }
+
+    public bool ShowsCursor => _showCursor;
+
+    public bool ShowsCrosshair => _crosshair;
+
+    /// <summary>显示鼠标: the screenshot with or without the pointer (copy, save, pin, mosaics … all use it).</summary>
+    public void SetShowCursor(bool show)
+    {
+        show &= _cursorShot != null;
+        _showCursor = show;
+        var screen = show ? _screenWithCursor ??= CursorCapture.Paint(_screenPlain, _cursorShot!) : _screenPlain;
+        if (ReferenceEquals(screen, _screen))
+        {
+            return;
+        }
+
+        _screen = screen;
+        ScreenImage.Source = screen;
+        BrightImage.Source = screen;
+        Editor.Source = screen;
+        Magnifier.Source = screen;
+        _effectiveScreen = null;
+        foreach (var mosaic in Editor.Items.Where(item => item is MosaicAnnotation or MosaicBrushAnnotation))
+        {
+            MosaicBuilder.Rebuild(mosaic, EffectiveScreen);
+        }
+
+        Editor.InvalidateVisual();
+        Magnifier.InvalidateVisual();
+    }
+
+    private void ToggleShowCursor()
+    {
+        SetShowCursor(!_showCursor);
+        App.Config.CaptureShowCursor = _showCursor;
+        try
+        {
+            App.Config.Save();
+        }
+        catch (IOException ex)
+        {
+            Log.Error("保存设置失败", ex);
+        }
+    }
+
+    /// <summary>辅助线 on / off; it follows the mouse until switched off (or the capture ends).</summary>
+    public void SetCrosshair(bool on)
+    {
+        _crosshair = on;
+        if (!on)
+        {
+            CrossH.Visibility = Visibility.Collapsed;
+            CrossV.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        UpdateCrosshair(Mouse.GetPosition(Root));
+    }
+
+    private void UpdateCrosshair(Point dip)
+    {
+        if (!_crosshair)
+        {
+            return;
+        }
+
+        // One physical pixel thick, on the pixel under the mouse.
+        var pixel = 1 / Math.Max(0.1, _scale);
+        var x = Math.Floor(dip.X * _scale) / _scale;
+        var y = Math.Floor(dip.Y * _scale) / _scale;
+        CrossH.Width = Math.Max(0, Root.ActualWidth);
+        CrossH.Height = pixel;
+        CrossV.Width = pixel;
+        CrossV.Height = Math.Max(0, Root.ActualHeight);
+        Canvas.SetLeft(CrossH, 0);
+        Canvas.SetTop(CrossH, y);
+        Canvas.SetLeft(CrossV, x);
+        Canvas.SetTop(CrossV, 0);
+        CrossH.Visibility = Visibility.Visible;
+        CrossV.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>The capture window's own keys (显示鼠标, 辅助线) on press. True = used.</summary>
+    private bool CaptureKeyDown(Key key, bool repeat)
+    {
+        var config = App.Config;
+        var modifiers = Keyboard.Modifiers;
+        foreach (var configured in new[] { config.CrosshairKey, config.CaptureCursorKey })
+        {
+            var modifier = CaptureKey.ModifierOf(configured);
+            if (modifier != ModifierKeys.None && CaptureKey.IsModifierKey(key, modifier))
+            {
+                if (!repeat)
+                {
+                    _tapKey = key; // decided on release
+                }
+
+                return false;
+            }
+        }
+
+        if (!AnnotationOps.IsModifier(key))
+        {
+            _tapKey = null;
+        }
+
+        if (CaptureKey.Matches(config.CrosshairKey, key, modifiers))
+        {
+            SetCrosshair(!_crosshair);
+            return true;
+        }
+
+        if (CaptureKey.Matches(config.CaptureCursorKey, key, modifiers))
+        {
+            ToggleShowCursor();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>A lone modifier released with nothing else pressed: its switch.</summary>
+    private bool CaptureKeyUp(Key key)
+    {
+        if (_tapKey != key)
+        {
+            return false;
+        }
+
+        _tapKey = null;
+        var config = App.Config;
+        var used = false;
+        if (CaptureKey.IsModifierKey(key, CaptureKey.ModifierOf(config.CrosshairKey)))
+        {
+            SetCrosshair(!_crosshair);
+            used = true;
+        }
+
+        if (CaptureKey.IsModifierKey(key, CaptureKey.ModifierOf(config.CaptureCursorKey)))
+        {
+            ToggleShowCursor();
+            used = true;
+        }
+
+        return used;
+    }
+
+    private static string KeyLabel(string? configured) => string.IsNullOrWhiteSpace(configured) ? "（未设置）" : configured.Trim();
+
     protected override void OnClosed(EventArgs e)
     {
         _closed = true;
+        StopHoverAnimation();
         _noticeTimer.Stop();
         CancelTranslation();
         _active = null;

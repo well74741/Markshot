@@ -87,12 +87,18 @@ public partial class PinWindow
 
         Separator();
         Add("设置…", () => ((App)Application.Current).ShowSettings());
+        if (InGroup)
+        {
+            Add($"关闭选中的 {SelectedPins.Count} 张贴图", CloseWithGroup, gesture: "Esc");
+            Add("取消多选", ClearPinGroup);
+        }
+
         if ((Application.Current as App)?.PinCount > 1)
         {
             Add("关闭所有贴图", () => ((App)Application.Current).CloseAllPins());
         }
 
-        Add("关闭", Close, gesture: "Esc");
+        Add("关闭", Close, gesture: InGroup ? null : "Esc");
         ContextMenu = menu;
     }
 

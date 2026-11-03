@@ -206,7 +206,7 @@ public static class ToolCursors
             return Cursors.IBeam;
         }
 
-        if (tool is AnnotationTool.Rectangle or AnnotationTool.Ellipse or AnnotationTool.Line
+        if (tool is AnnotationTool.Rectangle or AnnotationTool.Ellipse or AnnotationTool.Line or AnnotationTool.Polyline
             or AnnotationTool.Arrow or AnnotationTool.Mosaic or AnnotationTool.Watermark or AnnotationTool.Number)
         {
             return Cursors.Cross;

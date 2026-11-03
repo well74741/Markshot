@@ -35,7 +35,8 @@ internal static class AnnotationOps
             {
                 Rect = new Rect(point, point), Color = color, Thickness = thickness, Fill = toolbar.FillEnabled
             },
-            AnnotationTool.Arrow => new ArrowAnnotation { Start = point, End = point, Color = color, Thickness = thickness },
+            AnnotationTool.Arrow => new ArrowAnnotation { Start = point, End = point, Color = color, Thickness = thickness, Style = toolbar.ArrowStyle },
+            AnnotationTool.Polyline => new PolylineAnnotation { Color = color, Thickness = thickness },
             AnnotationTool.Line => new LineAnnotation { Start = point, End = point, Color = color, Thickness = thickness },
             AnnotationTool.Pen => new PenAnnotation { Color = color, Thickness = thickness },
             AnnotationTool.Highlighter => new PenAnnotation { Color = color, Thickness = thickness, Highlight = true },
@@ -158,7 +159,7 @@ internal static class AnnotationOps
     {
         AnnotationTool.Rectangle or AnnotationTool.Ellipse => 1,
         AnnotationTool.Pen or AnnotationTool.Highlighter => 2,
-        AnnotationTool.Arrow or AnnotationTool.Line => 3,
+        AnnotationTool.Arrow or AnnotationTool.Line or AnnotationTool.Polyline => 3,
         AnnotationTool.Mosaic or AnnotationTool.MosaicBrush => 4,
         AnnotationTool.Text or AnnotationTool.Watermark => 5,
         _ => 0
@@ -176,6 +177,7 @@ internal static class AnnotationOps
         AnnotationTool.Highlighter => AnnotationTool.Pen,
         AnnotationTool.Arrow => AnnotationTool.Line,
         AnnotationTool.Line => AnnotationTool.Arrow,
+        AnnotationTool.Polyline => AnnotationTool.Arrow, // a style of the settings row; Tab switches the main kinds
         AnnotationTool.Mosaic => AnnotationTool.MosaicBrush,
         AnnotationTool.MosaicBrush => AnnotationTool.Mosaic,
         AnnotationTool.Text => AnnotationTool.Watermark,
@@ -190,6 +192,7 @@ internal static class AnnotationOps
         EllipseAnnotation => AnnotationTool.Ellipse,
         LineAnnotation => AnnotationTool.Line,
         ArrowAnnotation => AnnotationTool.Arrow,
+        PolylineAnnotation => AnnotationTool.Polyline,
         PenAnnotation { Highlight: true } => AnnotationTool.Highlighter,
         PenAnnotation => AnnotationTool.Pen,
         MosaicAnnotation => AnnotationTool.Mosaic,
@@ -205,6 +208,7 @@ internal static class AnnotationOps
     {
         RectAnnotation or EllipseAnnotation => tool is AnnotationTool.Rectangle or AnnotationTool.Ellipse,
         LineAnnotation or ArrowAnnotation => tool is AnnotationTool.Line or AnnotationTool.Arrow,
+        PolylineAnnotation => false,
         PenAnnotation => tool is AnnotationTool.Pen or AnnotationTool.Highlighter,
         _ => false
     } && ToolOf(annotation) != tool;
@@ -220,6 +224,7 @@ internal static class AnnotationOps
         MosaicAnnotation box => box.Rect.Width < 2 || box.Rect.Height < 2,
         ArrowAnnotation arrow => (arrow.End - arrow.Start).Length < 2,
         LineAnnotation line => (line.End - line.Start).Length < 2,
+        PolylineAnnotation polyline => polyline.Points.Count < 2,
         PenAnnotation pen => pen.Points.Count < 1,
         MosaicBrushAnnotation brush => brush.Points.Count < 1,
         _ => false
@@ -269,7 +274,7 @@ internal static class AnnotationOps
         for (var i = items.Count - 1; i >= 0; i--)
         {
             var annotation = items[i];
-            if (annotation is PenAnnotation or MosaicBrushAnnotation or WatermarkAnnotation)
+            if (annotation is PenAnnotation and not PolylineAnnotation or MosaicBrushAnnotation or WatermarkAnnotation)
             {
                 continue;
             }
@@ -502,7 +507,7 @@ internal static class AnnotationClipboard
     public static bool HasContent => _item != null;
 
     public static bool CanCopy(Annotation annotation) =>
-        annotation is not (PenAnnotation or MosaicBrushAnnotation or WatermarkAnnotation);
+        annotation is PolylineAnnotation || annotation is not (PenAnnotation or MosaicBrushAnnotation or WatermarkAnnotation);
 
     public static void Copy(Annotation annotation)
     {

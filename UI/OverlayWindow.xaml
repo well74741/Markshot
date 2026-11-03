@@ -47,9 +47,13 @@
         <Canvas x:Name="UiLayer">
             <Border x:Name="Hint" Background="{DynamicResource T_CC1C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"
                     CornerRadius="7" Padding="16,9" IsHitTestVisible="False">
-                <TextBlock Text="拖拽选择区域　·　右键拖动手绘截图（Shift 直线）　·　点击窗口可直接选中　·　R 上次区域　·　双击复制　·　Esc 取消"
+                <TextBlock x:Name="HintText" Text="拖拽选择区域　·　右键拖动手绘截图（Shift 直线）　·　点击窗口 / 元素直接选中　·　R 上次区域　·　双击复制　·　Esc 取消"
                            Foreground="{DynamicResource T_FFEDEDED}" FontSize="13" />
             </Border>
+
+            <!-- 辅助线: a crosshair through the mouse across the whole screen. -->
+            <Rectangle x:Name="CrossH" Fill="#B34C8DFF" Height="1" Visibility="Collapsed" IsHitTestVisible="False" />
+            <Rectangle x:Name="CrossV" Fill="#B34C8DFF" Width="1" Visibility="Collapsed" IsHitTestVisible="False" />
 
             <ui:MagnifierLayer x:Name="Magnifier" Width="200" Height="176" Visibility="Collapsed" />
 
