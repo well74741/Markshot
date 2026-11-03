@@ -86,44 +86,23 @@ public partial class OverlayWindow
 
         CommitPendingText();
         var image = Compose();
-        var dialog = new SaveFileDialog
+        var path = SaveImageDialog.Ask(this, "保存截图", $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+        if (path == null)
         {
-            Title = "保存截图",
-            Filter = "PNG 图片|*.png|JPEG 图片|*.jpg;*.jpeg",
-            FileName = $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png"
-        };
-
-        var initialDirectory = App.Config.ResolveSaveDirectory();
-        if (Directory.Exists(initialDirectory))
-        {
-            dialog.InitialDirectory = initialDirectory;
-        }
-
-        var wasTopmost = Topmost;
-        Topmost = false;
-        try
-        {
-            if (dialog.ShowDialog(this) != true)
-            {
-                return;
-            }
-        }
-        finally
-        {
-            Topmost = wasTopmost;
+            Focus();
+            return;
         }
 
         try
         {
-            SaveToFile(image, dialog.FileName);
-            SavedPath = dialog.FileName;
+            SaveToFile(image, path);
+            SavedPath = path;
             CloseWith(CaptureAction.Save, image);
         }
         catch (Exception ex)
         {
             Log.Error("保存截图失败", ex);
-            MessageBox.Show(this, "保存失败：" + ex.Message, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessage.Show(this, "保存失败", ex.Message, "确定");
         }
     }
 
@@ -356,16 +335,7 @@ public partial class OverlayWindow
         CloseWith(CaptureAction.Translate, cropped);
     }
 
-    private static void SaveToFile(BitmapSource image, string path)
-    {
-        BitmapEncoder encoder = Path.GetExtension(path).ToLowerInvariant() is ".jpg" or ".jpeg"
-            ? new JpegBitmapEncoder { QualityLevel = 92 }
-            : new PngBitmapEncoder();
-
-        encoder.Frames.Add(BitmapFrame.Create(image));
-        using var stream = File.Create(path);
-        encoder.Save(stream);
-    }
+    private static void SaveToFile(BitmapSource image, string path) => ImageFile.Save(image, path);
 
     /// <summary>录屏: the selected area becomes the recording area.</summary>
     private void RecordAndClose()

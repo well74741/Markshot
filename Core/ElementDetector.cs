@@ -14,7 +14,7 @@ public sealed record DetectedElement(Rect Bounds, string Label);
 public static class ElementDetector
 {
     private const int MaxDepth = 40;
-    private static readonly TimeSpan Budget = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan Budget = TimeSpan.FromMilliseconds(1500);
 
     public static List<DetectedElement> Detect(IntPtr window, int x, int y, CancellationToken cancel = default)
     {
@@ -35,6 +35,8 @@ public static class ElementDetector
             using (cache.Activate())
             {
                 var current = AutomationElement.FromHandle(window);
+                // The budget is for the walk: the first contact with UI Automation in a process can take a while.
+                started.Restart();
                 var point = new Point(x, y);
                 for (var depth = 0; depth < MaxDepth && current != null; depth++)
                 {

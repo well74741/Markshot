@@ -21,7 +21,8 @@ public sealed class ImageEditorWindow : PinWindow
 
     private readonly DockPanel _layout = new();
     private FrameworkElement? _panel;
-    private readonly ScrollViewer _scroller;
+    private readonly Canvas _stage; // the picture sits on it anywhere: dragged with the middle button, zoomed at the mouse
+    private Point _pan; // where the picture's top-left corner is on the stage (DIP)
     private readonly Border _dropHint;
     private readonly Border _emptyHint;
     private readonly Border _sessionBar;
@@ -35,8 +36,11 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly Slider _angle = new() { Minimum = -45, Maximum = 45, IsMoveToPointEnabled = true };
     private readonly TextBlock _angleValue = new() { FontSize = 12, Width = 40, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
     private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _sliders = new();
-    private readonly ToggleButton _gray;
     private readonly ToggleButton _invert;
+    private readonly Dictionary<EditGroup, Button> _resetButtons = new();
+    // The picture before the first change of each group, while only that group has changed it since.
+    private readonly Dictionary<EditGroup, (State State, List<Annotation> Items)> _beforeGroup = new();
+    private EditGroup? _lastGroup;
     private readonly DispatcherTimer _adjustTimer = new() { Interval = TimeSpan.FromMilliseconds(350) };
     private BitmapSource _origin;
     private BitmapSource? _proxy;
@@ -53,8 +57,16 @@ public sealed class ImageEditorWindow : PinWindow
     private bool _forceClose;
     private bool _firstFit = true;
     private Point _panStart;
-    private Point _panOffset;
+    private Point _panOrigin;
     private bool _panning;
+
+    /// <summary>The panel's groups of picture changes (each has its own 重置).</summary>
+    private enum EditGroup
+    {
+        Size,
+        Turn,
+        Cut
+    }
 
     public ImageEditorWindow(BitmapSource? image = null, string? path = null, List<Annotation>? annotations = null, PinWindow? sourcePin = null)
         : this(image == null ? ImageOps.FromPixels(new byte[4], 1, 1) : ImageOps.Normalize(image), image != null, path, annotations, sourcePin)
@@ -90,25 +102,17 @@ public sealed class ImageEditorWindow : PinWindow
         Theme.TrackTitleBar(this);
         UpdateTitle();
 
-        // The pin's image area moves into a scroll area; the toolbar sits above it.
+        // The pin's image area moves onto a free stage; the toolbar sits above it.
         var canvas = RootGrid;
         Content = null;
         ImageHost.Background = (Brush)Application.Current.FindResource("SmallCheckerBrush");
-        canvas.HorizontalAlignment = HorizontalAlignment.Center;
-        canvas.VerticalAlignment = VerticalAlignment.Center;
-        _scroller = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Padding = new Thickness(16),
-            Content = canvas,
-            Focusable = false
-        };
-        _scroller.PreviewMouseWheel += Scroller_PreviewMouseWheel;
-        _scroller.PreviewMouseDown += Scroller_PreviewMouseDown;
-        _scroller.PreviewMouseMove += Scroller_PreviewMouseMove;
-        _scroller.PreviewMouseUp += Scroller_PreviewMouseUp;
-        _scroller.MouseLeftButtonDown += (_, _) =>
+        _stage = new Canvas { ClipToBounds = true, Background = Brushes.Transparent, Focusable = false };
+        _stage.Children.Add(canvas);
+        _stage.PreviewMouseWheel += Stage_PreviewMouseWheel;
+        _stage.PreviewMouseDown += Stage_PreviewMouseDown;
+        _stage.PreviewMouseMove += Stage_PreviewMouseMove;
+        _stage.PreviewMouseUp += Stage_PreviewMouseUp;
+        _stage.MouseLeftButtonDown += (_, _) =>
         {
             // A click on the empty space around the image: deselect.
             if (!ImageHost.IsMouseOver && _overlay == null)
@@ -117,12 +121,16 @@ public sealed class ImageEditorWindow : PinWindow
                 ClearSelection();
             }
         };
-        SizeChanged += (_, _) =>
+        _stage.SizeChanged += (_, e) =>
         {
-            if (_firstFit && _hasImage && _scroller.ActualWidth > 0)
+            if (_firstFit && _hasImage && _stage.ActualWidth > 0)
             {
                 Fit();
+                return;
             }
+
+            // The picture keeps its place relative to the middle of the view.
+            MoveTo(new Point(_pan.X + (e.NewSize.Width - e.PreviousSize.Width) / 2, _pan.Y + (e.NewSize.Height - e.PreviousSize.Height) / 2));
         };
 
         _emptyHint = EmptyHint();
@@ -163,12 +171,11 @@ public sealed class ImageEditorWindow : PinWindow
         UiScale.Attach(_sessionBar);
 
         var middle = new Grid();
-        middle.Children.Add(_scroller);
+        middle.Children.Add(_stage);
         middle.Children.Add(_emptyHint);
         middle.Children.Add(_sessionBar);
         middle.Children.Add(_dropHint);
 
-        _gray = TextToggle("灰度", "转为灰度图");
         _invert = TextToggle("反色", "颜色取反");
         var panel = BuildPanel();
         var status = BuildStatusBar();
@@ -202,6 +209,11 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 RestoreState(state);
             }
+
+            // Undo / redo: which group changed the picture last is not known any more.
+            _beforeGroup.Clear();
+            _lastGroup = null;
+            UpdateResetButtons();
         };
         _history.ExtraSize = extra => extra is State s
             ? new (object, long)[] { (s.Origin, s.Origin.PixelWidth * 4L * s.Origin.PixelHeight), (s.Base, s.Base.PixelWidth * 4L * s.Base.PixelHeight) }
@@ -301,12 +313,23 @@ public sealed class ImageEditorWindow : PinWindow
         return button;
     }
 
-    private static Border Section(string title, params UIElement[] children)
+    private static Border Section(string title, Button? reset, params UIElement[] children)
     {
         var stack = new StackPanel();
-        var heading = new TextBlock { Text = title, FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
+        var heading = new TextBlock { Text = title, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
         heading.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFE6E6E6));
-        stack.Children.Add(heading);
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8), LastChildFill = true };
+        if (reset != null)
+        {
+            reset.Height = 24;
+            reset.FontSize = 11.5;
+            reset.Margin = new Thickness(0);
+            DockPanel.SetDock(reset, Dock.Right);
+            header.Children.Add(reset);
+        }
+
+        header.Children.Add(heading);
+        stack.Children.Add(header);
         foreach (var child in children)
         {
             stack.Children.Add(child);
@@ -383,20 +406,22 @@ public sealed class ImageEditorWindow : PinWindow
         colour.Children.Add(AdjustSlider("饱和度", "Saturation", -100, 100, 0));
         colour.Children.Add(AdjustSlider("透明度", "Opacity", 0, 100, 100));
         var toggles = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
-        _gray.Click += (_, _) => AdjustChanged();
         _invert.Click += (_, _) => AdjustChanged();
-        toggles.Children.Add(_gray);
         toggles.Children.Add(_invert);
-        var reset = TextButton("重置", "调色恢复默认", ResetAdjust);
-        reset.Margin = new Thickness(0);
-        toggles.Children.Add(reset);
         colour.Children.Add(toggles);
 
+        Button Reset(EditGroup group, string tip)
+        {
+            var button = TextButton("重置", tip, () => ResetGroup(group));
+            _resetButtons[group] = button;
+            return button;
+        }
+
         var stack = new StackPanel { Margin = new Thickness(10) };
-        stack.Children.Add(Section("尺寸", sizeRow, _keepRatio));
-        stack.Children.Add(Section("旋转与镜像", turnRow, angleRow, applyAngle));
-        stack.Children.Add(Section("裁切", cutRow));
-        stack.Children.Add(Section("调色", colour));
+        stack.Children.Add(Section("尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio));
+        stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow, angleRow, applyAngle));
+        stack.Children.Add(Section("裁切", Reset(EditGroup.Cut, "回到裁切 / 梯形校正之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
+        stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
         UiScale.Attach(stack);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = stack };
         var frame = new Border { Width = 262, BorderThickness = new Thickness(1, 0, 0, 0), Child = scroll };
@@ -493,7 +518,6 @@ public sealed class ImageEditorWindow : PinWindow
         _sliders["Contrast"].Slider.Value = _adjust.Contrast;
         _sliders["Saturation"].Slider.Value = _adjust.Saturation;
         _sliders["Opacity"].Slider.Value = _adjust.Opacity;
-        _gray.IsChecked = _adjust.Gray;
         _invert.IsChecked = _adjust.Invert;
         _syncingControls = false;
         _emptyHint.Visibility = _hasImage ? Visibility.Collapsed : Visibility.Visible;
@@ -503,6 +527,7 @@ public sealed class ImageEditorWindow : PinWindow
             _panel.IsEnabled = _hasImage;
         }
 
+        UpdateResetButtons();
         UpdateStatus();
     }
 
@@ -514,10 +539,16 @@ public sealed class ImageEditorWindow : PinWindow
 
     // ------------------------------------------------------------------ zoom and pan
 
-    private void SetZoom(double zoom)
+    /// <summary>Zooms keeping the picture point under <paramref name="anchor"/> (stage DIP; default: the middle of the view) in place.</summary>
+    private void SetZoom(double zoom, Point? anchor = null)
     {
+        var at = anchor ?? new Point(_stage.ActualWidth / 2, _stage.ActualHeight / 2);
+        var before = _zoom;
         _zoom = Math.Clamp(zoom, MinZoom, 8);
+        var ratio = _zoom / before;
+        _pan = new Point(at.X - (at.X - _pan.X) * ratio, at.Y - (at.Y - _pan.Y) * ratio);
         ApplyBounds();
+        MoveTo(_pan);
         _textEditor.Refresh();
         var pointer = Mouse.GetPosition(ImageHost);
         UpdateCursor(new Point(pointer.X / _zoom, pointer.Y / _zoom));
@@ -532,55 +563,74 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void ZoomStep(double factor) => SetZoom(_zoom * factor);
 
-    /// <summary>Fits the image into the window (a very long one: fits its short side, the rest scrolls).</summary>
+    /// <summary>
+    /// Fits the picture into the view and puts it in the middle (F). A very long one fits its short
+    /// side and starts at its top.
+    /// </summary>
     public void Fit()
     {
-        if (!_hasImage || _scroller.ActualWidth <= 0)
+        if (!_hasImage || _stage.ActualWidth <= 0)
         {
             return;
         }
 
-        var width = Math.Max(50, _scroller.ActualWidth - 40);
-        var height = Math.Max(50, _scroller.ActualHeight - 40);
+        var width = Math.Max(50, _stage.ActualWidth - 40);
+        var height = Math.Max(50, _stage.ActualHeight - 40);
         double w = _baseImage.PixelWidth, h = _baseImage.PixelHeight;
-        var fit = Math.Max(h / w, w / h) > 3 ? Math.Max(width / w, height / h) : Math.Min(width / w, height / h);
+        var tall = Math.Max(h / w, w / h) > 3;
+        var fit = tall ? Math.Max(width / w, height / h) : Math.Min(width / w, height / h);
         _firstFit = false;
         SetZoom(Math.Min(1, fit));
+        Center();
+        if (tall)
+        {
+            // A long screenshot starts at its beginning.
+            MoveTo(new Point(w * _zoom > _stage.ActualWidth ? 20 : _pan.X, h * _zoom > _stage.ActualHeight ? 20 : _pan.Y));
+        }
     }
 
-    /// <summary>
-    /// A selected element or an active tool takes the wheel as on a pin (size; Ctrl = opacity).
-    /// Otherwise the wheel scrolls the picture and Ctrl + wheel zooms at the pointer.
-    /// </summary>
-    private void Scroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    /// <summary>The picture in the middle of the view at the current zoom.</summary>
+    public void Center() =>
+        MoveTo(new Point((_stage.ActualWidth - _baseImage.PixelWidth * _zoom) / 2, (_stage.ActualHeight - _baseImage.PixelHeight * _zoom) / 2));
+
+    /// <summary>Puts the picture's corner at <paramref name="position"/>; a part of it always stays in view.</summary>
+    private void MoveTo(Point position)
     {
-        var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        const double keep = 48;
+        double w = _baseImage.PixelWidth * _zoom, h = _baseImage.PixelHeight * _zoom;
+        _pan = new Point(
+            Math.Clamp(position.X, Math.Min(0, keep - w), Math.Max(0, _stage.ActualWidth - keep)),
+            Math.Clamp(position.Y, Math.Min(0, keep - h), Math.Max(0, _stage.ActualHeight - keep)));
+        Canvas.SetLeft(RootGrid, Math.Round(_pan.X));
+        Canvas.SetTop(RootGrid, Math.Round(_pan.Y));
+    }
+
+    /// <summary>The picture's top-left corner on the stage (tests).</summary>
+    public Point PanOffset => _pan;
+
+    /// <summary>
+    /// The wheel zooms at the mouse. With an element selected or a tool active, Shift + wheel is the
+    /// element's / tool's size and Ctrl + wheel its opacity (as on a pin).
+    /// </summary>
+    private void Stage_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        var modifiers = Keyboard.Modifiers;
         var drawing = _overlay == null && (_textEditor.IsActive || _selected != null || _tool is not (AnnotationTool.None or AnnotationTool.Select));
-        if (drawing && ImageHost.IsMouseOver)
+        if (drawing && ImageHost.IsMouseOver && (modifiers & (ModifierKeys.Shift | ModifierKeys.Control)) != 0)
         {
             OnMouseWheel(this, e);
+            e.Handled = true;
             return;
         }
 
-        if (!control)
-        {
-            return; // the scroll area scrolls
-        }
-
-        var inImage = e.GetPosition(ImageHost);
-        var inView = e.GetPosition(_scroller);
-        var before = _zoom;
-        ZoomStep(e.Delta > 0 ? 1.1 : 1 / 1.1);
-        _scroller.UpdateLayout();
-        // The point under the mouse stays under the mouse.
-        var ratio = _zoom / before;
-        var moved = ImageHost.TranslatePoint(new Point(inImage.X * ratio, inImage.Y * ratio), _scroller);
-        _scroller.ScrollToHorizontalOffset(_scroller.HorizontalOffset + moved.X - inView.X);
-        _scroller.ScrollToVerticalOffset(_scroller.VerticalOffset + moved.Y - inView.Y);
+        ZoomAt(e.Delta, e.GetPosition(_stage));
         e.Handled = true;
     }
 
-    private void Scroller_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    /// <summary>One wheel notch of zoom at a point of the view.</summary>
+    public void ZoomAt(int delta, Point at) => SetZoom(_zoom * (delta > 0 ? 1.1 : 1 / 1.1), at);
+
+    private void Stage_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         // The keyboard goes back to the canvas when it is clicked (the size boxes apply on Enter only).
         if (KeysBelongToUi && (Keyboard.FocusedElement as DependencyObject) != null)
@@ -591,35 +641,37 @@ public sealed class ImageEditorWindow : PinWindow
         if (e.ChangedButton == MouseButton.Middle)
         {
             _panning = true;
-            _panStart = e.GetPosition(_scroller);
-            _panOffset = new Point(_scroller.HorizontalOffset, _scroller.VerticalOffset);
-            _scroller.CaptureMouse();
-            _scroller.Cursor = Cursors.SizeAll;
+            _panStart = e.GetPosition(_stage);
+            _panOrigin = _pan;
+            _stage.CaptureMouse();
+            _stage.Cursor = Cursors.SizeAll;
             e.Handled = true;
         }
     }
 
-    private void Scroller_PreviewMouseMove(object sender, MouseEventArgs e)
+    private void Stage_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (_panning)
         {
-            var delta = e.GetPosition(_scroller) - _panStart;
-            _scroller.ScrollToHorizontalOffset(_panOffset.X - delta.X);
-            _scroller.ScrollToVerticalOffset(_panOffset.Y - delta.Y);
+            var delta = e.GetPosition(_stage) - _panStart;
+            MoveTo(_panOrigin + delta);
             e.Handled = true;
         }
     }
 
-    private void Scroller_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    private void Stage_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
         if (_panning && e.ChangedButton == MouseButton.Middle)
         {
             _panning = false;
-            _scroller.ReleaseMouseCapture();
-            _scroller.ClearValue(CursorProperty);
+            _stage.ReleaseMouseCapture();
+            _stage.ClearValue(CursorProperty);
             e.Handled = true;
         }
     }
+
+    /// <summary>A middle-button drag of the picture by <paramref name="delta"/> (tests).</summary>
+    public void PanBy(Vector delta) => MoveTo(_pan + delta);
 
     // ------------------------------------------------------------------ the document
 
@@ -633,6 +685,8 @@ public sealed class ImageEditorWindow : PinWindow
         _adjustPending = false;
         Editor.Items.Clear();
         _history.Clear();
+        _beforeGroup.Clear();
+        _lastGroup = null;
         _savedChange = _history.ChangeCount;
         _hasImage = true;
         _path = path;
@@ -684,7 +738,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// One undoable change of the image's geometry: pending colour changes are finished first, what
     /// comes out becomes the new starting point (the colour sliders return to neutral).
     /// </summary>
-    private void GeometryStep(Func<BitmapSource> change)
+    private void GeometryStep(EditGroup group, Func<BitmapSource> change)
     {
         if (!_hasImage)
         {
@@ -693,6 +747,19 @@ public sealed class ImageEditorWindow : PinWindow
 
         _textEditor.Commit();
         ClearSelection();
+        BakeAdjust();
+        if (_lastGroup != group)
+        {
+            // Another kind of change: the earlier groups cannot be put back on their own any more.
+            _beforeGroup.Clear();
+        }
+
+        if (!_beforeGroup.ContainsKey(group))
+        {
+            _beforeGroup[group] = (new State(_origin, _baseImage, _adjust), Editor.Items.Select(item => item.Clone()).ToList());
+        }
+
+        _lastGroup = group;
         _history.Checkpoint(Editor.Items);
         var result = change();
         _origin = result;
@@ -701,6 +768,52 @@ public sealed class ImageEditorWindow : PinWindow
         SetBitmap(result);
         UpdateUndoButtons();
         RefreshPanel();
+    }
+
+    /// <summary>重置 of a group: the picture as it was before that group's changes (one undo step).</summary>
+    private void ResetGroup(EditGroup group)
+    {
+        if (!_beforeGroup.TryGetValue(group, out var before))
+        {
+            return;
+        }
+
+        _textEditor.Commit();
+        ClearSelection();
+        _history.Checkpoint(Editor.Items);
+        _beforeGroup.Clear();
+        _lastGroup = null;
+        _adjustTimer.Stop();
+        _adjustPending = false;
+        _origin = before.State.Origin;
+        _proxy = null;
+        _adjust = before.State.Adjust;
+        SetBitmap(before.State.Base);
+        Editor.Items.Clear();
+        Editor.Items.AddRange(before.Items.Select(item => item.Clone()));
+        Editor.InvalidateVisual();
+        UpdateUndoButtons();
+        RefreshPanel();
+        Fit();
+    }
+
+    /// <summary>A group's 重置 works while that group was the last to change the picture.</summary>
+    public bool CanReset(string group) => Enum.TryParse<EditGroup>(group, out var parsed) && _beforeGroup.ContainsKey(parsed);
+
+    public void Reset(string group)
+    {
+        if (Enum.TryParse<EditGroup>(group, out var parsed))
+        {
+            ResetGroup(parsed);
+        }
+    }
+
+    private void UpdateResetButtons()
+    {
+        foreach (var (group, button) in _resetButtons)
+        {
+            button.IsEnabled = _beforeGroup.ContainsKey(group);
+        }
     }
 
     /// <summary>Annotations into the pixels: for operations they cannot follow (they stay undoable).</summary>
@@ -721,7 +834,7 @@ public sealed class ImageEditorWindow : PinWindow
     {
         if (width >= 1 && height >= 1 && (width != _baseImage.PixelWidth || height != _baseImage.PixelHeight))
         {
-            GeometryStep(() => ImageOps.Resize(Flattened(), width, height));
+            GeometryStep(EditGroup.Size, () => ImageOps.Resize(Flattened(), width, height));
             Fit();
         }
     }
@@ -788,7 +901,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>A flip / quarter turn: annotations follow and stay editable.</summary>
     private void Orient(Action turn)
     {
-        GeometryStep(() =>
+        GeometryStep(EditGroup.Turn, () =>
         {
             turn();
             return ImageOps.Normalize(_baseImage);
@@ -821,13 +934,13 @@ public sealed class ImageEditorWindow : PinWindow
 
     public void RotateBy(double degrees)
     {
-        GeometryStep(() => ImageOps.Rotate(Flattened(), degrees));
+        GeometryStep(EditGroup.Turn, () => ImageOps.Rotate(Flattened(), degrees));
         Fit();
     }
 
     public void CropTo(Int32Rect rect)
     {
-        GeometryStep(() =>
+        GeometryStep(EditGroup.Cut, () =>
         {
             var cropped = ImageOps.Crop(_baseImage, rect);
             // The annotations keep their place on the picture and stay editable.
@@ -841,13 +954,13 @@ public sealed class ImageEditorWindow : PinWindow
 
     public void PathCropTo(IReadOnlyList<Point> path)
     {
-        GeometryStep(() => ImageOps.PathCrop(Flattened(), path, out _));
+        GeometryStep(EditGroup.Cut, () => ImageOps.PathCrop(Flattened(), path, out _));
         Fit();
     }
 
     public void KeystoneTo(IReadOnlyList<Point> quad)
     {
-        GeometryStep(() => ImageOps.Keystone(Flattened(), quad));
+        GeometryStep(EditGroup.Cut, () => ImageOps.Keystone(Flattened(), quad));
         Fit();
     }
 
@@ -858,7 +971,7 @@ public sealed class ImageEditorWindow : PinWindow
         Math.Round(_sliders["Contrast"].Slider.Value),
         Math.Round(_sliders["Saturation"].Slider.Value),
         Math.Round(_sliders["Opacity"].Slider.Value),
-        _gray.IsChecked == true,
+        false,
         _invert.IsChecked == true);
 
     private void AdjustChanged()
@@ -1024,6 +1137,12 @@ public sealed class ImageEditorWindow : PinWindow
 
         if (!control)
         {
+            if (key == Key.F && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                Fit(); // F: back in the middle, fitted
+                return true;
+            }
+
             if (key != Key.Escape || _selected != null)
             {
                 return false;
@@ -1169,44 +1288,28 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
-        var dialog = new SaveFileDialog
-        {
-            Title = "保存图片",
-            Filter = ImageFile.SaveFilter,
-            FileName = _path != null ? Path.GetFileName(_path) : $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png",
-            FilterIndex = (_path != null ? Path.GetExtension(_path).ToLowerInvariant() : "") switch
-            {
-                ".jpg" or ".jpeg" or ".jfif" => 2,
-                ".webp" => 3,
-                ".bmp" => 4,
-                ".tif" or ".tiff" => 5,
-                _ => 1
-            }
-        };
-        var directory = _path != null ? Path.GetDirectoryName(_path) : App.Config.ResolveSaveDirectory();
-        if (directory != null && Directory.Exists(directory))
-        {
-            dialog.InitialDirectory = directory;
-        }
-
-        if (dialog.ShowDialog(this) != true)
+        var name = _path != null && Path.GetExtension(_path).ToLowerInvariant() is not (".gif" or ".ico")
+            ? Path.GetFileName(_path)
+            : $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+        var path = SaveImageDialog.Ask(this, "保存图片", name, _path != null ? Path.GetDirectoryName(_path) : null);
+        if (path == null)
         {
             return;
         }
 
         try
         {
-            ImageFile.Save(ComposeEditedImage(), dialog.FileName);
-            _path = dialog.FileName;
+            ImageFile.Save(ComposeEditedImage(), path);
+            _path = path;
             MarkKept();
             UpdateTitle();
             UpdateStatus();
-            ((App)Application.Current).ShowSavedPrompt(dialog.FileName);
+            ((App)Application.Current).ShowSavedPrompt(path);
         }
         catch (Exception ex)
         {
             Log.Error("保存图片失败", ex);
-            MessageBox.Show(this, "保存失败：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessage.Show(this, "保存失败", ex.Message, "确定");
         }
     }
 
@@ -1240,13 +1343,13 @@ public sealed class ImageEditorWindow : PinWindow
             return true;
         }
 
-        var answer = MessageBox.Show(this, "图片还没有保存，要保存吗？", "Markshot", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-        if (answer == MessageBoxResult.Cancel)
+        var answer = ThemedMessage.Show(this, "图片还没有保存", "关闭前要保存这张图片吗？", "保存", "不保存", "取消");
+        if (answer is 2 or -1)
         {
             return false;
         }
 
-        if (answer == MessageBoxResult.Yes)
+        if (answer == 0)
         {
             Save();
             return !IsDirty;

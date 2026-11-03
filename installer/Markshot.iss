@@ -63,6 +63,23 @@ Name: "{userstartup}\Markshot"; Filename: "{app}\Markshot.exe"; Tasks: startup
 ; Where this installer ran from: Markshot looks there for newer installers (设置 → 更新路径).
 Root: HKCU; Subkey: "Software\Markshot"; ValueType: string; ValueName: "SetupDir"; ValueData: "{src}"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Markshot"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}"
+; 打开方式: Markshot is offered for pictures (Markshot refreshes this on every start; removed on uninstall).
+Root: HKCU; Subkey: "Software\Classes\Markshot.Image"; ValueType: string; ValueName: ""; ValueData: "Markshot 图片"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Markshot.Image\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\Markshot.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\Markshot.Image\shell\open"; ValueType: string; ValueName: ""; ValueData: "用 Markshot 编辑"
+Root: HKCU; Subkey: "Software\Classes\Markshot.Image\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Markshot.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\Applications\Markshot.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "Markshot 图片编辑器"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Applications\Markshot.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Markshot.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\.png\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.jpg\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.jpeg\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.jfif\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.bmp\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.gif\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.tif\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.tiff\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.webp\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.ico\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\Markshot.exe"; Description: "启动 Markshot"; Flags: nowait postinstall skipifsilent

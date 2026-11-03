@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.17`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.18`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -581,6 +581,22 @@ un.ps1 batch1 menu`。
 - 贴图多选 `UI/PinWindow.Group.cs`：静态 `Group`，Shift 单击加选（连同上一次点的贴图）、Ctrl 单击减选，`GroupMark` 虚线框；拖动 / 方向键 / Esc / 右键关闭作用于整组。
 - OCR：`OcrService.Layout` 按文字框重建版面（行聚类、列间距 > 1.5 行高用 Tab、缩进、段落空行），`RecognizeAsync` 默认走它。
 - 测试：`annotate`（折线、箭头样式、撤销交接、贴图多选、OCR 版面）、`capture`（元素识别、悬停层级、显示鼠标、辅助线按键）。
+
+## 8.1.18 0.8.18 变更：画面识别、编辑器画布、主题化保存、打开方式
+
+- 0.8.17 的元素识别在真实桌面上基本看不到效果：Electron / Chromium 应用关掉了无障碍（UIA 只给一个铺满窗口的文档，0 个子元素），
+  Qt 等应用每次查询 0.3–3.7 秒、旧的 400 ms 预算走不到文字层。现在：
+  - `Core/ScreenSegmenter`：从截图本身找元素。亮度边缘 → 三档间距（13 / 22 / 40 DIP 横向，按缩放比放大）用前缀和做膨胀 → 洪水填充标号，
+    盒子取原始边缘的范围 + 2 px。每个窗口区域算一次（约 80 ms，后台线程），之后每次查找 O(1)；鼠标不在边缘上时取包含它的最小盒子（图片中间、卡片留白）。
+  - 截图窗口 `RunElementDetection`：先画面分块（快）再 UIA（慢，预算 1.5 s，从拿到窗口根元素后开始计时），两次结果都用 `Dispatcher.BeginInvoke` 送回界面线程；
+    `BuildHoverChain` 把两类结果按面积排序、去掉肉眼分不出的重复框，窗口放最后。
+  - 测试：`capture` 用合成画面验证文字段 / 图片 / 段落；`hover` 起一个子进程显示窗口，跨进程验证悬停框；`deskprobe`（不在默认列表）只读地看真实桌面上的识别结果。
+- 编辑器：`ScrollViewer` 换成自由画布 `_stage`（Canvas + `_pan`）。滚轮在鼠标处缩放，中键拖动，`F` = `Fit()`（适应并居中），至少留 48 DIP 在视野内。
+  分区「重置」：`GeometryStep(EditGroup, …)` 在一组操作第一次发生前记下 `State` + 批注；换了另一组操作或撤销 / 重做就清掉（按钮变灰）。灰度按钮去掉（`ImageAdjust.Gray` 仍在）。
+- `UI/SaveImageDialog`（主题化保存窗口，四处保存都用它）和 `ThemedMessage`（编辑器未保存提示、保存失败）。截图 / 贴图保存也支持 WebP / BMP / TIFF（统一走 `ImageFile.Save`）。
+- 打开方式：`Core/FileAssociation`（HKCU 下 ProgID `Markshot.Image`、`Applications\Markshot.exe`、各扩展名 `OpenWithProgids`；启动时按 `AppConfig.RegisterOpenWith` 刷新）；
+  安装包也写同样的键、卸载时删除。`OpenRequests`：第二次启动带图片参数时经命名管道交给已运行的 Markshot；`App.OpenFileInEditor`。
+  设为默认只能由用户在 Windows 的选择窗口里确认（`SHOpenWithDialog`）。测试 `files` 用自己的注册表键和管道名，不碰真实设置。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

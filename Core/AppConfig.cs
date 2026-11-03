@@ -77,6 +77,9 @@ public sealed class AppConfig
     /// <summary>Copying a capture / pin also puts a PNG file on the clipboard (paste in Explorer).</summary>
     public bool CopyImageAsFile { get; set; } = true;
 
+    /// <summary>Markshot is offered in Explorer's 打开方式 for pictures (refreshed on every start).</summary>
+    public bool RegisterOpenWith { get; set; } = true;
+
     /// <summary>截图: the mouse pointer is part of the screenshot (toggled with <see cref="CaptureCursorKey"/>, remembered).</summary>
     public bool CaptureShowCursor { get; set; }
 

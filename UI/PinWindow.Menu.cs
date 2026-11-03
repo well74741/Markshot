@@ -136,51 +136,21 @@ public partial class PinWindow
 
     private protected virtual void Save()
     {
-        var dialog = new SaveFileDialog
+        var path = SaveImageDialog.Ask(this, "保存贴图", $"Markshot_pin_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+        if (path == null)
         {
-            Title = "保存贴图",
-            Filter = "PNG 图片|*.png|JPEG 图片|*.jpg;*.jpeg",
-            FileName = $"Markshot_pin_{DateTime.Now:yyyyMMdd_HHmmss}.png"
-        };
-
-        var initialDirectory = App.Config.ResolveSaveDirectory();
-        if (Directory.Exists(initialDirectory))
-        {
-            dialog.InitialDirectory = initialDirectory;
-        }
-
-        var wasTopmost = Topmost;
-        Topmost = false;
-        try
-        {
-            if (dialog.ShowDialog(this) != true)
-            {
-                return;
-            }
-        }
-        finally
-        {
-            Topmost = wasTopmost;
+            return;
         }
 
         try
         {
-            BitmapEncoder encoder = Path.GetExtension(dialog.FileName).ToLowerInvariant() is ".jpg" or ".jpeg"
-                ? new JpegBitmapEncoder { QualityLevel = 92 }
-                : new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(CurrentImage));
-            using (var stream = File.Create(dialog.FileName))
-            {
-                encoder.Save(stream);
-            }
-
-            ((App)Application.Current).ShowSavedPrompt(dialog.FileName);
+            ImageFile.Save(CurrentImage, path);
+            ((App)Application.Current).ShowSavedPrompt(path);
         }
         catch (Exception ex)
         {
             Log.Error("保存贴图失败", ex);
-            MessageBox.Show(this, "保存失败：" + ex.Message, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessage.Show(this, "保存失败", ex.Message, "确定");
         }
     }
 }

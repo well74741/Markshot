@@ -91,6 +91,38 @@ static class CaptureTest
         Check(Wait(Task.Run(() => ElementDetector.Detect(IntPtr.Zero, 0, 0))).Count == 0, "no window, no elements");
         host.Close();
 
+        // ---- the screenshot itself: runs of text, a picture, a paragraph (apps without UI Automation)
+        var page = new Canvas { Width = 640, Height = 320, Background = Brushes.White };
+        TextBlock T(string s, double x, double y) { var t = new TextBlock { Text = s, FontSize = 15, Foreground = Brushes.Black }; Canvas.SetLeft(t, x); Canvas.SetTop(t, y); page.Children.Add(t); return t; }
+        var run = T("Hello world 你好", 40, 40);
+        var other = T("第二段文字", 320, 40);
+        var picture = new System.Windows.Shapes.Rectangle { Width = 120, Height = 80, Fill = new LinearGradientBrush(Colors.SteelBlue, Colors.Orange, 30) };
+        Canvas.SetLeft(picture, 40); Canvas.SetTop(picture, 130); page.Children.Add(picture);
+        var line1 = T("段落第一行，内容比较长一些", 320, 130);
+        var line2 = T("段落第二行", 320, 152);
+        page.Measure(new Size(640, 320)); page.Arrange(new Rect(0, 0, 640, 320)); page.UpdateLayout();
+        var pageShot = new RenderTargetBitmap(640, 320, 96, 96, PixelFormats.Pbgra32);
+        pageShot.Render(page);
+        pageShot.Freeze();
+        var (pagePixels, _, _) = ImageOps.ReadPixels(pageShot);
+        var segmenter = new ScreenSegmenter(pagePixels, 640, 320, 1);
+        var whole = new Int32Rect(0, 0, 640, 320);
+        Rect Box(FrameworkElement e) => new(Canvas.GetLeft(e), Canvas.GetTop(e), e.ActualWidth, e.ActualHeight);
+        bool Around(Int32Rect found, Rect want, double slack) =>
+            found.X <= want.X + slack && found.Y <= want.Y + slack && found.X + found.Width >= want.Right - slack && found.Y + found.Height >= want.Bottom - slack &&
+            found.Width <= want.Width + slack * 2 + 8 && found.Height <= want.Height + slack * 2 + 8;
+        var onRun = segmenter.At(whole, 60, 50);
+        Console.WriteLine("on run: " + string.Join(" | ", onRun));
+        Check(onRun.Count > 0 && Around(onRun[0], Box(run), 4), "over a run of text: just that run (not the text beside it)");
+        var onPicture = segmenter.At(whole, 100, 170);
+        Check(onPicture.Count > 0 && Around(onPicture[0], Box(picture), 3), "over a picture: the picture");
+        var onParagraph = segmenter.At(whole, 340, 140);
+        var both = Rect.Union(Box(line1), Box(line2));
+        Console.WriteLine("on paragraph: " + string.Join(" | ", onParagraph));
+        Check(onParagraph.Count >= 2 && Around(onParagraph[0], Box(line1), 4) && onParagraph.Skip(1).Any(r => Around(r, both, 4)),
+            "over a paragraph line: the line, then the paragraph");
+        Check(segmenter.At(whole, 600, 300).Count == 0, "over empty background: nothing");
+
         // ---- the capture window, not shown: hover frames, 显示鼠标, 辅助线
         var screen = Solid(300, 200, 40, 40, 40);
         var overlay = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
@@ -112,6 +144,21 @@ static class CaptureTest
         Check((Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "wheel down: back in");
         Call(overlay, "SetHoverChain", list);
         Check((Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "the chosen level stays while the mouse stays on the element");
+
+        // the hover asks the screenshot when UI Automation has nothing (no window behind here: handle 0)
+        var pageOverlay = new OverlayWindow(pageShot, new Int32Rect(0, 0, 640, 320));
+        typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(pageOverlay, new WindowTarget { Handle = IntPtr.Zero, Bounds = new Rect(0, 0, 640, 320), Label = "窗口" });
+        typeof(OverlayWindow).GetField("_hoverScreenPoint", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(pageOverlay, (60, 50));
+        typeof(OverlayWindow).GetField("_elementWanted", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(pageOverlay, ((IntPtr, int, int)?)(IntPtr.Zero, 60, 50));
+        Call(pageOverlay, "RunElementDetection");
+        Pump(800);
+        var pageEditor = (Markshot.Annotations.AnnotationEditor)pageOverlay.FindName("Editor");
+        var framed = pageEditor.HoverBounds;
+        Check(pageEditor.ShowHover && Around(new Int32Rect((int)framed.X, (int)framed.Y, (int)framed.Width, (int)framed.Height), Box(run), 4) && pageEditor.HoverLabel!.StartsWith("文字"),
+            "the capture frames the run of text under the mouse");
+        pageOverlay.Close();
 
         var pointer = Solid(12, 18, 0, 0, 255);
         overlay.CursorShot = new CursorShot(pointer, 100, 60);

@@ -608,50 +608,99 @@ public partial class OverlayWindow
         }
     }
 
-    private async void RunElementDetection()
+    /// <summary>
+    /// Looks up the newest wanted position on a worker thread — first the pieces of the screenshot under
+    /// the mouse (quick), then the UI Automation elements (may take a while) — and hands each result to
+    /// this window's thread (explicitly: it touches the window, whatever context started the lookup).
+    /// </summary>
+    private void RunElementDetection()
     {
-        _elementBusy = true;
-        try
-        {
-            while (_elementWanted is { } wanted && !_closed)
-            {
-                _elementWanted = null;
-                List<DetectedElement> found;
-                try
-                {
-                    found = await Task.Run(() => ElementDetector.Detect(wanted.Handle, wanted.X, wanted.Y));
-                }
-                catch (Exception ex)
-                {
-                    Log.Error("元素识别失败", ex);
-                    found = new List<DetectedElement>();
-                }
-
-                if (_closed || _hoverTarget?.Handle != wanted.Handle || _hasSelection || _dragging)
-                {
-                    continue;
-                }
-
-                // A newer position waits and this result is not under the mouse any more: skip it.
-                var (mx, my) = _hoverScreenPoint;
-                if (_elementWanted != null && (found.Count == 0 || !found[0].Bounds.Contains(new Point(mx, my))))
-                {
-                    continue;
-                }
-
-                SetHoverChain(BuildHoverChain(found));
-            }
-        }
-        finally
+        if (_closed || _elementWanted is not { } wanted || _hoverTarget == null)
         {
             _elementBusy = false;
+            return;
+        }
+
+        _elementBusy = true;
+        _elementWanted = null;
+        var window = ToLocal(_hoverTarget.Bounds);
+        var region = new Int32Rect((int)window.X, (int)window.Y, (int)window.Width, (int)window.Height);
+        var localX = wanted.X - _bounds.X;
+        var localY = wanted.Y - _bounds.Y;
+        var segmenter = Segmenter;
+        Task.Run(() =>
+        {
+            var pieces = new List<Int32Rect>();
+            try
+            {
+                pieces = segmenter.At(region, localX, localY);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("画面识别失败", ex);
+            }
+
+            Dispatcher.BeginInvoke(() => ApplyElements(wanted.Handle, pieces, null));
+            List<DetectedElement> elements;
+            try
+            {
+                elements = ElementDetector.Detect(wanted.Handle, wanted.X, wanted.Y);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("元素识别失败", ex);
+                elements = new List<DetectedElement>();
+            }
+
+            Dispatcher.BeginInvoke(() =>
+            {
+                ApplyElements(wanted.Handle, pieces, elements);
+                RunElementDetection(); // the position wanted meanwhile, if any
+            });
+        });
+    }
+
+    private ScreenSegmenter? _segmenter;
+
+    /// <summary>Picks pieces out of the screenshot (without the pointer drawn on it).</summary>
+    private ScreenSegmenter Segmenter
+    {
+        get
+        {
+            if (_segmenter == null)
+            {
+                var (pixels, width, height) = ImageOps.ReadPixels(_screenPlain);
+                _segmenter = new ScreenSegmenter(pixels, width, height, _scale);
+            }
+
+            return _segmenter;
         }
     }
 
-    private List<HoverCandidate> BuildHoverChain(IReadOnlyList<DetectedElement> elements)
+    private void ApplyElements(IntPtr handle, List<Int32Rect> pieces, List<DetectedElement>? elements)
     {
-        var chain = new List<HoverCandidate>();
+        if (_closed || _hoverTarget?.Handle != handle || _hasSelection || _dragging)
+        {
+            return;
+        }
+
+        var chain = BuildHoverChain(pieces, elements ?? new List<DetectedElement>());
+        // A newer position waits and this result is not under the mouse any more: skip it.
+        var (mx, my) = _hoverScreenPoint;
+        var mouse = new Point(mx - _bounds.X, my - _bounds.Y);
+        if (_elementWanted != null && (chain.Count == 0 || !chain[0].Local.Contains(mouse)))
+        {
+            return;
+        }
+
+        SetHoverChain(chain);
+    }
+
+    /// <summary>Everything found under the mouse, smallest first, each size once; the window last.</summary>
+    private List<HoverCandidate> BuildHoverChain(IReadOnlyList<Int32Rect> pieces, IReadOnlyList<DetectedElement> elements)
+    {
         var window = _hoverTarget == null ? Rect.Empty : ToLocal(_hoverTarget.Bounds);
+        var found = new List<HoverCandidate>();
         foreach (var element in elements)
         {
             var local = ToLocal(element.Bounds);
@@ -660,10 +709,23 @@ public partial class OverlayWindow
                 local = Rect.Intersect(local, window);
             }
 
-            if (!local.IsEmpty && local.Width >= 4 && local.Height >= 4 &&
-                !chain.Any(seen => ElementDetector.Same(seen.Local, local)) && !ElementDetector.Same(local, window))
+            found.Add(new HoverCandidate(local, element.Label));
+        }
+
+        foreach (var piece in pieces)
+        {
+            var local = new Rect(piece.X, piece.Y, piece.Width, piece.Height);
+            var textLike = piece.Height <= 44 * _scale && piece.Width >= piece.Height * 1.5;
+            found.Add(new HoverCandidate(local, textLike ? "文字" : "区域"));
+        }
+
+        var chain = new List<HoverCandidate>();
+        foreach (var candidate in found.Where(c => !c.Local.IsEmpty && c.Local.Width >= 4 && c.Local.Height >= 4)
+                     .OrderBy(c => c.Local.Width * c.Local.Height))
+        {
+            if (!chain.Any(seen => Close(seen.Local, candidate.Local)) && !Close(candidate.Local, window))
             {
-                chain.Add(new HoverCandidate(local, element.Label));
+                chain.Add(candidate);
             }
         }
 
@@ -674,6 +736,10 @@ public partial class OverlayWindow
 
         return chain;
     }
+
+    /// <summary>Two frames the user could not tell apart.</summary>
+    private static bool Close(Rect a, Rect b) =>
+        Math.Abs(a.X - b.X) <= 3 && Math.Abs(a.Y - b.Y) <= 3 && Math.Abs(a.Right - b.Right) <= 3 && Math.Abs(a.Bottom - b.Bottom) <= 3;
 
     /// <summary>New frames under the mouse. The level the wheel chose stays when its frame is still offered.</summary>
     private void SetHoverChain(List<HoverCandidate> chain)

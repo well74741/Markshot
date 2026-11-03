@@ -651,6 +651,8 @@
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <TextBlock Text="截图识别" Style="{StaticResource CardTitle}" />
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,0,0,6" TextWrapping="Wrap"
+                                       Text="先用系统无障碍接口找元素，找不到时（如 Electron / 网页应用、游戏、远程桌面）按画面识别文字段、图片和内容块。" />
                             <CheckBox x:Name="DetectElementsCheck" Margin="84,2,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="识别 UI 元素：文字、图片、表格、按钮等" />
                             <CheckBox x:Name="DetectWindowsCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
@@ -659,6 +661,20 @@
                                       Content="截图包含鼠标指针（截图中也可用快捷键切换）" />
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
                                        Text="截图时鼠标经过的元素 / 窗口会自动框住，单击即截取；滚轮在元素和外层之间切换。都关掉则只能拖动框选。" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="打开方式" Style="{StaticResource CardTitle}" />
+                            <CheckBox x:Name="OpenWithCheck" Margin="84,2,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                      Content="在图片的「打开方式」里加入 Markshot（PNG、JPEG、WebP、BMP、GIF、TIFF、ICO）" />
+                            <StackPanel Orientation="Horizontal" Margin="84,10,0,0">
+                                <Button Content="设为图片默认打开方式…" Style="{StaticResource FooterButton}" Click="DefaultOpen_Click" />
+                                <Button Content="Windows 默认应用设置" Style="{StaticResource FooterButton}" Margin="8,0,0,0" Click="DefaultApps_Click" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
+                                       Text="Windows 不允许程序自己改默认打开方式：在弹出的窗口里选 Markshot 并勾选「始终使用此应用」。其他格式可在 Windows 默认应用设置里逐个选择。" />
                         </StackPanel>
                     </Border>
 

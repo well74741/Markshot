@@ -77,6 +77,19 @@ static class ImageEditorTest
     static void Call(object o, string name, params object[] args) =>
         typeof(ImageEditorWindow).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(o, args);
 
+    static string Shot2Text(FrameworkElement root)
+    {
+        var texts = new List<string>();
+        void Walk(DependencyObject d)
+        {
+            if (d is ContentControl { Content: string c }) texts.Add(c);
+            if (d is TextBlock t) texts.Add(t.Text);
+            foreach (var child in LogicalTreeHelper.GetChildren(d).OfType<DependencyObject>()) Walk(child);
+        }
+        Walk(root);
+        return string.Join("|", texts);
+    }
+
     public static void Run()
     {
         Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -113,10 +126,11 @@ static class ImageEditorTest
         Check(At(clean, 100, 60).G > 200 && At(clean, 100, 60).R > 200, "composite has the annotation drawn");
 
         // ---- colour: from the original every time; one undo step per change
-        editor.SetAdjust(new ImageAdjust(Gray: true));
+        editor.SetAdjust(new ImageAdjust(Saturation: -100));
         Pump(30);
         var g = At(editor.Composite, 300, 200);
-        Check(g.R == g.G && g.G == g.B, "灰度");
+        Check(g.R == g.G && g.G == g.B, "饱和度 -100");
+        Check(!Shot2Text(editor).Contains("灰度"), "no 灰度 button any more");
         editor.UndoStep();
         Pump(30);
         Check(Same(editor.Composite, clean), "undo brings the colours back exactly");
@@ -214,6 +228,53 @@ static class ImageEditorTest
         overlay.Crop = new Rect(10, 10, 100, 80);
         Call(editor, "CancelSession");
         Check(editor.ImageWidth == 400 && Field(editor, "_overlay") == null, "cancel leaves the picture alone");
+
+        // ---- sections' 重置: back to before that group's changes, while it was the last kind of change
+        Check(!editor.CanReset("Size") && !editor.CanReset("Turn") && !editor.CanReset("Cut"), "nothing to reset at first");
+        editor.ResizeTo(200, 150);
+        editor.ResizeTo(100, 75);
+        Pump(30);
+        Check(editor.CanReset("Size") && editor.ImageWidth == 100, "after two resizes the size can be reset");
+        editor.Reset("Size");
+        Pump(30);
+        Check(editor.ImageWidth == 400 && editor.AnnotationCount == 1 && Same(editor.Composite, clean) && !editor.CanReset("Size"), "尺寸 重置: original size and annotations back");
+        editor.UndoStep();
+        Pump(30);
+        Check(editor.ImageWidth == 100, "the reset is one undo step");
+        editor.RedoStep();
+        Pump(30);
+        editor.Turn(true);
+        editor.Flip(true);
+        Pump(30);
+        Check(editor.CanReset("Turn") && !editor.CanReset("Size"), "rotation group: its own reset");
+        editor.CropTo(new Int32Rect(10, 10, 200, 100));
+        Pump(30);
+        Check(!editor.CanReset("Turn") && editor.CanReset("Cut"), "another kind of change: the earlier group cannot be reset alone");
+        editor.Reset("Cut");
+        Pump(30);
+        Check(editor.ImageWidth == 300 && editor.ImageHeight == 400, "裁切 重置: back to the turned picture");
+        editor.UndoStep(); editor.UndoStep(); editor.UndoStep(); editor.UndoStep();
+        Pump(30);
+        Check(Same(editor.Composite, clean), "undo back to the start");
+
+        // ---- the view: wheel zooms at the mouse, the middle button drags anywhere, F fits and centres
+        editor.Fit();
+        Pump(50);
+        var fitted = editor.PanOffset;
+        var zoomBefore = (double)Field(editor, "_zoom");
+        var at = new Point(fitted.X + 100 * zoomBefore, fitted.Y + 80 * zoomBefore); // picture pixel (100, 80)
+        editor.ZoomAt(120, at);
+        editor.ZoomAt(120, at);
+        var zoomAfter = (double)Field(editor, "_zoom");
+        var under = new Point((at.X - editor.PanOffset.X) / zoomAfter, (at.Y - editor.PanOffset.Y) / zoomAfter);
+        Check(zoomAfter > zoomBefore * 1.15 && Math.Abs(under.X - 100) < 1 && Math.Abs(under.Y - 80) < 1, "wheel zooms in, the point under the mouse stays put");
+        editor.PanBy(new Vector(-500, 300));
+        Check(editor.PanOffset.X < fitted.X - 300, "the picture moves freely (past the edges)");
+        editor.PanBy(new Vector(-100000, 0));
+        Check(editor.PanOffset.X + 400 * zoomAfter >= 47, "a part of it always stays in view");
+        Call(editor, "EditorKey", System.Windows.Input.Key.F, false);
+        Pump(30);
+        Check(Math.Abs(editor.PanOffset.X - fitted.X) < 2 && Math.Abs(editor.PanOffset.Y - fitted.Y) < 2 && (double)Field(editor, "_zoom") == zoomBefore, "F: fitted and back in the middle");
 
         // ---- save, and 贴到屏幕 hands over base + annotations
         foreach (var ext in new[] { "png", "jpg", "webp" })

@@ -49,6 +49,7 @@ public partial class SettingsWindow : Window
         DetectElementsCheck.IsChecked = config.DetectElements;
         DetectWindowsCheck.IsChecked = config.DetectWindows;
         CaptureCursorCheck.IsChecked = config.CaptureShowCursor;
+        OpenWithCheck.IsChecked = config.RegisterOpenWith;
         CaptureCursorKeyBox.Text = config.CaptureCursorKey;
         CrosshairKeyBox.Text = config.CrosshairKey;
         AutoStartCheck.IsChecked = AutoStart.IsEnabled;
@@ -222,6 +223,34 @@ public partial class SettingsWindow : Window
         // Alt combinations arrive as Key.System; the real key is in SystemKey.
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         e.Handled = HandleHotkeyKey(box, key, Keyboard.Modifiers);
+    }
+
+    /// <summary>Registers Markshot and opens Windows' chooser for .png (the user ticks "always").</summary>
+    private void DefaultOpen_Click(object sender, RoutedEventArgs e)
+    {
+        OpenWithCheck.IsChecked = true;
+        _config.RegisterOpenWith = true;
+        (Application.Current as App)?.ApplyOpenWith();
+        try
+        {
+            FileAssociation.ChooseDefault(new System.Windows.Interop.WindowInteropHelper(this).Handle);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("打开默认程序选择失败", ex);
+        }
+    }
+
+    private void DefaultApps_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("ms-settings:defaultapps") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log.Error("打开默认应用设置失败", ex);
+        }
     }
 
     /// <summary>Capture-window keys: a combination, or a lone Alt / Ctrl / Shift (set when it is released alone).</summary>
@@ -449,6 +478,12 @@ public partial class SettingsWindow : Window
         _config.DetectElements = DetectElementsCheck.IsChecked == true;
         _config.DetectWindows = DetectWindowsCheck.IsChecked == true;
         _config.CaptureShowCursor = CaptureCursorCheck.IsChecked == true;
+        var openWithChanged = _config.RegisterOpenWith != (OpenWithCheck.IsChecked == true);
+        _config.RegisterOpenWith = OpenWithCheck.IsChecked == true;
+        if (openWithChanged)
+        {
+            (Application.Current as App)?.ApplyOpenWith();
+        }
         _config.CaptureCursorKey = CaptureKeyText(CaptureCursorKeyBox, _config.CaptureCursorKey);
         _config.CrosshairKey = CaptureKeyText(CrosshairKeyBox, _config.CrosshairKey);
         if ((AutoStartCheck.IsChecked == true) != AutoStart.IsEnabled)

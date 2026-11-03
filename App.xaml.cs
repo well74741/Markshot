@@ -50,7 +50,15 @@ public partial class App : Application
             return;
         }
 
+        // Pictures named on the command line (打开方式 in Explorer) open in the image editor.
+        var files = OpenRequests.ImagesIn(e.Args);
         _mutex = new Mutex(true, @"Local\Markshot.SingleInstance", out var createdNew);
+        if (!createdNew && files.Count > 0 && OpenRequests.Send(files))
+        {
+            Shutdown(); // the running Markshot opens them
+            return;
+        }
+
         if (!createdNew)
         {
             MessageBox.Show("Markshot 已经在运行，请使用系统托盘图标。", "Markshot",
@@ -118,12 +126,19 @@ public partial class App : Application
         ApplyHotkeys();
         StartUpdateChecks();
         UI.Recording.RecorderCommands.Listen(Dispatcher, command => _recorder?.Command(command));
+        OpenRequests.Listen(Dispatcher, OpenFileInEditor);
+        ApplyOpenWith();
 
         _tray.ShowBalloon(
             "Markshot 已启动",
             $"截图 {Config.CaptureHotkey} · {PinHotkeyLabel}\n右键托盘图标打开设置");
 
         Log.Info($"Markshot 启动，截图键 {Config.CaptureHotkey}，{PinHotkeyLabel}");
+
+        foreach (var file in files)
+        {
+            Dispatcher.BeginInvoke(new Action(() => OpenFileInEditor(file)), DispatcherPriority.ApplicationIdle);
+        }
 
         var arguments = e.Args;
         if (arguments.Contains("--settings"))
@@ -661,6 +676,48 @@ public partial class App : Application
         return pin;
     }
 
+    /// <summary>A picture from 打开方式 / a second start: a new editor window, brought to the front.</summary>
+    public void OpenFileInEditor(string path)
+    {
+        var editor = OpenEditor();
+        if (!editor.OpenFile(path))
+        {
+            editor.CloseWithoutAsking();
+            return;
+        }
+
+        // Another program had the foreground: a moment of topmost brings the editor up front.
+        editor.Topmost = true;
+        editor.Activate();
+        editor.Topmost = false;
+    }
+
+    /// <summary>The 打开方式 entry follows the setting (and the program's current path).</summary>
+    public void ApplyOpenWith()
+    {
+        var exe = Environment.ProcessPath;
+        if (exe == null || !exe.EndsWith("Markshot.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Config.RegisterOpenWith)
+            {
+                FileAssociation.Register(exe);
+            }
+            else if (FileAssociation.RegisteredCommand() != null)
+            {
+                FileAssociation.Unregister(exe);
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+        {
+            Log.Error("登记打开方式失败", ex);
+        }
+    }
+
     public UI.ImageEditorWindow OpenEditor(BitmapSource? image = null, string? path = null,
         List<Annotations.Annotation>? annotations = null, UI.PinWindow? sourcePin = null)
     {
@@ -699,32 +756,21 @@ public partial class App : Application
     /// <summary>A save dialog for an image, then the usual "saved" prompt.</summary>
     public void SaveImageAs(BitmapSource image)
     {
-        var dialog = new Microsoft.Win32.SaveFileDialog
-        {
-            Title = "保存图片",
-            Filter = ImageFile.SaveFilter,
-            FileName = $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png"
-        };
-        var directory = Config.ResolveSaveDirectory();
-        if (Directory.Exists(directory))
-        {
-            dialog.InitialDirectory = directory;
-        }
-
-        if (dialog.ShowDialog() != true)
+        var path = UI.SaveImageDialog.Ask(null, "保存图片", $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+        if (path == null)
         {
             return;
         }
 
         try
         {
-            ImageFile.Save(image, dialog.FileName);
-            ShowSavedPrompt(dialog.FileName);
+            ImageFile.Save(image, path);
+            ShowSavedPrompt(path);
         }
         catch (Exception ex)
         {
             Log.Error("保存图片失败", ex);
-            MessageBox.Show("保存失败：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Error);
+            UI.ThemedMessage.Show(null, "保存失败", ex.Message, "确定");
         }
     }
 
