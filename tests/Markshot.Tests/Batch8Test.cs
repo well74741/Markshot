@@ -55,7 +55,7 @@ static class Batch8Test
         var actions = (Panel)bar.FindName("CaptureActions");
         apply.Invoke(null, new object?[] { actions, "Copy,Save,Pin,Close,Ocr,Translate", "Ocr", (string[])catalog.GetField("CaptureActions")!.GetValue(null)! });
         var actionKeys = actions.Children.OfType<FrameworkElement>().Select(c => c.Tag as string).ToList();
-        Check(actionKeys.First() == "Record" && actionKeys[1] == "Copy" && actions.Children.OfType<FrameworkElement>().First(c => (string?)c.Tag == "Ocr").Visibility == Visibility.Collapsed,
+        Check(actionKeys[0] == "Scroll" && actionKeys[1] == "Record" && actionKeys[2] == "Copy" && actions.Children.OfType<FrameworkElement>().First(c => (string?)c.Tag == "Ocr").Visibility == Visibility.Collapsed,
             "action order applied, hidden action collapsed: " + string.Join(",", actionKeys));
         win.UpdateLayout();
         var bmp = new RenderTargetBitmap((int)bar.ActualWidth, (int)bar.ActualHeight, 96, 96, PixelFormats.Pbgra32);

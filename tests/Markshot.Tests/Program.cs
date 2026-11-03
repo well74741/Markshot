@@ -44,6 +44,7 @@ static class Program
         if (mode == "menu") MenuProbe.Run();
         if (mode == "support") SupportTest.Run();
         if (mode == "history") HistoryTest.Run();
+        if (mode == "stitch") StitchTest.Run();
         if (mode == "firstopen") FirstOpenProbe.Run();
         if (mode == "cornerprobe") CornerProbe.Run();
     }

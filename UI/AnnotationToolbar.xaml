@@ -77,6 +77,9 @@
                 <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
 
                 <StackPanel x:Name="CaptureActions" Orientation="Horizontal">
+                    <Button Style="{StaticResource IconToolButton}" Click="Scroll_Click" Tag="Scroll" ToolTip="长截图：滚动框内内容，自动拼接成长图">
+                        <Border Style="{StaticResource IconScrollMask}" />
+                    </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Record_Click" Tag="Record" ToolTip="录屏：录制这个区域">
                         <Border Style="{StaticResource IconRecordMask}" />
                     </Button>

@@ -102,6 +102,7 @@ public partial class AnnotationToolbar : UserControl
     public event Action? CloseRequested;
     public event Action? ApplyRequested;
     public event Action? RecordRequested;
+    public event Action? ScrollRequested;
 
     /// <summary>The watermark switch: true = show a watermark, false = remove it.</summary>
     public event Action<bool>? WatermarkToggled;
@@ -1170,6 +1171,8 @@ public partial class AnnotationToolbar : UserControl
     private void Pin_Click(object sender, RoutedEventArgs e) => PinRequested?.Invoke();
 
     private void Record_Click(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
+
+    private void Scroll_Click(object sender, RoutedEventArgs e) => ScrollRequested?.Invoke();
 
     private void Translate_Click(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke();
 

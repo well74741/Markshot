@@ -376,6 +376,17 @@ public partial class OverlayWindow
         CloseWith(CaptureAction.Record, _screen);
     }
 
+    /// <summary>长截图: the selected area is captured while its content is scrolled.</summary>
+    private void ScrollAndClose()
+    {
+        if (!_hasSelection)
+        {
+            return;
+        }
+
+        CloseWith(CaptureAction.Scroll, _screen);
+    }
+
     private void OcrAndClose()
     {
         if (!_hasSelection)

@@ -12,7 +12,8 @@ public enum CaptureAction
     Save,
     Pin,
     Translate,
-    Record
+    Record,
+    Scroll
 }
 
 public partial class OverlayWindow : Window
@@ -344,6 +345,7 @@ public partial class OverlayWindow : Window
         Toolbar.PinRequested += PinAndClose;
         Toolbar.TranslateRequested += TranslateAndClose;
         Toolbar.RecordRequested += RecordAndClose;
+        Toolbar.ScrollRequested += ScrollAndClose;
         Toolbar.OcrRequested += OcrAndClose;
         _autoTranslate = App.Config.ImmersiveTranslate;
         Toolbar.SetTranslateEnabled(_autoTranslate);

@@ -301,6 +301,11 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/keys.png" /></Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="IconScrollMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/scroll.png" /></Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="IconMosaicBrushMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/mosaic_brush.png" /></Setter.Value>

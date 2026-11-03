@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.14`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.15`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -536,6 +536,17 @@ un.ps1 batch1 menu`。
   + `.Annotations.cs`（批注工具、元素选择、文字水印、撤销）+ `.Finish.cs`（合成与关闭：复制 / 保存 / 贴图 / 翻译 / 录屏 / OCR）+ `.Translation.cs`（原位翻译）。
 - `PinWindow`：`.xaml.cs`（显示、缩放、拖动、阴影、快照）+ `.Editing.cs` + `.Toolbar.cs` + `.Orientation.cs`（翻转旋转、光带）+ `.Translation.cs` + `.Menu.cs`。
 - 拆分前后逐个标识符计数一致（只多了新文件的类声明）。
+
+## 8.1.15 0.8.15 变更
+
+- 长截图：`Core/ScrollStitcher`（逐行哈希；先找上下不动的行 = 页头页尾，再在中间部分找使“新帧第 i 行 = 旧帧第 i+d 行”匹配最多的位移 d，
+  单色行不参与判断；匹配率 ≥ 92% 才认，回滚 / 不动不追加；最长 30000 px）。`UI/ScrollCaptureSession`：选区外一圈点透的蓝框 +
+  旁边的预览面板（放不下时压在角上并排除出抓屏），每 100 ms `CopyFromScreen`，预览 ≤ 3 次/秒重建；完成 → 复制 + 贴图（按屏高缩放）。
+  入口：批注栏动作 `Scroll`（`CaptureAction.Scroll`，图标 = 图标库「双向箭头」转 90°）。测试 `stitch`：合成页面带页头页尾、重复帧、不规则位移，逐像素比对。
+- 贴图历史：`PinHistory`/`PinStore` 上限 10 → 30，`PinStore.Delete`；`UI/PinHistoryWindow`（托盘「贴图历史…」），App 的 `RestorePinEntry`（本次运行内关闭的按快照恢复）。
+- `Core/Support.cs`：`Secrets`（DPAPI，`TranslationConfig.ApiKeyProtected`，旧明文 `ApiKey` 读入后不再写出）、`AutoStart`（HKCU Run，取消时也删安装器的启动快捷方式）、
+  `Diagnostics.Export`（桌面 zip：logs、去掉 Key 的 config、系统 / 显示器信息）。
+- 录屏：保存的录像提示框多一个「播放」；托盘「录屏区域回中」（`RecorderController.Recenter`）。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

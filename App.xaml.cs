@@ -217,6 +217,13 @@ public partial class App : Application
             };
             overlay.ShowDialog();
 
+            if (overlay.Result == CaptureAction.Scroll)
+            {
+                var area = overlay.SelectionScreenRect;
+                StartScrollCapture(new Int32Rect((int)area.X, (int)area.Y, (int)area.Width, (int)area.Height));
+                return;
+            }
+
             if (overlay.Result == CaptureAction.Record)
             {
                 // 录屏 from the capture toolbar: record the selected area.
@@ -622,6 +629,30 @@ public partial class App : Application
         }
 
         yield return ("退出录屏", () => r!.Command("exit"));
+    }
+
+    /// <summary>长截图 on an area; when done the long image is copied and opened as a pin (fitted to the screen).</summary>
+    public void StartScrollCapture(Int32Rect area)
+    {
+        if (area.Width < 16 || area.Height < 16)
+        {
+            return;
+        }
+
+        var session = new UI.ScrollCaptureSession(area, image =>
+        {
+            ClipboardService.CopyImage(image);
+            var work = Core.Recording.Monitors.Of(area).WorkArea;
+            var pin = CreatePin(image, area.X, work.Y + 8);
+            var zoom = Math.Min(1, (work.Height - 16) / (double)image.PixelHeight);
+            if (zoom < 1)
+            {
+                pin.RestoreView(zoom, 1);
+            }
+
+            _tray?.ShowBalloon("长截图完成", $"{image.PixelWidth} × {image.PixelHeight}，已复制并贴到屏幕。");
+        });
+        session.Start();
     }
 
     /// <summary>Opens the recorder (on an area, e.g. the capture selection).</summary>
