@@ -69,8 +69,7 @@ public partial class OverlayWindow
         var image = Compose();
         if (!ClipboardService.CopyImage(image))
         {
-            MessageBox.Show(this, "复制失败：剪贴板被其他程序占用，请重试。", "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "复制失败：剪贴板被其他程序占用，请重试。", "确定");
             return;
         }
 
@@ -127,8 +126,7 @@ public partial class OverlayWindow
         catch (Exception ex)
         {
             Log.Error("快速保存失败", ex);
-            MessageBox.Show(this, "快速保存失败：" + ex.Message, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessage.Show(this, "出错了", "快速保存失败：" + ex.Message, "确定");
         }
     }
 

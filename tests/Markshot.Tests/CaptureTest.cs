@@ -160,6 +160,49 @@ static class CaptureTest
             "the capture frames the run of text under the mouse");
         pageOverlay.Close();
 
+        // a picture wall (Pinterest-like): picture -> gap -> picture -> back; the frame follows every time
+        var wall = new Canvas { Width = 800, Height = 500, Background = Brushes.White };
+        var cards = new List<Rect>();
+        for (var c = 0; c < 4; c++)
+        for (var r = 0; r < 2; r++)
+        {
+            var card = new Rect(30 + c * 190, 30 + r * 230, 170, 200 - c * 12);
+            cards.Add(card);
+            var fill = new System.Windows.Shapes.Rectangle { Width = card.Width, Height = card.Height, Fill = new LinearGradientBrush(Color.FromRgb((byte)(40 + c * 50), 90, 160), Colors.Orange, 45 + r * 30) };
+            Canvas.SetLeft(fill, card.X); Canvas.SetTop(fill, card.Y); wall.Children.Add(fill);
+        }
+        wall.Measure(new Size(800, 500)); wall.Arrange(new Rect(0, 0, 800, 500)); wall.UpdateLayout();
+        var wallShot = new RenderTargetBitmap(800, 500, 96, 96, PixelFormats.Pbgra32);
+        wallShot.Render(wall);
+        wallShot.Freeze();
+        var wallOverlay = new OverlayWindow(wallShot, new Int32Rect(0, 0, 800, 500));
+        typeof(OverlayWindow).GetField("_windowFinder", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(wallOverlay,
+            (Func<int, int, WindowTarget?>)((_, _) => new WindowTarget { Handle = IntPtr.Zero, Bounds = new Rect(0, 0, 800, 500), Label = "网页" }));
+        var wallEditor = (Markshot.Annotations.AnnotationEditor)wallOverlay.FindName("Editor");
+        Rect HoverAt(double x, double y)
+        {
+            Call(wallOverlay, "UpdateHover", new Point(x, y));
+            Pump(500);
+            return (Rect)Get(wallOverlay, "_hoverLocal");
+        }
+
+        bool Card(Rect found, Rect card) => Math.Abs(found.X - card.X) <= 3 && Math.Abs(found.Y - card.Y) <= 3 && Math.Abs(found.Width - card.Width) <= 6 && Math.Abs(found.Height - card.Height) <= 6;
+        var path = new (double X, double Y, int Card)[]
+        {
+            (100, 120, 0), (210, 120, -1), (290, 130, 2), (600, 600 - 590, -2), (480, 330, 5), (210, 120, -1), (100, 300, 1), (110, 125, 0)
+        };
+        var followed = true;
+        foreach (var (x, y, index) in path)
+        {
+            var found = HoverAt(x, y);
+            var ok = index >= 0 ? Card(found, cards[index]) : !Card(found, cards[0]);
+            Console.WriteLine($"wall ({x},{y}) -> {found} {(ok ? "ok" : "WRONG")}");
+            followed &= ok;
+        }
+
+        Check(followed, "picture wall: picture, gap, another picture and back - the frame follows every time");
+        wallOverlay.Close();
+
         var pointer = Solid(12, 18, 0, 0, 255);
         overlay.CursorShot = new CursorShot(pointer, 100, 60);
         Check(!overlay.ShowsCursor && At((BitmapSource)Get(overlay, "_screen"), 104, 64).R == 40, "显示鼠标 off: the screenshot without the pointer");

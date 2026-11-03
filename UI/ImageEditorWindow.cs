@@ -29,6 +29,10 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly TextBlock _sessionText = new() { FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center };
     private readonly Button _sessionApply;
     private readonly TextBlock _statusSize = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _statusHint = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(16, 0, 12, 0) };
+    private readonly Canvas _toolbarLayer = new() { ClipToBounds = true };
+    private readonly System.Windows.Shapes.Rectangle _checker = new() { IsHitTestVisible = false };
+    private Point _toolbarAnchor = new(0.5, 14); // the floating bar: centre (fraction of the width), gap to the bottom
     private readonly TextBlock _statusZoom = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Width = 48, TextAlignment = TextAlignment.Center };
     private readonly TextBox _widthBox = new();
     private readonly TextBox _heightBox = new();
@@ -105,8 +109,12 @@ public sealed class ImageEditorWindow : PinWindow
         // The pin's image area moves onto a free stage; the toolbar sits above it.
         var canvas = RootGrid;
         Content = null;
-        ImageHost.Background = (Brush)Application.Current.FindResource("SmallCheckerBrush");
+        // The checkerboard behind see-through parts covers only the visible part of the picture: on the
+        // picture itself it would be tiled over the whole (zoomed) size, which made zooming in slow.
+        ImageHost.Background = Brushes.Transparent;
+        _checker.Fill = (Brush)Application.Current.FindResource("SmallCheckerBrush");
         _stage = new Canvas { ClipToBounds = true, Background = Brushes.Transparent, Focusable = false };
+        _stage.Children.Add(_checker);
         _stage.Children.Add(canvas);
         _stage.PreviewMouseWheel += Stage_PreviewMouseWheel;
         _stage.PreviewMouseDown += Stage_PreviewMouseDown;
@@ -174,18 +182,19 @@ public sealed class ImageEditorWindow : PinWindow
         middle.Children.Add(_stage);
         middle.Children.Add(_emptyHint);
         middle.Children.Add(_sessionBar);
+        middle.Children.Add(_toolbarLayer);
         middle.Children.Add(_dropHint);
 
         _invert = TextToggle("反色", "颜色取反");
         var panel = BuildPanel();
         var status = BuildStatusBar();
-        var top = new Border { Padding = new Thickness(8, 6, 8, 6), BorderThickness = new Thickness(0, 0, 0, 1), Child = Toolbar };
-        Toolbar.HorizontalAlignment = HorizontalAlignment.Center;
-        top.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
-        DockPanel.SetDock(top, Dock.Top);
+        // The annotation bar floats at the bottom of the picture area; its grip moves it anywhere.
+        _toolbarLayer.Children.Add(Toolbar);
+        Toolbar.SizeChanged += (_, _) => PlaceToolbar();
+        _toolbarLayer.SizeChanged += (_, _) => PlaceToolbar();
+        Toolbar.DragFinished += RememberToolbarPlace;
         DockPanel.SetDock(status, Dock.Bottom);
         DockPanel.SetDock(panel, Dock.Right);
-        _layout.Children.Add(top);
         _layout.Children.Add(status);
         _layout.Children.Add(panel);
         _layout.Children.Add(middle);
@@ -196,6 +205,24 @@ public sealed class ImageEditorWindow : PinWindow
         Toolbar.OpenRequested += OpenDialog;
         Toolbar.PinRequested += PinToScreen;
         Toolbar.ToolChanged += _ => CancelSession();
+        Toolbar.ToolChanged += _ => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
+        Toolbar.VariantChanged += _ => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
+        PreviewMouseUp += (_, _) => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
+        PreviewKeyUp += (_, _) => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
+        SourceInitialized += (_, _) =>
+        {
+            // A lone Alt (Alt + wheel sizes the brush) must not put the window into menu mode.
+            System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle)?.AddHook(
+                (IntPtr _, int message, IntPtr wParam, IntPtr _, ref bool handled) =>
+                {
+                    if (message == 0x0112 && (wParam.ToInt64() & 0xFFF0) == 0xF100)
+                    {
+                        handled = true;
+                    }
+
+                    return IntPtr.Zero;
+                });
+        };
         Toolbar.PreviewMouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(new Action(ReclaimKeyboard), DispatcherPriority.Input);
 
         _history.CaptureExtra = () =>
@@ -399,15 +426,20 @@ public sealed class ImageEditorWindow : PinWindow
         cutRow.Children.Add(TextButton("矩形裁切", "拖出要保留的区域（批注保持可编辑）", () => StartSession(EditorOverlayMode.Crop)));
         cutRow.Children.Add(TextButton("路径裁切", "沿手绘路径抠图，路径外变透明", () => StartSession(EditorOverlayMode.Path)));
         cutRow.Children.Add(TextButton("梯形校正", "拖动四个角对准倾斜的矩形，校正为正矩形", () => StartSession(EditorOverlayMode.Keystone)));
+        cutRow.Children.Add(TextButton("网格形变", "拖动网格点，图片跟着弯曲变形（4×4 网格）", () => StartSession(EditorOverlayMode.Mesh)));
 
         var colour = new StackPanel();
         colour.Children.Add(AdjustSlider("亮度", "Brightness", -100, 100, 0));
         colour.Children.Add(AdjustSlider("对比度", "Contrast", -100, 100, 0));
         colour.Children.Add(AdjustSlider("饱和度", "Saturation", -100, 100, 0));
+        colour.Children.Add(AdjustSlider("色相", "Hue", -180, 180, 0));
         colour.Children.Add(AdjustSlider("透明度", "Opacity", 0, 100, 100));
         var toggles = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         _invert.Click += (_, _) => AdjustChanged();
         toggles.Children.Add(_invert);
+        var curves = TextButton("曲线…", "打开曲线表调整明暗", OpenCurves);
+        curves.Margin = new Thickness(0, 0, 6, 0);
+        toggles.Children.Add(curves);
         colour.Children.Add(toggles);
 
         Button Reset(EditGroup group, string tip)
@@ -477,7 +509,10 @@ public sealed class ImageEditorWindow : PinWindow
         zoom.Children.Add(Small("100%", "实际大小（Ctrl+1）", () => SetZoom(1)));
         DockPanel.SetDock(zoom, Dock.Right);
         bar.Children.Add(zoom);
+        DockPanel.SetDock(_statusSize, Dock.Left);
         bar.Children.Add(_statusSize);
+        _statusHint.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFF8A8A8A));
+        bar.Children.Add(_statusHint);
         var frame = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Child = bar };
         frame.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
         UiScale.Attach(bar);
@@ -518,9 +553,11 @@ public sealed class ImageEditorWindow : PinWindow
         _sliders["Contrast"].Slider.Value = _adjust.Contrast;
         _sliders["Saturation"].Slider.Value = _adjust.Saturation;
         _sliders["Opacity"].Slider.Value = _adjust.Opacity;
+        _sliders["Hue"].Slider.Value = _adjust.Hue;
         _invert.IsChecked = _adjust.Invert;
         _syncingControls = false;
         _emptyHint.Visibility = _hasImage ? Visibility.Collapsed : Visibility.Visible;
+        _checker.Visibility = _hasImage ? Visibility.Visible : Visibility.Collapsed;
         ImageHost.Visibility = _hasImage ? Visibility.Visible : Visibility.Collapsed;
         if (_panel != null)
         {
@@ -544,7 +581,8 @@ public sealed class ImageEditorWindow : PinWindow
     {
         var at = anchor ?? new Point(_stage.ActualWidth / 2, _stage.ActualHeight / 2);
         var before = _zoom;
-        _zoom = Math.Clamp(zoom, MinZoom, 8);
+        _zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
+        RenderOptions.SetBitmapScalingMode(Img, _zoom >= 3 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
         var ratio = _zoom / before;
         _pan = new Point(at.X - (at.X - _pan.X) * ratio, at.Y - (at.Y - _pan.Y) * ratio);
         ApplyBounds();
@@ -603,20 +641,119 @@ public sealed class ImageEditorWindow : PinWindow
             Math.Clamp(position.Y, Math.Min(0, keep - h), Math.Max(0, _stage.ActualHeight - keep)));
         Canvas.SetLeft(RootGrid, Math.Round(_pan.X));
         Canvas.SetTop(RootGrid, Math.Round(_pan.Y));
+        var visible = Rect.Intersect(new Rect(Math.Round(_pan.X), Math.Round(_pan.Y), w, h), new Rect(0, 0, _stage.ActualWidth, _stage.ActualHeight));
+        if (visible.IsEmpty)
+        {
+            _checker.Width = _checker.Height = 0;
+            return;
+        }
+
+        Canvas.SetLeft(_checker, visible.X);
+        Canvas.SetTop(_checker, visible.Y);
+        _checker.Width = visible.Width;
+        _checker.Height = visible.Height;
+    }
+
+    private const double MaxZoom = 32;
+
+    // ------------------------------------------------------------------ the floating annotation bar
+
+    private void PlaceToolbar()
+    {
+        double width = Toolbar.ActualWidth, height = Toolbar.ActualHeight, areaWidth = _toolbarLayer.ActualWidth, areaHeight = _toolbarLayer.ActualHeight;
+        if (areaWidth <= 0 || width <= 0)
+        {
+            return;
+        }
+
+        Canvas.SetLeft(Toolbar, Math.Round(Math.Clamp(_toolbarAnchor.X * areaWidth - width / 2, 4, Math.Max(4, areaWidth - width - 4))));
+        Canvas.SetTop(Toolbar, Math.Round(Math.Clamp(areaHeight - _toolbarAnchor.Y - height, 4, Math.Max(4, areaHeight - height - 4))));
+    }
+
+    /// <summary>Dragged by its grip: it keeps that place (also when the window is resized or the settings row opens).</summary>
+    private void RememberToolbarPlace()
+    {
+        var areaWidth = Math.Max(1, _toolbarLayer.ActualWidth);
+        var left = Canvas.GetLeft(Toolbar);
+        var top = Canvas.GetTop(Toolbar);
+        _toolbarAnchor = new Point((left + Toolbar.ActualWidth / 2) / areaWidth, _toolbarLayer.ActualHeight - top - Toolbar.ActualHeight);
+        PlaceToolbar();
+    }
+
+    /// <summary>Where the floating bar is (tests).</summary>
+    public Rect ToolbarBounds => new(Canvas.GetLeft(Toolbar), Canvas.GetTop(Toolbar), Toolbar.ActualWidth, Toolbar.ActualHeight);
+
+    public Size ToolbarArea => new(_toolbarLayer.ActualWidth, _toolbarLayer.ActualHeight);
+
+    // ------------------------------------------------------------------ the status bar: what works now
+
+    /// <summary>The keys and mouse actions for what is going on (tool, selection, a crop …).</summary>
+    public string Hint => _statusHint.Text;
+
+    private void UpdateHint()
+    {
+        const string view = "滚轮缩放 · 中键拖动画布 · F 适应窗口";
+        string text;
+        if (!_hasImage)
+        {
+            text = "打开或拖入一张图片";
+        }
+        else if (_overlay != null)
+        {
+            text = _overlay.Mode switch
+            {
+                EditorOverlayMode.Crop => "拖出保留区域 · 拖边角调整 · 拖框内移动",
+                EditorOverlayMode.Path => "按住沿边缘画一圈 · Shift 直线段",
+                EditorOverlayMode.Mesh => "拖动网格点让图片弯曲",
+                _ => "拖四个角对准倾斜的矩形"
+            } + " · Enter 应用 · Esc 取消 · " + view;
+        }
+        else if (_textEditor.IsActive)
+        {
+            text = "输入文字 · Enter 完成 · Shift+Enter 换行 · Alt+滚轮 字号 · Ctrl+B 粗体 · Esc 完成";
+        }
+        else if (_polyline != null)
+        {
+            text = "单击放拐点 · 双击 / Enter / 右键结束 · Backspace 撤回 · Shift 45° · Esc 放弃";
+        }
+        else if (_selected != null)
+        {
+            text = "拖动移动 · 拖手柄缩放 / 旋转 · Alt+滚轮 大小 · Ctrl+滚轮 透明度 · Ctrl+C / V 复制粘贴 · Delete 删除 · Esc 取消选择";
+        }
+        else
+        {
+            text = _tool switch
+            {
+                AnnotationTool.Rectangle or AnnotationTool.Ellipse => "拖动绘制 · Shift 正方形 / 圆 · Ctrl 圆角 · 按住空格移动 · Alt+滚轮 线宽 · Tab 换样式",
+                AnnotationTool.Arrow or AnnotationTool.Line => "拖动绘制 · Shift 45° · E 旋转 · 按住空格移动 · Alt+滚轮 粗细 · Tab 箭头 / 直线",
+                AnnotationTool.Polyline => "单击放第一个点 · 也可拖出一段 · Alt+滚轮 粗细",
+                AnnotationTool.Pen or AnnotationTool.Highlighter => "拖动书写 · Shift 直线 · Alt+滚轮 笔刷大小 · Ctrl+滚轮 透明度 · Tab 画笔 / 荧光笔",
+                AnnotationTool.Mosaic => "拖出打码区域 · Alt+滚轮 程度 · Tab 画笔马赛克",
+                AnnotationTool.MosaicBrush => "涂抹打码 · Shift 直线 · Alt+滚轮 笔刷大小 · Tab 区域马赛克",
+                AnnotationTool.Text => "单击输入文字 · 单击已有文字编辑 · 拖动移动 · Alt+滚轮 字号",
+                AnnotationTool.Watermark => "拖动移动水印 · 双击修改文字 · Alt+滚轮 字号",
+                AnnotationTool.Number => "单击放序号 · Alt+滚轮 大小",
+                AnnotationTool.Eraser => "拖动擦掉批注 · Alt+滚轮 橡皮大小 · Ctrl+滚轮 擦除强度",
+                _ => "单击批注选中 · 拖动移动 · Ctrl+Z 撤销 · Ctrl+S 保存 · Ctrl+T 贴到屏幕"
+            } + " · " + view;
+        }
+
+        _statusHint.Text = text;
+        _statusHint.ToolTip = text;
     }
 
     /// <summary>The picture's top-left corner on the stage (tests).</summary>
     public Point PanOffset => _pan;
 
     /// <summary>
-    /// The wheel zooms at the mouse. With an element selected or a tool active, Shift + wheel is the
-    /// element's / tool's size and Ctrl + wheel its opacity (as on a pin).
+    /// The wheel zooms at the mouse. With an element selected or a tool active, Alt + wheel is the
+    /// element's / tool's size and Ctrl + wheel its opacity.
     /// </summary>
     private void Stage_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         var modifiers = Keyboard.Modifiers;
         var drawing = _overlay == null && (_textEditor.IsActive || _selected != null || _tool is not (AnnotationTool.None or AnnotationTool.Select));
-        if (drawing && ImageHost.IsMouseOver && (modifiers & (ModifierKeys.Shift | ModifierKeys.Control)) != 0)
+        if (drawing && (modifiers & (ModifierKeys.Alt | ModifierKeys.Control)) != 0)
         {
             OnMouseWheel(this, e);
             e.Handled = true;
@@ -640,33 +777,51 @@ public sealed class ImageEditorWindow : PinWindow
 
         if (e.ChangedButton == MouseButton.Middle)
         {
+            // Whatever still holds the mouse (a slider of the bar, a drawing) lets go first.
+            Mouse.Captured?.ReleaseMouseCapture();
             _panning = true;
             _panStart = e.GetPosition(_stage);
             _panOrigin = _pan;
             _stage.CaptureMouse();
-            _stage.Cursor = Cursors.SizeAll;
+            Mouse.OverrideCursor = Cursors.SizeAll;
             e.Handled = true;
         }
     }
 
     private void Stage_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_panning)
+        if (!_panning)
         {
-            var delta = e.GetPosition(_stage) - _panStart;
-            MoveTo(_panOrigin + delta);
-            e.Handled = true;
+            return;
         }
+
+        if (e.MiddleButton != MouseButtonState.Pressed)
+        {
+            EndPan(); // the release happened elsewhere
+            return;
+        }
+
+        var delta = e.GetPosition(_stage) - _panStart;
+        MoveTo(_panOrigin + delta);
+        e.Handled = true;
     }
 
     private void Stage_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
         if (_panning && e.ChangedButton == MouseButton.Middle)
         {
-            _panning = false;
-            _stage.ReleaseMouseCapture();
-            _stage.ClearValue(CursorProperty);
+            EndPan();
             e.Handled = true;
+        }
+    }
+
+    private void EndPan()
+    {
+        _panning = false;
+        Mouse.OverrideCursor = null;
+        if (_stage.IsMouseCaptured)
+        {
+            _stage.ReleaseMouseCapture();
         }
     }
 
@@ -704,6 +859,7 @@ public sealed class ImageEditorWindow : PinWindow
         UpdateTitle();
         RefreshPanel();
         Fit();
+        UpdateHint();
     }
 
     /// <summary>The bitmap under the annotations changes (size included); mosaics are rebuilt from it.</summary>
@@ -720,6 +876,7 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         ApplyBounds();
+        MoveTo(_pan);
         Editor.InvalidateVisual();
     }
 
@@ -964,6 +1121,26 @@ public sealed class ImageEditorWindow : PinWindow
         Fit();
     }
 
+    /// <summary>网格形变 with the grid points of <see cref="EditorOverlay.Mesh"/> (annotations go into the pixels).</summary>
+    public void MeshWarpTo(IReadOnlyList<Point> points)
+    {
+        GeometryStep(EditGroup.Cut, () => ImageOps.MeshWarp(Flattened(), points, EditorOverlay.MeshColumns, EditorOverlay.MeshRows));
+    }
+
+    /// <summary>曲线: the curve window; the picture follows while points are dragged, 取消 puts it back.</summary>
+    private void OpenCurves()
+    {
+        if (!_hasImage)
+        {
+            return;
+        }
+
+        var window = new CurvesWindow(_adjust.Curve, Proxy()) { Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        window.CurveChanged += curve => SetAdjust(_adjust with { Curve = ToneCurve.IsStraight(curve) ? null : curve });
+        window.ShowDialog();
+        RefreshPanel();
+    }
+
     // ------------------------------------------------------------------ colour
 
     private ImageAdjust AdjustFromControls() => new(
@@ -972,7 +1149,9 @@ public sealed class ImageEditorWindow : PinWindow
         Math.Round(_sliders["Saturation"].Slider.Value),
         Math.Round(_sliders["Opacity"].Slider.Value),
         false,
-        _invert.IsChecked == true);
+        _invert.IsChecked == true,
+        Math.Round(_sliders["Hue"].Slider.Value),
+        _adjust.Curve);
 
     private void AdjustChanged()
     {
@@ -991,7 +1170,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// </summary>
     public void SetAdjust(ImageAdjust adjust)
     {
-        if (adjust == _adjust)
+        if (adjust.SameAs(_adjust))
         {
             return;
         }
@@ -1060,15 +1239,28 @@ public sealed class ImageEditorWindow : PinWindow
         Toolbar.SetTool(AnnotationTool.None);
         _overlay = new EditorOverlay(mode, _baseImage.PixelWidth, _baseImage.PixelHeight, _zoom);
         _overlay.Changed += UpdateSessionBar;
+        if (mode == EditorOverlayMode.Mesh)
+        {
+            // The warp is previewed on a small copy of the picture with its annotations.
+            var whole = ImageOps.Normalize(base.ComposeEditedImage());
+            var side = Math.Max(whole.PixelWidth, whole.PixelHeight);
+            var small = side <= 700 ? whole : ImageOps.Resize(whole, Math.Max(1, whole.PixelWidth * 700 / side), Math.Max(1, whole.PixelHeight * 700 / side));
+            var scale = small.PixelWidth / (double)whole.PixelWidth;
+            _overlay.MeshPreview = points => ImageOps.MeshWarp(small, points.Select(p => new Point(p.X * scale, p.Y * scale)).ToList(),
+                EditorOverlay.MeshColumns, EditorOverlay.MeshRows);
+        }
+
         ImageHost.Children.Add(_overlay);
         _sessionText.Text = mode switch
         {
             EditorOverlayMode.Crop => "拖出要保留的区域，拖边角调整。Enter 应用，Esc 取消",
             EditorOverlayMode.Path => "按住鼠标沿要保留的部分画一圈（按住 Shift 走直线）。Enter 应用，Esc 取消",
+            EditorOverlayMode.Mesh => "拖动网格点，图片跟着弯曲变形。Enter 应用，Esc 取消",
             _ => "拖动四个角对准图中倾斜的矩形。Enter 应用，Esc 取消"
         };
         _sessionBar.Visibility = Visibility.Visible;
         UpdateSessionBar();
+        UpdateHint();
     }
 
     private void UpdateSessionBar() => _sessionApply.IsEnabled = _overlay?.Ready == true;
@@ -1097,6 +1289,9 @@ public sealed class ImageEditorWindow : PinWindow
             case EditorOverlayMode.Path:
                 PathCropTo(overlay.PathPoints);
                 break;
+            case EditorOverlayMode.Mesh:
+                MeshWarpTo(overlay.Mesh);
+                break;
             default:
                 KeystoneTo(overlay.Quad);
                 break;
@@ -1110,6 +1305,7 @@ public sealed class ImageEditorWindow : PinWindow
             ImageHost.Children.Remove(_overlay);
             _overlay = null;
             _sessionBar.Visibility = Visibility.Collapsed;
+            UpdateHint();
         }
     }
 
@@ -1238,7 +1434,7 @@ public sealed class ImageEditorWindow : PinWindow
         catch (Exception ex)
         {
             Log.Error("打开图片失败：" + path, ex);
-            MessageBox.Show(this, "无法打开这个图片：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "无法打开这个图片：" + ex.Message, "确定");
             return false;
         }
     }

@@ -3,10 +3,118 @@ using SkiaSharp;
 
 namespace Markshot.Core;
 
-/// <summary>Colour adjustments of the image editor; all neutral at their defaults.</summary>
-public sealed record ImageAdjust(double Brightness = 0, double Contrast = 0, double Saturation = 0, double Opacity = 100, bool Gray = false, bool Invert = false)
+/// <summary>
+/// Colour adjustments of the image editor; all neutral at their defaults. <see cref="Hue"/> turns the
+/// colours (degrees); <see cref="Curve"/> is the tone curve's points as x, y pairs (0–255), null = straight.
+/// </summary>
+public sealed record ImageAdjust(double Brightness = 0, double Contrast = 0, double Saturation = 0, double Opacity = 100, bool Gray = false, bool Invert = false,
+    double Hue = 0, double[]? Curve = null)
 {
-    public bool IsNeutral => Brightness == 0 && Contrast == 0 && Saturation == 0 && Opacity >= 100 && !Gray && !Invert;
+    public bool IsNeutral => Brightness == 0 && Contrast == 0 && Saturation == 0 && Opacity >= 100 && !Gray && !Invert && Hue == 0 && ToneCurve.IsStraight(Curve);
+
+    /// <summary>Same values (the curve compared point by point).</summary>
+    public bool SameAs(ImageAdjust? other) => other is not null && this with { Curve = null } == other with { Curve = null } &&
+        (Curve ?? ToneCurve.Straight).AsSpan().SequenceEqual(other.Curve ?? ToneCurve.Straight);
+}
+
+/// <summary>The tone curve of 曲线: points through which a smooth curve (that never turns back) maps input to output.</summary>
+public static class ToneCurve
+{
+    public static readonly double[] Straight = { 0, 0, 255, 255 };
+
+    public static bool IsStraight(double[]? curve) =>
+        curve == null || Enumerable.Range(0, curve.Length / 2).All(i => Math.Abs(curve[i * 2] - curve[i * 2 + 1]) < 0.5);
+
+    /// <summary>
+    /// 256 output values: monotone cubic (Fritsch–Carlson) through the points sorted by x; flat beyond
+    /// the first / last point.
+    /// </summary>
+    public static byte[] Table(double[]? curve)
+    {
+        var table = new byte[256];
+        var points = Enumerable.Range(0, (curve ?? Straight).Length / 2)
+            .Select(i => (X: Math.Clamp((curve ?? Straight)[i * 2], 0, 255), Y: Math.Clamp((curve ?? Straight)[i * 2 + 1], 0, 255)))
+            .OrderBy(p => p.X).ToList();
+        for (var i = points.Count - 1; i > 0; i--)
+        {
+            if (points[i].X - points[i - 1].X < 0.5)
+            {
+                points.RemoveAt(i);
+            }
+        }
+
+        if (points.Count == 1)
+        {
+            Array.Fill(table, (byte)Math.Round(points[0].Y));
+            return table;
+        }
+
+        var n = points.Count;
+        var slopes = new double[n - 1];
+        for (var i = 0; i < n - 1; i++)
+        {
+            slopes[i] = (points[i + 1].Y - points[i].Y) / (points[i + 1].X - points[i].X);
+        }
+
+        var tangents = new double[n];
+        tangents[0] = slopes[0];
+        tangents[n - 1] = slopes[n - 2];
+        for (var i = 1; i < n - 1; i++)
+        {
+            tangents[i] = slopes[i - 1] * slopes[i] <= 0 ? 0 : (slopes[i - 1] + slopes[i]) / 2;
+        }
+
+        for (var i = 0; i < n - 1; i++)
+        {
+            if (Math.Abs(slopes[i]) < 1e-9)
+            {
+                tangents[i] = tangents[i + 1] = 0;
+                continue;
+            }
+
+            var a = tangents[i] / slopes[i];
+            var b = tangents[i + 1] / slopes[i];
+            var s = a * a + b * b;
+            if (s > 9)
+            {
+                var t = 3 / Math.Sqrt(s);
+                tangents[i] = t * a * slopes[i];
+                tangents[i + 1] = t * b * slopes[i];
+            }
+        }
+
+        for (var x = 0; x < 256; x++)
+        {
+            double y;
+            if (x <= points[0].X)
+            {
+                y = points[0].Y;
+            }
+            else if (x >= points[n - 1].X)
+            {
+                y = points[n - 1].Y;
+            }
+            else
+            {
+                var k = 0;
+                while (x > points[k + 1].X)
+                {
+                    k++;
+                }
+
+                var h = points[k + 1].X - points[k].X;
+                var t = (x - points[k].X) / h;
+                var t2 = t * t;
+                var t3 = t2 * t;
+                y = (2 * t3 - 3 * t2 + 1) * points[k].Y + (t3 - 2 * t2 + t) * h * tangents[k] +
+                    (-2 * t3 + 3 * t2) * points[k + 1].Y + (t3 - t2) * h * tangents[k + 1];
+            }
+
+            table[x] = (byte)Math.Clamp(Math.Round(y), 0, 255);
+        }
+
+        return table;
+    }
 }
 
 /// <summary>Pixel operations of the image editor. Everything takes and returns frozen bitmaps.</summary>
@@ -40,20 +148,31 @@ public static class ImageOps
     public static BitmapSource Adjust(BitmapSource source, ImageAdjust adjust)
     {
         var (pixels, width, height) = ReadPixels(source);
-        // A lookup table per channel value: brightness, contrast and invert (in that order).
+        // A lookup table per channel value: brightness, contrast, invert, then the tone curve.
         var table = new byte[256];
+        var curve = ToneCurve.Table(adjust.Curve);
         var brightness = adjust.Brightness / 100 * 255;
         var contrast = adjust.Contrast >= 0 ? 1 + adjust.Contrast / 100 * 2 : 1 + adjust.Contrast / 100;
         for (var i = 0; i < 256; i++)
         {
             var value = (i - 127.5) * contrast + 127.5 + brightness;
             value = Math.Clamp(value, 0, 255);
-            table[i] = (byte)Math.Round(adjust.Invert ? 255 - value : value);
+            table[i] = curve[(int)Math.Round(adjust.Invert ? 255 - value : value)];
         }
 
         var saturation = adjust.Gray ? 0 : 1 + adjust.Saturation / 100;
         var opacity = Math.Clamp(adjust.Opacity, 0, 100) / 100;
-        var changeColor = Math.Abs(saturation - 1) > 1e-6;
+        // 色相: the colours turn around the grey axis keeping their brightness (as CSS hue-rotate).
+        var hue = adjust.Hue * Math.PI / 180;
+        double cos = Math.Cos(hue), sin = Math.Sin(hue);
+        var m = new[]
+        {
+            0.213 + cos * 0.787 - sin * 0.213, 0.715 - cos * 0.715 - sin * 0.715, 0.072 - cos * 0.072 + sin * 0.928,
+            0.213 - cos * 0.213 + sin * 0.143, 0.715 + cos * 0.285 + sin * 0.140, 0.072 - cos * 0.072 - sin * 0.283,
+            0.213 - cos * 0.213 - sin * 0.787, 0.715 - cos * 0.715 + sin * 0.715, 0.072 + cos * 0.928 + sin * 0.072
+        };
+        var turn = Math.Abs(adjust.Hue) > 1e-6;
+        var changeColor = Math.Abs(saturation - 1) > 1e-6 || turn;
         Parallel.For(0, height, y =>
         {
             var row = y * width * 4;
@@ -63,6 +182,16 @@ public static class ImageOps
                 double b = pixels[i], g = pixels[i + 1], r = pixels[i + 2];
                 if (changeColor)
                 {
+                    if (turn)
+                    {
+                        var r2 = m[0] * r + m[1] * g + m[2] * b;
+                        var g2 = m[3] * r + m[4] * g + m[5] * b;
+                        var b2 = m[6] * r + m[7] * g + m[8] * b;
+                        r = r2;
+                        g = g2;
+                        b = b2;
+                    }
+
                     var luma = 0.114 * b + 0.587 * g + 0.299 * r;
                     b = Math.Clamp(luma + (b - luma) * saturation, 0, 255);
                     g = Math.Clamp(luma + (g - luma) * saturation, 0, 255);
@@ -167,6 +296,108 @@ public static class ImageOps
             }
         });
         return FromPixels(output, width, height);
+    }
+
+    /// <summary>
+    /// 网格形变: the picture divided into a grid of <paramref name="columns"/> × <paramref name="rows"/>
+    /// cells, each cell stretched onto the quadrilateral of its four (moved) grid points. Points are in
+    /// output pixels, row by row ((columns + 1) per row). Same size as the source; outside = transparent.
+    /// </summary>
+    public static BitmapSource MeshWarp(BitmapSource source, IReadOnlyList<Point> points, int columns, int rows)
+    {
+        var (input, width, height) = ReadPixels(source);
+        var output = new byte[width * height * 4];
+        double cellW = width / (double)columns, cellH = height / (double)rows;
+        Point P(int c, int r) => points[r * (columns + 1) + c];
+        var cells = new List<(int C, int R)>();
+        for (var r = 0; r < rows; r++)
+        {
+            for (var c = 0; c < columns; c++)
+            {
+                cells.Add((c, r));
+            }
+        }
+
+        foreach (var (c, r) in cells)
+        {
+            Point a = P(c, r), b = P(c + 1, r), cc = P(c + 1, r + 1), d = P(c, r + 1);
+            var left = (int)Math.Floor(Math.Min(Math.Min(a.X, b.X), Math.Min(cc.X, d.X)));
+            var right = (int)Math.Ceiling(Math.Max(Math.Max(a.X, b.X), Math.Max(cc.X, d.X)));
+            var top = (int)Math.Floor(Math.Min(Math.Min(a.Y, b.Y), Math.Min(cc.Y, d.Y)));
+            var bottom = (int)Math.Ceiling(Math.Max(Math.Max(a.Y, b.Y), Math.Max(cc.Y, d.Y)));
+            left = Math.Max(0, left);
+            top = Math.Max(0, top);
+            right = Math.Min(width, right);
+            bottom = Math.Min(height, bottom);
+            Parallel.For(top, bottom, y =>
+            {
+                for (var x = left; x < right; x++)
+                {
+                    if (InverseBilinear(new Point(x + 0.5, y + 0.5), a, b, cc, d, out var u, out var v))
+                    {
+                        Sample(input, width, height, (c + u) * cellW - 0.5, (r + v) * cellH - 0.5, output, (y * width + x) * 4);
+                    }
+                }
+            });
+        }
+
+        return FromPixels(output, width, height);
+    }
+
+    /// <summary>The (u, v) in [0, 1]² for which the bilinear patch a-b-c-d (clockwise from top-left) passes through p.</summary>
+    private static bool InverseBilinear(Point p, Point a, Point b, Point c, Point d, out double u, out double v)
+    {
+        static double Cross(Vector x, Vector y) => x.X * y.Y - x.Y * y.X;
+        Vector e = b - a, f = d - a, g = a - b + (c - d), h = p - a;
+        var k2 = Cross(g, f);
+        var k1 = Cross(e, f) + Cross(h, g);
+        var k0 = Cross(h, e);
+        u = v = -1;
+        const double slack = 1e-6;
+
+        bool Solve(double vv, out double uu)
+        {
+            var dx = e.X + g.X * vv;
+            var dy = e.Y + g.Y * vv;
+            uu = Math.Abs(dx) >= Math.Abs(dy) ? (h.X - f.X * vv) / dx : (h.Y - f.Y * vv) / dy;
+            return vv >= -slack && vv <= 1 + slack && uu >= -slack && uu <= 1 + slack && double.IsFinite(uu);
+        }
+
+        if (Math.Abs(k2) < 1e-9)
+        {
+            if (Math.Abs(k1) < 1e-12)
+            {
+                return false;
+            }
+
+            v = -k0 / k1;
+            return Solve(v, out u);
+        }
+
+        var w = k1 * k1 - 4 * k0 * k2;
+        if (w < 0)
+        {
+            return false;
+        }
+
+        w = Math.Sqrt(w);
+        var v1 = (-k1 - w) / (2 * k2);
+        if (Solve(v1, out var u1))
+        {
+            u = u1;
+            v = v1;
+            return true;
+        }
+
+        var v2 = (-k1 + w) / (2 * k2);
+        if (Solve(v2, out var u2))
+        {
+            u = u2;
+            v = v2;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>Bilinear sample (premultiplied while mixing, so transparent pixels do not bleed); outside = transparent.</summary>

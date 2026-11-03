@@ -92,6 +92,9 @@ public partial class AnnotationToolbar : UserControl
     };
 
     public event Action<AnnotationTool>? ToolChanged;
+
+    /// <summary>The bar was moved by its grip (inside a canvas).</summary>
+    public event Action? DragFinished;
     public event Action<AnnotationTool>? VariantChanged;
     public event Action? SettingsChanged;
     public event Action? UndoRequested;
@@ -212,7 +215,7 @@ public partial class AnnotationToolbar : UserControl
         CaptureActions.Visibility = mode == AnnotationToolbarMode.Capture ? Visibility.Visible : Visibility.Collapsed;
         PinActions.Visibility = mode == AnnotationToolbarMode.Pin ? Visibility.Visible : Visibility.Collapsed;
         EditorActions.Visibility = mode == AnnotationToolbarMode.Editor ? Visibility.Visible : Visibility.Collapsed;
-        DragHandle.Visibility = mode == AnnotationToolbarMode.Editor ? Visibility.Collapsed : Visibility.Visible;
+        DragHandle.Visibility = Visibility.Visible;
         ApplyToolOrderFromConfig();
     }
 
@@ -1330,6 +1333,7 @@ public partial class AnnotationToolbar : UserControl
 
         _dragging = false;
         DragHandle.ReleaseMouseCapture();
+        DragFinished?.Invoke();
         e.Handled = true;
     }
 }

@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.18`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.19`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -597,6 +597,22 @@ un.ps1 batch1 menu`。
 - 打开方式：`Core/FileAssociation`（HKCU 下 ProgID `Markshot.Image`、`Applications\Markshot.exe`、各扩展名 `OpenWithProgids`；启动时按 `AppConfig.RegisterOpenWith` 刷新）；
   安装包也写同样的键、卸载时删除。`OpenRequests`：第二次启动带图片参数时经命名管道交给已运行的 Markshot；`App.OpenFileInEditor`。
   设为默认只能由用户在 Windows 的选择窗口里确认（`SHOpenWithDialog`）。测试 `files` 用自己的注册表键和管道名，不碰真实设置。
+
+## 8.1.19 0.8.19 变更
+
+- 悬停识别：0.8.18 在鼠标仍在“最小框”内时不再查找，离开一张图片到空白处后最小框变成整页，之后再也不重新判断。
+  现在每次移动都重算：画面分块（区域准备好后 O(1) 查表；没准备好时后台 `ScreenSegmenter.Prepare`，完成后刷新）+ 上次 UIA 结果里仍包含鼠标的元素；
+  UIA 查询在后台排队（只查最新位置）。框没变时不重画。预选框改为 3 DIP 蓝色实线（画在区域内侧）。测试 `capture` 里有图片墙来回移动的用例（`_windowFinder` 注入窗口）。
+- 长截图 `ScrollStitcher` 重写：每帧切成 行 × 16 竖条的格子，只有变化且非纯色的格子参与；每个竖条内多数一致才计票（固定侧栏 / 滚动条 / 动画不干扰）；
+  在 ±一屏内找位移，负位置 = 往上滚，新行插到最前；跳太远时在已拼内容里 `Locate`。固定页眉 / 页脚 = 位移时没参与且基本没变的边缘行。
+  `KeptColumns` 按列统计“变化且跟随滚动”的比例，去掉两侧固定面板和滚动条（只在那一侧确实有内容时裁）。
+- 编辑器：工具栏改为底部悬浮（`_toolbarLayer` Canvas，`_toolbarAnchor` = 中心比例 + 距底，拖手柄后 `DragFinished` 记住位置）；状态栏 `UpdateHint` 按工具 / 选中 / 会话显示操作。
+  `Alt + 滚轮` 大小、`Ctrl + 滚轮` 透明度；编辑器不建 `PinMagnifier`，并拦截 SC_KEYMENU。中键平移先释放别人的鼠标捕获、用 `Mouse.OverrideCursor`，丢失松开时自动结束。
+  放大卡顿的原因是棋盘格画刷铺在整张放大后的图上（几万像素见方）；改为只铺在可见部分（`_checker`）。最大缩放 3200%，≥300% 用最近邻。
+- `ImageAdjust` 增加 `Hue`（CSS hue-rotate 矩阵）和 `Curve`（x,y 对；`ToneCurve.Table` = Fritsch–Carlson 单调三次）；`SameAs` 按值比较曲线。`UI/CurvesWindow`（直方图、加点 / 拖动 / 拖出删除 / 右键删除，取消还原）。
+- 网格形变：`EditorOverlayMode.Mesh`（5×5 点），`ImageOps.MeshWarp`（每格逆双线性映射 + 双线性采样），预览用 ≤700 px 的小图实时算；应用时批注合并进像素（裁切组，可重置 / 撤销）。
+- 更新：`UI/UpdateWindow`（主题化，下载进度），`UpdateService.InstallQuietly` 用 `/VERYSILENT … /RESTARTAFTERUPDATE` 启动安装包；
+  安装脚本 `[Code] RestartAfterUpdate` 在该参数下装完重新打开 Markshot，`WizardStyle=modern dynamic`。其余 `MessageBox` 全部换成 `ThemedMessage`。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

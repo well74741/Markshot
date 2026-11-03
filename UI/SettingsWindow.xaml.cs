@@ -377,8 +377,7 @@ public partial class SettingsWindow : Window
     {
         if (!HotkeyGesture.TryParse(CaptureHotkeyBox.Text, out var capture, out var error))
         {
-            MessageBox.Show(this, "截图快捷键无效：" + error, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "截图快捷键无效：" + error, "确定");
             return;
         }
 
@@ -386,16 +385,14 @@ public partial class SettingsWindow : Window
         var pin = default(HotkeyGesture);
         if (hasPinHotkey && !HotkeyGesture.TryParse(PinHotkeyBox.Text, out pin, out error))
         {
-            MessageBox.Show(this, "贴图快捷键无效：" + error, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "贴图快捷键无效：" + error, "确定");
             return;
         }
 
         if (hasPinHotkey &&
             string.Equals(capture.Text, pin.Text, StringComparison.OrdinalIgnoreCase))
         {
-            MessageBox.Show(this, "截图和贴图不能使用同一个快捷键。", "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "截图和贴图不能使用同一个快捷键。", "确定");
             return;
         }
 
@@ -404,8 +401,7 @@ public partial class SettingsWindow : Window
         if (hasMouseThrough &&
             !HotkeyGesture.TryParse(MouseThroughHotkeyBox.Text, out mouseThrough, out error))
         {
-            MessageBox.Show(this, "鼠标穿透快捷键无效：" + error, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "鼠标穿透快捷键无效：" + error, "确定");
             return;
         }
 
@@ -413,8 +409,7 @@ public partial class SettingsWindow : Window
         var restore = default(HotkeyGesture);
         if (hasRestore && !HotkeyGesture.TryParse(RestorePinHotkeyBox.Text, out restore, out error))
         {
-            MessageBox.Show(this, "返回上一贴图快捷键无效：" + error, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "返回上一贴图快捷键无效：" + error, "确定");
             return;
         }
 
@@ -422,15 +417,13 @@ public partial class SettingsWindow : Window
         var record = default(HotkeyGesture);
         if (hasRecord && !HotkeyGesture.TryParse(RecordHotkeyBox.Text, out record, out error))
         {
-            MessageBox.Show(this, "录屏快捷键无效：" + error, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "录屏快捷键无效：" + error, "确定");
             return;
         }
 
         if (hasRecord && string.Equals(capture.Text, record.Text, StringComparison.OrdinalIgnoreCase))
         {
-            MessageBox.Show(this, "截图和录屏不能使用同一个快捷键。", "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "截图和录屏不能使用同一个快捷键。", "确定");
             return;
         }
 
@@ -457,8 +450,7 @@ public partial class SettingsWindow : Window
         var toolKeys = new[] { penKey, selectKey, eraserKey, textKey, numberKey, lineKey, shapeKey };
         if (toolKeys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != toolKeys.Length)
         {
-            MessageBox.Show(this, "标注工具快捷键不能重复。", "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessage.Show(this, "提示", "标注工具快捷键不能重复。", "确定");
             return;
         }
 
@@ -803,26 +795,8 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var result = MessageBox.Show(this, $"关闭 Markshot 并安装 {_update.Version}？", "更新 Markshot",
-            MessageBoxButton.OKCancel, MessageBoxImage.Question);
-        if (result != MessageBoxResult.OK)
-        {
-            return;
-        }
-
-        try
-        {
-            UpdateButton.IsEnabled = false;
-            var progress = new Progress<double>(value => StatusText.Text = $"正在下载更新… {value:P0}");
-            var local = await UpdateService.DownloadAsync(_update, progress);
-            UpdateService.Install(local);
-        }
-        catch (Exception ex)
-        {
-            Log.Error("下载更新失败", ex);
-            StatusText.Text = "下载更新失败：" + ex.Message;
-            UpdateButton.IsEnabled = true;
-        }
+        await Task.Yield();
+        new UpdateWindow(_update) { Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner }.ShowDialog();
     }
 
     private void BrowseUpdate_Click(object sender, RoutedEventArgs e)

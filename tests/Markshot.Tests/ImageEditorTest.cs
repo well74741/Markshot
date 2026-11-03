@@ -276,6 +276,74 @@ static class ImageEditorTest
         Pump(30);
         Check(Math.Abs(editor.PanOffset.X - fitted.X) < 2 && Math.Abs(editor.PanOffset.Y - fitted.Y) < 2 && (double)Field(editor, "_zoom") == zoomBefore, "F: fitted and back in the middle");
 
+        // ---- zoom far in: up to 3200 %, the checkerboard only where the picture is visible, pixels stay sharp
+        for (var i = 0; i < 80; i++) editor.ZoomAt(120, new Point(300, 200));
+        var deep = (double)Field(editor, "_zoom");
+        var checker = (System.Windows.Shapes.Rectangle)Field(editor, "_checker");
+        var stage = (Canvas)Field(editor, "_stage");
+        Check(deep > 30 && deep <= 32, $"zooms in to 3200 % ({deep * 100:0} %)");
+        Check(checker.Width <= stage.ActualWidth + 1 && checker.Height <= stage.ActualHeight + 1, "the checkerboard covers only the view, not the 12 800 px picture");
+        Check(RenderOptions.GetBitmapScalingMode((Image)Field(editor, "Img")) == BitmapScalingMode.NearestNeighbor, "close up the pixels stay sharp");
+        var before = editor.PanOffset;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < 60; i++) { editor.PanBy(new Vector(7, 3)); ((FrameworkElement)editor.Content).UpdateLayout(); }
+        Check(watch.ElapsedMilliseconds < 1500 && editor.PanOffset != before, $"dragging close up stays quick ({watch.ElapsedMilliseconds} ms for 60 moves)");
+        editor.Fit();
+        Pump(30);
+
+        // ---- the floating bar at the bottom, the status bar says what works now
+        var bar = editor.ToolbarBounds;
+        var area = editor.ToolbarArea;
+        Check(Math.Abs(bar.X + bar.Width / 2 - area.Width / 2) < 3 && Math.Abs(area.Height - bar.Bottom - 14) < 3, $"the annotation bar floats at the bottom middle ({bar})");
+        Check(((AnnotationToolbar)Field(editor, "Toolbar")).FindName("DragHandle") is FrameworkElement { Visibility: Visibility.Visible }, "it has its grip to move it");
+        Canvas.SetLeft((AnnotationToolbar)Field(editor, "Toolbar"), 20);
+        Canvas.SetTop((AnnotationToolbar)Field(editor, "Toolbar"), 30);
+        Call(editor, "RememberToolbarPlace");
+        editor.Width += 60;
+        Pump(100);
+        Check(Math.Abs(editor.ToolbarBounds.Y - 30) < 3, "moved by its grip: it stays there");
+        Check(editor.Hint.Contains("滚轮缩放") && editor.Hint.Contains("单击批注选中"), "status bar: no tool");
+        ((AnnotationToolbar)Field(editor, "Toolbar")).SetTool(AnnotationTool.Pen);
+        typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, new object[] { AnnotationTool.Pen });
+        Call(editor, "UpdateHint");
+        Check(editor.Hint.Contains("Alt+滚轮 笔刷大小"), "status bar: the pen's keys");
+        Call(editor, "StartSession", EditorOverlayMode.Mesh);
+        Check(editor.Hint.Contains("网格点") && editor.Hint.Contains("Enter 应用"), "status bar: the mesh session");
+        Call(editor, "CancelSession");
+        typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, new object[] { AnnotationTool.None });
+
+        // ---- 网格形变 in the editor, 色相 and 曲线
+        Call(editor, "StartSession", EditorOverlayMode.Mesh);
+        var mesh = (EditorOverlay)Field(editor, "_overlay");
+        Check(!mesh.Ready, "mesh: nothing to apply before a point moves");
+        mesh.MoveMeshPoint(12, new Point(260, 150));
+        Pump(50);
+        Shot((FrameworkElement)editor.Content, "editor_mesh.png");
+        Call(editor, "ApplySession");
+        Pump(50);
+        Check(editor.ImageWidth == 400 && At(editor.Composite, 230, 150).R == 200, "mesh applied: the red half reaches the dragged point");
+        editor.UndoStep();
+        Pump(30);
+        Check(Same(editor.Composite, clean), "undo the mesh");
+        editor.SetAdjust(new ImageAdjust(Hue: 120));
+        Pump(30);
+        var turnedHue = At(editor.Composite, 100, 200);
+        Check(turnedHue.G > turnedHue.R, "色相 slider value turns the colours");
+        editor.SetAdjust(new ImageAdjust());
+        var curves = new CurvesWindow(null, editor.Composite) { Left = -3000, Top = -3000, ShowActivated = false };
+        double[]? lastCurve = null;
+        curves.CurveChanged += curve => lastCurve = curve;
+        curves.Show();
+        Pump(50);
+        var added = curves.AddPoint(128, 200);
+        curves.MovePoint(added, new Point(128, 220));
+        Check(lastCurve != null && ToneCurve.Table(lastCurve)[128] == 220, "曲线: a point added and dragged");
+        Shot((FrameworkElement)curves.Content, "curves_dark.png");
+        curves.Close();
+        Check(lastCurve!.Length == 4 && ToneCurve.IsStraight(lastCurve), "曲线: 取消 puts the curve back");
+        editor.SetAdjust(new ImageAdjust());
+        Pump(30);
+
         // ---- save, and 贴到屏幕 hands over base + annotations
         foreach (var ext in new[] { "png", "jpg", "webp" })
         {

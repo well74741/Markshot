@@ -60,6 +60,39 @@ static class ImageOpsTest
         var neutral = At(ImageOps.Adjust(c, new ImageAdjust()), 1, 1);
         Check(neutral.R == 200 && neutral.G == 100 && neutral.B == 50 && neutral.A == 255, "neutral changes nothing");
 
+        // 色相: red turns towards green at +120°, grey stays grey, a full turn changes nothing
+        var red = Solid(2, 2, 220, 30, 30);
+        var green = At(ImageOps.Adjust(red, new ImageAdjust(Hue: 120)), 0, 0);
+        Check(green.G > green.R + 80 && green.G > green.B, $"hue +120: red becomes green ({green.R},{green.G},{green.B})");
+        var greyHue = At(ImageOps.Adjust(Solid(2, 2, 120, 120, 120), new ImageAdjust(Hue: 77)), 0, 0);
+        Check(Near(greyHue.R, 120) && Near(greyHue.G, 120) && Near(greyHue.B, 120), "hue leaves grey alone");
+        var full = At(ImageOps.Adjust(c, new ImageAdjust(Hue: 360)), 1, 1);
+        Check(Near(full.R, 200) && Near(full.G, 100) && Near(full.B, 50), "hue 360 = as before");
+
+        // 曲线: a straight curve changes nothing, an S-curve darkens shadows and lifts lights, monotone
+        Check(ToneCurve.Table(null).Select((v, i) => v == i).All(x => x), "straight curve: identity");
+        var sTable = ToneCurve.Table(new double[] { 0, 0, 64, 40, 192, 220, 255, 255 });
+        Check(sTable[64] == 40 && sTable[192] == 220 && sTable[32] < 32 && sTable[224] > 224, $"S-curve goes through its points ({sTable[64]}, {sTable[192]})");
+        Check(sTable.Zip(sTable.Skip(1)).All(p => p.Second >= p.First), "the curve never goes down");
+        var curved = At(ImageOps.Adjust(Solid(2, 2, 64, 64, 64), new ImageAdjust(Curve: new double[] { 0, 0, 64, 40, 192, 220, 255, 255 })), 0, 0);
+        Check(curved.R == 40 && curved.G == 40, "the picture follows the curve");
+        Check(new ImageAdjust(Curve: new double[] { 0, 0, 255, 255 }).IsNeutral && !new ImageAdjust(Hue: 5).IsNeutral, "neutral knows hue and curve");
+        Check(new ImageAdjust(Curve: new double[] { 0, 0, 128, 90, 255, 255 }).SameAs(new ImageAdjust(Curve: new double[] { 0, 0, 128, 90, 255, 255 })), "same curve compares equal");
+
+        // 网格形变: an untouched grid changes nothing; pulling the middle point drags the picture with it
+        var grid = new Point[25];
+        for (var r = 0; r <= 4; r++) for (var col = 0; col <= 4; col++) grid[r * 5 + col] = new Point(100 * col / 4.0, 60 * r / 4.0);
+        var halvesForMesh = Halves(100, 60);
+        var same = ImageOps.MeshWarp(halvesForMesh, grid, 4, 4);
+        Check(At(same, 10, 30).R == 220 && At(same, 90, 30).B == 220 && At(same, 49, 30).R == 220 && At(same, 51, 30).B == 220, "mesh: untouched grid = the picture");
+        var pulled = (Point[])grid.Clone();
+        pulled[2 * 5 + 2] = new Point(70, 30); // the centre (50, 30) dragged right
+        var warped = ImageOps.MeshWarp(halvesForMesh, pulled, 4, 4);
+        Check(At(warped, 60, 30).R == 220 && At(warped, 51, 5).B == 220, "mesh: the red half follows the dragged point, the edge stays");
+        var outward = (Point[])grid.Clone();
+        outward[4] = new Point(80, 0);
+        Check(At(ImageOps.MeshWarp(halvesForMesh, outward, 4, 4), 95, 1).A == 0, "mesh: pulled in from the corner, transparent outside");
+
         var halves = Halves(100, 60);
         var small = ImageOps.Resize(halves, 50, 30);
         Check(small.PixelWidth == 50 && small.PixelHeight == 30 && At(small, 10, 15).R > 200 && At(small, 40, 15).B > 200, "resize");

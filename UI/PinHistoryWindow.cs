@@ -38,7 +38,7 @@ public sealed class PinHistoryWindow : Window
         var clear = new Button { Content = "清空", Style = (Style)Application.Current.FindResource("FooterButton"), MinWidth = 64, Height = 28 };
         clear.Click += (_, _) =>
         {
-            if (MessageBox.Show(this, "清空全部贴图历史？", "Markshot", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+            if (ThemedMessage.Show(this, "清空贴图历史", "清空全部贴图历史？", "清空", "取消") == 0)
             {
                 _clear();
                 Refresh();

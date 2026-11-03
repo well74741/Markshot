@@ -80,8 +80,8 @@ static class StitchTest
         again.Add(Frame(page, 500));
         again.Add(Frame(page, 600));
         var h = again.Height;
-        again.Add(Frame(page, 400));
-        Check(again.Height == h, "scrolling back up adds nothing");
+        again.Add(Frame(page, 550));
+        Check(again.Height == h, "scrolling back up over what was seen adds nothing");
 
         // down, up, down again (the reported bug): every row of the page exactly once
         var yoyo = new ScrollStitcher(W, H);
@@ -98,6 +98,77 @@ static class StitchTest
             if (px2[a] != page[b] || px2[a + 1] != page[b + 1] || px2[a + 2] != page[b + 2]) bad2++;
         }
         Check(bad2 == 0, $"down / up / down: content identical ({bad2} wrong pixels)");
+
+        // ---- a chat window (reported: scrolling it does nothing): starts at the bottom and goes UP
+        var up = new ScrollStitcher(W, H);
+        foreach (var o in new[] { 1500, 1400, 1250, 1100, 900 }) { var n = up.Add(Frame(page, o)); Console.WriteLine($"up {o}: +{n} shift {up.LastShift} height {up.Height}"); }
+        var upResult = up.Result();
+        Check(upResult.PixelHeight == Header + (1500 - 900) + body + Footer, $"scrolling up from the start: rows go on top (height {upResult.PixelHeight}, expected {Header + 600 + body + Footer})");
+        var upPx = new byte[W * 4 * upResult.PixelHeight];
+        upResult.CopyPixels(upPx, W * 4, 0);
+        var upBad = 0;
+        for (var y = 0; y < 600 + body; y++)
+        for (var x = 0; x < W; x++)
+        {
+            var a = ((y + Header) * W + x) * 4; var b = ((y + 900) * W + x) * 4;
+            if (upPx[a] != page[b] || upPx[a + 1] != page[b + 1] || upPx[a + 2] != page[b + 2]) upBad++;
+        }
+        Check(upBad == 0, $"scrolling up: content in order ({upBad} wrong pixels)");
+
+        // A window with a side panel and a scrollbar in the area: only the middle moves.
+        byte[] App(int offset, int spinner)
+        {
+            const int side = 90, bar = 12;
+            var f = Frame(page, offset);
+            var thumbTop = 40 + offset * (H - 70 - 60) / Doc;
+            for (var y = 0; y < H; y++)
+            for (var x = 0; x < W; x++)
+            {
+                var i = (y * W + x) * 4;
+                if (x < side)
+                {
+                    var v = (byte)(((y / 22) * 37 + (x / 7) * 11) % 120 + 60); // the panel's list: never moves
+                    f[i] = v; f[i + 1] = (byte)(v / 2); f[i + 2] = 200; f[i + 3] = 255;
+                }
+                else if (x >= W - bar)
+                {
+                    var on = y >= thumbTop && y < thumbTop + 60;
+                    f[i] = f[i + 1] = f[i + 2] = (byte)(on ? 120 : 230); f[i + 3] = 255;
+                }
+            }
+
+            for (var y = 6; y < 26; y++)
+            for (var x = 100; x < 120; x++)
+            {
+                var i = (y * W + x) * 4;
+                f[i] = f[i + 1] = f[i + 2] = (byte)(spinner * 60); // something animating in the header
+            }
+
+            return f;
+        }
+
+        var chat = new ScrollStitcher(W, H);
+        chat.Add(App(1200, 0));
+        chat.Add(App(1200, 1)); // only the animation changed: not a scroll
+        Check(chat.Height == H, "an animation alone adds nothing");
+        var spin = 2;
+        foreach (var o in new[] { 1100, 950, 800, 950, 1200, 1350, 1500 }) { var n = chat.Add(App(o, spin++ % 4)); Console.WriteLine($"chat {o}: +{n} shift {chat.LastShift} height {chat.Height}"); }
+        var chatResult = chat.Result();
+        Check(chatResult.PixelHeight == Header + (1500 - 800) + body + Footer, $"side panel + scrollbar + animation: both directions stitch (height {chatResult.PixelHeight}, expected {Header + 700 + body + Footer})");
+        var (keptLeft, keptWidth) = chat.KeptColumns();
+        Check(keptLeft >= 86 && keptLeft + keptWidth <= W - 8 && chatResult.PixelWidth == keptWidth, $"the fixed side panel and scroll bar are left out (columns {keptLeft}..{keptLeft + keptWidth})");
+        var chatPx = new byte[keptWidth * 4 * chatResult.PixelHeight];
+        chatResult.CopyPixels(chatPx, keptWidth * 4, 0);
+        var chatBad = 0;
+        for (var y = 0; y < 700 + body; y++)
+        for (var x = keptLeft; x < keptLeft + keptWidth; x++)
+        {
+            var a = ((y + Header) * keptWidth + x - keptLeft) * 4; var b = ((y + 800) * W + x) * 4;
+            if (chatPx[a] != page[b] || chatPx[a + 1] != page[b + 1] || chatPx[a + 2] != page[b + 2]) chatBad++;
+        }
+        Check(chatBad == 0, $"the moving part is intact ({chatBad} wrong pixels)");
+        var enc3 = new PngBitmapEncoder(); enc3.Frames.Add(BitmapFrame.Create(chatResult));
+        using (var f = File.Create("stitched_chat.png")) enc3.Save(f);
 
         // ---- the session: frames come in on a timer, 完成 hands over the long image
         System.Windows.Application.Current.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;

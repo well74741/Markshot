@@ -41,6 +41,19 @@ public sealed class ScreenSegmenter
     /// The pieces under <paramref name="x"/>, <paramref name="y"/> (screenshot pixels) within
     /// <paramref name="region"/>, smallest first. Pieces that fill most of the region are left out (the window is that).
     /// </summary>
+    /// <summary>The pieces of this region are worked out (looking them up is then instant).</summary>
+    public bool IsReady(Int32Rect region)
+    {
+        region = Clip(region);
+        lock (_gate)
+        {
+            return _levels != null && _region.Equals(region);
+        }
+    }
+
+    /// <summary>Works out the pieces of a region (~100 ms for a big window: off the UI thread).</summary>
+    public void Prepare(Int32Rect region) => At(region, region.X, region.Y);
+
     public List<Int32Rect> At(Int32Rect region, int x, int y)
     {
         region = Clip(region);

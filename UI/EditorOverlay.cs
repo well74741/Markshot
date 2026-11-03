@@ -5,11 +5,13 @@ public enum EditorOverlayMode
 {
     Crop,
     Path,
-    Keystone
+    Keystone,
+    Mesh
 }
 
 /// <summary>
-/// Drawn over the image in the editor while cropping, cutting along a path or correcting a keystone.
+/// Drawn over the image in the editor while cropping, cutting along a path, correcting a keystone or
+/// warping with a mesh (网格形变: the picture follows the grid points as they are dragged).
 /// Coordinates are image pixels; <see cref="Zoom"/> converts them to this element's DIPs.
 /// </summary>
 public sealed class EditorOverlay : FrameworkElement
@@ -38,6 +40,15 @@ public sealed class EditorOverlay : FrameworkElement
         // A keystone starts a little inside the image, so the corners are easy to grab.
         var inset = Math.Min(w, h) * 0.08;
         Quad = new[] { new Point(inset, inset), new Point(w - inset, inset), new Point(w - inset, h - inset), new Point(inset, h - inset) };
+        Mesh = new Point[(MeshColumns + 1) * (MeshRows + 1)];
+        for (var r = 0; r <= MeshRows; r++)
+        {
+            for (var c = 0; c <= MeshColumns; c++)
+            {
+                Mesh[r * (MeshColumns + 1) + c] = new Point(w * c / MeshColumns, h * r / MeshRows);
+            }
+        }
+
         Cursor = mode == EditorOverlayMode.Crop ? Cursors.Cross : mode == EditorOverlayMode.Path ? Cursors.Pen : Cursors.Arrow;
     }
 
@@ -51,6 +62,19 @@ public sealed class EditorOverlay : FrameworkElement
     /// <summary>Keystone corners: top-left, top-right, bottom-right, bottom-left.</summary>
     public Point[] Quad { get; }
 
+    public const int MeshColumns = 4;
+
+    public const int MeshRows = 4;
+
+    /// <summary>网格形变: the grid points (row by row), in image pixels.</summary>
+    public Point[] Mesh { get; }
+
+    /// <summary>The warped picture for the current grid (a small copy is fine: it is stretched over the image).</summary>
+    public Func<IReadOnlyList<Point>, BitmapSource>? MeshPreview { get; set; }
+
+    private BitmapSource? _meshImage;
+    private bool _meshDirty = true;
+
     /// <summary>The cut-out path.</summary>
     public List<Point> PathPoints { get; } = new();
 
@@ -59,6 +83,7 @@ public sealed class EditorOverlay : FrameworkElement
     {
         EditorOverlayMode.Path => !_drawing && PathPoints.Count >= 3,
         EditorOverlayMode.Crop => Crop.Width >= 2 && Crop.Height >= 2,
+        EditorOverlayMode.Mesh => Moved,
         _ => true
     };
 
@@ -134,6 +159,50 @@ public sealed class EditorOverlay : FrameworkElement
                 break;
             }
 
+            case EditorOverlayMode.Mesh:
+            {
+                if (_meshDirty && MeshPreview != null)
+                {
+                    _meshImage = MeshPreview(Mesh);
+                    _meshDirty = false;
+                }
+
+                // The warped picture covers the original (which shows through nowhere).
+                dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1A)), null, all);
+                if (_meshImage != null)
+                {
+                    dc.DrawImage(_meshImage, all);
+                }
+
+                var thin = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0xFF, 0xFF, 0xFF)), 1);
+                var shade = new Pen(new SolidColorBrush(Color.FromArgb(0x70, 0, 0, 0)), 2.6);
+                for (var r = 0; r <= MeshRows; r++)
+                {
+                    for (var c = 0; c <= MeshColumns; c++)
+                    {
+                        var at = ToDip(MeshPoint(c, r));
+                        if (c < MeshColumns)
+                        {
+                            dc.DrawLine(shade, at, ToDip(MeshPoint(c + 1, r)));
+                            dc.DrawLine(thin, at, ToDip(MeshPoint(c + 1, r)));
+                        }
+
+                        if (r < MeshRows)
+                        {
+                            dc.DrawLine(shade, at, ToDip(MeshPoint(c, r + 1)));
+                            dc.DrawLine(thin, at, ToDip(MeshPoint(c, r + 1)));
+                        }
+                    }
+                }
+
+                foreach (var point in Mesh)
+                {
+                    dc.DrawEllipse(Brushes.White, accent, ToDip(point), Grip, Grip);
+                }
+
+                break;
+            }
+
             case EditorOverlayMode.Keystone:
             {
                 var outline = new StreamGeometry();
@@ -161,6 +230,34 @@ public sealed class EditorOverlay : FrameworkElement
                 break;
             }
         }
+    }
+
+    private Point MeshPoint(int column, int row) => Mesh[row * (MeshColumns + 1) + column];
+
+    /// <summary>A grid point was moved away from where it started.</summary>
+    public bool Moved { get; private set; }
+
+    /// <summary>Moves a grid point (tests and dragging); the preview follows.</summary>
+    public void MoveMeshPoint(int index, Point to)
+    {
+        Mesh[index] = new Point(Math.Clamp(to.X, -_imageWidth, _imageWidth * 2), Math.Clamp(to.Y, -_imageHeight, _imageHeight * 2));
+        Moved = true;
+        _meshDirty = true;
+        InvalidateVisual();
+        Changed?.Invoke();
+    }
+
+    private int MeshHit(Point dip)
+    {
+        for (var i = 0; i < Mesh.Length; i++)
+        {
+            if ((ToDip(Mesh[i]) - dip).Length <= Grip + 6)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private static Point Lerp(Point a, Point b, double t) => new(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t);
@@ -246,6 +343,9 @@ public sealed class EditorOverlay : FrameworkElement
             case EditorOverlayMode.Keystone:
                 _corner = CornerHit(dip);
                 break;
+            case EditorOverlayMode.Mesh:
+                _corner = MeshHit(dip);
+                break;
         }
 
         CaptureMouse();
@@ -288,6 +388,14 @@ public sealed class EditorOverlay : FrameworkElement
                 break;
             case EditorOverlayMode.Keystone:
                 Cursor = CornerHit(dip) >= 0 ? Cursors.SizeAll : Cursors.Arrow;
+                break;
+            case EditorOverlayMode.Mesh when pressed && _corner >= 0:
+                // Free to leave the picture a little (the warp may pull an edge in or out).
+                MoveMeshPoint(_corner, new Point(dip.X / Zoom, dip.Y / Zoom));
+                e.Handled = true;
+                return;
+            case EditorOverlayMode.Mesh:
+                Cursor = MeshHit(dip) >= 0 ? Cursors.SizeAll : Cursors.Arrow;
                 break;
             default:
                 return;

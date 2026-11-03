@@ -211,6 +211,20 @@ public static class UpdateService
         return 0;
     }
 
+    /// <summary>
+    /// Installs in the background (no wizard: the update window shows the progress) and quits; the
+    /// installer opens Markshot again when it is done.
+    /// </summary>
+    public static void InstallQuietly(Package package)
+    {
+        Log.Info($"开始后台更新到 {package.Version}：{package.Path}");
+        Process.Start(new ProcessStartInfo(package.Path, "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAFTERUPDATE")
+        {
+            UseShellExecute = true
+        });
+        ((App)Application.Current).ShutdownApp();
+    }
+
     /// <summary>Starts the installer and quits so it can replace the files.</summary>
     public static void Install(Package package)
     {

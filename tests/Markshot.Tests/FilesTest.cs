@@ -122,6 +122,23 @@ static class FilesTest
         Theme.Apply(ThemeMode.Dark);
         Directory.Delete(dir, true);
 
+        // ---- the update window: themed, downloads, then installs quietly (here: noted only)
+        UpdateService.Package installed = null;
+        var update = new UpdateWindow(new UpdateService.Package(Path.Combine(Path.GetTempPath(), "Markshot-Setup-9.9.9.exe"), "9.9.9"))
+        {
+            Left = -3000, Top = -3000, ShowActivated = false, InstallAction = package => installed = package
+        };
+        update.Show();
+        Pump(100);
+        Shot((FrameworkElement)update.Content, "update_dark.png");
+        var task = update.InstallAsync();
+        var until = DateTime.Now.AddSeconds(5);
+        while (!task.IsCompleted && DateTime.Now < until) Pump(50);
+        Check(installed?.Version == "9.9.9" && update.Status.Contains("重新打开"), "立即更新: installs quietly, says Markshot reopens");
+        update.Close();
+        var iss = File.ReadAllText(Repo.File(Path.Combine("installer", "Markshot.iss")));
+        Check(iss.Contains("WizardStyle=modern dynamic") && iss.Contains("RestartAfterUpdate"), "the installer follows light / dark and reopens Markshot after a quiet update");
+
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
     }
 }

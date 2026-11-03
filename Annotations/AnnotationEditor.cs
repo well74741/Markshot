@@ -346,13 +346,16 @@ public sealed class AnnotationEditor : FrameworkElement
     {
         var unit = Scale; // canvas pixels per DIP
 
-        dc.DrawRectangle(
-            null,
-            new Pen(Accent, 1.5 * unit)
-            {
-                DashStyle = new DashStyle(new[] { 5.0, 3.0 }, 0)
-            },
-            bounds);
+        // A solid, bold blue frame drawn just inside the area (the area itself is what gets captured).
+        var thickness = 3 * unit;
+        var inner = bounds;
+        inner.Inflate(-thickness / 2, -thickness / 2);
+        if (inner.Width <= 0 || inner.Height <= 0)
+        {
+            inner = bounds;
+        }
+
+        dc.DrawRectangle(null, new Pen(Accent, thickness) { LineJoin = PenLineJoin.Miter }, inner);
 
         if (string.IsNullOrWhiteSpace(label))
         {

@@ -60,7 +60,7 @@ public partial class PinWindow : Window
     private bool _movingSelected;
     private bool _erasing;
     private PenAnnotation? _eraserPath;
-    private PolylineDraft? _polyline; // 折线 being placed
+    private protected PolylineDraft? _polyline; // 折线 being placed
     private CreationGesture? _gesture;
     // E / R pressed while dragging a selected element: rotate / scale about its centre.
     private bool _dragRotate;
@@ -163,7 +163,11 @@ public partial class PinWindow : Window
         Closed += (_, _) => LeaveGroup();
         LocationChanged += (_, _) => PlaceToolbar(); // the toolbar window follows the pin
         // Alt over the pin: the capture magnifier at the pointer.
-        _magnifier = new PinMagnifier(ImageHost, () => CurrentImage, ToPixels);
+        if (!IsEditor)
+        {
+            _magnifier = new PinMagnifier(ImageHost, () => CurrentImage, ToPixels); // the editor uses Alt for Alt + wheel
+        }
+
         Motion.PopOnShow(Toolbar, fromAbove: true);
         Motion.FadeOnShow(PinStatus);
         SourceInitialized += (_, _) => ApplyBounds();
@@ -833,7 +837,7 @@ public partial class PinWindow : Window
 
     private protected void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (IsEditor && !ImageHost.IsMouseOver)
+        if (IsEditor && !ImageHost.IsMouseOver && (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Control)) == 0)
         {
             return;
         }

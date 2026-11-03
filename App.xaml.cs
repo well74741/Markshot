@@ -61,8 +61,7 @@ public partial class App : Application
 
         if (!createdNew)
         {
-            MessageBox.Show("Markshot 已经在运行，请使用系统托盘图标。", "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            UI.ThemedMessage.Show(null, "提示", "Markshot 已经在运行，请使用系统托盘图标。", "确定");
             Shutdown();
             return;
         }
@@ -100,8 +99,7 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) =>
         {
             Log.Error("未处理的 UI 异常", args.Exception);
-            MessageBox.Show("发生错误：" + args.Exception.Message, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            UI.ThemedMessage.Show(null, "出错了", "发生错误：" + args.Exception.Message, "确定");
             args.Handled = true;
         };
 
@@ -302,8 +300,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("截图失败", ex);
-            MessageBox.Show("截图失败：" + ex.Message, "Markshot",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            UI.ThemedMessage.Show(null, "出错了", "截图失败：" + ex.Message, "确定");
         }
         finally
         {
@@ -621,7 +618,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("导出诊断信息失败", ex);
-            MessageBox.Show("导出诊断信息失败：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Warning);
+            UI.ThemedMessage.Show(null, "提示", "导出诊断信息失败：" + ex.Message, "确定");
         }
     }
 
@@ -825,7 +822,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("打开录屏失败", ex);
-            MessageBox.Show("打开录屏失败：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Error);
+            UI.ThemedMessage.Show(null, "出错了", "打开录屏失败：" + ex.Message, "确定");
         }
     }
 

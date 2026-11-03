@@ -36,7 +36,8 @@ Compression=lzma2/ultra64
 LZMAUseSeparateProcess=yes
 LZMADictionarySize=262144
 SolidCompression=yes
-WizardStyle=modern
+; The wizard follows Windows' light / dark setting (Markshot itself is dark by default).
+WizardStyle=modern dynamic
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Close a running Markshot before the files are replaced.
@@ -83,3 +84,16 @@ Root: HKCU; Subkey: "Software\Classes\.ico\OpenWithProgids"; ValueType: none; Va
 
 [Run]
 Filename: "{app}\Markshot.exe"; Description: "启动 Markshot"; Flags: nowait postinstall skipifsilent
+; An update started from Markshot runs silently: Markshot opens again when it is done.
+Filename: "{app}\Markshot.exe"; Flags: nowait; Check: RestartAfterUpdate
+
+[Code]
+function RestartAfterUpdate: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/RESTARTAFTERUPDATE') = 0 then
+      Result := True;
+end;

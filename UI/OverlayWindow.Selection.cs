@@ -542,6 +542,11 @@ public partial class OverlayWindow
         UpdateSelectionVisuals();
     }
 
+    /// <summary>
+    /// The frames under the mouse, again on every move: the screenshot's pieces (instant once the
+    /// window's region is worked out) and the UI Automation elements found last that still contain
+    /// the mouse; a new UI Automation lookup runs in the background (newest position wins).
+    /// </summary>
     private void UpdateHover(Point point)
     {
         var config = App.Config;
@@ -552,16 +557,12 @@ public partial class OverlayWindow
             return;
         }
 
-        // Still inside the smallest frame found: nothing new under the mouse.
-        if (_hoverTarget != null && _hoverInner.Contains(point))
-        {
-            return;
-        }
-
         var screenX = _bounds.X + (int)Math.Round(point.X);
         var screenY = _bounds.Y + (int)Math.Round(point.Y);
         _hoverScreenPoint = (screenX, screenY);
-        var target = WindowDetector.Detect(screenX, screenY, _preferChild && !config.DetectElements);
+        var target = _windowFinder != null
+            ? _windowFinder(screenX, screenY)
+            : WindowDetector.Detect(screenX, screenY, _preferChild && !config.DetectElements);
         var window = target == null ? Rect.Empty : ToLocal(target.Bounds);
         if (target == null || window.IsEmpty)
         {
@@ -569,7 +570,11 @@ public partial class OverlayWindow
             return;
         }
 
-        var sameWindow = _hoverTarget?.Handle == target.Handle;
+        if (_hoverTarget?.Handle != target.Handle)
+        {
+            _uiaElements = new List<DetectedElement>(); // another window: what was found belongs to the old one
+        }
+
         _hoverTarget = target;
         if (!config.DetectElements)
         {
@@ -577,14 +582,59 @@ public partial class OverlayWindow
             return;
         }
 
-        if (!sameWindow)
+        RefreshHoverChain();
+        RequestElements(target.Handle, screenX, screenY);
+    }
+
+    /// <summary>For tests: the window under a screen point (instead of the desktop's).</summary>
+#pragma warning disable CS0649 // set by tests
+    private Func<int, int, WindowTarget?>? _windowFinder;
+#pragma warning restore CS0649
+
+    /// <summary>The UI Automation elements of the last lookup (screen pixels).</summary>
+    private List<DetectedElement> _uiaElements = new();
+    private bool _preparing;
+
+    /// <summary>The frames at the mouse from what is known now.</summary>
+    private void RefreshHoverChain()
+    {
+        if (_closed || _hoverTarget == null || _hasSelection || _dragging)
         {
-            // Another window: its frame until its elements are known.
-            SetHoverChain(config.DetectWindows ? new List<HoverCandidate> { new(window, target.Label) } : new List<HoverCandidate>());
+            return;
         }
 
-        _hoverInner = Rect.Empty;
-        RequestElements(target.Handle, screenX, screenY);
+        var window = ToLocal(_hoverTarget.Bounds);
+        var region = new Int32Rect((int)window.X, (int)window.Y, (int)window.Width, (int)window.Height);
+        var (sx, sy) = _hoverScreenPoint;
+        var pieces = new List<Int32Rect>();
+        var segmenter = Segmenter;
+        if (segmenter.IsReady(region))
+        {
+            pieces = segmenter.At(region, sx - _bounds.X, sy - _bounds.Y);
+        }
+        else if (!_preparing)
+        {
+            _preparing = true;
+            Task.Run(() =>
+            {
+                try
+                {
+                    segmenter.Prepare(region);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("画面识别失败", ex);
+                }
+            }).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
+            {
+                _preparing = false;
+                RefreshHoverChain();
+            }), TaskScheduler.Default);
+        }
+
+        var mouse = new Point(sx, sy);
+        var elements = _uiaElements.Where(element => element.Bounds.Contains(mouse)).ToList();
+        SetHoverChain(BuildHoverChain(pieces, elements));
     }
 
     /// <summary>A frame offered on hover: an element or the window, in this window's pixels.</summary>
@@ -609,13 +659,12 @@ public partial class OverlayWindow
     }
 
     /// <summary>
-    /// Looks up the newest wanted position on a worker thread — first the pieces of the screenshot under
-    /// the mouse (quick), then the UI Automation elements (may take a while) — and hands each result to
-    /// this window's thread (explicitly: it touches the window, whatever context started the lookup).
+    /// Looks up the UI Automation elements at the newest wanted position on a worker thread and
+    /// hands them to this window's thread (explicitly: they touch the window, whatever context started the lookup).
     /// </summary>
     private void RunElementDetection()
     {
-        if (_closed || _elementWanted is not { } wanted || _hoverTarget == null)
+        if (_closed || _elementWanted is not { } wanted)
         {
             _elementBusy = false;
             return;
@@ -623,41 +672,27 @@ public partial class OverlayWindow
 
         _elementBusy = true;
         _elementWanted = null;
-        var window = ToLocal(_hoverTarget.Bounds);
-        var region = new Int32Rect((int)window.X, (int)window.Y, (int)window.Width, (int)window.Height);
-        var localX = wanted.X - _bounds.X;
-        var localY = wanted.Y - _bounds.Y;
-        var segmenter = Segmenter;
         Task.Run(() =>
         {
-            var pieces = new List<Int32Rect>();
             try
             {
-                pieces = segmenter.At(region, localX, localY);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("画面识别失败", ex);
-            }
-
-            Dispatcher.BeginInvoke(() => ApplyElements(wanted.Handle, pieces, null));
-            List<DetectedElement> elements;
-            try
-            {
-                elements = ElementDetector.Detect(wanted.Handle, wanted.X, wanted.Y);
+                return ElementDetector.Detect(wanted.Handle, wanted.X, wanted.Y);
             }
             catch (Exception ex)
             {
                 Log.Error("元素识别失败", ex);
-                elements = new List<DetectedElement>();
+                return new List<DetectedElement>();
+            }
+        }).ContinueWith(lookup => Dispatcher.BeginInvoke(() =>
+        {
+            if (_hoverTarget?.Handle == wanted.Handle)
+            {
+                _uiaElements = lookup.Result;
+                RefreshHoverChain();
             }
 
-            Dispatcher.BeginInvoke(() =>
-            {
-                ApplyElements(wanted.Handle, pieces, elements);
-                RunElementDetection(); // the position wanted meanwhile, if any
-            });
-        });
+            RunElementDetection(); // the position wanted meanwhile, if any
+        }), TaskScheduler.Default);
     }
 
     private ScreenSegmenter? _segmenter;
@@ -675,25 +710,6 @@ public partial class OverlayWindow
 
             return _segmenter;
         }
-    }
-
-    private void ApplyElements(IntPtr handle, List<Int32Rect> pieces, List<DetectedElement>? elements)
-    {
-        if (_closed || _hoverTarget?.Handle != handle || _hasSelection || _dragging)
-        {
-            return;
-        }
-
-        var chain = BuildHoverChain(pieces, elements ?? new List<DetectedElement>());
-        // A newer position waits and this result is not under the mouse any more: skip it.
-        var (mx, my) = _hoverScreenPoint;
-        var mouse = new Point(mx - _bounds.X, my - _bounds.Y);
-        if (_elementWanted != null && (chain.Count == 0 || !chain[0].Local.Contains(mouse)))
-        {
-            return;
-        }
-
-        SetHoverChain(chain);
     }
 
     /// <summary>Everything found under the mouse, smallest first, each size once; the window last.</summary>
@@ -748,14 +764,17 @@ public partial class OverlayWindow
         _hoverChain = chain;
         if (chain.Count == 0)
         {
-            _hoverInner = Rect.Empty;
             HideHoverFrame();
             return;
         }
 
         var keep = chain.FindIndex(candidate => ElementDetector.Same(candidate.Local, shown));
         _hoverLevel = keep >= 0 && _hoverLevel > 0 ? keep : 0;
-        _hoverInner = chain[0].Local;
+        if (Editor.ShowHover && ElementDetector.Same(chain[_hoverLevel].Local, shown))
+        {
+            return; // the same frame: nothing to redraw
+        }
+
         ShowHoverLevel();
     }
 
@@ -850,7 +869,7 @@ public partial class OverlayWindow
         _hoverTarget = null;
         _hoverChain = new List<HoverCandidate>();
         _hoverLevel = 0;
-        _hoverInner = Rect.Empty;
+        _uiaElements = new List<DetectedElement>();
         HideHoverFrame();
     }
 

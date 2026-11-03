@@ -101,7 +101,6 @@ public partial class OverlayWindow : Window
     // Element / window frames under the mouse, smallest first; the wheel picks the level.
     private List<HoverCandidate> _hoverChain = new();
     private int _hoverLevel;
-    private Rect _hoverInner = Rect.Empty; // moves inside it need no new lookup
     private (IntPtr Handle, int X, int Y)? _elementWanted;
     private bool _elementBusy;
     private (int X, int Y) _hoverScreenPoint;
