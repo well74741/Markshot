@@ -818,7 +818,7 @@ public partial class OverlayWindow
         }
     }
 
-    private const double HoverMs = 70;
+    private const double HoverMs = 140;
 
     private void OnHoverFrame(object? sender, EventArgs e)
     {

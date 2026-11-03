@@ -112,6 +112,11 @@ public sealed class AnnotationEditor : FrameworkElement
     /// <summary>The element showing the picture under the annotations: 抠除 holes are cut out of it too.</summary>
     public UIElement? CutoutTarget { get; set; }
 
+    /// <summary>Holes appeared or all went (the owner's shadow follows the shape then).</summary>
+    public event Action? CutoutsChanged;
+
+    private bool _hadCutouts;
+
     private Geometry? _ownTargetClip;
     private Geometry? _savedTargetClip;
 
@@ -149,6 +154,12 @@ public sealed class AnnotationEditor : FrameworkElement
         }
 
         UpdateCutoutTarget(visible != null && !ReferenceEquals(visible, area) ? visible : null);
+        var hasCutouts = Cutouts.Any(Items);
+        if (hasCutouts != _hadCutouts)
+        {
+            _hadCutouts = hasCutouts;
+            Dispatcher.BeginInvoke(new Action(() => CutoutsChanged?.Invoke()));
+        }
 
         var live = LiveEraser is { Count: > 0 } ? EraseStroke.Widen(LiveEraser, LiveEraserWidth) : null;
         foreach (var annotation in DrawOrder(Items))

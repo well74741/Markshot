@@ -215,12 +215,12 @@ public static class ToolCursors
         // The ring matches what the brush paints: eraser 2x (EraserWidth), highlighter 4x (PenAnnotation).
         var width = tool switch
         {
-            AnnotationTool.Eraser => Math.Max(2, thickness),
+            AnnotationTool.Eraser or AnnotationTool.Cutout => Math.Max(2, thickness),
             AnnotationTool.Highlighter => thickness * 4,
             _ => thickness
         };
         var diameter = Math.Clamp((int)Math.Round(width * Math.Max(0.1, scale)), 6, 240);
-        var ink = tool == AnnotationTool.Eraser
+        var ink = tool is AnnotationTool.Eraser or AnnotationTool.Cutout
             ? Colors.White
             : color ?? Color.FromRgb(0xF5, 0xF5, 0xF5);
         var key = $"{tool}-{diameter}-{ink.R:X2}{ink.G:X2}{ink.B:X2}";
@@ -246,7 +246,8 @@ public static class ToolCursors
     {
         try
         {
-            var eraser = key.StartsWith(nameof(AnnotationTool.Eraser), StringComparison.Ordinal);
+            var eraser = key.StartsWith(nameof(AnnotationTool.Eraser), StringComparison.Ordinal) ||
+                         key.StartsWith(nameof(AnnotationTool.Cutout), StringComparison.Ordinal);
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
             {

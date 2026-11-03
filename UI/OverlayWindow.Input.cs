@@ -153,7 +153,7 @@ public partial class OverlayWindow
             return;
         }
 
-        if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
+        if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser and not AnnotationTool.Cutout)
         {
             var candidate = HitAnnotation(point);
             if (candidate != null && SameFamily(candidate, _tool))
@@ -195,7 +195,7 @@ public partial class OverlayWindow
             ClearAnnotationSelection();
         }
 
-        if (_tool == AnnotationTool.Eraser && Toolbar.EraserCutout)
+        if (_tool == AnnotationTool.Cutout)
         {
             // 抠除: the hole is an element of its own, there (and cut) while it is drawn.
             var cutout = new CutoutAnnotation { Thickness = EraserWidth };
@@ -256,7 +256,7 @@ public partial class OverlayWindow
             return;
         }
 
-        if (_tool is not (AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Eraser) &&
+        if (_tool is not (AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Eraser or AnnotationTool.Cutout) &&
             _hasSelection && _selection.Contains(point))
         {
             StartAnnotation(point);
@@ -508,7 +508,7 @@ public partial class OverlayWindow
             {
                 UpdateWatermarkHover(point);
             }
-            else if (_hasSelection && _tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
+            else if (_hasSelection && _tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser and not AnnotationTool.Cutout)
             {
                 UpdateAnnotationHover(point);
             }
@@ -1463,7 +1463,7 @@ public partial class OverlayWindow
             AnnotationTool.Number => Math.Clamp(_thickness + step, 8, 40),
             AnnotationTool.MosaicBrush => Math.Clamp(_thickness + step * 2, 4, 80),
             AnnotationTool.Watermark => Math.Clamp(_thickness + step * 2, 10, 120),
-            AnnotationTool.Eraser => Math.Clamp(_thickness + step * 2, 4, 80),
+            AnnotationTool.Eraser or AnnotationTool.Cutout => Math.Clamp(_thickness + step * 2, 4, 80),
             _ => Math.Clamp(_thickness + step * 0.5, 1, 16)
         };
 

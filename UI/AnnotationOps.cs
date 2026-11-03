@@ -113,7 +113,7 @@ internal static class AnnotationOps
     /// </summary>
     public static bool InsideMoves(Annotation selected, AnnotationTool tool, Point point, double tolerance)
     {
-        var freehand = tool is AnnotationTool.Pen or AnnotationTool.Highlighter or AnnotationTool.MosaicBrush or AnnotationTool.Eraser;
+        var freehand = tool is AnnotationTool.Pen or AnnotationTool.Highlighter or AnnotationTool.MosaicBrush or AnnotationTool.Eraser or AnnotationTool.Cutout;
         var drawing = tool is not AnnotationTool.None and not AnnotationTool.Select;
         var open = selected is PenAnnotation or LineAnnotation or ArrowAnnotation or MosaicBrushAnnotation;
         return !(freehand || (drawing && open)) || selected.HitTest(point, tolerance);
@@ -134,7 +134,7 @@ internal static class AnnotationOps
         }
 
         if (tool is AnnotationTool.Number or AnnotationTool.Pen or AnnotationTool.Highlighter
-            or AnnotationTool.MosaicBrush or AnnotationTool.Eraser)
+            or AnnotationTool.MosaicBrush or AnnotationTool.Eraser or AnnotationTool.Cutout)
         {
             return FrameHit.None;
         }
@@ -161,6 +161,7 @@ internal static class AnnotationOps
         AnnotationTool.Pen or AnnotationTool.Highlighter => 2,
         AnnotationTool.Arrow or AnnotationTool.Line or AnnotationTool.Polyline => 3,
         AnnotationTool.Mosaic or AnnotationTool.MosaicBrush => 4,
+        AnnotationTool.Eraser or AnnotationTool.Cutout => 6,
         AnnotationTool.Text or AnnotationTool.Watermark => 5,
         _ => 0
     };
@@ -178,6 +179,8 @@ internal static class AnnotationOps
         AnnotationTool.Arrow => AnnotationTool.Line,
         AnnotationTool.Line => AnnotationTool.Arrow,
         AnnotationTool.Polyline => AnnotationTool.Arrow, // a style of the settings row; Tab switches the main kinds
+        AnnotationTool.Eraser => AnnotationTool.Cutout,
+        AnnotationTool.Cutout => AnnotationTool.Eraser,
         AnnotationTool.Mosaic => AnnotationTool.MosaicBrush,
         AnnotationTool.MosaicBrush => AnnotationTool.Mosaic,
         AnnotationTool.Text => AnnotationTool.Watermark,

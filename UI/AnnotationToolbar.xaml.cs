@@ -78,7 +78,8 @@ public partial class AnnotationToolbar : UserControl
         [AnnotationTool.Mosaic] = 12,
         [AnnotationTool.MosaicBrush] = 24,
         [AnnotationTool.Watermark] = 24,
-        [AnnotationTool.Eraser] = 16
+        [AnnotationTool.Eraser] = 16,
+        [AnnotationTool.Cutout] = 16
     };
 
     // Variant last chosen per tool button: the button shows it and activates it.
@@ -88,7 +89,8 @@ public partial class AnnotationToolbar : UserControl
         [ToolFamily.Pen] = AnnotationTool.Pen,
         [ToolFamily.Line] = AnnotationTool.Arrow,
         [ToolFamily.Text] = AnnotationTool.Text,
-        [ToolFamily.Mosaic] = AnnotationTool.Mosaic
+        [ToolFamily.Mosaic] = AnnotationTool.Mosaic,
+        [ToolFamily.Eraser] = AnnotationTool.Eraser
     };
 
     public event Action<AnnotationTool>? ToolChanged;
@@ -253,7 +255,7 @@ public partial class AnnotationToolbar : UserControl
             ["Text"] = new FrameworkElement[] { ToolText, TextChevron },
             ["Number"] = new FrameworkElement[] { ToolNumber },
             ["Mosaic"] = new FrameworkElement[] { ToolMosaic, MosaicChevron },
-            ["Eraser"] = new FrameworkElement[] { ToolEraser }
+            ["Eraser"] = new FrameworkElement[] { ToolEraser, EraserChevron }
         };
         var hiddenSet = ToolbarCatalog.Set(hidden);
 
@@ -648,7 +650,7 @@ public partial class AnnotationToolbar : UserControl
             BackgroundToggle.IsChecked = _textBackground;
             LevelSlider.Value = Math.Clamp(_mosaicLevel, LevelSlider.Minimum, LevelSlider.Maximum);
             LevelValue.Text = ((int)Math.Round(_mosaicLevel)).ToString(CultureInfo.InvariantCulture);
-            var shownOpacity = tool == AnnotationTool.Eraser ? _eraserOpacity : _watermarkOpacity;
+            var shownOpacity = tool is AnnotationTool.Eraser or AnnotationTool.Cutout ? _eraserOpacity : _watermarkOpacity;
             OpacitySlider.Value = Math.Round(shownOpacity * 100);
             OpacityValue.Text = $"{Math.Round(shownOpacity * 100)}%";
             AngleSlider.Value = _watermarkAngle;
@@ -708,6 +710,8 @@ public partial class AnnotationToolbar : UserControl
         VariantHighlighter.IsChecked = tool == AnnotationTool.Highlighter;
         VariantMosaic.IsChecked = tool == AnnotationTool.Mosaic;
         VariantMosaicBrush.IsChecked = tool == AnnotationTool.MosaicBrush;
+        EraserErase.IsChecked = tool == AnnotationTool.Eraser;
+        EraserCut.IsChecked = tool == AnnotationTool.Cutout;
         VariantText.IsChecked = tool == AnnotationTool.Text;
         VariantWatermark.IsChecked = tool == AnnotationTool.Watermark;
         _configuring = false;
@@ -825,7 +829,7 @@ public partial class AnnotationToolbar : UserControl
         AnnotationTool.Watermark => ToolFamily.Watermark,
         AnnotationTool.Text => ToolFamily.Text,
         AnnotationTool.Number => ToolFamily.Number,
-        AnnotationTool.Eraser => ToolFamily.Eraser,
+        AnnotationTool.Eraser or AnnotationTool.Cutout => ToolFamily.Eraser,
         _ => ToolFamily.None
     };
 
@@ -894,6 +898,9 @@ public partial class AnnotationToolbar : UserControl
         _arrowStyle = style;
         SettingsChanged?.Invoke();
     }
+
+    private void EraserMenu_Click(object sender, RoutedEventArgs e) =>
+        ShowVariantMenu((Button)sender, ("擦除", AnnotationTool.Eraser), ("抠除", AnnotationTool.Cutout));
 
     private void MosaicMenu_Click(object sender, RoutedEventArgs e) =>
         ShowVariantMenu((Button)sender, ("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush));
@@ -1057,6 +1064,7 @@ public partial class AnnotationToolbar : UserControl
                 _ => "IconArrowMask"
             }),
             ToolFamily.Text => (ToolText, ToolTextIcon, tool == AnnotationTool.Watermark ? "IconWatermarkMask" : "IconTextMask"),
+            ToolFamily.Eraser => (ToolEraser, ToolEraserIcon, tool == AnnotationTool.Cutout ? "IconCutoutMask" : "IconEraserMask"),
             _ => (ToolMosaic, ToolMosaicIcon, tool == AnnotationTool.MosaicBrush ? "IconMosaicBrushMask" : "IconMosaicMask")
         };
         button.Tag = tool.ToString();
@@ -1305,24 +1313,8 @@ public partial class AnnotationToolbar : UserControl
         ClearPinButton.IsEnabled = canClear;
     }
 
-    private bool _eraserCutout;
-
-    /// <summary>The eraser's 抠除 style: a transparent hole through the picture and every annotation.</summary>
-    public bool EraserCutout => _eraserCutout;
-
-    private void EraserMode_Checked(object sender, RoutedEventArgs e)
-    {
-        if (EraserCut == null)
-        {
-            return;
-        }
-
-        _eraserCutout = EraserCut.IsChecked == true;
-        if (!_configuring)
-        {
-            SettingsChanged?.Invoke();
-        }
-    }
+    /// <summary>The eraser button's 抠除 style is in hand.</summary>
+    public bool EraserCutout => _tool == AnnotationTool.Cutout;
 
     private void Apply_Click(object sender, RoutedEventArgs e) => ApplyRequested?.Invoke();
 

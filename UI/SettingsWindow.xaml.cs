@@ -542,6 +542,13 @@ public partial class SettingsWindow : Window
 
     private void DrawerHandle_MouseLeave(object sender, MouseEventArgs e)
     {
+        // From the cup to the bar (or back) is still over the drawer.
+        if (sender is FrameworkElement left && Mouse.DirectlyOver is DependencyObject over && over != left &&
+            (DrawerHandle.IsMouseOver || DrawerCoffee.Parent is UIElement { IsMouseOver: true }))
+        {
+            return;
+        }
+
         Theme.Bind(DrawerBar, Border.BackgroundProperty, 0x4DFFFFFF);
         if (!_drawerDragging)
         {
@@ -558,7 +565,7 @@ public partial class SettingsWindow : Window
         _drawerMoved = false;
         _drawerStartY = e.GetPosition(this).Y;
         _drawerStartHeight = height;
-        DrawerHandle.CaptureMouse();
+        ((UIElement)sender).CaptureMouse();
         e.Handled = true;
     }
 
@@ -589,7 +596,7 @@ public partial class SettingsWindow : Window
         }
 
         _drawerDragging = false;
-        DrawerHandle.ReleaseMouseCapture();
+        ((UIElement)sender).ReleaseMouseCapture();
         var height = DrawerHeight;
         double target;
         if (!_drawerMoved)

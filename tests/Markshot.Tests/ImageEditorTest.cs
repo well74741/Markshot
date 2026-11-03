@@ -373,12 +373,49 @@ static class ImageEditorTest
         box.DragTransform(new Point(150, 450));
         Check(box.Ready && box.TransformRect.Width < 400 && Math.Abs(box.TransformAngle) > 10, $"handles resize, outside turns ({box.TransformRect.Width:0}x{box.TransformRect.Height:0}, {box.TransformAngle:0}°)");
         box.TransformAngle = 0;
-        Shot((FrameworkElement)editor.Content, "editor_transform.png");
-        Call(editor, "ApplySession");
+        Check(((Image)Field(editor, "Img")).Opacity == 0, "调节框: the picture is not darkened but hidden (the box draws it, the rest shows the checkerboard)");
+        var sizeLabel = (Border)Field(editor, "_cropSize");
         Pump(50);
-        Check(editor.ImageWidth == 300 && editor.ImageHeight == 200, $"调节框 applied: new size ({editor.ImageWidth}×{editor.ImageHeight})");
+        Check(sizeLabel.Visibility == Visibility.Visible, "调节框: the editable size label like the capture's");
+        Shot((FrameworkElement)editor.Content, "editor_transform.png");
+        var keyDown = new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, PresentationSource.FromVisual(editor)!, 0, System.Windows.Input.Key.Enter)
+        {
+            RoutedEvent = UIElement.PreviewKeyDownEvent
+        };
+        editor.RaiseEvent(keyDown);
+        Pump(50);
+        Check(editor.ImageWidth == 300 && editor.ImageHeight == 200, $"调节框 applied with Enter: new size ({editor.ImageWidth}×{editor.ImageHeight})");
+        Check(((Image)Field(editor, "Img")).Opacity == 1, "the picture shows again");
         editor.UndoStep();
         Pump(30);
+        // typed size: around the box's centre; shrinking + turning leaves see-through corners
+        Call(editor, "StartSession", EditorOverlayMode.Transform);
+        box = (EditorOverlay)Field(editor, "_overlay");
+        typeof(ImageEditorWindow).GetField("_cropWidth", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(editor)!.GetType();
+        ((TextBox)Field(editor, "_cropWidth")).Text = "200";
+        ((TextBox)Field(editor, "_cropHeight")).Text = "150";
+        editor.ApplyCropSize();
+        Check(box.TransformRect == new Rect(100, 75, 200, 150), $"typed size goes round the centre ({box.TransformRect})");
+        box.TransformAngle = 30;
+        Call(editor, "ApplySession");
+        Pump(50);
+        Check(At(editor.Composite, 1, 1).A == 0 && editor.ImageWidth > 200, "smaller and turned: the uncovered corners are transparent");
+        editor.UndoStep();
+        Pump(30);
+
+        // a rectangle crop after turning keeps the turned picture (cut straight, no turning back)
+        editor.RotateBy(30);
+        Pump(30);
+        var turnedWidth = editor.ImageWidth;
+        editor.CropTo(new Int32Rect(60, 60, 200, 150));
+        Pump(30);
+        Check(editor.ImageWidth == 200 && editor.ImageHeight == 150, "crop after an angle: straight 200×150");
+        editor.RotateBy(10);
+        Pump(30);
+        Check(editor.ImageWidth < turnedWidth, $"the next angle turns the cropped picture, not the old one ({editor.ImageWidth} < {turnedWidth})");
+        editor.UndoStep(); editor.UndoStep(); editor.UndoStep();
+        Pump(30);
+        Check(Same(editor.Composite, clean), "undo back");
         ((Slider)Field(editor, "_angle")).Value = 30; // previewed, not applied
         Call(editor, "StartSession", EditorOverlayMode.Crop);
         Check(((FrameworkElement)Field(editor, "ImageHost")).RenderTransform.Value.IsIdentity, "a crop is never tilted by a previewed angle");

@@ -223,7 +223,8 @@ public sealed class EditorOverlay : FrameworkElement
         var reach = all;
         reach.Inflate(4000, 4000);
         dc.DrawRectangle(Brushes.Transparent, null, reach);
-        dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xE6, 0x1A, 0x1A, 0x1A)), null, all);
+        // The picture itself is hidden meanwhile (the editor sets it see-through): what the box does not
+        // cover shows the checkerboard, as it will be transparent.
         var box = ToDip(TransformRect);
         var center = new Point(box.X + box.Width / 2, box.Y + box.Height / 2);
         dc.PushTransform(new RotateTransform(TransformAngle, center.X, center.Y));
@@ -240,7 +241,23 @@ public sealed class EditorOverlay : FrameworkElement
         }
 
         dc.Pop();
-        DrawLabel(dc, $"{(int)Math.Round(TransformRect.Width)} × {(int)Math.Round(TransformRect.Height)}   {TransformAngle:0.#}°", new Point(box.X, box.Y));
+        if (ShowSizeLabel)
+        {
+            DrawLabel(dc, $"{(int)Math.Round(TransformRect.Width)} × {(int)Math.Round(TransformRect.Height)}   {TransformAngle:0.#}°", new Point(box.X, box.Y));
+        }
+    }
+
+    /// <summary>The box turned: its outline on the screen (image pixels), for placing the size label above it.</summary>
+    public Rect TransformBounds
+    {
+        get
+        {
+            var r = TransformRect;
+            var center = new Point(r.X + r.Width / 2, r.Y + r.Height / 2);
+            var corners = new[] { r.TopLeft, r.TopRight, r.BottomRight, r.BottomLeft }
+                .Select(p => Annotations.AnnotationEditor.RotatePoint(p, center, TransformAngle)).ToList();
+            return new Rect(new Point(corners.Min(p => p.X), corners.Min(p => p.Y)), new Point(corners.Max(p => p.X), corners.Max(p => p.Y)));
+        }
     }
 
     private static IEnumerable<(int Handle, Point At)> Grips(Rect r)

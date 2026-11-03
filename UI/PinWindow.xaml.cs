@@ -470,7 +470,7 @@ public partial class PinWindow : Window
             }
 
             var visible = size >= 0.5 && opacity >= 0.01;
-            if (ShapedShadow)
+            if (ShapedShadow || Cutouts.Any(Editor.Items))
             {
                 // Lasso pins: the shadow traces the shape itself.
                 ImageShadowLayer.Visibility = Visibility.Collapsed;

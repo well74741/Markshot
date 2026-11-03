@@ -16,7 +16,8 @@ public enum AnnotationTool
     Number,
     Eraser,
     MosaicBrush,
-    Polyline
+    Polyline,
+    Cutout
 }
 
 /// <summary>Head of an arrow: 尖头 (swept, pointed tail), 线形 (open head), 三角 (filled head), 双向 (heads at both ends).</summary>

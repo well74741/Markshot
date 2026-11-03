@@ -22,6 +22,7 @@ public partial class PinWindow
 
         Toolbar.ClearRequested += ClearAnnotations;
         Editor.CutoutTarget = Img; // 抠除 holes are see-through
+        Editor.CutoutsChanged += () => UpdateFrame(); // ... the shadow plate behind the picture too
 
         Toolbar.ToolChanged += OnToolbarToolChanged;
         Toolbar.WatermarkToggled += OnWatermarkToggled;
@@ -869,7 +870,7 @@ public partial class PinWindow
             return;
         }
 
-        if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser)
+        if (_tool is not AnnotationTool.None and not AnnotationTool.Select and not AnnotationTool.Eraser and not AnnotationTool.Cutout)
         {
             var candidate = HitAnnotation(point);
             if (candidate != null && SameFamily(candidate, _tool))
@@ -901,7 +902,7 @@ public partial class PinWindow
             return;
         }
 
-        if (_tool == AnnotationTool.Eraser && Toolbar.EraserCutout)
+        if (_tool == AnnotationTool.Cutout)
         {
             // 抠除: the hole is an element of its own, there (and cut) while it is drawn.
             var cutout = new CutoutAnnotation { Thickness = EraserWidth };
@@ -1560,7 +1561,7 @@ public partial class PinWindow
 
     private void UpdateAnnotationHover(Point point)
     {
-        if (_tool is AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Eraser)
+        if (_tool is AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Eraser or AnnotationTool.Cutout)
         {
             ClearAnnotationHover();
             return;
@@ -1649,7 +1650,7 @@ public partial class PinWindow
             AnnotationTool.Number => Math.Clamp(_thickness + step, 8, 40),
             AnnotationTool.MosaicBrush => Math.Clamp(_thickness + step * 2, 4, 80),
             AnnotationTool.Watermark => Math.Clamp(_thickness + step * 2, 10, 120),
-            AnnotationTool.Eraser => Math.Clamp(_thickness + step * 2, 4, 80),
+            AnnotationTool.Eraser or AnnotationTool.Cutout => Math.Clamp(_thickness + step * 2, 4, 80),
             _ => Math.Clamp(_thickness + step * 0.5, 1, 16)
         };
 

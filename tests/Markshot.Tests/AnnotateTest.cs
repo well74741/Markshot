@@ -289,8 +289,14 @@ static class AnnotateTest
         Check(A(80, 50) == 0 && A(120, 50) == 0 && A(10, 10) == 255 && A(80, 25) == 255, "抠除: transparent hole through the picture and annotations; the rest stays");
         Check(cutItems.OfType<CutoutAnnotation>().Count() == 1 && AnnotationOps_HitNothing(cutItems, new Point(150, 50)), "the hole is never selected");
         var toolbarCut = (AnnotationToolbar)Get(cutEditor, "Toolbar");
-        ((RadioButton)toolbarCut.FindName("EraserCut")).IsChecked = true;
-        Check(toolbarCut.EraserCutout, "the eraser has the 抠除 style");
+        toolbarCut.SetTool(AnnotationTool.Eraser);
+        Check(((FrameworkElement)toolbarCut.FindName("EraserChevron")).Visibility == Visibility.Visible, "the eraser button has its ▾ menu");
+        var modes = (FrameworkElement)toolbarCut.FindName("EraserModes");
+        var row = (Panel)VisualTreeHelper.GetParent(modes);
+        Check(row.Children.IndexOf(modes) == 0, "擦除 / 抠除 are the first thing in the settings row");
+        Check(AnnotationOps_Next(AnnotationTool.Eraser) == AnnotationTool.Cutout && AnnotationOps_Next(AnnotationTool.Cutout) == AnnotationTool.Eraser, "Tab switches 擦除 ↔ 抠除");
+        toolbarCut.PickVariant(AnnotationTool.Cutout);
+        Check(toolbarCut.EraserCutout && ((RadioButton)toolbarCut.FindName("EraserCut")).IsChecked == true, "the eraser has the 抠除 style");
         Check(((FrameworkElement)toolbarCut.FindName("ClearPinButton")) is { } && toolbarCut.FindName("ClearPinButton") is Button, "clear button exists");
         Call(cutEditor, "UpdateUndoButtons");
         typeof(PinWindow).GetMethod("ClearAnnotations", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(cutEditor, null);
@@ -299,6 +305,22 @@ static class AnnotateTest
         Pump(30);
         Check(cutItems.Count == 3, "and it can be undone");
         cutEditor.CloseWithoutAsking();
+
+        // ---- 抠除 on a pin: the hole is see-through (no shadow plate behind it)
+        var holePin = new PinWindow(Blank(120, 80), -4000, -4000, Blank(120, 80), null) { Left = -4000, Top = -4000, ShowActivated = false };
+        holePin.Show();
+        Pump(200);
+        var pinItems2 = ((AnnotationEditor)Get(holePin, "Editor")).Items;
+        var pinHole = new CutoutAnnotation { Thickness = 20 };
+        pinHole.Points.Add(new Point(30, 40));
+        pinHole.Points.Add(new Point(90, 40));
+        pinItems2.Add(pinHole);
+        Call(holePin, "EnterEditMode");
+        ((AnnotationEditor)Get(holePin, "Editor")).InvalidateVisual();
+        Pump(150);
+        var shadowLayer = (FrameworkElement)Get(holePin, "ImageShadowLayer");
+        Check(shadowLayer.Visibility != Visibility.Visible && ((Image)Get(holePin, "Img")).Clip != null, "pin with a hole: no shadow plate behind it, the picture is cut");
+        holePin.CloseImmediately();
 
         // ---- number badge: resizing follows the handle, no flip-flopping
         var badge = new NumberAnnotation { Center = new Point(50, 50), Radius = 14, Number = 1 };

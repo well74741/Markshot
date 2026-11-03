@@ -765,7 +765,8 @@ public sealed class ImageEditorWindow : PinWindow
                 AnnotationTool.Text => "单击输入文字 · 单击已有文字编辑 · 拖动移动 · Alt+滚轮 字号",
                 AnnotationTool.Watermark => "拖动移动水印 · 双击修改文字 · Alt+滚轮 字号",
                 AnnotationTool.Number => "单击放序号 · Alt+滚轮 大小",
-                AnnotationTool.Eraser => "拖动擦掉批注 · Alt+滚轮 橡皮大小 · Ctrl+滚轮 擦除强度",
+                AnnotationTool.Eraser => "拖动擦掉批注 · Alt+滚轮 橡皮大小 · Ctrl+滚轮 擦除强度 · Tab 抠除",
+                AnnotationTool.Cutout => "拖动把图片和批注一起擦成透明 · Alt+滚轮 大小 · Tab 擦除",
                 _ => "单击批注选中 · 拖动移动 · Ctrl+Z 撤销 · Ctrl+S 保存 · Ctrl+T 贴到屏幕"
             } + " · " + view;
         }
@@ -1152,6 +1153,8 @@ public sealed class ImageEditorWindow : PinWindow
 
     public void CropTo(Int32Rect rect)
     {
+        // A crop keeps the picture as it is now (turned included): the next angle starts from here.
+        _rotationBase = null;
         GeometryStep(EditGroup.Cut, () =>
         {
             var cropped = ImageOps.Crop(_baseImage, rect);
@@ -1308,6 +1311,10 @@ public sealed class ImageEditorWindow : PinWindow
             _overlay.TransformPreview = side <= 1400 ? whole
                 : ImageOps.Resize(whole, Math.Max(1, whole.PixelWidth * 1400 / side), Math.Max(1, whole.PixelHeight * 1400 / side));
             _overlay.TransformRect = new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight);
+            // The picture is drawn by the box now; the real one is hidden (not darkened) so the
+            // uncovered parts show the checkerboard, as they will be transparent.
+            Img.Opacity = 0;
+            Editor.Visibility = Visibility.Hidden;
         }
 
         if (mode == EditorOverlayMode.Mesh)
@@ -1336,6 +1343,12 @@ public sealed class ImageEditorWindow : PinWindow
         _sessionBar.Visibility = Visibility.Visible;
         UpdateSessionBar();
         UpdateHint();
+        PlaceCropSize(force: true);
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            Activate();
+            Keyboard.Focus(this);
+        }), DispatcherPriority.Input);
     }
 
     private void UpdateSessionBar() => _sessionApply.IsEnabled = _overlay?.Ready == true;
@@ -1384,6 +1397,8 @@ public sealed class ImageEditorWindow : PinWindow
             _overlay = null;
             _sessionBar.Visibility = Visibility.Collapsed;
             _cropSize.Visibility = Visibility.Collapsed;
+            Img.Opacity = 1;
+            Editor.Visibility = Visibility.Visible;
             UpdateHint();
         }
     }
@@ -1739,7 +1754,7 @@ public sealed class ImageEditorWindow : PinWindow
                 if (e.Key == Key.Enter)
                 {
                     ApplyCropSize();
-                    ReclaimKeyboard();
+                    Keyboard.Focus(this); // the next Enter applies the crop / 调节框
                     e.Handled = true;
                 }
                 else if (e.Key == Key.Escape)
@@ -1763,13 +1778,16 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void PlaceCropSize(bool force)
     {
-        if (_overlay is not { Mode: EditorOverlayMode.Crop } overlay)
+        if (_overlay is not { Mode: EditorOverlayMode.Crop or EditorOverlayMode.Transform } overlay)
         {
             _cropSize.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var crop = overlay.Crop;
+        // Crop: its rectangle; 调节框: the size the picture gets, placed above the (turned) box.
+        var transform = overlay.Mode == EditorOverlayMode.Transform;
+        var crop = transform ? overlay.TransformRect : overlay.Crop;
+        var place = transform ? overlay.TransformBounds : crop;
         if (force || !_cropWidth.IsKeyboardFocusWithin)
         {
             _cropWidth.Text = ((int)Math.Round(crop.Width)).ToString(CultureInfo.InvariantCulture);
@@ -1782,7 +1800,7 @@ public sealed class ImageEditorWindow : PinWindow
 
         _cropSize.Visibility = Visibility.Visible;
         _cropSize.UpdateLayout();
-        var corner = ImageHost.TranslatePoint(new Point(crop.X * _zoom, crop.Y * _zoom), _toolbarLayer);
+        var corner = ImageHost.TranslatePoint(new Point(place.X * _zoom, place.Y * _zoom), _toolbarLayer);
         var top = corner.Y - _cropSize.ActualHeight - 4;
         Canvas.SetLeft(_cropSize, Math.Round(corner.X));
         Canvas.SetTop(_cropSize, Math.Round(top < 2 ? corner.Y + 4 : top));
@@ -1791,8 +1809,25 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>The typed crop size: from the crop's top-left corner, kept inside the picture.</summary>
     public void ApplyCropSize()
     {
-        if (_overlay is not { Mode: EditorOverlayMode.Crop } overlay)
+        if (_overlay is not { Mode: EditorOverlayMode.Crop or EditorOverlayMode.Transform } overlay)
         {
+            return;
+        }
+
+        if (overlay.Mode == EditorOverlayMode.Transform)
+        {
+            // 调节框: the typed size, around the box's centre.
+            if (int.TryParse(_cropWidth.Text.Trim(), out var w) && int.TryParse(_cropHeight.Text.Trim(), out var h) && w >= 1 && h >= 1)
+            {
+                var r = overlay.TransformRect;
+                w = Math.Min(w, 30000);
+                h = Math.Min(h, 30000);
+                overlay.TransformRect = new Rect(r.X + (r.Width - w) / 2, r.Y + (r.Height - h) / 2, w, h);
+                overlay.InvalidateVisual();
+                UpdateSessionBar();
+            }
+
+            PlaceCropSize(force: true);
             return;
         }
 
