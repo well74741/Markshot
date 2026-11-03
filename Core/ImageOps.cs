@@ -300,6 +300,12 @@ public static class ImageFile
     public static BitmapSource Load(string path)
     {
         var bytes = File.ReadAllBytes(path);
+        if (IsWebp(bytes))
+        {
+            // Always SkiaSharp, so a WebP opens the same whether or not Windows has a WebP codec.
+            return LoadWithSkia(bytes, null);
+        }
+
         try
         {
             using var stream = new MemoryStream(bytes);
@@ -309,18 +315,30 @@ public static class ImageFile
         }
         catch (Exception ex) when (ex is NotSupportedException or FileFormatException or COMException or ArgumentException or InvalidOperationException)
         {
-            // No Windows codec for it (WebP on many PCs…): SkiaSharp reads the common ones.
-            using var decoded = SKBitmap.Decode(bytes) ?? throw new NotSupportedException("无法识别的图片格式", ex);
-            using var bgra = decoded.Copy(SKColorType.Bgra8888);
-            var pixels = new byte[bgra.Width * bgra.Height * 4];
-            using (var unpremul = new SKBitmap(new SKImageInfo(bgra.Width, bgra.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul)))
-            {
-                decoded.CopyTo(unpremul, SKColorType.Bgra8888);
-                System.Runtime.InteropServices.Marshal.Copy(unpremul.GetPixels(), pixels, 0, pixels.Length);
-            }
-
-            return ImageOps.FromPixels(pixels, bgra.Width, bgra.Height);
+            // No Windows codec for it: SkiaSharp reads the common ones.
+            return LoadWithSkia(bytes, ex);
         }
+    }
+
+    private static bool IsWebp(byte[] bytes) =>
+        bytes.Length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F' &&
+        bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P';
+
+    private static BitmapSource LoadWithSkia(byte[] bytes, Exception? inner)
+    {
+        // Decoded straight into unpremultiplied BGRA: copying a decoded (premultiplied) bitmap kept the
+        // premultiplied values, and half-transparent pixels came out too dark.
+        var size = SKBitmap.DecodeBounds(bytes);
+        if (size.Width <= 0 || size.Height <= 0)
+        {
+            throw new NotSupportedException("无法识别的图片格式", inner);
+        }
+
+        var info = new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        using var decoded = SKBitmap.Decode(bytes, info) ?? throw new NotSupportedException("无法识别的图片格式", inner);
+        var pixels = new byte[info.Width * info.Height * 4];
+        System.Runtime.InteropServices.Marshal.Copy(decoded.GetPixels(), pixels, 0, pixels.Length);
+        return ImageOps.FromPixels(pixels, info.Width, info.Height);
     }
 
     /// <summary>Writes by the file's extension; formats without transparency go on white.</summary>
