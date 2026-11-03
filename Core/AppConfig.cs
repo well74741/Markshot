@@ -31,11 +31,11 @@ public sealed class AppConfig
     public string PinToolHidden { get; set; } = "";
 
     /// <summary>Order / hidden of the action buttons on the right of the annotation bar.</summary>
-    public string CaptureActionOrder { get; set; } = "Scroll,Record,Ocr,Close,Pin,Save,Copy,Translate,Edit";
+    public string CaptureActionOrder { get; set; } = "Scroll,Record,Ocr,Close,Clear,Pin,Save,Copy,Translate,Edit";
 
     public string CaptureActionHidden { get; set; } = "";
 
-    public string PinActionOrder { get; set; } = "Save,Apply,Edit";
+    public string PinActionOrder { get; set; } = "Close,Save,Clear,Apply,Edit";
 
     public string PinActionHidden { get; set; } = "";
 

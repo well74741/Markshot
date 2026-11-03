@@ -240,6 +240,12 @@ public partial class OverlayWindow : Window
                 return;
             }
 
+            // While annotating (a tool in hand or something drawn) a right click must not throw the work away.
+            if (_tool is not (AnnotationTool.None or AnnotationTool.Select) || Editor.Items.Count > 0 || _selectedAnnotation != null)
+            {
+                return;
+            }
+
             _rightReset = true; // released without dragging: start over
         };
         PreviewMouseMove += (_, e) =>
@@ -316,6 +322,7 @@ public partial class OverlayWindow : Window
         ScreenImage.Source = screen;
         BrightImage.Source = screen;
         Editor.Source = screen;
+        Editor.CutoutTarget = BrightImage; // 抠除 holes show the dimmed screen
         Magnifier.Source = screen;
 
         InitToolbar();
@@ -404,6 +411,7 @@ public partial class OverlayWindow : Window
             }
         };
         Toolbar.CloseRequested += CancelCapture;
+        Toolbar.ClearRequested += ClearAnnotations;
         Toolbar.SizeChanged += (_, _) =>
         {
             if (!_closed && Toolbar.Visibility == Visibility.Visible)

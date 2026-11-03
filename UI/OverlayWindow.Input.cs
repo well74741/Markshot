@@ -195,6 +195,24 @@ public partial class OverlayWindow
             ClearAnnotationSelection();
         }
 
+        if (_tool == AnnotationTool.Eraser && Toolbar.EraserCutout)
+        {
+            // 抠除: the hole is an element of its own, there (and cut) while it is drawn.
+            var cutout = new CutoutAnnotation { Thickness = EraserWidth };
+            cutout.Points.Add(point);
+            _history.Arm(Editor.Items);
+            _history.CommitArmed();
+            Editor.Items.Add(cutout);
+            _eraserPath = cutout;
+            _gesture = new CreationGesture(cutout, point);
+            _erasing = true;
+            UpdateUndoButtons();
+            Editor.InvalidateVisual();
+            InputLayer.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
         if (_tool == AnnotationTool.Eraser)
         {
             // The stroke erases live and is bound to the elements it touched on release.
@@ -584,6 +602,7 @@ public partial class OverlayWindow
             Editor.LiveEraser = null;
             _active = null;
             _gesture = null;
+            DropCutout();
             _erasing = false;
             _eraserPath = null;
             _dragging = false;
@@ -675,6 +694,7 @@ public partial class OverlayWindow
         Editor.LiveEraser = null;
         _active = null;
         _gesture = null;
+        DropCutout();
         _erasing = false;
         _eraserPath = null;
         _dragging = false;
@@ -755,7 +775,11 @@ public partial class OverlayWindow
             _erasing = false;
             _gesture = null;
             Editor.LiveEraser = null;
-            if (_eraserPath != null)
+            if (_eraserPath is CutoutAnnotation)
+            {
+                UpdateUndoButtons(); // the hole was cut while drawing; its undo step exists
+            }
+            else if (_eraserPath != null)
             {
                 // The state before the stroke becomes the undo step, but only if it erased something.
                 var before = Editor.Items.Select(item => item.Clone()).ToList();
@@ -1486,4 +1510,14 @@ public partial class OverlayWindow
     private static bool IsShiftDown => (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
     private static bool IsCtrlDown => (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+
+    /// <summary>A cut-out being drawn is cancelled (right click / Esc): the hole goes again.</summary>
+    private void DropCutout()
+    {
+        if (_erasing && _eraserPath is CutoutAnnotation)
+        {
+            _history.CancelGesture(Editor.Items);
+            UpdateUndoButtons();
+        }
+    }
 }

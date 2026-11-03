@@ -32,7 +32,8 @@ public partial class OverlayWindow
         using (var dc = visual.RenderOpen())
         {
             dc.PushTransform(new TranslateTransform(-x, -y));
-            dc.PushClip(lassoClip ?? new RectangleGeometry(new Rect(x, y, width, height), _cornerRadius, _cornerRadius));
+            var area = lassoClip ?? new RectangleGeometry(new Rect(x, y, width, height), _cornerRadius, _cornerRadius);
+            dc.PushClip(includeAnnotations ? Cutouts.Exclude(Editor.Items, area) : area);
             dc.DrawImage(_screen, new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight));
             if (translation != null)
             {

@@ -639,6 +639,25 @@ public partial class OverlayWindow
     private void UpdateUndoButtons()
     {
         Toolbar.RefreshUndo(_history.CanUndo, _history.CanRedo);
+        Toolbar.SetCanClear(Editor.Items.Count > 0);
+    }
+
+    /// <summary>清空批注: every annotation goes (one undo step).</summary>
+    private void ClearAnnotations()
+    {
+        _textEditor.Commit();
+        if (Editor.Items.Count == 0)
+        {
+            return;
+        }
+
+        _history.Checkpoint(Editor.Items);
+        ClearAnnotationSelection();
+        Editor.Items.Clear();
+        _numberCounter = 1;
+        UpdateUndoButtons();
+        Editor.InvalidateVisual();
+        FocusWindow();
     }
 
     private void Undo() => ApplyHistory(_history.Undo);

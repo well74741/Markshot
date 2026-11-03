@@ -221,6 +221,21 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/line.png" /></Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="IconTrashMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/trash.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconCutoutMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/cutout.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconCoffeeMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/coffee.png" /></Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="IconPolylineMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/polyline.png" /></Setter.Value>

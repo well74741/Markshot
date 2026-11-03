@@ -251,8 +251,13 @@
 
             <!-- Coffee drawer: drag the bar up to pull the QR code out; click it to put it away. -->
             <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,6">
-                <TextBlock x:Name="DrawerHint" Text="往上拉，请杯咖~" Foreground="{DynamicResource T_FF8A8A8A}" FontSize="12"
-                           HorizontalAlignment="Center" Margin="0,0,0,4" Opacity="0" IsHitTestVisible="False" />
+                <!-- A coffee cup above the bar; hovering the bar turns it into the hint text. -->
+                <Grid Margin="0,0,0,4" IsHitTestVisible="False">
+                    <Border x:Name="DrawerCoffee" Style="{StaticResource IconCoffeeMask}" Width="16" Height="16"
+                            Background="{DynamicResource T_FF8A8A8A}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <TextBlock x:Name="DrawerHint" Text="往上拉，请杯咖~" Foreground="{DynamicResource T_FF8A8A8A}" FontSize="12"
+                               HorizontalAlignment="Center" Opacity="0" />
+                </Grid>
                 <!-- The bar rides on top: pulling it up reveals the QR code underneath. -->
                 <Border x:Name="DrawerHandle" Height="22" Background="Transparent" Cursor="SizeNS"
                         ToolTip="往上拉，请杯咖~"

@@ -507,6 +507,87 @@ public class PenAnnotation : Annotation
 }
 
 /// <summary>
+/// 抠除: an eraser stroke that cuts a transparent hole through the picture and every annotation
+/// (above and below it, drawn later or earlier). Not drawn itself, never selected; the holes of all
+/// cut-outs clip the whole picture (<see cref="Cutouts"/>).
+/// </summary>
+public sealed class CutoutAnnotation : PenAnnotation
+{
+    private Geometry? _shape;
+    private string? _shapeKey;
+
+    public override bool Erasable => false;
+
+    public override void Draw(DrawingContext dc)
+    {
+    }
+
+    public override bool HitTest(Point point, double tolerance) => false;
+
+    /// <summary>The hole (the stroke widened to its width).</summary>
+    public Geometry Shape()
+    {
+        var key = $"{Points.Count}:{(Points.Count > 0 ? Points[0] : default)}:{(Points.Count > 0 ? Points[^1] : default)}:{Thickness}";
+        if (_shape == null || _shapeKey != key)
+        {
+            _shape = EraseStroke.Widen(Points, Thickness);
+            if (_shape.CanFreeze)
+            {
+                _shape.Freeze();
+            }
+
+            _shapeKey = key;
+        }
+
+        return _shape;
+    }
+
+    public override Annotation Clone()
+    {
+        var copy = (CutoutAnnotation)base.Clone();
+        copy._shape = null;
+        copy._shapeKey = null;
+        return copy;
+    }
+}
+
+/// <summary>The holes cut by 抠除.</summary>
+public static class Cutouts
+{
+    public static bool Any(IReadOnlyList<Annotation> items)
+    {
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (items[i] is CutoutAnnotation)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The area without the holes (the area itself when there are none).</summary>
+    public static Geometry Exclude(IReadOnlyList<Annotation> items, Geometry area)
+    {
+        if (!Any(items))
+        {
+            return area;
+        }
+
+        var holes = new GeometryGroup { FillRule = FillRule.Nonzero };
+        foreach (var cutout in items.OfType<CutoutAnnotation>())
+        {
+            holes.Children.Add(cutout.Shape());
+        }
+
+        var result = new CombinedGeometry(GeometryCombineMode.Exclude, area, holes);
+        result.Freeze();
+        return result;
+    }
+}
+
+/// <summary>
 /// 折线: straight segments between clicked corners. A pen stroke underneath, so moving, resizing,
 /// mirroring, cropping and erasing treat it like one.
 /// </summary>
@@ -1206,23 +1287,45 @@ public static class MosaicBuilder
         var smallHeight = Math.Max(1, (height + blockSize - 1) / blockSize);
         var small = new byte[smallWidth * smallHeight * 4];
 
-        // Only the sampled row of each block row is read, not the whole image.
-        var row = new byte[width * 4];
-        for (var by = 0; by < smallHeight; by++)
+        // The average colour of each block (premultiplied while summing): one sampled pixel could be a
+        // coloured edge of anti-aliased text, which made white text come out in every colour.
+        var pixels = new byte[width * height * 4];
+        converted.CopyPixels(new Int32Rect(x, y, width, height), pixels, width * 4, 0);
+        Parallel.For(0, smallHeight, by =>
         {
-            var sy = Math.Min(height - 1, by * blockSize + blockSize / 2);
-            converted.CopyPixels(new Int32Rect(x, y + sy, width, 1), row, width * 4, 0);
+            var y0 = by * blockSize;
+            var y1 = Math.Min(height, y0 + blockSize);
             for (var bx = 0; bx < smallWidth; bx++)
             {
-                var sx = Math.Min(width - 1, bx * blockSize + blockSize / 2);
-                var sourceIndex = sx * 4;
-                var targetIndex = (by * smallWidth + bx) * 4;
-                small[targetIndex] = row[sourceIndex];
-                small[targetIndex + 1] = row[sourceIndex + 1];
-                small[targetIndex + 2] = row[sourceIndex + 2];
-                small[targetIndex + 3] = row[sourceIndex + 3];
+                var x0 = bx * blockSize;
+                var x1 = Math.Min(width, x0 + blockSize);
+                double b = 0, g = 0, r = 0, alpha = 0;
+                var count = 0;
+                for (var py = y0; py < y1; py++)
+                {
+                    var i = (py * width + x0) * 4;
+                    for (var px = x0; px < x1; px++, i += 4)
+                    {
+                        var a = pixels[i + 3];
+                        b += pixels[i] * a;
+                        g += pixels[i + 1] * a;
+                        r += pixels[i + 2] * a;
+                        alpha += a;
+                        count++;
+                    }
+                }
+
+                var t = (by * smallWidth + bx) * 4;
+                if (alpha > 0)
+                {
+                    small[t] = (byte)Math.Round(b / alpha);
+                    small[t + 1] = (byte)Math.Round(g / alpha);
+                    small[t + 2] = (byte)Math.Round(r / alpha);
+                }
+
+                small[t + 3] = (byte)Math.Round(alpha / Math.Max(1, count));
             }
-        }
+        });
 
         var pattern = BitmapSource.Create(
             smallWidth, smallHeight, 96, 96, PixelFormats.Bgra32, null, small, smallWidth * 4);

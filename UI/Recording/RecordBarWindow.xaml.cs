@@ -641,9 +641,41 @@ public partial class RecordBarWindow : Window
 
     // ------------------------------------------------------------------ menus, popups, confirm
 
+    private ContextMenu? _openMenu;
+    private FrameworkElement? _menuAnchor;
+    private long _menuClosedAt;
+    private readonly HashSet<FrameworkElement> _menuAnchors = new();
+    private bool _suppressMenu;
+
+    /// <summary>A button's menu: a second click on the same button closes it (instead of opening it again).</summary>
     private void ShowMenu(FrameworkElement anchor, IEnumerable<(string Label, bool Checked, Action Action)> items)
     {
+        if (_menuAnchors.Add(anchor))
+        {
+            // The press comes before the menu's own closing / the click: note whether this press is a "close".
+            anchor.PreviewMouseLeftButtonDown += (_, _) =>
+                _suppressMenu = _openMenu != null && ReferenceEquals(_menuAnchor, anchor) ||
+                                ReferenceEquals(_menuAnchor, anchor) && Environment.TickCount64 - _menuClosedAt < 300;
+        }
+
+        if (_suppressMenu || (ReferenceEquals(_menuAnchor, anchor) && Environment.TickCount64 - _menuClosedAt < 300 && _openMenu == null))
+        {
+            _suppressMenu = false;
+            _openMenu?.SetCurrentValue(ContextMenu.IsOpenProperty, false);
+            return;
+        }
+
         var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
+        _openMenu = menu;
+        _menuAnchor = anchor;
+        menu.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_openMenu, menu))
+            {
+                _openMenu = null;
+                _menuClosedAt = Environment.TickCount64;
+            }
+        };
         foreach (var (label, isChecked, action) in items)
         {
             var item = new MenuItem { Header = label, IsChecked = isChecked };

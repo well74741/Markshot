@@ -6,7 +6,8 @@ public enum EditorOverlayMode
     Crop,
     Path,
     Keystone,
-    Mesh
+    Mesh,
+    Transform
 }
 
 /// <summary>
@@ -70,6 +71,23 @@ public sealed class EditorOverlay : FrameworkElement
     /// <summary>The one 交叉拆分 of this session is done: from now on the mouse only drags.</summary>
     public bool WarpSplit { get; private set; }
 
+    /// <summary>Draws its own size label on the crop (the editor shows an editable one instead).</summary>
+    public bool ShowSizeLabel { get; set; } = true;
+
+    /// <summary>调节框: where the picture goes (image pixels, before turning) and its angle (degrees).</summary>
+    public Rect TransformRect { get; set; }
+
+    public double TransformAngle { get; set; }
+
+    /// <summary>The picture drawn in the box (a small copy is fine).</summary>
+    public BitmapSource? TransformPreview { get; set; }
+
+    private string? _transformDrag;
+    private Point _transformStart;
+    private Rect _transformOrigin;
+    private double _angleOrigin;
+    private double _angleStart;
+
     /// <summary>The cut-out path.</summary>
     public List<Point> PathPoints { get; } = new();
 
@@ -79,6 +97,8 @@ public sealed class EditorOverlay : FrameworkElement
         EditorOverlayMode.Path => !_drawing && PathPoints.Count >= 3,
         EditorOverlayMode.Crop => Crop.Width >= 2 && Crop.Height >= 2,
         EditorOverlayMode.Mesh => Warp.Changed,
+        EditorOverlayMode.Transform => Math.Abs(TransformAngle) > 0.05 ||
+                                       Math.Abs(TransformRect.Width - _imageWidth) >= 1 || Math.Abs(TransformRect.Height - _imageHeight) >= 1,
         _ => true
     };
 
@@ -100,6 +120,12 @@ public sealed class EditorOverlay : FrameworkElement
     {
         var all = new Rect(0, 0, _imageWidth * Zoom, _imageHeight * Zoom);
         dc.DrawRectangle(Brushes.Transparent, null, all); // takes the mouse everywhere over the image
+        if (Mode == EditorOverlayMode.Transform)
+        {
+            DrawTransform(dc, all);
+            return;
+        }
+
         var white = new Pen(Brushes.White, 1.5);
         var accent = new Pen(Accent, 1.5);
         switch (Mode)
@@ -121,7 +147,10 @@ public sealed class EditorOverlay : FrameworkElement
                     DrawGrip(dc, ToDip(grip), accent);
                 }
 
-                DrawLabel(dc, $"{(int)Math.Round(Crop.Width)} × {(int)Math.Round(Crop.Height)}", crop.TopLeft);
+                if (ShowSizeLabel)
+                {
+                    DrawLabel(dc, $"{(int)Math.Round(Crop.Width)} × {(int)Math.Round(Crop.Height)}", crop.TopLeft);
+                }
                 break;
             }
 
@@ -185,6 +214,106 @@ public sealed class EditorOverlay : FrameworkElement
                 break;
             }
         }
+    }
+
+    /// <summary>调节框: the picture in its box (turned), eight handles; outside the box = turning.</summary>
+    private void DrawTransform(DrawingContext dc, Rect all)
+    {
+        // The whole area around takes the mouse too (turning happens outside the box).
+        var reach = all;
+        reach.Inflate(4000, 4000);
+        dc.DrawRectangle(Brushes.Transparent, null, reach);
+        dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xE6, 0x1A, 0x1A, 0x1A)), null, all);
+        var box = ToDip(TransformRect);
+        var center = new Point(box.X + box.Width / 2, box.Y + box.Height / 2);
+        dc.PushTransform(new RotateTransform(TransformAngle, center.X, center.Y));
+        if (TransformPreview != null)
+        {
+            dc.DrawImage(TransformPreview, box);
+        }
+
+        var accent = new Pen(Accent, 1.5);
+        dc.DrawRectangle(null, accent, box);
+        foreach (var (_, grip) in Grips(TransformRect))
+        {
+            DrawGrip(dc, ToDip(grip), accent);
+        }
+
+        dc.Pop();
+        DrawLabel(dc, $"{(int)Math.Round(TransformRect.Width)} × {(int)Math.Round(TransformRect.Height)}   {TransformAngle:0.#}°", new Point(box.X, box.Y));
+    }
+
+    private static IEnumerable<(int Handle, Point At)> Grips(Rect r)
+    {
+        double cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+        yield return (0, r.TopLeft);
+        yield return (1, new Point(cx, r.Top));
+        yield return (2, r.TopRight);
+        yield return (3, new Point(r.Right, cy));
+        yield return (4, r.BottomRight);
+        yield return (5, new Point(cx, r.Bottom));
+        yield return (6, r.BottomLeft);
+        yield return (7, new Point(r.Left, cy));
+    }
+
+    /// <summary>What a press at <paramref name="pixel"/> does: a handle ("0".."7"), "move" inside, "rotate" outside.</summary>
+    public string TransformHit(Point pixel)
+    {
+        var center = new Point(TransformRect.X + TransformRect.Width / 2, TransformRect.Y + TransformRect.Height / 2);
+        var local = Annotations.AnnotationEditor.RotatePoint(pixel, center, -TransformAngle);
+        foreach (var (handle, at) in Grips(TransformRect))
+        {
+            if ((ToDip(at) - ToDip(local)).Length <= Grip + 4)
+            {
+                return handle.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        return TransformRect.Contains(local) ? "move" : "rotate";
+    }
+
+    /// <summary>A press of the box (tests and the mouse).</summary>
+    public void PressTransform(Point pixel)
+    {
+        _transformDrag = TransformHit(pixel);
+        _transformStart = pixel;
+        _transformOrigin = TransformRect;
+        _angleOrigin = TransformAngle;
+        var center = new Point(TransformRect.X + TransformRect.Width / 2, TransformRect.Y + TransformRect.Height / 2);
+        _angleStart = Math.Atan2(pixel.Y - center.Y, pixel.X - center.X) * 180 / Math.PI;
+    }
+
+    public void DragTransform(Point pixel)
+    {
+        switch (_transformDrag)
+        {
+            case null:
+                return;
+            case "move":
+                TransformRect = new Rect(_transformOrigin.X + pixel.X - _transformStart.X, _transformOrigin.Y + pixel.Y - _transformStart.Y,
+                    _transformOrigin.Width, _transformOrigin.Height);
+                break;
+            case "rotate":
+            {
+                var center = new Point(_transformOrigin.X + _transformOrigin.Width / 2, _transformOrigin.Y + _transformOrigin.Height / 2);
+                var angle = _angleOrigin + Math.Atan2(pixel.Y - center.Y, pixel.X - center.X) * 180 / Math.PI - _angleStart;
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+                {
+                    angle = Math.Round(angle / 15) * 15;
+                }
+
+                TransformAngle = Math.IEEERemainder(angle, 360);
+                break;
+            }
+
+            default:
+                TransformRect = UI.AnnotationOps.ResizeFromHandle(_transformOrigin, TransformAngle, int.Parse(_transformDrag, CultureInfo.InvariantCulture),
+                    pixel, (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
+                break;
+        }
+
+        InvalidateVisual();
+        Changed?.Invoke();
     }
 
     private void DrawWarp(DrawingContext dc, Rect all, Pen accent)
@@ -533,6 +662,9 @@ public sealed class EditorOverlay : FrameworkElement
             case EditorOverlayMode.Mesh:
                 PressWarp(new Point(dip.X / Zoom, dip.Y / Zoom));
                 break;
+            case EditorOverlayMode.Transform:
+                PressTransform(new Point(dip.X / Zoom, dip.Y / Zoom));
+                break;
         }
 
         CaptureMouse();
@@ -576,6 +708,22 @@ public sealed class EditorOverlay : FrameworkElement
             case EditorOverlayMode.Keystone:
                 Cursor = CornerHit(dip) >= 0 ? Cursors.SizeAll : Cursors.Arrow;
                 break;
+            case EditorOverlayMode.Transform when pressed:
+                DragTransform(new Point(dip.X / Zoom, dip.Y / Zoom));
+                e.Handled = true;
+                return;
+            case EditorOverlayMode.Transform:
+                Cursor = TransformHit(new Point(dip.X / Zoom, dip.Y / Zoom)) switch
+                {
+                    "move" => Cursors.SizeAll,
+                    "rotate" => ToolCursors.GetRotationCursor(true),
+                    "0" or "4" => Cursors.SizeNWSE,
+                    "2" or "6" => Cursors.SizeNESW,
+                    "1" or "5" => Cursors.SizeNS,
+                    _ => Cursors.SizeWE
+                };
+                e.Handled = true;
+                return;
             case EditorOverlayMode.Mesh when pressed && _warpGrab.Kind >= 0:
                 // Free to leave the picture (the canvas grows to hold the result).
                 DragWarpTo(new Point(dip.X / Zoom, dip.Y / Zoom));
@@ -614,6 +762,7 @@ public sealed class EditorOverlay : FrameworkElement
             _drawing = false;
         }
 
+        _transformDrag = null;
         _warpGrab = (-1, 0, 0, 0);
         _drag = null;
         _corner = -1;

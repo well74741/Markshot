@@ -373,6 +373,7 @@ public partial class OverlayWindow
 
         Canvas.SetLeft(Toolbar, left);
         Canvas.SetTop(Toolbar, top);
+        PositionTranslateStatus(); // it keeps out of the bar's way
     }
 
     private int HitHandle(Point point)
@@ -817,7 +818,7 @@ public partial class OverlayWindow
         }
     }
 
-    private const double HoverMs = 140;
+    private const double HoverMs = 70;
 
     private void OnHoverFrame(object? sender, EventArgs e)
     {

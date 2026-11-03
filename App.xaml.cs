@@ -22,6 +22,7 @@ public partial class App : Application
     private readonly List<(PinSnapshot Snapshot, PinEntry Entry)> _closedPins = new();
 
     private Mutex? _mutex;
+    private long _lastErrorShown = -10000;
     private HotkeyManager? _hotkeys;
     private TrayService? _tray;
     private UI.Recording.RecorderController? _recorder;
@@ -99,8 +100,16 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) =>
         {
             Log.Error("未处理的 UI 异常", args.Exception);
-            UI.ThemedMessage.Show(null, "出错了", "发生错误：" + args.Exception.Message, "确定");
             args.Handled = true;
+            // Shown later and at most once every few seconds: an error inside layout / rendering repeats
+            // every frame, and a modal box inside that loop froze and then crashed the app.
+            if (Environment.TickCount64 - _lastErrorShown > 5000)
+            {
+                _lastErrorShown = Environment.TickCount64;
+                var message = args.Exception.Message;
+                Dispatcher.BeginInvoke(new Action(() => _tray?.ShowBalloon("Markshot 出错了", message + "（详情见日志，可用托盘“导出诊断信息”反馈）")),
+                    DispatcherPriority.ApplicationIdle);
+            }
         };
 
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>

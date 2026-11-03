@@ -109,6 +109,12 @@ public sealed class AnnotationEditor : FrameworkElement
 
     public bool ShowHover { get; set; }
 
+    /// <summary>The element showing the picture under the annotations: 抠除 holes are cut out of it too.</summary>
+    public UIElement? CutoutTarget { get; set; }
+
+    private Geometry? _ownTargetClip;
+    private Geometry? _savedTargetClip;
+
     public AnnotationEditor()
     {
         IsHitTestVisible = false;
@@ -125,15 +131,24 @@ public sealed class AnnotationEditor : FrameworkElement
         dc.PushTransform(new ScaleTransform(1 / Scale, 1 / Scale));
 
         var hasSelection = ShowSelectionChrome && Selection.Width > 0 && Selection.Height > 0;
+        Geometry? area = null;
         if (hasSelection)
         {
-            dc.PushClip(SelectionPath ?? new RectangleGeometry(Selection, SelectionCornerRadius, SelectionCornerRadius));
+            area = SelectionPath ?? new RectangleGeometry(Selection, SelectionCornerRadius, SelectionCornerRadius);
         }
         else if (Source != null)
         {
             // Elements never paint outside the image (a pin); frames and grips still may.
-            dc.PushClip(new RectangleGeometry(new Rect(0, 0, Source.PixelWidth, Source.PixelHeight), SourceCornerRadius, SourceCornerRadius));
+            area = new RectangleGeometry(new Rect(0, 0, Source.PixelWidth, Source.PixelHeight), SourceCornerRadius, SourceCornerRadius);
         }
+
+        var visible = area == null ? null : Cutouts.Exclude(Items, area);
+        if (visible != null)
+        {
+            dc.PushClip(visible);
+        }
+
+        UpdateCutoutTarget(visible != null && !ReferenceEquals(visible, area) ? visible : null);
 
         var live = LiveEraser is { Count: > 0 } ? EraseStroke.Widen(LiveEraser, LiveEraserWidth) : null;
         foreach (var annotation in DrawOrder(Items))
@@ -276,6 +291,37 @@ public sealed class AnnotationEditor : FrameworkElement
     /// Paint order: as listed, except that the watermark is painted right after the mosaics
     /// (so a mosaic never pixelates it) instead of under everything.
     /// </summary>
+    /// <summary>The picture element gets the holes too (in its own DIPs); put back as it was when there are none.</summary>
+    private void UpdateCutoutTarget(Geometry? visible)
+    {
+        if (CutoutTarget == null)
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(CutoutTarget.Clip, _ownTargetClip))
+        {
+            _savedTargetClip = CutoutTarget.Clip; // set by the owner meanwhile
+        }
+
+        if (visible == null)
+        {
+            if (_ownTargetClip != null && ReferenceEquals(CutoutTarget.Clip, _ownTargetClip))
+            {
+                CutoutTarget.Clip = _savedTargetClip;
+            }
+
+            _ownTargetClip = null;
+            return;
+        }
+
+        var clip = visible.Clone();
+        clip.Transform = new ScaleTransform(1 / Scale, 1 / Scale);
+        clip.Freeze();
+        _ownTargetClip = clip;
+        CutoutTarget.Clip = clip;
+    }
+
     public static IEnumerable<Annotation> DrawOrder(IReadOnlyList<Annotation> items)
     {
         var watermark = items.OfType<WatermarkAnnotation>().FirstOrDefault();
@@ -629,7 +675,7 @@ public sealed class AnnotationEditor : FrameworkElement
         }
         else
         {
-            dc.DrawRoundedRectangle(null, new Pen(blue, unit * 2.6), selection, corner, corner);
+            dc.DrawRoundedRectangle(null, new Pen(blue, unit * 3.5), selection, corner, corner);
 
             // Rounding dots inside the corners.
             foreach (var dot in CornerDots(selection, corner, unit))

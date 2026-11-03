@@ -17,7 +17,11 @@ public partial class PinWindow
         if (!IsEditor)
         {
             Toolbar.EditRequested += OpenInEditor;
+            Toolbar.CloseRequested += Close; // the pin's own close button
         }
+
+        Toolbar.ClearRequested += ClearAnnotations;
+        Editor.CutoutTarget = Img; // 抠除 holes are see-through
 
         Toolbar.ToolChanged += OnToolbarToolChanged;
         Toolbar.WatermarkToggled += OnWatermarkToggled;
@@ -403,7 +407,8 @@ public partial class PinWindow
         using (var dc = visual.RenderOpen())
         {
             // Rounded pins keep their corners transparent, annotations included.
-            dc.PushClip(new RectangleGeometry(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight), CornerRadius, CornerRadius));
+            dc.PushClip(Cutouts.Exclude(Editor.Items,
+                new RectangleGeometry(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight), CornerRadius, CornerRadius)));
             dc.DrawImage(_baseImage, new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight));
             foreach (var annotation in AnnotationEditor.DrawOrder(Editor.Items))
             {
@@ -761,6 +766,7 @@ public partial class PinWindow
     private protected void UpdateUndoButtons()
     {
         Toolbar.RefreshUndo(_history.CanUndo, _history.CanRedo);
+        Toolbar.SetCanClear(Editor.Items.Count > 0);
     }
 
     private Point ToPixels(Point dip) => new(dip.X / _zoom, dip.Y / _zoom);
@@ -892,6 +898,24 @@ public partial class PinWindow
             }
 
             ClearSelection();
+            return;
+        }
+
+        if (_tool == AnnotationTool.Eraser && Toolbar.EraserCutout)
+        {
+            // 抠除: the hole is an element of its own, there (and cut) while it is drawn.
+            var cutout = new CutoutAnnotation { Thickness = EraserWidth };
+            cutout.Points.Add(point);
+            _history.Arm(Editor.Items);
+            _history.CommitArmed();
+            Editor.Items.Add(cutout);
+            _eraserPath = cutout;
+            _gesture = new CreationGesture(cutout, point);
+            _erasing = true;
+            UpdateUndoButtons();
+            Editor.InvalidateVisual();
+            InputLayer.CaptureMouse();
+            e.Handled = true;
             return;
         }
 
@@ -1035,6 +1059,7 @@ public partial class PinWindow
             Editor.LiveEraser = null;
             _active = null;
             _gesture = null;
+            DropCutout();
             _erasing = false;
             _eraserPath = null;
             InputLayer.ReleaseMouseCapture();
@@ -1095,6 +1120,7 @@ public partial class PinWindow
         Editor.LiveEraser = null;
         _active = null;
         _gesture = null;
+        DropCutout();
         _erasing = false;
         _eraserPath = null;
         _suppressContextMenu = true;
@@ -1133,7 +1159,11 @@ public partial class PinWindow
             _erasing = false;
             _gesture = null;
             Editor.LiveEraser = null;
-            if (_eraserPath != null)
+            if (_eraserPath is CutoutAnnotation)
+            {
+                UpdateUndoButtons(); // the hole was cut while drawing; its undo step exists
+            }
+            else if (_eraserPath != null)
             {
                 // The state before the stroke becomes the undo step, but only if it erased something.
                 var before = Editor.Items.Select(item => item.Clone()).ToList();
@@ -1717,5 +1747,15 @@ public partial class PinWindow
 
         InputLayer.Focus();
         Keyboard.Focus(InputLayer);
+    }
+
+    /// <summary>A cut-out being drawn is cancelled (right click / Esc): the hole goes again.</summary>
+    private void DropCutout()
+    {
+        if (_erasing && _eraserPath is CutoutAnnotation)
+        {
+            _history.CancelGesture(Editor.Items);
+            UpdateUndoButtons();
+        }
     }
 }

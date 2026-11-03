@@ -362,6 +362,43 @@ static class ImageEditorTest
         editor.SetAdjust(new ImageAdjust());
         Pump(30);
 
+        // ---- 调节框 (double-click), crop size typed, 重置所有修改, angle range
+        Check(((Slider)Field(editor, "_angle")).Minimum == -180 && ((Slider)Field(editor, "_angle")).Maximum == 180, "angle slider covers 360°");
+        Call(editor, "StartSession", EditorOverlayMode.Transform);
+        var box = (EditorOverlay)Field(editor, "_overlay");
+        Check(box.TransformRect == new Rect(0, 0, 400, 300) && !box.Ready, "调节框 starts on the picture");
+        box.PressTransform(new Point(400, 300));
+        box.DragTransform(new Point(300, 200));
+        box.PressTransform(new Point(500, 150)); // outside: turning
+        box.DragTransform(new Point(150, 450));
+        Check(box.Ready && box.TransformRect.Width < 400 && Math.Abs(box.TransformAngle) > 10, $"handles resize, outside turns ({box.TransformRect.Width:0}x{box.TransformRect.Height:0}, {box.TransformAngle:0}°)");
+        box.TransformAngle = 0;
+        Shot((FrameworkElement)editor.Content, "editor_transform.png");
+        Call(editor, "ApplySession");
+        Pump(50);
+        Check(editor.ImageWidth == 300 && editor.ImageHeight == 200, $"调节框 applied: new size ({editor.ImageWidth}×{editor.ImageHeight})");
+        editor.UndoStep();
+        Pump(30);
+        ((Slider)Field(editor, "_angle")).Value = 30; // previewed, not applied
+        Call(editor, "StartSession", EditorOverlayMode.Crop);
+        Check(((FrameworkElement)Field(editor, "ImageHost")).RenderTransform.Value.IsIdentity, "a crop is never tilted by a previewed angle");
+        editor.TypeCropSize(120, 80);
+        var cropBox = ((EditorOverlay)Field(editor, "_overlay")).Crop;
+        Check(cropBox.Width == 120 && cropBox.Height == 80, "the crop size label takes typed numbers");
+        Check(((Border)Field(editor, "_cropSize")).Visibility == Visibility.Visible, "the crop shows the editable size label");
+        Call(editor, "CancelSession");
+        editor.Flip(true);
+        editor.ResizeTo(200, 150);
+        Pump(30);
+        editor.ResetAll();
+        Pump(30);
+        Check(editor.ImageWidth == 400 && Same(editor.Composite, clean) && editor.AnnotationCount == 1, "重置所有修改: as opened");
+        editor.UndoStep();
+        Pump(30);
+        Check(editor.ImageWidth == 200, "and undoable");
+        editor.ResetAll();
+        Pump(30);
+
         // ---- save, and 贴到屏幕 hands over base + annotations
         foreach (var ext in new[] { "png", "jpg", "webp" })
         {
@@ -394,6 +431,8 @@ static class ImageEditorTest
         pinner.SetAdjust(new ImageAdjust(Invert: true));
         Call(pinner, "PinToScreen");
         Check(made != null && handed.Count == 1 && handedComposed.PixelWidth == 300 && At(handedBase, 200, 100).R == 255 && !pinner.IsDirty, "贴到屏幕: the adjusted picture + editable annotations; counts as kept");
+        Pump(50);
+        Check(!pinner.IsVisible, "贴到屏幕 closes the editor");
         made.Show();
         Pump(200);
         Check(Same(made.SourceImage, handedComposed), "the pin shows the edited picture");

@@ -256,8 +256,83 @@ static class AnnotateTest
         Check(!a.IsVisible && !c.IsVisible && b.IsVisible && PinWindow.SelectedPins.Count == 0, "Esc closes the picked pins only");
         b.CloseImmediately();
 
+        // ---- mosaic: the average colour of each block (white text on dark stays grey, no coloured fringes)
+        var textPx = new byte[24 * 24 * 4];
+        for (var i = 0; i < textPx.Length; i += 4)
+        {
+            var x = (i / 4) % 24;
+            var on = x % 3 == 0; // thin white strokes with coloured anti-aliasing beside them
+            textPx[i] = (byte)(on ? 255 : x % 3 == 1 ? 200 : 20);
+            textPx[i + 1] = (byte)(on ? 255 : 20);
+            textPx[i + 2] = (byte)(on ? 255 : x % 3 == 2 ? 200 : 20);
+            textPx[i + 3] = 255;
+        }
+
+        var textImage = ImageOps.FromPixels(textPx, 24, 24);
+        var pattern = MosaicBuilder.Build(textImage, new Rect(0, 0, 24, 24), 12)!;
+        var (patPx, _, _) = ImageOps.ReadPixels(pattern);
+        Check(Math.Abs(patPx[0] - patPx[2]) < 30 && patPx[1] > 80, $"mosaic block = average colour ({patPx[2]},{patPx[1]},{patPx[0]})");
+
+        // ---- 抠除: a hole through the picture and every annotation, also those drawn later
+        var cutEditor = new ImageEditorWindow(Blank(200, 120)) { Left = 40, Top = 40, ShowActivated = false };
+        cutEditor.Show();
+        Pump(300);
+        var cutItems = ((AnnotationEditor)Get(cutEditor, "Editor")).Items;
+        cutItems.Add(new RectAnnotation { Rect = new Rect(20, 20, 100, 60), Color = Colors.Red, Thickness = 6, Fill = true });
+        var hole = new CutoutAnnotation { Thickness = 20 };
+        hole.Points.Add(new Point(60, 50));
+        hole.Points.Add(new Point(140, 50));
+        cutItems.Add(hole);
+        cutItems.Add(new RectAnnotation { Rect = new Rect(100, 30, 60, 40), Color = Colors.Blue, Thickness = 4, Fill = true }); // drawn after the hole
+        var cut = cutEditor.Composite;
+        byte A(int x, int y) { var (px, w, _) = ImageOps.ReadPixels(cut); return px[(y * w + x) * 4 + 3]; }
+        Check(A(80, 50) == 0 && A(120, 50) == 0 && A(10, 10) == 255 && A(80, 25) == 255, "抠除: transparent hole through the picture and annotations; the rest stays");
+        Check(cutItems.OfType<CutoutAnnotation>().Count() == 1 && AnnotationOps_HitNothing(cutItems, new Point(150, 50)), "the hole is never selected");
+        var toolbarCut = (AnnotationToolbar)Get(cutEditor, "Toolbar");
+        ((RadioButton)toolbarCut.FindName("EraserCut")).IsChecked = true;
+        Check(toolbarCut.EraserCutout, "the eraser has the 抠除 style");
+        Check(((FrameworkElement)toolbarCut.FindName("ClearPinButton")) is { } && toolbarCut.FindName("ClearPinButton") is Button, "clear button exists");
+        Call(cutEditor, "UpdateUndoButtons");
+        typeof(PinWindow).GetMethod("ClearAnnotations", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(cutEditor, null);
+        Check(cutItems.Count == 0, "清空批注 removes everything");
+        cutEditor.UndoStep();
+        Pump(30);
+        Check(cutItems.Count == 3, "and it can be undone");
+        cutEditor.CloseWithoutAsking();
+
+        // ---- number badge: resizing follows the handle, no flip-flopping
+        var badge = new NumberAnnotation { Center = new Point(50, 50), Radius = 14, Number = 1 };
+        var start = badge.Bounds;
+        var radii = new List<double>();
+        foreach (var x in new[] { 70.0, 72, 74, 76, 78, 80 })
+        {
+            var target = AnnotationOps_ResizeFromHandle(start, 0, 4, new Point(x, x - 2));
+            AnnotationOps_Resize(badge, target, 4);
+            radii.Add(badge.Radius);
+        }
+
+        Check(radii.Zip(radii.Skip(1)).All(p => p.Second >= p.First), "number badge grows steadily: " + string.Join(",", radii.Select(r => r.ToString("0.#"))));
+
+        // ---- toolbar: clear / close buttons in the right places, part of the order
+        var catalog = typeof(PinWindow).Assembly.GetType("Markshot.UI.ToolbarCatalog")!;
+        var captureKeys = (string[])catalog.GetField("CaptureActions")!.GetValue(null)!;
+        var pinKeys = (string[])catalog.GetField("PinActions")!.GetValue(null)!;
+        Check(Array.IndexOf(captureKeys, "Clear") == Array.IndexOf(captureKeys, "Close") + 1, "capture bar: 清空批注 right of 关闭");
+        Check(string.Join(",", pinKeys) == "Close,Save,Clear,Apply,Edit", "pin bar: 关闭 before 保存, 清空批注 before 应用");
+        var order = (List<string>)catalog.GetMethod("Order")!.Invoke(null, new object[] { "Save,Apply,Edit", pinKeys })!;
+        Check(order.Contains("Clear") && order.Contains("Close"), "an old saved order gets the new buttons");
+
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
     }
+
+    static bool AnnotationOps_HitNothing(List<Annotation> items, Point p) =>
+        typeof(PinWindow).Assembly.GetType("Markshot.UI.AnnotationOps")!.GetMethod("HitTest")!.Invoke(null, new object[] { items, p, 4.0 }) is not CutoutAnnotation;
+
+    static Rect AnnotationOps_ResizeFromHandle(Rect start, double rotation, int handle, Point p) =>
+        (Rect)typeof(PinWindow).Assembly.GetType("Markshot.UI.AnnotationOps")!.GetMethod("ResizeFromHandle")!.Invoke(null, new object[] { start, rotation, handle, p, false })!;
+
+    static void AnnotationOps_Resize(Annotation a, Rect target, int handle) =>
+        typeof(PinWindow).Assembly.GetType("Markshot.UI.AnnotationOps")!.GetMethod("Resize")!.Invoke(null, new object[] { a, target, handle });
 
     static void TestShot(ImageEditorWindow editor, AnnotationToolbar toolbar)
     {

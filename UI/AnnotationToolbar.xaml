@@ -94,6 +94,9 @@
                     <Button Style="{StaticResource IconToolButton}" Click="Close_Click" Tag="Close" ToolTip="关闭 (Esc)">
                         <Border Style="{StaticResource IconCloseMask}" />
                     </Button>
+                    <Button x:Name="ClearCaptureButton" Style="{StaticResource IconToolButton}" Click="Clear_Click" Tag="Clear" ToolTip="清空批注（可撤销）" IsEnabled="False">
+                        <Border Style="{StaticResource IconTrashMask}" />
+                    </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Pin_Click" Tag="Pin" ToolTip="贴图 (F3)" Foreground="{StaticResource Accent}">
                         <Border Style="{StaticResource IconPinMask}" />
                     </Button>
@@ -114,8 +117,14 @@
                 </StackPanel>
 
                 <StackPanel x:Name="PinActions" Orientation="Horizontal" Visibility="Collapsed">
+                    <Button Style="{StaticResource IconToolButton}" Click="Close_Click" Tag="Close" ToolTip="关闭贴图">
+                        <Border Style="{StaticResource IconCloseMask}" />
+                    </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Save_Click" Tag="Save" ToolTip="保存">
                         <Border Style="{StaticResource IconSaveMask}" />
+                    </Button>
+                    <Button x:Name="ClearPinButton" Style="{StaticResource IconToolButton}" Click="Clear_Click" Tag="Clear" ToolTip="清空批注（可撤销）" IsEnabled="False">
+                        <Border Style="{StaticResource IconTrashMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" Tag="Apply" ToolTip="应用 (Ctrl+S)" Foreground="{StaticResource Accent}">
                         <Border Style="{StaticResource IconConfirmMask}" />
@@ -256,6 +265,16 @@
                                 ValueChanged="Angle_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
                         <TextBlock x:Name="AngleValue" Text="-24°" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="30"
                                    TextAlignment="Center" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- The eraser's two styles: 擦除 (annotations) / 抠除 (a transparent hole through everything). -->
+                    <StackPanel x:Name="EraserModes" Orientation="Horizontal" Visibility="Collapsed">
+                        <RadioButton x:Name="EraserErase" Style="{StaticResource IconToolRadio}" GroupName="EraserMode" Checked="EraserMode_Checked" ToolTip="擦除：擦掉批注" IsChecked="True">
+                            <Border Style="{StaticResource IconEraserMask}" />
+                        </RadioButton>
+                        <RadioButton x:Name="EraserCut" Style="{StaticResource IconToolRadio}" GroupName="EraserMode" Checked="EraserMode_Checked" ToolTip="抠除：连同图片和所有批注一起擦成透明，之后画的批注也不会盖住空洞">
+                            <Border Style="{StaticResource IconCutoutMask}" />
+                        </RadioButton>
                     </StackPanel>
 
                     <StackPanel x:Name="OpacityGroup" Orientation="Horizontal" Visibility="Collapsed">

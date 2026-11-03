@@ -105,6 +105,9 @@ public partial class AnnotationToolbar : UserControl
     public event Action? TranslateRequested;
     public event Action? OcrRequested;
     public event Action? CloseRequested;
+
+    /// <summary>清空批注 (capture and pin bars).</summary>
+    public event Action? ClearRequested;
     public event Action? ApplyRequested;
     public event Action? RecordRequested;
     public event Action? ScrollRequested;
@@ -546,7 +549,8 @@ public partial class AnnotationToolbar : UserControl
                 return;
 
             case ToolFamily.Eraser:
-                // Eraser: width and opacity (how strongly it erases).
+                // Eraser: 擦除 / 抠除, width and opacity (how strongly it erases).
+                EraserModes.Visibility = Visibility.Visible;
                 WidthSlider.Minimum = 4;
                 WidthSlider.Maximum = 80;
                 OpacityGroup.Visibility = Visibility.Visible;
@@ -686,6 +690,7 @@ public partial class AnnotationToolbar : UserControl
         RectVariants.Visibility = Visibility.Collapsed;
         LineVariants.Visibility = Visibility.Collapsed;
         ArrowStyleGroup.Visibility = Visibility.Collapsed;
+        EraserModes.Visibility = Visibility.Collapsed;
         PenVariants.Visibility = Visibility.Collapsed;
         MosaicVariants.Visibility = Visibility.Collapsed;
     }
@@ -1290,6 +1295,34 @@ public partial class AnnotationToolbar : UserControl
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke();
+
+    private void Clear_Click(object sender, RoutedEventArgs e) => ClearRequested?.Invoke();
+
+    /// <summary>清空批注 is only usable with something to clear.</summary>
+    public void SetCanClear(bool canClear)
+    {
+        ClearCaptureButton.IsEnabled = canClear;
+        ClearPinButton.IsEnabled = canClear;
+    }
+
+    private bool _eraserCutout;
+
+    /// <summary>The eraser's 抠除 style: a transparent hole through the picture and every annotation.</summary>
+    public bool EraserCutout => _eraserCutout;
+
+    private void EraserMode_Checked(object sender, RoutedEventArgs e)
+    {
+        if (EraserCut == null)
+        {
+            return;
+        }
+
+        _eraserCutout = EraserCut.IsChecked == true;
+        if (!_configuring)
+        {
+            SettingsChanged?.Invoke();
+        }
+    }
 
     private void Apply_Click(object sender, RoutedEventArgs e) => ApplyRequested?.Invoke();
 

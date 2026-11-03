@@ -528,8 +528,16 @@ public partial class SettingsWindow : Window
         Theme.Bind(DrawerBar, Border.BackgroundProperty, 0x99FFFFFF);
         if (DrawerHeight < 1)
         {
-            Motion.Fade(DrawerHint, 1);
+            ShowDrawerHint(true);
         }
+    }
+
+    /// <summary>The hint text on hover, the coffee cup otherwise (neither while the QR code is out).</summary>
+    private void ShowDrawerHint(bool text, double? height = null)
+    {
+        var open = (height ?? DrawerHeight) >= 1;
+        Motion.Fade(DrawerHint, text ? 1 : 0);
+        Motion.Fade(DrawerCoffee, text || open ? 0 : 1);
     }
 
     private void DrawerHandle_MouseLeave(object sender, MouseEventArgs e)
@@ -537,7 +545,7 @@ public partial class SettingsWindow : Window
         Theme.Bind(DrawerBar, Border.BackgroundProperty, 0x4DFFFFFF);
         if (!_drawerDragging)
         {
-            Motion.Fade(DrawerHint, 0);
+            ShowDrawerHint(false);
         }
     }
 
@@ -570,6 +578,7 @@ public partial class SettingsWindow : Window
         // Follows the pointer upwards and stops once the QR code is fully out.
         DrawerPanel.Height = Math.Clamp(_drawerStartHeight + delta, 0, DrawerFull);
         DrawerHint.Opacity = DrawerPanel.Height < 1 ? 1 : 0;
+        DrawerCoffee.Opacity = 0;
     }
 
     private void DrawerHandle_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -596,7 +605,7 @@ public partial class SettingsWindow : Window
         {
             EasingFunction = Motion.Ease
         });
-        Motion.Fade(DrawerHint, target < 1 && DrawerHandle.IsMouseOver ? 1 : 0);
+        ShowDrawerHint(target < 1 && DrawerHandle.IsMouseOver, target);
         e.Handled = true;
     }
 

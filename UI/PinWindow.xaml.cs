@@ -745,9 +745,16 @@ public partial class PinWindow : Window
             return;
         }
 
+        var transformed = _resizingAnnotation || _rotatingAnnotation;
         if (_resizingAnnotation || _rotatingAnnotation || _movingSelected)
         {
             _history.Disarm();
+        }
+
+        if (transformed && IsMouseCaptured)
+        {
+            // A resize / rotation by the frame captured the window: let go, or nothing else gets a click.
+            ReleaseMouseCapture();
         }
 
         _dragRotate = false;

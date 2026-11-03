@@ -359,10 +359,15 @@ internal static class AnnotationOps
                 break;
             }
             case NumberAnnotation number:
-                // A number badge grows / shrinks around its own centre (it used to slide with the handle).
-                var dw = Math.Abs(target.Width - source.Width);
-                var dh = Math.Abs(target.Height - source.Height);
-                number.Radius = Math.Clamp((dw >= dh ? target.Width : target.Height) / 2, 8, 80);
+                // A number badge grows / shrinks around its own centre. The size follows the dragged
+                // handle's own direction (comparing with the changing current size made it flip back and forth).
+                var badge = handle switch
+                {
+                    1 or 5 => target.Height,
+                    3 or 7 => target.Width,
+                    _ => Math.Max(target.Width, target.Height)
+                };
+                number.Radius = Math.Clamp(badge / 2, 8, 80);
                 break;
             case PenAnnotation pen:
                 ScalePoints(pen.Points, source, target);

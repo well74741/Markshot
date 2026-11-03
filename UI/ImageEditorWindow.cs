@@ -33,11 +33,15 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly Canvas _toolbarLayer = new() { ClipToBounds = true };
     private readonly System.Windows.Shapes.Rectangle _checker = new() { IsHitTestVisible = false };
     private Point _toolbarAnchor = new(0.5, 14); // the floating bar: centre (fraction of the width), gap to the bottom
+    private readonly Border _cropSize = new() { CornerRadius = new CornerRadius(3), Padding = new Thickness(3, 1, 3, 1), Visibility = Visibility.Collapsed };
+    private readonly TextBox _cropWidth = new();
+    private readonly TextBox _cropHeight = new();
+    private (State State, List<Annotation> Items)? _initial; // the picture as it was opened (重置所有修改)
     private readonly TextBlock _statusZoom = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Width = 48, TextAlignment = TextAlignment.Center };
     private readonly TextBox _widthBox = new();
     private readonly TextBox _heightBox = new();
     private readonly CheckBox _keepRatio = new() { Content = "锁定比例", IsChecked = true, FontSize = 12, Margin = new Thickness(0, 6, 0, 0) };
-    private readonly Slider _angle = new() { Minimum = -45, Maximum = 45, IsMoveToPointEnabled = true };
+    private readonly Slider _angle = new() { Minimum = -180, Maximum = 180, IsMoveToPointEnabled = true };
     private readonly TextBlock _angleValue = new() { FontSize = 12, Width = 40, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
     private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _sliders = new();
     private readonly ToggleButton _invert;
@@ -112,7 +116,8 @@ public sealed class ImageEditorWindow : PinWindow
         // The checkerboard behind see-through parts covers only the visible part of the picture: on the
         // picture itself it would be tiled over the whole (zoomed) size, which made zooming in slow.
         ImageHost.Background = Brushes.Transparent;
-        _checker.Fill = (Brush)Application.Current.FindResource("SmallCheckerBrush");
+        _checker.Fill = CheckerBrush();
+        Theme.Changed += OnThemeChanged;
         _stage = new Canvas { ClipToBounds = true, Background = Brushes.Transparent, Focusable = false };
         _stage.Children.Add(_checker);
         _stage.Children.Add(canvas);
@@ -193,6 +198,23 @@ public sealed class ImageEditorWindow : PinWindow
         Toolbar.SizeChanged += (_, _) => PlaceToolbar();
         _toolbarLayer.SizeChanged += (_, _) => PlaceToolbar();
         Toolbar.DragFinished += RememberToolbarPlace;
+        BuildCropSize();
+        _toolbarLayer.Children.Add(_cropSize);
+        // Double-click on the picture (no tool, not on an annotation): the 调节框 for size and angle.
+        ImageHost.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (e.ClickCount != 2 || _overlay != null || !_hasImage || _textEditor.IsActive || _tool is not (AnnotationTool.None or AnnotationTool.Select))
+            {
+                return;
+            }
+
+            var at = e.GetPosition(ImageHost);
+            if (AnnotationOps.HitTest(Editor.Items, new Point(at.X / _zoom, at.Y / _zoom), 7 / _zoom) == null)
+            {
+                StartSession(EditorOverlayMode.Transform);
+                e.Handled = true;
+            }
+        };
         DockPanel.SetDock(status, Dock.Bottom);
         DockPanel.SetDock(panel, Dock.Right);
         _layout.Children.Add(status);
@@ -269,9 +291,11 @@ public sealed class ImageEditorWindow : PinWindow
         Closing += OnClosingEditor;
         Closed += (_, _) =>
         {
+            Theme.Changed -= OnThemeChanged;
             _adjustTimer.Stop();
             _waitingPin?.ShowAgain(); // not re-pinned: the pin it came from comes back as it was
         };
+        _initial = (new State(_origin, _baseImage, _adjust), Editor.Items.Select(item => item.Clone()).ToList());
         Loaded += (_, _) =>
         {
             EnterEditMode();
@@ -452,8 +476,12 @@ public sealed class ImageEditorWindow : PinWindow
         var stack = new StackPanel { Margin = new Thickness(10) };
         stack.Children.Add(Section("尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio));
         stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow, angleRow, applyAngle));
-        stack.Children.Add(Section("裁切", Reset(EditGroup.Cut, "回到裁切 / 梯形校正之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
+        stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
         stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
+        var resetAll = TextButton("重置所有修改", "回到打开时的样子（图片和批注；可用 Ctrl+Z 撤销）", ResetAll);
+        resetAll.HorizontalAlignment = HorizontalAlignment.Stretch;
+        resetAll.Margin = new Thickness(0, 4, 0, 4);
+        stack.Children.Add(resetAll);
         UiScale.Attach(stack);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = stack };
         var frame = new Border { Width = 262, BorderThickness = new Thickness(1, 0, 0, 0), Child = scroll };
@@ -641,6 +669,7 @@ public sealed class ImageEditorWindow : PinWindow
             Math.Clamp(position.Y, Math.Min(0, keep - h), Math.Max(0, _stage.ActualHeight - keep)));
         Canvas.SetLeft(RootGrid, Math.Round(_pan.X));
         Canvas.SetTop(RootGrid, Math.Round(_pan.Y));
+        Dispatcher.BeginInvoke(new Action(PlaceCropSize), DispatcherPriority.Render);
         var visible = Rect.Intersect(new Rect(Math.Round(_pan.X), Math.Round(_pan.Y), w, h), new Rect(0, 0, _stage.ActualWidth, _stage.ActualHeight));
         if (visible.IsEmpty)
         {
@@ -704,6 +733,7 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 EditorOverlayMode.Crop => "拖出保留区域 · 拖边角调整 · 拖框内移动",
                 EditorOverlayMode.Path => "按住沿边缘画一圈 · Shift 直线段",
+                EditorOverlayMode.Transform => "拖边角调尺寸 · 框外拖动旋转 · Shift 等比 / 15°",
                 EditorOverlayMode.Mesh => _overlay.WarpSplit
                     ? "拖动图片带动最近的交点 · 拖交点 / 边角移动 · 拖蓝色手柄弯曲边线"
                     : "单击图片交叉拆分一次（虚线预览位置），之后只需拖动",
@@ -845,6 +875,7 @@ public sealed class ImageEditorWindow : PinWindow
         _beforeGroup.Clear();
         _lastGroup = null;
         _rotationBase = null;
+        _initial = null; // set when the new picture is in
         _savedChange = _history.ChangeCount;
         _hasImage = true;
         _path = path;
@@ -861,6 +892,7 @@ public sealed class ImageEditorWindow : PinWindow
         UpdateUndoButtons();
         UpdateTitle();
         RefreshPanel();
+        _initial = (new State(_origin, _baseImage, _adjust), new List<Annotation>());
         Fit();
         UpdateHint();
     }
@@ -1261,9 +1293,23 @@ public sealed class ImageEditorWindow : PinWindow
         ClearSelection();
         SetTool(AnnotationTool.None);
         Toolbar.SetTool(AnnotationTool.None);
+        // A previewed (not applied) angle must not tilt the crop / path / handles.
+        _angle.Value = 0;
+        ImageHost.RenderTransform = Transform.Identity;
         _overlay = new EditorOverlay(mode, _baseImage.PixelWidth, _baseImage.PixelHeight, _zoom);
         _overlay.Changed += UpdateSessionBar;
         _overlay.Changed += UpdateHint;
+        _overlay.Changed += PlaceCropSize;
+        _overlay.ShowSizeLabel = false;
+        if (mode == EditorOverlayMode.Transform)
+        {
+            var whole = ImageOps.Normalize(base.ComposeEditedImage());
+            var side = Math.Max(whole.PixelWidth, whole.PixelHeight);
+            _overlay.TransformPreview = side <= 1400 ? whole
+                : ImageOps.Resize(whole, Math.Max(1, whole.PixelWidth * 1400 / side), Math.Max(1, whole.PixelHeight * 1400 / side));
+            _overlay.TransformRect = new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight);
+        }
+
         if (mode == EditorOverlayMode.Mesh)
         {
             // The warp is previewed on a small copy of the picture with its annotations.
@@ -1284,6 +1330,7 @@ public sealed class ImageEditorWindow : PinWindow
             EditorOverlayMode.Crop => "拖出要保留的区域，拖边角调整。Enter 应用，Esc 取消",
             EditorOverlayMode.Path => "按住鼠标沿要保留的部分画一圈（按住 Shift 走直线）。Enter 应用，Esc 取消",
             EditorOverlayMode.Mesh => "先单击图片交叉拆分一次，然后拖动交点、边角和蓝色手柄弯曲图片。Enter 应用，Esc 取消",
+            EditorOverlayMode.Transform => "拖边角调尺寸（Shift 等比），框外拖动旋转（Shift 15°）。Enter 应用，Esc 取消",
             _ => "拖动四个角对准图中倾斜的矩形。Enter 应用，Esc 取消"
         };
         _sessionBar.Visibility = Visibility.Visible;
@@ -1320,6 +1367,9 @@ public sealed class ImageEditorWindow : PinWindow
             case EditorOverlayMode.Mesh:
                 WarpTo(overlay.Warp);
                 break;
+            case EditorOverlayMode.Transform:
+                TransformTo((int)Math.Round(overlay.TransformRect.Width), (int)Math.Round(overlay.TransformRect.Height), overlay.TransformAngle);
+                break;
             default:
                 KeystoneTo(overlay.Quad);
                 break;
@@ -1333,6 +1383,7 @@ public sealed class ImageEditorWindow : PinWindow
             ImageHost.Children.Remove(_overlay);
             _overlay = null;
             _sessionBar.Visibility = Visibility.Collapsed;
+            _cropSize.Visibility = Visibility.Collapsed;
             UpdateHint();
         }
     }
@@ -1555,6 +1606,7 @@ public sealed class ImageEditorWindow : PinWindow
             : ((App)Application.Current).PinFromEditor(_baseImage, annotations, composed, _sourcePin, work);
         _waitingPin = null;
         MarkKept();
+        CloseWithoutAsking(); // pinned: the editor's job is done
     }
 
     // ------------------------------------------------------------------ closing
@@ -1593,8 +1645,175 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>Closes now (the app is shutting down, tests).</summary>
     public void CloseWithoutAsking()
     {
+        if (_closedWindow)
+        {
+            return;
+        }
+
         _forceClose = true;
         Close();
+    }
+
+    private bool _closedWindow;
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _closedWindow = true;
+        base.OnClosed(e);
+    }
+
+    // ------------------------------------------------------------------ 调节框, crop size, reset all, checkerboard
+
+    /// <summary>调节框 applied: a new size, then the angle (annotations go into the pixels; one undo step).</summary>
+    public void TransformTo(int width, int height, double angle)
+    {
+        width = Math.Clamp(width, 1, 30000);
+        height = Math.Clamp(height, 1, 30000);
+        GeometryStep(Math.Abs(angle) > 0.05 ? EditGroup.Turn : EditGroup.Size, () =>
+        {
+            var image = Flattened();
+            if (width != image.PixelWidth || height != image.PixelHeight)
+            {
+                image = ImageOps.Resize(image, width, height);
+            }
+
+            return Math.Abs(angle) > 0.05 ? ImageOps.Rotate(image, angle) : image;
+        });
+        Fit();
+    }
+
+    /// <summary>重置所有修改: the picture and annotations as they were when opened (one undo step).</summary>
+    public void ResetAll()
+    {
+        if (_initial is not { } initial || !_hasImage)
+        {
+            return;
+        }
+
+        CancelSession();
+        _textEditor.Commit();
+        ClearSelection();
+        _history.Checkpoint(Editor.Items);
+        _beforeGroup.Clear();
+        _lastGroup = null;
+        _rotationBase = null;
+        RestoreState(initial.State);
+        Editor.Items.Clear();
+        Editor.Items.AddRange(initial.Items.Select(item => item.Clone()));
+        Editor.InvalidateVisual();
+        UpdateUndoButtons();
+        RefreshPanel();
+        Fit();
+    }
+
+    /// <summary>The checkerboard behind see-through parts, in the theme's colours.</summary>
+    private static Brush CheckerBrush()
+    {
+        var (light, dark) = Theme.IsLight
+            ? (Color.FromRgb(0xFF, 0xFF, 0xFF), Color.FromRgb(0xE3, 0xE3, 0xE3))
+            : (Color.FromRgb(0x2F, 0x2F, 0x2F), Color.FromRgb(0x3C, 0x3C, 0x3C));
+        var group = new DrawingGroup();
+        group.Children.Add(new GeometryDrawing(new SolidColorBrush(light), null, new RectangleGeometry(new Rect(0, 0, 12, 12))));
+        var squares = new GeometryGroup();
+        squares.Children.Add(new RectangleGeometry(new Rect(0, 0, 6, 6)));
+        squares.Children.Add(new RectangleGeometry(new Rect(6, 6, 6, 6)));
+        group.Children.Add(new GeometryDrawing(new SolidColorBrush(dark), null, squares));
+        var brush = new DrawingBrush(group) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 12, 12), ViewportUnits = BrushMappingMode.Absolute };
+        brush.Freeze();
+        return brush;
+    }
+
+    private void OnThemeChanged() => _checker.Fill = CheckerBrush();
+
+    /// <summary>The crop's size label, typed into like the capture's: Enter (or clicking elsewhere) applies.</summary>
+    private void BuildCropSize()
+    {
+        _cropSize.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xCD141414));
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var box in new[] { _cropWidth, _cropHeight })
+        {
+            box.Style = (Style)Application.Current.FindResource("SizeLabelField");
+            box.ToolTip = ReferenceEquals(box, _cropWidth) ? "宽（像素），可直接修改，Enter 应用" : "高（像素），可直接修改，Enter 应用";
+            box.PreviewKeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter)
+                {
+                    ApplyCropSize();
+                    ReclaimKeyboard();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    PlaceCropSize(force: true);
+                    ReclaimKeyboard();
+                    e.Handled = true;
+                }
+            };
+            box.LostKeyboardFocus += (_, _) => ApplyCropSize();
+        }
+
+        row.Children.Add(_cropWidth);
+        row.Children.Add(new TextBlock { Text = "×", Foreground = Brushes.LightGray, FontSize = 12, Margin = new Thickness(1, 0, 1, 0), VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(_cropHeight);
+        _cropSize.Child = row;
+        UiScale.Attach(_cropSize);
+    }
+
+    private void PlaceCropSize() => PlaceCropSize(force: false);
+
+    private void PlaceCropSize(bool force)
+    {
+        if (_overlay is not { Mode: EditorOverlayMode.Crop } overlay)
+        {
+            _cropSize.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var crop = overlay.Crop;
+        if (force || !_cropWidth.IsKeyboardFocusWithin)
+        {
+            _cropWidth.Text = ((int)Math.Round(crop.Width)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (force || !_cropHeight.IsKeyboardFocusWithin)
+        {
+            _cropHeight.Text = ((int)Math.Round(crop.Height)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        _cropSize.Visibility = Visibility.Visible;
+        _cropSize.UpdateLayout();
+        var corner = ImageHost.TranslatePoint(new Point(crop.X * _zoom, crop.Y * _zoom), _toolbarLayer);
+        var top = corner.Y - _cropSize.ActualHeight - 4;
+        Canvas.SetLeft(_cropSize, Math.Round(corner.X));
+        Canvas.SetTop(_cropSize, Math.Round(top < 2 ? corner.Y + 4 : top));
+    }
+
+    /// <summary>The typed crop size: from the crop's top-left corner, kept inside the picture.</summary>
+    public void ApplyCropSize()
+    {
+        if (_overlay is not { Mode: EditorOverlayMode.Crop } overlay)
+        {
+            return;
+        }
+
+        var crop = overlay.Crop;
+        if (int.TryParse(_cropWidth.Text.Trim(), out var width) && int.TryParse(_cropHeight.Text.Trim(), out var height))
+        {
+            width = Math.Clamp(width, 2, (int)Math.Max(2, _baseImage.PixelWidth - crop.X));
+            height = Math.Clamp(height, 2, (int)Math.Max(2, _baseImage.PixelHeight - crop.Y));
+            overlay.Crop = new Rect(crop.X, crop.Y, width, height);
+            overlay.InvalidateVisual();
+            UpdateSessionBar();
+        }
+
+        PlaceCropSize(force: true);
+    }
+
+    public void TypeCropSize(int width, int height)
+    {
+        _cropWidth.Text = width.ToString(CultureInfo.InvariantCulture);
+        _cropHeight.Text = height.ToString(CultureInfo.InvariantCulture);
+        ApplyCropSize();
     }
 
     /// <summary>Undo / redo for callers outside the annotation code (tests, menus).</summary>

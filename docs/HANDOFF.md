@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.21`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.22`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -625,6 +625,18 @@ un.ps1 batch1 menu`。
 ## 8.1.21 0.8.21 变更
 
 - 网格形变每次只交叉拆分一次（`EditorOverlay.WarpSplit`）；之后在空白处按下 = 抓最近的交点拖动（`PressWarp` / `DragWarpTo`，记住抓取偏移，不跳到指针），光标变手形，不再显示拆分十字。
+
+## 8.1.22 0.8.22 变更
+
+- 稳定性：调整框缩放 / 旋转结束时贴图窗口没有释放鼠标捕获（编辑器整体点不动），现在 `OnMouseLeftButtonUp` 释放；
+  未处理 UI 异常不再弹模态框（布局循环里连弹模态框会卡死闪退），改为节流的托盘气泡；截图编辑中（有批注 / 工具 / 选中元素）右键不再重置截图。
+- `CutoutAnnotation : PenAnnotation`（抠除）：不绘制、不可选，`Cutouts.Exclude` 把所有洞从可见区域剔除；`AnnotationEditor` 的裁剪和合成（贴图、截图、编辑器 Flattened）都用它，
+  `CutoutTarget`（贴图的 Img、截图的 BrightImage）同步打洞。按下时 `Arm + CommitArmed` 生成一步撤销，取消时 `CancelGesture` 还原。
+- 马赛克块取平均色（预乘 alpha）；序号缩放按手柄方向取尺寸；截图框选后线宽不变；悬停框动画 70 ms；翻译状态条避让工具栏。
+- 工具栏：`Clear`（清空批注，`SetCanClear`）加入截图 / 贴图动作，贴图加 `Close`；旧配置的顺序会自动补上新按钮。橡皮擦设置行 `EraserModes`（擦除 / 抠除）。
+- 编辑器：`EditorOverlayMode.Transform`（双击图片，`ResizeFromHandle` + 框外旋转，`TransformTo` 先缩放后旋转）；开始任何会话前清掉预览角度；裁切尺寸标签 `_cropSize`（同截图 SizeBox 样式）；
+  `ResetAll`；`CheckerBrush` 跟主题；贴到屏幕后 `CloseWithoutAsking`；分区「裁切与变形」；角度 ±180。
+- 录屏：按键图标留边；`ShowMenu` 同一按钮再点关闭菜单。设置抽屉横条上方加咖啡图标，悬停变回文字。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

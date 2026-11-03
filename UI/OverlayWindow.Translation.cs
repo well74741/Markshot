@@ -234,6 +234,32 @@ public partial class OverlayWindow
             top = selection.Top + 6;
         }
 
+        // Never over the toolbar: try inside the area, below it, then beside the bar.
+        if (Toolbar.Visibility == Visibility.Visible && Toolbar.ActualWidth > 0)
+        {
+            var bar = new Rect(Canvas.GetLeft(Toolbar), Canvas.GetTop(Toolbar), Toolbar.ActualWidth, Toolbar.ActualHeight);
+            bar.Inflate(4, 4);
+            var candidates = new[]
+            {
+                new Point(left, top),
+                new Point(left, selection.Top + 6),
+                new Point(left, selection.Bottom + 6),
+                new Point(left, bar.Top - size.Height - 2),
+                new Point(left, bar.Bottom + 2),
+                new Point(Math.Max(4, bar.Left - size.Width - 4), bar.Top + 4)
+            };
+            foreach (var candidate in candidates)
+            {
+                var place = new Rect(candidate, size);
+                if (!place.IntersectsWith(bar) && place.Top >= 4 && place.Bottom <= ActualHeight - 4)
+                {
+                    left = candidate.X;
+                    top = candidate.Y;
+                    break;
+                }
+            }
+        }
+
         Canvas.SetLeft(TranslateStatus, left);
         Canvas.SetTop(TranslateStatus, top);
     }

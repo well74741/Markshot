@@ -103,6 +103,10 @@ static class Batch4Test
 
         // width eases when switching to a tool with a wider row
         var host0 = (FrameworkElement)bars[0].FindName("SettingsHost");
+        // A short bar (pin mode, narrow row) so the text row is wider than the buttons above it.
+        bars[0].SetMode(AnnotationToolbarMode.Pin);
+        bars[0].SetTool(AnnotationTool.Number);
+        Pump(450);
         stack.UpdateLayout();
         var startWidth = host0.ActualWidth;
         bars[0].SetTool(AnnotationTool.Text);
