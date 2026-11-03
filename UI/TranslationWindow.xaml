@@ -4,7 +4,7 @@
         Icon="pack://application:,,,/Markshot;component/Assets/markshot.ico"
         Title="Markshot 翻译"
         Width="980" Height="600" MinWidth="720" MinHeight="420"
-        Background="#FF1A1A1A"
+        Background="{DynamicResource T_FF1A1A1A}"
         WindowStartupLocation="CenterScreen"
         Topmost="True"
         PreviewKeyDown="OnPreviewKeyDown"
@@ -14,21 +14,21 @@
     <Window.Resources>
         <!-- Card holding one text pane: header row (title + actions) and a borderless editor. -->
         <Style x:Key="Pane" TargetType="Border">
-            <Setter Property="Background" Value="#FF222222" />
-            <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource T_FF222222}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource T_1FFFFFFF}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
         </Style>
 
         <Style x:Key="PaneTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#E6E6E6" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFE6E6E6}" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <Style x:Key="PaneMeta" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#8A8A8A" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FF8A8A8A}" />
             <Setter Property="FontSize" Value="11.5" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="8,1,0,0" />
@@ -36,17 +36,17 @@
 
         <!-- Small text action inside a pane header. -->
         <Style x:Key="PaneAction" TargetType="Button" BasedOn="{StaticResource ToolButton}">
-            <Setter Property="Foreground" Value="#C8C8C8" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFC8C8C8}" />
             <Setter Property="Padding" Value="9,3" />
             <Setter Property="FontSize" Value="12" />
         </Style>
 
         <Style x:Key="PaneEditor" TargetType="TextBox">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#F0F0F0" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFF0F0F0}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="FontSize" Value="14" />
-            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="CaretBrush" Value="{DynamicResource T_FFFFFFFF}" />
             <Setter Property="SelectionBrush" Value="{StaticResource Accent}" />
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="TextWrapping" Value="Wrap" />
@@ -66,7 +66,7 @@
 
         <!-- Dark drop-down for the target language. -->
         <Style x:Key="DarkComboItem" TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="#F0F0F0" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFF0F0F0}" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -76,7 +76,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#2EFFFFFF" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource T_2EFFFFFF}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter Property="Foreground" Value="#FF4C8DFF" />
@@ -88,7 +88,7 @@
         </Style>
 
         <Style x:Key="DarkCombo" TargetType="ComboBox">
-            <Setter Property="Foreground" Value="#F0F0F0" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFF0F0F0}" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Height" Value="32" />
             <Setter Property="ItemContainerStyle" Value="{StaticResource DarkComboItem}" />
@@ -100,15 +100,15 @@
                                           IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
-                                        <Border x:Name="Bd" Background="#FF262626" BorderBrush="#2EFFFFFF"
+                                        <Border x:Name="Bd" Background="{DynamicResource T_FF262626}" BorderBrush="{DynamicResource T_2EFFFFFF}"
                                                 BorderThickness="1" CornerRadius="5">
                                             <Path HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0"
-                                                  Data="M0,0 L4,4 L8,0" Stroke="#B8B8B8" StrokeThickness="1.5"
+                                                  Data="M0,0 L4,4 L8,0" Stroke="{DynamicResource T_FFB8B8B8}" StrokeThickness="1.5"
                                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Bd" Property="BorderBrush" Value="#55FFFFFF" />
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource T_55FFFFFF}" />
                                             </Trigger>
                                             <Trigger Property="IsChecked" Value="True">
                                                 <Setter TargetName="Bd" Property="BorderBrush" Value="#FF4C8DFF" />
@@ -122,7 +122,7 @@
                                               TextElement.Foreground="{TemplateBinding Foreground}" />
                             <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom"
                                    AllowsTransparency="True" Focusable="False" PopupAnimation="Fade" VerticalOffset="4">
-                                <Border Background="#FF1E1E1E" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="8"
+                                <Border Background="{DynamicResource T_FF1E1E1E}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" CornerRadius="8"
                                         Padding="4" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
                                     <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto">
                                         <StackPanel IsItemsHost="True" />
@@ -148,7 +148,7 @@
                                 <Thumb>
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Border CornerRadius="4" Background="#44FFFFFF" Margin="1,2" />
+                                            <Border CornerRadius="4" Background="{DynamicResource T_44FFFFFF}" Margin="1,2" />
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>
@@ -170,14 +170,14 @@
         <!-- Header: title on the left, target language + translate on the right. -->
         <Grid Grid.Row="0" Margin="20,16,20,12">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock x:Name="HeaderTitle" Text="截图翻译" FontSize="17" Foreground="#F5F5F5" FontWeight="SemiBold"
+                <TextBlock x:Name="HeaderTitle" Text="截图翻译" FontSize="17" Foreground="{DynamicResource T_FFF5F5F5}" FontWeight="SemiBold"
                            VerticalAlignment="Center" />
-                <TextBlock x:Name="HeaderSubtitle" Text="本地 OCR + AI 翻译" FontSize="12" Foreground="#8A8A8A"
+                <TextBlock x:Name="HeaderSubtitle" Text="本地 OCR + AI 翻译" FontSize="12" Foreground="{DynamicResource T_FF8A8A8A}"
                            VerticalAlignment="Center" Margin="10,2,0,0" />
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <TextBlock Text="译成" Foreground="#9A9A9A" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBlock Text="译成" Foreground="{DynamicResource T_FF9A9A9A}" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
                 <ComboBox x:Name="TargetBox" Style="{StaticResource DarkCombo}" Width="150" VerticalAlignment="Center"
                           ToolTip="自动：识别到中文译成英文，其它语言译成中文" />
                 <Button x:Name="TranslateButton" Style="{StaticResource PrimaryButton}" Content="翻译"
@@ -203,7 +203,7 @@
                         <Button Content="复制" Style="{StaticResource PaneAction}" HorizontalAlignment="Right"
                                 Click="CopySource_Click" ToolTip="复制原文" />
                     </Grid>
-                    <Border DockPanel.Dock="Top" Height="1" Background="#14FFFFFF" Margin="14,8,14,0" />
+                    <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource T_14FFFFFF}" Margin="14,8,14,0" />
                     <TextBox x:Name="SourceBox" Style="{StaticResource PaneEditor}" />
                 </DockPanel>
             </Border>
@@ -218,10 +218,10 @@
                         <Button Content="复制" Style="{StaticResource PaneAction}" HorizontalAlignment="Right"
                                 Click="Copy_Click" ToolTip="复制译文" />
                     </Grid>
-                    <Border DockPanel.Dock="Top" Height="1" Background="#14FFFFFF" Margin="14,8,14,0" />
+                    <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource T_14FFFFFF}" Margin="14,8,14,0" />
                     <Grid>
                         <TextBox x:Name="ResultBox" Style="{StaticResource PaneEditor}" IsReadOnly="True" />
-                        <TextBlock x:Name="ResultPlaceholder" Text="点击右上角“翻译”生成译文" Foreground="#5E5E5E" FontSize="13"
+                        <TextBlock x:Name="ResultPlaceholder" Text="点击右上角“翻译”生成译文" Foreground="{DynamicResource T_FF5E5E5E}" FontSize="13"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
                     </Grid>
                 </DockPanel>
@@ -231,8 +231,8 @@
         <!-- Footer: status on the left, actions on the right. -->
         <Grid Grid.Row="2" Margin="20,12,20,16">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="#5E5E5E" VerticalAlignment="Center" />
-                <TextBlock x:Name="StatusText" Foreground="#9A9A9A" FontSize="12" Margin="8,0,0,0"
+                <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="{DynamicResource T_FF5E5E5E}" VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusText" Foreground="{DynamicResource T_FF9A9A9A}" FontSize="12" Margin="8,0,0,0"
                            VerticalAlignment="Center" Text="准备就绪" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

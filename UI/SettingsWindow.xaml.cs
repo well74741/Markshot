@@ -14,8 +14,8 @@ public partial class SettingsWindow : Window
         InitializeComponent();
 
         _config = config;
-        SourceInitialized += (_, _) =>
-            Native.EnableDarkTitleBar(new WindowInteropHelper(this).Handle);
+        Theme.TrackTitleBar(this);
+        UiScale.AttachWindow(this);
 
         CaptureHotkeyBox.Text = config.CaptureHotkey;
         PinHotkeyBox.Text = config.PinHotkey;
@@ -24,6 +24,13 @@ public partial class SettingsWindow : Window
         RecordHotkeyBox.Text = config.RecordHotkey;
         TextBypassBox.Text = config.TextBypassModifier;
         PinFlipHBox.Text = config.PinFlipHorizontalHotkey;
+        _theme = config.Theme;
+        _uiSize = config.UiSize;
+        (_theme switch { "Light" => ThemeLight, "System" => ThemeSystem, _ => ThemeDark }).IsChecked = true;
+        (string.Equals(_uiSize, "Large", StringComparison.OrdinalIgnoreCase) ? SizeLarge : SizeMedium).IsChecked = true;
+        UpdateDrawerQr();
+        Theme.Changed += UpdateDrawerQr;
+        Closed += (_, _) => Theme.Changed -= UpdateDrawerQr;
         _shadowColor = config.PinShadowColor;
         ShadowSizeSlider.Value = config.PinShadowSize;
         ShadowOpacitySlider.Value = Math.Round(config.PinShadowOpacity * 100);
@@ -75,10 +82,12 @@ public partial class SettingsWindow : Window
         PageTranslate.Visibility = page == "Translate" ? Visibility.Visible : Visibility.Collapsed;
         PageGeneral.Visibility = page == "General" ? Visibility.Visible : Visibility.Collapsed;
         PageToolbar.Visibility = page == "Toolbar" ? Visibility.Visible : Visibility.Collapsed;
+        PageStyle.Visibility = page == "Style" ? Visibility.Visible : Visibility.Collapsed;
         Motion.EnterPage(page switch
         {
             "Translate" => PageTranslate,
             "Toolbar" => PageToolbar,
+            "Style" => PageStyle,
             "General" => PageGeneral,
             _ => PageHotkeys
         });
@@ -97,6 +106,9 @@ public partial class SettingsWindow : Window
                 break;
             case "Toolbar":
                 NavToolbar.IsChecked = true;
+                break;
+            case "Style":
+                NavStyle.IsChecked = true;
                 break;
             default:
                 NavHotkeys.IsChecked = true;
@@ -389,6 +401,8 @@ public partial class SettingsWindow : Window
         _config.PinShadowSize = Math.Round(ShadowSizeSlider.Value);
         _config.PinShadowOpacity = Math.Round(ShadowOpacitySlider.Value) / 100;
         _config.PinShadowColor = _shadowColor;
+        _config.Theme = _theme;
+        _config.UiSize = _uiSize;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
         (_config.CaptureToolOrder, _config.CaptureToolHidden) = ReadToolbarRow(CaptureToolsRow);
         (_config.CaptureActionOrder, _config.CaptureActionHidden) = ReadToolbarRow(CaptureActionsRow);
@@ -433,7 +447,7 @@ public partial class SettingsWindow : Window
 
     private void DrawerHandle_MouseEnter(object sender, MouseEventArgs e)
     {
-        DrawerBar.Background = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF));
+        Theme.Bind(DrawerBar, Border.BackgroundProperty, 0x99FFFFFF);
         if (DrawerHeight < 1)
         {
             Motion.Fade(DrawerHint, 1);
@@ -442,7 +456,7 @@ public partial class SettingsWindow : Window
 
     private void DrawerHandle_MouseLeave(object sender, MouseEventArgs e)
     {
-        DrawerBar.Background = new SolidColorBrush(Color.FromArgb(0x4D, 0xFF, 0xFF, 0xFF));
+        Theme.Bind(DrawerBar, Border.BackgroundProperty, 0x4DFFFFFF);
         if (!_drawerDragging)
         {
             Motion.Fade(DrawerHint, 0);
@@ -522,11 +536,11 @@ public partial class SettingsWindow : Window
             var icon = ToolbarCatalog.Icon(key);
             if (icon is Border mask)
             {
-                mask.Background = Brushes.White;
+                Theme.Bind(mask, Border.BackgroundProperty, 0xFFFFFFFF);
             }
             else if (icon is System.Windows.Shapes.Shape shape)
             {
-                shape.Stroke = Brushes.White;
+                shape.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, Theme.Key(0xFFFFFFFF));
             }
 
             var button = new Border
@@ -546,7 +560,7 @@ public partial class SettingsWindow : Window
                 iconElement.VerticalAlignment = VerticalAlignment.Center;
             }
 
-            button.MouseEnter += (_, _) => button.Background = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF));
+            button.MouseEnter += (_, _) => Theme.Bind(button, Border.BackgroundProperty, 0x26FFFFFF);
             button.MouseLeave += (_, _) => button.Background = Brushes.Transparent;
             var id = RowId(row, key);
             if (hiddenSet.Contains(key))
@@ -576,6 +590,34 @@ public partial class SettingsWindow : Window
     }
 
     private static string RowId(Panel row, string key) => row.Name + ":" + key;
+
+    // ---- 样式: theme and size preview at once; App re-applies the saved ones when not saved ----
+    private string _theme = "Dark";
+    private string _uiSize = "Medium";
+
+    private void Theme_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string mode })
+        {
+            _theme = mode;
+            Theme.Apply(mode);
+        }
+    }
+
+    private void UiSize_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string size })
+        {
+            _uiSize = size;
+            UiScale.Apply(size);
+        }
+    }
+
+    /// <summary>The QR code: grey dots on the dark theme, dark dots on the light one.</summary>
+    private void UpdateDrawerQr() =>
+        DrawerQr.Source = new BitmapImage(new Uri(Theme.IsLight
+            ? "pack://application:,,,/Markshot;component/Assets/donate_qr_light.png"
+            : "pack://application:,,,/Markshot;component/Assets/donate_qr.png"));
 
     private string _shadowColor = "#6A6A6A";
 

@@ -4,7 +4,7 @@
              xmlns:core="clr-namespace:Markshot.Core"
              Focusable="False">
 
-    <Border Background="#F21E1E1E" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="9" Padding="5,3">
+    <Border Background="{DynamicResource T_F21E1E1E}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" CornerRadius="9" Padding="5,3">
         <StackPanel>
             <StackPanel x:Name="MainRow" Orientation="Horizontal" VerticalAlignment="Center">
                 <Border x:Name="DragHandle" Width="20" Height="28" Background="Transparent"
@@ -12,7 +12,7 @@
                         MouseLeftButtonDown="DragHandle_MouseLeftButtonDown"
                         MouseMove="DragHandle_MouseMove"
                         MouseLeftButtonUp="DragHandle_MouseLeftButtonUp">
-                    <TextBlock Text="⠿" Foreground="#8A8A8A" FontSize="16"
+                    <TextBlock Text="⠿" Foreground="{DynamicResource T_FF8A8A8A}" FontSize="16"
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
 
@@ -68,13 +68,13 @@
                 </RadioButton>
                 </StackPanel>
 
-                <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
 
                 <Button x:Name="UndoButton" Style="{StaticResource IconToolButton}" Click="Undo_Click" ToolTip="撤销 (Ctrl+Z)">
                     <Border Style="{StaticResource IconUndoMask}" />
                 </Button>
 
-                <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
 
                 <StackPanel x:Name="CaptureActions" Orientation="Horizontal">
                     <Button Style="{StaticResource IconToolButton}" Click="Record_Click" Tag="Record" ToolTip="录屏：录制这个区域">
@@ -113,7 +113,7 @@
             </StackPanel>
             <!-- The settings row slides open / closed and eases its width (SizeTransitionHost). -->
             <core:SizeTransitionHost x:Name="SettingsHost">
-            <Border x:Name="SettingsBar" BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0"
+            <Border x:Name="SettingsBar" BorderBrush="{DynamicResource T_26FFFFFF}" BorderThickness="0,1,0,0"
                     Margin="0,3,0,0" Padding="2,3,0,0">
                 <!-- Same height for every tool's row. -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Height="32">
@@ -155,14 +155,14 @@
                     </StackPanel>
 
                     <StackPanel x:Name="WatermarkGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
                         <ToggleButton x:Name="WatermarkToggle" Style="{StaticResource ToolToggle}" Content="开启"
                                       Click="WatermarkToggle_Click" ToolTip="水印开关：关闭即去掉水印（可撤销）" />
                     </StackPanel>
 
                     <StackPanel x:Name="MosaicVariants" Orientation="Horizontal" Visibility="Collapsed">
-                        <TextBlock Text="类型" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" Margin="4,0,6,0" />
-                        <Border Background="#FF2A2A2A" CornerRadius="5" Padding="2" VerticalAlignment="Center">
+                        <TextBlock Text="类型" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" Margin="4,0,6,0" />
+                        <Border Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2" VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal">
                                 <RadioButton x:Name="VariantMosaic" Style="{StaticResource SegmentRadio}" Tag="Mosaic" GroupName="Variant"
                                              Checked="Variant_Checked" Content="区域" ToolTip="框选区域打码" />
@@ -176,52 +176,52 @@
                                   Click="Fill_Click" ToolTip="填充图形" />
 
                     <StackPanel x:Name="WidthGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border x:Name="WidthSeparator" Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
-                        <TextBlock x:Name="WidthLabel" Text="粗细" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
+                        <Border x:Name="WidthSeparator" Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <TextBlock x:Name="WidthLabel" Text="粗细" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />
                         <Slider x:Name="WidthSlider" Focusable="False" IsMoveToPointEnabled="True" Width="86" Minimum="1" Maximum="16" Value="3"
                                 ValueChanged="Width_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
-                        <TextBlock x:Name="WidthValue" Text="3" Foreground="#C8C8C8" FontSize="11" Width="20"
+                        <TextBlock x:Name="WidthValue" Text="3" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="20"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <StackPanel x:Name="CornerGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="5,0" />
-                        <TextBlock Text="圆角" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="5,0" />
+                        <TextBlock Text="圆角" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />
                         <Slider x:Name="CornerSlider" Focusable="False" IsMoveToPointEnabled="True" Width="64" Minimum="0" Maximum="40" Value="0"
                                 ValueChanged="Corner_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
-                        <TextBlock x:Name="CornerValue" Text="0" Foreground="#C8C8C8" FontSize="11" Width="20"
+                        <TextBlock x:Name="CornerValue" Text="0" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="20"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <StackPanel x:Name="LevelGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
-                        <TextBlock Text="程度" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <TextBlock Text="程度" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />
                         <Slider x:Name="LevelSlider" Focusable="False" IsMoveToPointEnabled="True" Width="86" Minimum="4" Maximum="40" Value="12"
                                 ValueChanged="Level_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
-                        <TextBlock x:Name="LevelValue" Text="12" Foreground="#C8C8C8" FontSize="11" Width="20"
+                        <TextBlock x:Name="LevelValue" Text="12" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="20"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <StackPanel x:Name="AngleGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
-                        <TextBlock Text="倾斜" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <TextBlock Text="倾斜" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />
                         <Slider x:Name="AngleSlider" Focusable="False" IsMoveToPointEnabled="True" Width="80" Minimum="-60" Maximum="60" Value="-24"
                                 ValueChanged="Angle_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
-                        <TextBlock x:Name="AngleValue" Text="-24°" Foreground="#C8C8C8" FontSize="11" Width="30"
+                        <TextBlock x:Name="AngleValue" Text="-24°" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="30"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <StackPanel x:Name="OpacityGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
-                        <TextBlock Text="透明度" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" />
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <TextBlock Text="透明度" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />
                         <Slider x:Name="OpacitySlider" Focusable="False" IsMoveToPointEnabled="True" Width="80" Minimum="5" Maximum="100" Value="25"
                                 ValueChanged="Opacity_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
-                        <TextBlock x:Name="OpacityValue" Text="25%" Foreground="#C8C8C8" FontSize="11" Width="30"
+                        <TextBlock x:Name="OpacityValue" Text="25%" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="30"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <StackPanel x:Name="TextStyleGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
                         <ToggleButton x:Name="BoldToggle" Style="{StaticResource ToolToggle}" Padding="8,5"
                                       Click="TextStyle_Click" ToolTip="粗体 (Ctrl+B)">
                             <TextBlock Text="B" FontWeight="Bold" FontSize="13" />
@@ -235,22 +235,22 @@
                     </StackPanel>
 
                     <StackPanel x:Name="StrokeGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
-                        <TextBlock Text="描边" Foreground="#A8A8A8" FontSize="11" VerticalAlignment="Center" Margin="0,0,2,0"
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <TextBlock Text="描边" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" Margin="0,0,2,0"
                                    ToolTip="文字描边：粗细为 0 即关闭" />
                         <Button x:Name="StrokeColorButton" Style="{StaticResource IconToolButton}"
                                 Click="StrokeColor_Click" ToolTip="描边颜色">
                             <Ellipse x:Name="StrokeColorCircle" Width="16" Height="16" Fill="#FFFFFF"
-                                     Stroke="#D8D8D8" StrokeThickness="1.2" />
+                                     Stroke="{DynamicResource T_FFD8D8D8}" StrokeThickness="1.2" />
                         </Button>
                         <Slider x:Name="StrokeSlider" Focusable="False" IsMoveToPointEnabled="True" Width="56" Minimum="0" Maximum="8" Value="0"
                                 ValueChanged="Stroke_Changed" VerticalAlignment="Center" Margin="4,0,2,0" />
-                        <TextBlock x:Name="StrokeValue" Text="0" Foreground="#C8C8C8" FontSize="11" Width="16"
+                        <TextBlock x:Name="StrokeValue" Text="0" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="16"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <StackPanel x:Name="ColorSection" Orientation="Horizontal">
-                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
                         <StackPanel x:Name="ColorGroup" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button x:Name="CustomColorButton" Style="{StaticResource IconToolButton}" Click="CustomColor_Click" ToolTip="自定义颜色">
                                 <!-- Same size as the palette swatches (20px) plus a 3px rainbow ring outside. -->
@@ -267,15 +267,15 @@
                                             </LinearGradientBrush>
                                         </Ellipse.Fill>
                                     </Ellipse>
-                                    <Ellipse Width="22" Height="22" Fill="#FF1E1E1E" />
+                                    <Ellipse Width="22" Height="22" Fill="{DynamicResource T_FF1E1E1E}" />
                                     <!-- Checkerboard under the preview shows the current opacity. -->
                                     <Ellipse Width="20" Height="20" Fill="{StaticResource SmallCheckerBrush}" />
                                     <Ellipse x:Name="CustomColorInner" Width="20" Height="20"
-                                             Stroke="#5AFFFFFF" StrokeThickness="1" />
+                                             Stroke="{DynamicResource T_5AFFFFFF}" StrokeThickness="1" />
                                 </Grid>
                             </Button>
                             <StackPanel x:Name="ColorPanel" Orientation="Horizontal" VerticalAlignment="Center" />
-                            <TextBlock x:Name="OpacityHint" Foreground="#C8C8C8" FontSize="11" VerticalAlignment="Center"
+                            <TextBlock x:Name="OpacityHint" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" VerticalAlignment="Center"
                                        Margin="4,0,2,0" Visibility="Collapsed" ToolTip="透明度：Ctrl+滚轮调整" />
                         </StackPanel>
                     </StackPanel>

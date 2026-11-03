@@ -74,7 +74,7 @@ internal sealed class TrimBar : FrameworkElement
         }
 
         var head = X(Math.Clamp(Position, 0, Duration));
-        dc.DrawRoundedRectangle(Brushes.White, null, new Rect(head - 1.5, top - 4, 3, height + 8), 1.5, 1.5);
+        dc.DrawRoundedRectangle(Theme.Brush(0xFFFFFFFF), null, new Rect(head - 1.5, top - 4, 3, height + 8), 1.5, 1.5);
     }
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)

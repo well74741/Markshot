@@ -81,7 +81,7 @@
     </Window.Resources>
 
     <!-- Dragging any empty part of the panel moves the window. -->
-    <Border Background="#FF1C1C1C" BorderBrush="#22FFFFFF" BorderThickness="1" CornerRadius="10"
+    <Border Background="{DynamicResource T_FF1C1C1C}" BorderBrush="{DynamicResource T_22FFFFFF}" BorderThickness="1" CornerRadius="10"
             MouseLeftButtonDown="Panel_MouseLeftButtonDown">
         <Grid Margin="14,10,14,14">
             <Grid.RowDefinitions>
@@ -94,9 +94,9 @@
             </Grid.RowDefinitions>
 
             <Grid x:Name="TitleBarGrid" Grid.Row="0" Background="Transparent">
-                <TextBlock Text="选择颜色" Foreground="#FFF0F0F0" FontSize="14" FontWeight="SemiBold"
+                <TextBlock Text="选择颜色" Foreground="{DynamicResource T_FFF0F0F0}" FontSize="14" FontWeight="SemiBold"
                            VerticalAlignment="Center" />
-                <Button x:Name="TitleCloseButton" Content="×" Foreground="#FFB8B8B8" Background="Transparent"
+                <Button x:Name="TitleCloseButton" Content="×" Foreground="{DynamicResource T_FFB8B8B8}" Background="Transparent"
                         BorderThickness="0" FontSize="20" Width="28" Height="26" HorizontalAlignment="Right"
                         VerticalAlignment="Center" Cursor="Hand" Click="Cancel_Click" />
             </Grid>
@@ -154,24 +154,24 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="66" />
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Height="30" Background="#FF2A2A2A" BorderBrush="#33FFFFFF"
+                <Border Grid.Column="0" Height="30" Background="{DynamicResource T_FF2A2A2A}" BorderBrush="{DynamicResource T_33FFFFFF}"
                         BorderThickness="1" CornerRadius="5">
                     <Grid Margin="9,0,7,0">
-                        <TextBlock Text="Hex" Foreground="#FFE8E8E8" VerticalAlignment="Center" FontSize="12" />
-                        <Path Data="M0 0 L4 4 L8 0" Stroke="#FFB8B8B8" StrokeThickness="1.3"
+                        <TextBlock Text="Hex" Foreground="{DynamicResource T_FFE8E8E8}" VerticalAlignment="Center" FontSize="12" />
+                        <Path Data="M0 0 L4 4 L8 0" Stroke="{DynamicResource T_FFB8B8B8}" StrokeThickness="1.3"
                               HorizontalAlignment="Right" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
                 <TextBox x:Name="HexBox" Grid.Column="1" Height="30" Margin="6,0,6,0"
-                         Background="#FF2A2A2A" Foreground="#FFF0F0F0" BorderBrush="#33FFFFFF"
+                         Background="{DynamicResource T_FF2A2A2A}" Foreground="{DynamicResource T_FFF0F0F0}" BorderBrush="{DynamicResource T_33FFFFFF}"
                          BorderThickness="1" Padding="8,0" VerticalContentAlignment="Center"
-                         FontFamily="Consolas" FontSize="13" CaretBrush="#FFF0F0F0"
+                         FontFamily="Consolas" FontSize="13" CaretBrush="{DynamicResource T_FFF0F0F0}"
                          PreviewKeyDown="HexBox_PreviewKeyDown"
                          LostKeyboardFocus="HexBox_LostKeyboardFocus" />
                 <TextBox x:Name="AlphaPercentBox" Grid.Column="2" Height="30"
-                         Background="#FF2A2A2A" Foreground="#FFF0F0F0" BorderBrush="#33FFFFFF"
+                         Background="{DynamicResource T_FF2A2A2A}" Foreground="{DynamicResource T_FFF0F0F0}" BorderBrush="{DynamicResource T_33FFFFFF}"
                          BorderThickness="1" Padding="6,0" VerticalContentAlignment="Center"
-                         FontFamily="Consolas" FontSize="12" TextAlignment="Right" CaretBrush="#FFF0F0F0"
+                         FontFamily="Consolas" FontSize="12" TextAlignment="Right" CaretBrush="{DynamicResource T_FFF0F0F0}"
                          PreviewKeyDown="AlphaBox_PreviewKeyDown"
                          LostKeyboardFocus="AlphaBox_LostKeyboardFocus" />
             </Grid>
@@ -189,7 +189,7 @@
                     </Button.Template>
                 </Button>
                 <Button Content="取消" Width="84" Height="32" HorizontalAlignment="Right" Margin="0,0,92,0"
-                        Background="#FF2A2A2A" Foreground="#FFF0F0F0" BorderBrush="#33FFFFFF"
+                        Background="{DynamicResource T_FF2A2A2A}" Foreground="{DynamicResource T_FFF0F0F0}" BorderBrush="{DynamicResource T_33FFFFFF}"
                         BorderThickness="1" Cursor="Hand" Click="Cancel_Click">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">

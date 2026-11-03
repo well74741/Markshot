@@ -45,10 +45,10 @@
                    MouseLeave="Input_MouseLeave" />
 
         <Canvas x:Name="UiLayer">
-            <Border x:Name="Hint" Background="#CC1C1C1C" BorderBrush="#33FFFFFF" BorderThickness="1"
+            <Border x:Name="Hint" Background="{DynamicResource T_CC1C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"
                     CornerRadius="7" Padding="16,9" IsHitTestVisible="False">
                 <TextBlock Text="拖拽选择区域　·　右键拖动手绘截图（Shift 直线）　·　点击窗口可直接选中　·　R 上次区域　·　双击复制　·　Esc 取消"
-                           Foreground="#EDEDED" FontSize="13" />
+                           Foreground="{DynamicResource T_FFEDEDED}" FontSize="13" />
             </Border>
 
             <ui:MagnifierLayer x:Name="Magnifier" Width="200" Height="176" Visibility="Collapsed" />
@@ -57,30 +57,30 @@
 
             <TextBox x:Name="WatermarkEditor" Style="{StaticResource InputBox}"
                      Width="280" MinHeight="36" FontSize="14" Visibility="Collapsed"
-                     Background="#E6101010" BorderBrush="#FF4C8DFF"
+                     Background="{DynamicResource T_E6101010}" BorderBrush="#FF4C8DFF"
                      ToolTip="水印文字：Enter 确定，Esc 取消"
                      PreviewKeyDown="WatermarkEditor_PreviewKeyDown" />
 
             <ui:AnnotationToolbar x:Name="Toolbar" Visibility="Collapsed" />
 
             <!-- The size label at the capture's top-left, editable in place: click a number, type, Enter. -->
-            <Border x:Name="SizeBox" Visibility="Collapsed" Background="#CD141414" CornerRadius="3" Padding="3,1">
+            <Border x:Name="SizeBox" Visibility="Collapsed" Background="{DynamicResource T_CD141414}" CornerRadius="3" Padding="3,1">
                 <StackPanel Orientation="Horizontal">
                     <TextBox x:Name="SizeWidthBox" Style="{StaticResource SizeLabelField}" ToolTip="宽（像素），可直接修改，Enter 应用"
                              PreviewKeyDown="SizeBox_PreviewKeyDown" />
-                    <TextBlock Text="×" Foreground="#C8C8C8" FontSize="12" Margin="1,0" VerticalAlignment="Center" />
+                    <TextBlock Text="×" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" Margin="1,0" VerticalAlignment="Center" />
                     <TextBox x:Name="SizeHeightBox" Style="{StaticResource SizeLabelField}" ToolTip="高（像素），可直接修改，Enter 应用"
                              PreviewKeyDown="SizeBox_PreviewKeyDown" />
                 </StackPanel>
             </Border>
 
             <!-- Chrome-style translate bar: [source | target] switch plus progress / error. -->
-            <Border x:Name="TranslateStatus" Visibility="Collapsed" Background="#F01C1C1C"
-                    BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="7" Padding="4">
+            <Border x:Name="TranslateStatus" Visibility="Collapsed" Background="{DynamicResource T_F01C1C1C}"
+                    BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" CornerRadius="7" Padding="4">
                 <StackPanel Orientation="Horizontal">
                     <Ellipse x:Name="TranslateDot" Width="7" Height="7" Fill="{StaticResource Accent}"
                              VerticalAlignment="Center" Margin="6,0,6,0" />
-                    <Border x:Name="LanguageSwitch" Background="#FF2A2A2A" CornerRadius="5" Padding="2"
+                    <Border x:Name="LanguageSwitch" Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2"
                             Visibility="Collapsed" Margin="0,0,2,0">
                         <StackPanel Orientation="Horizontal">
                             <ToggleButton x:Name="SourceLanguageButton" Style="{StaticResource LanguageSegment}"
@@ -89,7 +89,7 @@
                                           Click="TargetLanguage_Click" ToolTip="显示译文" />
                         </StackPanel>
                     </Border>
-                    <TextBlock x:Name="TranslateStatusText" Foreground="#D8D8D8" FontSize="12"
+                    <TextBlock x:Name="TranslateStatusText" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis"
                                Margin="6,0,6,0" />
                     <Button x:Name="TranslateRetry" Style="{StaticResource ToolButton}" Padding="8,2"

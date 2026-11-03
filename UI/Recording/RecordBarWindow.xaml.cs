@@ -36,6 +36,7 @@ public partial class RecordBarWindow : Window
     public RecordBarWindow(RecorderController controller)
     {
         InitializeComponent();
+        UiScale.Attach(Root);
         _controller = controller;
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Markshot;component/Assets/markshot.ico"));
         controller.Changed += Refresh;
@@ -589,7 +590,7 @@ public partial class RecordBarWindow : Window
         StackPanel Row(string label)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-            row.Children.Add(new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)), FontSize = 12, Width = 46, VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(new TextBlock { Text = label, Foreground = Theme.Brush(0xFF9A9A9A), FontSize = 12, Width = 46, VerticalAlignment = VerticalAlignment.Center });
             panel.Children.Add(row);
             return row;
         }
@@ -674,6 +675,7 @@ public partial class RecordBarWindow : Window
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
                 Margin = new Thickness(0, 0, 0, 6),
+                LayoutTransform = UiScale.Transform,
                 Child = content
             }
         };
@@ -685,7 +687,7 @@ public partial class RecordBarWindow : Window
     {
         Activate();
         var panel = new StackPanel { Margin = new Thickness(14, 12, 14, 12), MaxWidth = 320 };
-        panel.Children.Add(new TextBlock { Text = message, Foreground = Brushes.White, FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = message, Foreground = Theme.Brush(0xFFFFFFFF), FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var cancel = new Button { Content = "取消", Style = (Style)FindResource("FooterButton"), Margin = new Thickness(0, 0, 8, 0) };
         var ok = new Button { Content = action, Style = (Style)FindResource("PrimaryButton") };

@@ -60,6 +60,9 @@ public partial class App : Application
         }
 
         Config = AppConfig.Load();
+        Theme.Apply(Config.Theme);
+        UiScale.Apply(Config.UiSize);
+        UiScale.HookPopups();
 
         foreach (var entry in PinStore.Load())
         {
@@ -480,6 +483,12 @@ public partial class App : Application
             var saved = _settings?.Saved == true;
             _settings = null;
             PreviewPinShadow(null); // drop an unsaved preview (saved values are re-applied below)
+            if (!saved)
+            {
+                // Not saved: back to the saved look (the 样式 page previews at once).
+                Theme.Apply(Config.Theme);
+                UiScale.Apply(Config.UiSize);
+            }
             if (saved)
             {
                 Config.Save();

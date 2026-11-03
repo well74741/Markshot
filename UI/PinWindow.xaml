@@ -38,16 +38,16 @@
                 <TextBox x:Name="TextEditor" Style="{StaticResource InlineTextBox}" Visibility="Collapsed" />
                 <TextBox x:Name="WatermarkEditor" Style="{StaticResource InputBox}"
                          Width="240" MinHeight="34" FontSize="14" Visibility="Collapsed"
-                         Background="#E6101010" BorderBrush="#4C8DFF"
+                         Background="{DynamicResource T_E6101010}" BorderBrush="#4C8DFF"
                          ToolTip="水印文字：Enter 确定，Esc 取消"
                          PreviewKeyDown="WatermarkEditor_PreviewKeyDown" />
             </Canvas>
             <Border x:Name="FrameBorder" BorderThickness="0" BorderBrush="Transparent" IsHitTestVisible="False" />
             <Border x:Name="PinStatus" Visibility="Collapsed" IsHitTestVisible="False"
                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
-                    Background="#E61C1C1C" BorderBrush="#33FFFFFF" BorderThickness="1"
+                    Background="{DynamicResource T_E61C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"
                     CornerRadius="6" Padding="8,3">
-                <TextBlock x:Name="PinStatusText" Foreground="#EDEDED" FontSize="12" MaxWidth="360"
+                <TextBlock x:Name="PinStatusText" Foreground="{DynamicResource T_FFEDEDED}" FontSize="12" MaxWidth="360"
                            TextTrimming="CharacterEllipsis" />
             </Border>
         </Grid>

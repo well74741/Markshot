@@ -110,6 +110,18 @@ public partial class AnnotationToolbar : UserControl
     public AnnotationToolbar()
     {
         InitializeComponent();
+        if (Content is FrameworkElement root)
+        {
+            UiScale.Attach(root); // the control's own size includes the scale: placement code keeps working
+        }
+
+        Theme.Changed += UpdateSwatches;
+        Unloaded += (_, _) => Theme.Changed -= UpdateSwatches;
+        Loaded += (_, _) =>
+        {
+            Theme.Changed -= UpdateSwatches;
+            Theme.Changed += UpdateSwatches;
+        };
         // Presses on the bar's own background stay here (a pin window would take them as a click
         // on empty canvas and drop the selection, closing this row).
         MouseDown += (_, e) => e.Handled = true;
@@ -418,7 +430,6 @@ public partial class AnnotationToolbar : UserControl
                 CornerRadius = new CornerRadius(10),
                 Background = new SolidColorBrush(color),
                 BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255)),
                 Margin = new Thickness(3, 0, 3, 0),
                 Cursor = Cursors.Hand,
                 ToolTip = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
@@ -461,9 +472,7 @@ public partial class AnnotationToolbar : UserControl
         {
             var selected = Palette[i] == _color;
             _swatches[i].BorderThickness = new Thickness(selected ? 2 : 1);
-            _swatches[i].BorderBrush = selected
-                ? Brushes.White
-                : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
+            _swatches[i].BorderBrush = Theme.Brush(selected ? 0xFFFFFFFF : 0x5AFFFFFF);
         }
 
         // The custom button always previews the current colour at the current opacity.
@@ -473,7 +482,7 @@ public partial class AnnotationToolbar : UserControl
         OpacityHint.Text = $"{percent}%";
         OpacityHint.Visibility = percent < 100 ? Visibility.Visible : Visibility.Collapsed;
         CustomColorButton.ToolTip = $"自定义颜色 #{_color.R:X2}{_color.G:X2}{_color.B:X2} · 透明度 {percent}%（Ctrl+滚轮）";
-        CustomColorInner.Stroke = custom ? Brushes.White : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
+        CustomColorInner.Stroke = Theme.Brush(custom ? 0xFFFFFFFF : 0x5AFFFFFF);
         CustomColorInner.StrokeThickness = custom ? 2 : 1;
     }
 

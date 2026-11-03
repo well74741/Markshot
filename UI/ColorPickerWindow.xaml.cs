@@ -20,6 +20,7 @@ public partial class ColorPickerWindow : Window
     public ColorPickerWindow(Color color)
     {
         InitializeComponent();
+        UiScale.AttachWindow(this);
         SliderDragBehavior.Enable(HueSlider);
         SliderDragBehavior.Enable(AlphaSlider);
 

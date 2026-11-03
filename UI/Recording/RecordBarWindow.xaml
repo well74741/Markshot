@@ -9,20 +9,20 @@
         SizeToContent="WidthAndHeight"
         ShowInTaskbar="True"
         Topmost="True"
-        Background="#FF1C1C1C"
+        Background="{DynamicResource T_FF1C1C1C}"
         UseLayoutRounding="True"
         FontFamily="Microsoft YaHei UI"
-        Foreground="{StaticResource TextPrimary}">
+        Foreground="{DynamicResource TextPrimary}">
     <Window.Resources>
         <Style x:Key="Sep" TargetType="Border">
             <Setter Property="Width" Value="1" />
             <Setter Property="Height" Value="18" />
-            <Setter Property="Background" Value="#33FFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource T_33FFFFFF}" />
             <Setter Property="Margin" Value="5,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
         <Style x:Key="BarText" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#D8D8D8" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFD8D8D8}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
@@ -53,12 +53,12 @@
         </Style>
     </Window.Resources>
 
-    <Border x:Name="Root" BorderBrush="#33FFFFFF" BorderThickness="1" Background="#FF1C1C1C"
+    <Border x:Name="Root" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" Background="{DynamicResource T_FF1C1C1C}"
             MouseLeftButtonDown="Root_MouseLeftButtonDown" MouseMove="Root_MouseMove" MouseLeftButtonUp="Root_MouseLeftButtonUp">
         <StackPanel>
             <!-- ===== before / while recording ===== -->
             <StackPanel x:Name="RecordRow" Orientation="Horizontal" Margin="6,4">
-                <Ellipse x:Name="RecDot" Width="8" Height="8" Fill="#7A7A7A" Margin="4,0,6,0" VerticalAlignment="Center" />
+                <Ellipse x:Name="RecDot" Width="8" Height="8" Fill="{DynamicResource T_FF7A7A7A}" Margin="4,0,6,0" VerticalAlignment="Center" />
                 <TextBlock x:Name="TimeText" Text="00:00" Style="{StaticResource BarText}" FontFamily="Consolas" FontSize="13" MinWidth="44" />
                 <Border Style="{StaticResource Sep}" />
                 <StackPanel x:Name="SetupGroup" Orientation="Horizontal">
@@ -82,7 +82,7 @@
                 <Button x:Name="StartButton" Style="{StaticResource RecButton}" Click="Start_Click">
                     <StackPanel Orientation="Horizontal">
                         <Border x:Name="StartGlyph" Width="10" Height="10" CornerRadius="5" Background="#FF4D4F" VerticalAlignment="Center" />
-                        <TextBlock x:Name="StartText" Text="开始" Foreground="White" FontSize="12.5" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="StartText" Text="开始" Foreground="{DynamicResource T_FFFFFFFF}" FontSize="12.5" Margin="6,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
                 <ToggleButton x:Name="PauseToggle" Style="{StaticResource IconToolToggle}" Margin="4,0,0,0" Click="Pause_Click" ToolTip="暂停 / 继续">
@@ -138,7 +138,7 @@
             </StackPanel>
 
             <!-- Messages (saved / failed / progress). -->
-            <TextBlock x:Name="StatusText" Visibility="Collapsed" Foreground="#C8C8C8" FontSize="12" Margin="10,0,10,6"
+            <TextBlock x:Name="StatusText" Visibility="Collapsed" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" Margin="10,0,10,6"
                        TextWrapping="Wrap" MaxWidth="560" />
         </StackPanel>
     </Border>

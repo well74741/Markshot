@@ -33,8 +33,8 @@ public partial class TranslationWindow : Window
         SourceBox.TextChanged += (_, _) => UpdateMeta();
         ResultBox.TextChanged += (_, _) => UpdateMeta();
         Loaded += OnLoaded;
-        SourceInitialized += (_, _) =>
-            Native.EnableDarkTitleBar(new WindowInteropHelper(this).Handle);
+        Theme.TrackTitleBar(this);
+        UiScale.AttachWindow(this);
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -88,7 +88,7 @@ public partial class TranslationWindow : Window
             StatusKind.Busy => (Brush)FindResource("Accent"),
             StatusKind.Done => new SolidColorBrush(Color.FromRgb(0x52, 0xC4, 0x1A)),
             StatusKind.Error => new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F)),
-            _ => new SolidColorBrush(Color.FromRgb(0x5E, 0x5E, 0x5E))
+            _ => Theme.Brush(0xFF5E5E5E)
         };
     }
 

@@ -25,11 +25,11 @@ internal sealed class SavedPromptWindow : Window
         ShowInTaskbar = false;
         FontFamily = new FontFamily("Microsoft YaHei UI");
 
-        var title = new TextBlock { Text = "图片已保存", Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF5)), FontSize = 14, FontWeight = FontWeights.SemiBold };
+        var title = new TextBlock { Text = "图片已保存", Foreground = Theme.Brush(0xFFF5F5F5), FontSize = 14, FontWeight = FontWeights.SemiBold };
         var file = new TextBlock
         {
             Text = path,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
+            Foreground = Theme.Brush(0xFF9A9A9A),
             FontSize = 12,
             Margin = new Thickness(0, 6, 0, 14),
             MaxWidth = 380,
@@ -51,7 +51,7 @@ internal sealed class SavedPromptWindow : Window
         {
             Content = "保存后都询问是否打开所在文件夹",
             IsChecked = true,
-            Foreground = new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8)),
+            Foreground = Theme.Brush(0xFFB8B8B8),
             FontSize = 12,
             Margin = new Thickness(0, 14, 0, 0)
         };
@@ -63,8 +63,9 @@ internal sealed class SavedPromptWindow : Window
         body.Children.Add(_ask);
         Content = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
+            Background = Theme.Brush(0xFF1E1E1E),
+            BorderBrush = Theme.Brush(0x33FFFFFF),
+            LayoutTransform = UiScale.Transform,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(20, 16, 20, 14),

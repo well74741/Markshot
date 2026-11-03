@@ -52,17 +52,8 @@ internal sealed class RecordPreviewWindow : Window
         Out = controller.Take.Duration;
         _media.MediaOpened += (_, _) =>
         {
-            // Trust the player's length when it differs noticeably from ffmpeg's estimate.
-            if (_media.NaturalDuration.HasTimeSpan && controller.Take is { } take)
-            {
-                var length = _media.NaturalDuration.TimeSpan.TotalSeconds;
-                if (Math.Abs(length - take.Duration) > 0.3 && Math.Abs(Out - take.Duration) < 0.01)
-                {
-                    take.Duration = length;
-                    Out = length;
-                }
-            }
-
+            // The length stays ffmpeg's: Windows' player sometimes reports a rounded / shorter one
+            // (taking it trimmed the end of the take).
             Seek(0);
             PlaybackChanged?.Invoke();
         };

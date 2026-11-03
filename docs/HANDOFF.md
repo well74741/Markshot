@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.12`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.13`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -501,6 +501,20 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 文字工具设置栏加「文字 / 水印」切换（`TextVariants`）；水印设置加开关（`WatermarkGroup`，关 = 去掉水印、可撤销，`_watermarkOff` 期间不自动重建）。
 - 取色器：吸管遮罩层不再激活（WS_EX_NOACTIVATE）——颜色面板是模态的，焦点被抢回导致吸色立刻结束；Esc / Enter 由面板处理（Esc 先退出吸色，再按关闭面板）。
 - 批注按钮旁的 ▾：菜单打开时再点同一个箭头 = 关闭（300 ms 内刚关的菜单不再立即重开）。
+
+## 8.1.11 0.8.13 变更：主题与界面大小
+
+- `Core/Theme.cs`：XAML 里的灰色 / 白色叠加色都改成 `{DynamicResource T_AARRGGBB}`（键 = 暗色主题下的颜色，`Core/ThemeKeys.g.cs` 列出全部键），
+  浅色由 `Theme.ToLight` 推出：白色叠加 → 黑色叠加（alpha ×0.7），浅灰文字 → 深灰，深色背景 → 浅色背景（保持灰阶顺序）；有色相的颜色不变。
+  命名画刷（PanelBackground、TextPrimary、Hover…、菜单系统色）也由 Theme 设置，引用改成 DynamicResource，所以切换时已打开的窗口实时变色。
+  代码里新建的颜色用 `Theme.Brush(dark)`（一次性）或 `Theme.Bind(element, prop, dark)`（跟随切换）。跟随系统读
+  `HKCU\…\Themes\Personalize\AppsUseLightTheme`，`SystemEvents.UserPreferenceChanged` 时重新应用。标题栏 `Theme.TrackTitleBar`。
+  不跟主题的：截图画面上的元素（选区框、手柄、放大镜）、录制框、按键药丸、取色器色板、强调色。
+- 浅色主题二维码 `Assets/donate_qr_light.png`（灰点 168 → 64，中间 logo 不变），设置窗口随主题切换。
+- `UiScale`：共享的 `ScaleTransform`（中 1.0 / 大 1.15）作为 LayoutTransform 挂在批注栏内容、设置 / 翻译 / 取色窗口内容（`AttachWindow` 同时按比例改窗口尺寸）、
+  截图提示 / 尺寸框 / 翻译条、录屏工具栏与弹出面板、保存提示；菜单和提示气泡用类处理器在打开时挂上。
+- 设置新增「样式」页：主题、界面大小、贴图阴影（从快捷键页挪来）。选择即预览；未保存关闭时 App 重新应用已保存的主题和大小。
+- 修复：录屏预览不再用 MediaElement 报的时长替换 ffmpeg 的（Windows 播放器有时报短，导致出点提前、导出少了结尾）。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

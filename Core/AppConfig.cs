@@ -58,6 +58,12 @@ public sealed class AppConfig
 
     public string ToolShapeHotkey { get; set; } = "M";
 
+    /// <summary>Interface colours: Dark (default), Light or System (follow Windows).</summary>
+    public string Theme { get; set; } = "Dark";
+
+    /// <summary>Interface size: Medium (default) or Large (everything one step larger).</summary>
+    public string UiSize { get; set; } = "Medium";
+
     /// <summary>Pin shadow: blur size (DIP, 0 = none), colour (#RRGGBB) and opacity (0–1).</summary>
     public double PinShadowSize { get; set; } = 12;
 

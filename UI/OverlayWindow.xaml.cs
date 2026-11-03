@@ -215,6 +215,9 @@ public partial class OverlayWindow : Window
             }
         }), System.Windows.Threading.DispatcherPriority.Input);
         Editor.SizeLabelVisible = false; // the editable SizeBox is the label
+        UiScale.Attach(Hint);
+        UiScale.Attach(SizeBox);
+        UiScale.Attach(TranslateStatus);
         PreviewMouseRightButtonDown += (_, e) =>
         {
             if (_finishing)
@@ -915,6 +918,7 @@ public partial class OverlayWindow : Window
                 CornerRadius = Hint.CornerRadius,
                 Padding = Hint.Padding,
                 IsHitTestVisible = false,
+                LayoutTransform = UiScale.Transform,
                 Child = new TextBlock
                 {
                     Text = ((TextBlock)Hint.Child).Text,

@@ -4,7 +4,7 @@
         Icon="pack://application:,,,/Markshot;component/Assets/markshot.ico"
         Title="Markshot 设置"
         Width="760" Height="560" MinWidth="680" MinHeight="480"
-        Background="#FF1A1A1A"
+        Background="{DynamicResource T_FF1A1A1A}"
         WindowStartupLocation="CenterScreen"
         Topmost="True"
         FontFamily="Microsoft YaHei UI"
@@ -13,7 +13,7 @@
     <Window.Resources>
         <!-- Left navigation item -->
         <Style x:Key="NavItem" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="#B8B8B8" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFB8B8B8}" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Focusable" Value="False" />
@@ -30,13 +30,13 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#14FFFFFF" />
-                                <Setter Property="Foreground" Value="#F0F0F0" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource T_14FFFFFF}" />
+                                <Setter Property="Foreground" Value="{DynamicResource T_FFF0F0F0}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#22FFFFFF" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource T_22FFFFFF}" />
                                 <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
-                                <Setter Property="Foreground" Value="#FFFFFF" />
+                                <Setter Property="Foreground" Value="{DynamicResource T_FFFFFFFF}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -45,15 +45,15 @@
         </Style>
 
         <Style x:Key="PageTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#F5F5F5" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFF5F5F5}" />
             <Setter Property="FontSize" Value="17" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,10" />
         </Style>
 
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="#FF222222" />
-            <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource T_FF222222}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource T_1FFFFFFF}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="16,11,16,13" />
@@ -61,21 +61,21 @@
         </Style>
 
         <Style x:Key="CardTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#E6E6E6" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFE6E6E6}" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,9" />
         </Style>
 
         <Style x:Key="RowLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#A8A8A8" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFA8A8A8}" />
             <Setter Property="FontSize" Value="12.5" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
         <Style x:Key="Hint" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#7E7E7E" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FF7E7E7E}" />
             <Setter Property="FontSize" Value="11.5" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
@@ -103,14 +103,14 @@
         </Style>
 
         <Style x:Key="PasswordField" TargetType="PasswordBox">
-            <Setter Property="Background" Value="{StaticResource InputBackground}" />
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
-            <Setter Property="BorderBrush" Value="#2EFFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource InputBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource T_2EFFFFFF}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Height" Value="32" />
             <Setter Property="Padding" Value="8,0" />
             <Setter Property="FontSize" Value="13" />
-            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="CaretBrush" Value="{DynamicResource T_FFFFFFFF}" />
             <Setter Property="SelectionBrush" Value="{StaticResource Accent}" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Template">
@@ -144,13 +144,13 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Border x:Name="Track" Width="36" Height="20" CornerRadius="10" Background="#4A4A4A"
+                            <Border x:Name="Track" Width="36" Height="20" CornerRadius="10" Background="{DynamicResource T_FF4A4A4A}"
                                     VerticalAlignment="Center">
                                 <Ellipse x:Name="Knob" Width="14" Height="14" Fill="#F2F2F2"
                                          HorizontalAlignment="Left" Margin="3,0" />
                             </Border>
                             <ContentPresenter Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
-                                              TextElement.Foreground="#E0E0E0" TextElement.FontSize="12.5" />
+                                              TextElement.Foreground="{DynamicResource T_FFE0E0E0}" TextElement.FontSize="12.5" />
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
@@ -166,11 +166,11 @@
         <Style x:Key="Chip" TargetType="Button" BasedOn="{StaticResource ToolButton}">
             <Setter Property="Padding" Value="9,3" />
             <Setter Property="Margin" Value="0,0,6,0" />
-            <Setter Property="Foreground" Value="#C8C8C8" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFC8C8C8}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="#2C2C2C" BorderBrush="#26FFFFFF" BorderThickness="1"
+                        <Border x:Name="Bd" Background="{DynamicResource T_FF2C2C2C}" BorderBrush="{DynamicResource T_26FFFFFF}" BorderThickness="1"
                                 CornerRadius="11" Padding="{TemplateBinding Padding}">
                             <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"
                                               TextElement.FontSize="11.5" />
@@ -178,7 +178,7 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
-                                <Setter Property="Foreground" Value="#FFFFFF" />
+                                <Setter Property="Foreground" Value="{DynamicResource T_FFFFFFFF}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -199,7 +199,7 @@
                                 <Thumb>
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Border CornerRadius="4" Background="#44FFFFFF" Margin="1,2" />
+                                            <Border CornerRadius="4" Background="{DynamicResource T_44FFFFFF}" Margin="1,2" />
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>
@@ -211,7 +211,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid Background="#FF1A1A1A">
+    <Grid Background="{DynamicResource T_FF1A1A1A}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="168" />
             <ColumnDefinition Width="*" />
@@ -222,14 +222,14 @@
         </Grid.RowDefinitions>
 
         <!-- Navigation -->
-        <Border Grid.Row="0" Grid.RowSpan="2" Background="#FF151515" BorderBrush="#14FFFFFF" BorderThickness="0,0,1,0">
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="{DynamicResource T_FF151515}" BorderBrush="{DynamicResource T_14FFFFFF}" BorderThickness="0,0,1,0">
             <Grid>
             <StackPanel Margin="12,18,12,12">
-                <TextBlock Text="Markshot" Foreground="#F5F5F5" FontSize="15" FontWeight="SemiBold" Margin="8,0,0,2" />
+                <TextBlock Text="Markshot" Foreground="{DynamicResource T_FFF5F5F5}" FontSize="15" FontWeight="SemiBold" Margin="8,0,0,2" />
                 <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
-                    <TextBlock x:Name="VersionText" Foreground="#6E6E6E" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock x:Name="VersionText" Foreground="{DynamicResource T_FF6E6E6E}" FontSize="11" VerticalAlignment="Center" />
                     <Button x:Name="CheckUpdateButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="4,0,0,0"
-                            Foreground="#8A8A8A" FontSize="12" Content="↻" ToolTip="检查更新"
+                            Foreground="{DynamicResource T_FF8A8A8A}" FontSize="12" Content="↻" ToolTip="检查更新"
                             Click="CheckUpdate_Click" VerticalAlignment="Center" />
                 </StackPanel>
                 <!-- Own line so it is never cut off by the narrow column. -->
@@ -243,13 +243,15 @@
                              Content="翻译" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavToolbar" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Toolbar"
                              Content="批注栏" Checked="Nav_Checked" />
+                <RadioButton x:Name="NavStyle" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Style"
+                             Content="样式" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavGeneral" Style="{StaticResource NavItem}" GroupName="Nav" Tag="General"
                              Content="保存与识别" Checked="Nav_Checked" />
             </StackPanel>
 
             <!-- Coffee drawer: drag the bar up to pull the QR code out; click it to put it away. -->
             <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,6">
-                <TextBlock x:Name="DrawerHint" Text="往上拉，请杯咖~" Foreground="#8A8A8A" FontSize="12"
+                <TextBlock x:Name="DrawerHint" Text="往上拉，请杯咖~" Foreground="{DynamicResource T_FF8A8A8A}" FontSize="12"
                            HorizontalAlignment="Center" Margin="0,0,0,4" Opacity="0" IsHitTestVisible="False" />
                 <!-- The bar rides on top: pulling it up reveals the QR code underneath. -->
                 <Border x:Name="DrawerHandle" Height="22" Background="Transparent" Cursor="SizeNS"
@@ -257,7 +259,7 @@
                         MouseEnter="DrawerHandle_MouseEnter" MouseLeave="DrawerHandle_MouseLeave"
                         MouseLeftButtonDown="DrawerHandle_MouseLeftButtonDown" MouseMove="DrawerHandle_MouseMove"
                         MouseLeftButtonUp="DrawerHandle_MouseLeftButtonUp">
-                    <Border x:Name="DrawerBar" Width="46" Height="4" CornerRadius="2" Background="#4DFFFFFF"
+                    <Border x:Name="DrawerBar" Width="46" Height="4" CornerRadius="2" Background="{DynamicResource T_4DFFFFFF}"
                             VerticalAlignment="Center" />
                 </Border>
                 <Border x:Name="DrawerPanel" Height="0" ClipToBounds="True">
@@ -393,36 +395,6 @@
                                 </StackPanel>
                             </Grid>
 
-                            <!-- Pin shadow -->
-                            <Grid Margin="0,14,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="阴影大小" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
-                                <DockPanel Grid.Column="1">
-                                    <TextBlock x:Name="ShadowSizeValue" DockPanel.Dock="Right" Width="34" TextAlignment="Right"
-                                               Foreground="#C8C8C8" FontSize="12" VerticalAlignment="Center" />
-                                    <Slider x:Name="ShadowSizeSlider" Minimum="0" Maximum="40" IsMoveToPointEnabled="True"
-                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
-                                </DockPanel>
-                                <TextBlock Grid.Column="2" Text="颜色" Style="{StaticResource RowLabel}" Margin="18,0,8,0" />
-                                <Button Grid.Column="3" x:Name="ShadowColorButton" Style="{StaticResource FooterButton}" MinWidth="0"
-                                        Width="44" Height="26" Padding="0" Click="ShadowColor_Click" ToolTip="阴影颜色">
-                                    <Border x:Name="ShadowColorSwatch" Width="22" Height="14" CornerRadius="3"
-                                            BorderBrush="#55FFFFFF" BorderThickness="1" />
-                                </Button>
-                                <DockPanel Grid.Column="4" Margin="18,0,0,0">
-                                    <TextBlock Text="透明度" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
-                                    <TextBlock x:Name="ShadowOpacityValue" DockPanel.Dock="Right" Width="38" TextAlignment="Right"
-                                               Foreground="#C8C8C8" FontSize="12" VerticalAlignment="Center" />
-                                    <Slider x:Name="ShadowOpacitySlider" Minimum="0" Maximum="100" IsMoveToPointEnabled="True"
-                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
-                                </DockPanel>
-                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -540,24 +512,106 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Text="截图模式" Style="{StaticResource RowLabel}" />
-                                <Border Grid.Column="1" Background="#FF1B1B1B" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
+                                <Border Grid.Column="1" Background="{DynamicResource T_FF1B1B1B}" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
                                     <StackPanel Orientation="Horizontal">
                                         <StackPanel x:Name="CaptureToolsRow" Orientation="Horizontal" />
-                                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
                                         <StackPanel x:Name="CaptureActionsRow" Orientation="Horizontal" />
                                     </StackPanel>
                                 </Border>
                                 <TextBlock Grid.Row="2" Text="贴图模式" Style="{StaticResource RowLabel}" />
-                                <Border Grid.Row="2" Grid.Column="1" Background="#FF1B1B1B" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
+                                <Border Grid.Row="2" Grid.Column="1" Background="{DynamicResource T_FF1B1B1B}" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
                                     <StackPanel Orientation="Horizontal">
                                         <StackPanel x:Name="PinToolsRow" Orientation="Horizontal" />
-                                        <Border Width="1" Height="18" Background="#33FFFFFF" Margin="6,0" />
+                                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
                                         <StackPanel x:Name="PinActionsRow" Orientation="Horizontal" />
                                     </StackPanel>
                                 </Border>
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0"
                                        Text="单击按钮开关（变暗 = 不显示），长按拖动排序；批注栏上也可以长按按钮直接拖动排序。" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== Style ===== -->
+            <ScrollViewer x:Name="PageStyle" VerticalScrollBarVisibility="Auto" Padding="24,18,20,6"
+                          Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="样式" Style="{StaticResource PageTitle}" />
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="外观" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="10" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="主题" Style="{StaticResource RowLabel}" />
+                                <Border Grid.Column="1" Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton x:Name="ThemeDark" Style="{StaticResource SegmentRadio}" GroupName="Theme" Tag="Dark"
+                                                     Content="暗色" Checked="Theme_Checked" />
+                                        <RadioButton x:Name="ThemeLight" Style="{StaticResource SegmentRadio}" GroupName="Theme" Tag="Light"
+                                                     Content="浅色" Checked="Theme_Checked" />
+                                        <RadioButton x:Name="ThemeSystem" Style="{StaticResource SegmentRadio}" GroupName="Theme" Tag="System"
+                                                     Content="跟随系统" Checked="Theme_Checked" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Grid.Row="2" Text="界面大小" Style="{StaticResource RowLabel}" />
+                                <Border Grid.Row="2" Grid.Column="1" Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton x:Name="SizeMedium" Style="{StaticResource SegmentRadio}" GroupName="UiSize" Tag="Medium"
+                                                     Content="中" Checked="UiSize_Checked" />
+                                        <RadioButton x:Name="SizeLarge" Style="{StaticResource SegmentRadio}" GroupName="UiSize" Tag="Large"
+                                                     Content="大" Checked="UiSize_Checked" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
+                                       Text="选择后立即预览，点“保存”后保留。浅色：所有界面换成浅色；跟随系统：随 Windows 的应用主题切换。大：按钮、文字等界面元素整体大一号。" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="贴图阴影" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="阴影大小" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                <DockPanel Grid.Column="1">
+                                    <TextBlock x:Name="ShadowSizeValue" DockPanel.Dock="Right" Width="34" TextAlignment="Right"
+                                               Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
+                                    <Slider x:Name="ShadowSizeSlider" Minimum="0" Maximum="40" IsMoveToPointEnabled="True"
+                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
+                                </DockPanel>
+                                <TextBlock Grid.Column="2" Text="颜色" Style="{StaticResource RowLabel}" Margin="18,0,8,0" />
+                                <Button Grid.Column="3" x:Name="ShadowColorButton" Style="{StaticResource FooterButton}" MinWidth="0"
+                                        Width="44" Height="26" Padding="0" Click="ShadowColor_Click" ToolTip="阴影颜色">
+                                    <Border x:Name="ShadowColorSwatch" Width="22" Height="14" CornerRadius="3"
+                                            BorderBrush="{DynamicResource T_55FFFFFF}" BorderThickness="1" />
+                                </Button>
+                                <DockPanel Grid.Column="4" Margin="18,0,0,0">
+                                    <TextBlock Text="透明度" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                    <TextBlock x:Name="ShadowOpacityValue" DockPanel.Dock="Right" Width="38" TextAlignment="Right"
+                                               Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
+                                    <Slider x:Name="ShadowOpacitySlider" Minimum="0" Maximum="100" IsMoveToPointEnabled="True"
+                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
+                                </DockPanel>
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -585,9 +639,9 @@
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0"
                                        Text="留空则保存到 图片\Markshot；Ctrl+Shift+S 直接存到这里不弹窗。" />
-                            <CheckBox x:Name="CopyFileCheck" Margin="84,10,0,0" Foreground="#D8D8D8" FontSize="12"
+                            <CheckBox x:Name="CopyFileCheck" Margin="84,10,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="复制图片文件：复制截图或贴图时同时复制 PNG 文件，可直接在文件管理器里粘贴" />
-                            <CheckBox x:Name="AskOpenFolderCheck" Margin="84,8,0,0" Foreground="#D8D8D8" FontSize="12"
+                            <CheckBox x:Name="AskOpenFolderCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="保存图片后询问是否打开所在文件夹" />
                         </StackPanel>
                     </Border>
@@ -649,7 +703,7 @@
         </Grid>
 
         <!-- Footer -->
-        <Border Grid.Column="1" Grid.Row="1" BorderBrush="#14FFFFFF" BorderThickness="0,1,0,0" Padding="24,12,20,14">
+        <Border Grid.Column="1" Grid.Row="1" BorderBrush="{DynamicResource T_14FFFFFF}" BorderThickness="0,1,0,0" Padding="24,12,20,14">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="取消" Style="{StaticResource FooterButton}" Click="Cancel_Click" IsCancel="True" />
