@@ -115,8 +115,9 @@ static class RecorderFlowTest
         Check(fr.Left < area.X && fr.Right > area.X + area.Width, "frame window surrounds the area");
         Shot(bar!, "rec_bar_setup.png");
 
-        controller.SetSize(1280, 720);
-        Check(controller.Rect.Width == 1280 && controller.Rect.Height == 720, "typed size applies");
+        // A size that fits any screen (the CI machine's is small).
+        controller.SetSize(600, 340);
+        Check(controller.Rect.Width == 600 && controller.Rect.Height == 340, $"typed size applies ({controller.Rect.Width}x{controller.Rect.Height})");
         controller.SetSize(640, 360);
 
         // ---- record 1.2 s, pause 0.4 s, record 0.5 s
