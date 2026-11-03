@@ -24,3 +24,6 @@ publish_installer/
 dist/
 publish_portable/
 tools/deps/
+tests/out/
+tests/**/bin/
+tests/**/obj/

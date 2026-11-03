@@ -310,6 +310,10 @@ dotnet publish Markshot.csproj -c Release -r win-x64 --self-contained true -p:Pu
 
 ## 开发自检
 
+自动测试：`powershell -ExecutionPolicy Bypass -File testsun.ps1`（全部套件；也可只跑部分，如 `testsun.ps1 batch1 menu`）。
+GitHub 上每次推送都会自动跑（Actions → CI），发布版本前也会先跑，测试不通过不会生成安装包。
+
+
 仓库自带一个本地 mock 翻译服务：
 
 ```powershell

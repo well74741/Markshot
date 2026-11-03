@@ -521,6 +521,14 @@ WPF 绘制必须在 UI 线程：`TranslateAsync` 不用 `ConfigureAwait(false)`�
 - 批注按钮旁 ▾ 的开 / 关：菜单打开时点箭头，菜单的 Closed 与按钮的 Click 先后顺序不固定，先 Click 时会立刻开出第二个菜单再被关掉（闪一下）。
   现在箭头的 PreviewMouseLeftButtonDown 记下“菜单开着 / 刚关”（`_suppressMenuOpen`），随后的 Click 只关不开；`_openMenu` 记当前菜单。harness `menu` 覆盖两种顺序。
 
+## 8.1.13 测试进仓库
+
+- `tests/Markshot.Tests`：原先放在 %TEMP% 的 harness，按模式运行（`Markshot.Tests.exe batch1` …），路径经 `Repo.Root` 找仓库根目录。
+  `Markshot.csproj` 里 `Compile/Page/None Remove="tests\**"`，测试代码不会编进程序。
+- `tests/run.ps1`：每个套件单独进程运行，出现 `FAIL` 行、崩溃或非零退出即失败；截图与日志写到 `tests/out/`（gitignore）。可只跑部分：`testsun.ps1 batch1 menu`。
+- CI：`.github/workflows/ci.yml` 在 push main / PR 时跑全部套件；`release.yml` 打包前先跑测试，不通过就不发布。
+- 不进默认列表的：translate（要本地 mock LLM，`tools/mock_llm.py`）、真实抓屏 / 系统声音 / 麦克风（会录到真实内容）。
+
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 
 - `Core/Motion.cs`：唯一曲线 `StandardEase` = cubic-bezier(0.4,0,0.2,1)（XAML 里 `<core:StandardEase />`），

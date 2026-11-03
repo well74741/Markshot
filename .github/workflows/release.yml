@@ -30,6 +30,10 @@ jobs:
             choco install innosetup --no-progress -y
           }
 
+      - name: Tests (a release is only built when they pass)
+        shell: pwsh
+        run: ./tests/run.ps1
+
       - name: Package
         shell: pwsh
         run: ./tools/package.ps1
