@@ -11,7 +11,7 @@ namespace Markshot.UI;
 // Pin window: context menu, click-through, copy and save.
 public partial class PinWindow
 {
-    private void BuildContextMenu()
+    private protected virtual void BuildContextMenu()
     {
         // Only the entries that do something in the current state.
         var menu = new ContextMenu();
@@ -62,6 +62,7 @@ public partial class PinWindow
         Separator();
 
         Add(_editMode ? "完成标注" : "编辑标注", ToggleEditing, gesture: "Space");
+        Add("在图片编辑器里打开", OpenInEditor);
         if (Editor.Items.Count > 0)
         {
             Add("清除批注内容", ClearAnnotations);
@@ -86,7 +87,7 @@ public partial class PinWindow
 
         Separator();
         Add("设置…", () => ((App)Application.Current).ShowSettings());
-        if (((App)Application.Current).PinCount > 1)
+        if ((Application.Current as App)?.PinCount > 1)
         {
             Add("关闭所有贴图", () => ((App)Application.Current).CloseAllPins());
         }
@@ -122,12 +123,12 @@ public partial class PinWindow
         UpdateFrame();
     }
 
-    private void Copy()
+    private protected virtual void Copy()
     {
         ClipboardService.CopyImage(CurrentImage);
     }
 
-    private void Save()
+    private protected virtual void Save()
     {
         var dialog = new SaveFileDialog
         {

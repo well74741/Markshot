@@ -12,6 +12,8 @@ public sealed class ScrollStitcher
     private readonly int _height;
     private readonly int _maxHeight;
     private readonly List<byte[]> _bodyRows = new();
+    private readonly List<ulong> _bodyHashes = new();
+    private int _viewTop; // where the current frame's body starts inside the stitched body
     private ulong[]? _lastHashes;
     private byte[]? _lastFrame;
     private byte[]? _firstFrame;
@@ -71,28 +73,36 @@ public sealed class ScrollStitcher
             _top = Math.Min(top, _height / 3);
             _bottom = Math.Min(bottom, _height / 3);
             // The first frame's body is the start of the image.
+            var firstHashes = Hash(_firstFrame);
             for (var y = _top; y < _height - _bottom; y++)
             {
                 _bodyRows.Add(Row(_firstFrame, y));
+                _bodyHashes.Add(firstHashes[y]);
             }
+
+            _viewTop = 0;
         }
 
         var bodyTop = _top;
         var bodyHeight = _height - _top - _bottom;
-        var shift = FindShift(previous, hashes, bodyTop, bodyHeight);
-        LastShift = shift;
-        if (shift <= 0)
+        // Where does this frame's body sit in what was stitched so far? Looked up around the last
+        // position in both directions, so scrolling back up (and down again) never adds rows twice.
+        var position = Locate(hashes, bodyTop, bodyHeight);
+        if (position < 0)
         {
+            LastShift = 0;
             _lastFrame = frame;
             _lastHashes = hashes;
             return 0;
         }
 
-        // The rows that scrolled into view: the last `shift` rows of the body.
+        LastShift = position - _viewTop;
+        _viewTop = position;
         var added = 0;
-        for (var y = bodyTop + bodyHeight - shift; y < bodyTop + bodyHeight && !Full; y++)
+        for (var i = _bodyRows.Count - position; i < bodyHeight && !Full; i++)
         {
-            _bodyRows.Add(Row(frame, y));
+            _bodyRows.Add(Row(frame, bodyTop + i));
+            _bodyHashes.Add(hashes[bodyTop + i]);
             added++;
         }
 
@@ -102,49 +112,54 @@ public sealed class ScrollStitcher
     }
 
     /// <summary>
-    /// The scroll distance of the body between two frames: the shift d for which the new frame's
-    /// row i equals the old frame's row i + d over the most (non-blank) rows.
+    /// The offset p in the stitched body where the frame's body row i equals body row p + i over
+    /// the most non-blank rows (searched within one screen of the last position); -1 when unsure.
     /// </summary>
-    private int FindShift(ulong[] old, ulong[] now, int top, int height)
+    private int Locate(ulong[] now, int top, int height)
     {
-        var best = 0;
-        var bestScore = 0.0;
+        var count = _bodyHashes.Count;
         var minOverlap = Math.Max(8, height / 8);
-        for (var d = 1; d <= height - minOverlap; d++)
+        var from = Math.Max(0, _viewTop - height);
+        var to = Math.Min(count - minOverlap, _viewTop + height);
+        var best = -1;
+        var bestScore = 0.0;
+        var bestDistance = int.MaxValue;
+        for (var p = from; p <= to; p++)
         {
-            var overlap = height - d;
+            var overlap = Math.Min(height, count - p);
             int matches = 0, informative = 0;
-            for (var i = 0; i < overlap; i += 1)
+            for (var i = 0; i < overlap; i++)
             {
                 var a = now[top + i];
-                var b = old[top + i + d];
                 if (IsBlank(a))
                 {
                     continue;
                 }
 
                 informative++;
-                if (a == b)
+                if (a == _bodyHashes[p + i])
                 {
                     matches++;
                 }
             }
 
-            if (informative < Math.Min(8, overlap / 4))
+            if (informative < Math.Min(8, overlap / 4) || matches < Math.Min(12, informative))
             {
                 continue;
             }
 
             var score = matches / (double)informative;
-            // Clear agreement over many rows; a tie goes to the smaller shift.
-            if (score > bestScore + 1e-9 && matches >= Math.Min(12, informative))
+            var distance = Math.Abs(p - _viewTop);
+            // Clear agreement; equal scores go to the position nearest the last one.
+            if (score > bestScore + 1e-9 || (Math.Abs(score - bestScore) <= 1e-9 && distance < bestDistance))
             {
                 bestScore = score;
-                best = d;
+                best = p;
+                bestDistance = distance;
             }
         }
 
-        return bestScore >= 0.92 ? best : 0;
+        return bestScore >= 0.92 ? best : -1;
     }
 
     private readonly HashSet<ulong> _blank = new();

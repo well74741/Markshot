@@ -45,6 +45,8 @@ static class Program
         if (mode == "support") SupportTest.Run();
         if (mode == "history") HistoryTest.Run();
         if (mode == "stitch") StitchTest.Run();
+        if (mode == "imageops") ImageOpsTest.Run();
+        if (mode == "imageeditor") ImageEditorTest.Run();
         if (mode == "firstopen") FirstOpenProbe.Run();
         if (mode == "cornerprobe") CornerProbe.Run();
     }

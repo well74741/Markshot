@@ -13,7 +13,12 @@ public partial class PinWindow
 {
     private void InitToolbar()
     {
-        Toolbar.SetMode(AnnotationToolbarMode.Pin);
+        Toolbar.SetMode(IsEditor ? AnnotationToolbarMode.Editor : AnnotationToolbarMode.Pin);
+        if (!IsEditor)
+        {
+            Toolbar.EditRequested += OpenInEditor;
+        }
+
         Toolbar.ToolChanged += OnToolbarToolChanged;
         Toolbar.WatermarkToggled += OnWatermarkToggled;
         Toolbar.VariantChanged += OnToolbarVariantChanged;
@@ -283,7 +288,7 @@ public partial class PinWindow
         }
     }
 
-    private void EnterEditMode()
+    private protected void EnterEditMode()
     {
         if (_editMode || _locked || _clickThrough)
         {
@@ -317,9 +322,29 @@ public partial class PinWindow
         InputLayer.Focus();
     }
 
+    /// <summary>编辑: the image editor opens on this pin (image and editable annotations); re-pinning from there replaces it.</summary>
+    private void OpenInEditor()
+    {
+        ExitEditMode(true);
+        ((App)Application.Current).OpenEditor(_baseImage, annotations: Editor.Items.Select(item => item.Clone()).ToList(), sourcePin: this);
+        _parked = true;
+        Hide();
+    }
+
+    /// <summary>Back on the screen after the editor it went into was closed.</summary>
+    public void ShowAgain()
+    {
+        _parked = false;
+        if (!_fadingOut)
+        {
+            Show();
+            ApplyBounds();
+        }
+    }
+
     private void ExitEditMode(bool apply)
     {
-        if (!_editMode)
+        if (!_editMode || IsEditor)
         {
             return;
         }
@@ -364,7 +389,7 @@ public partial class PinWindow
         }
     }
 
-    private BitmapSource ComposeEditedImage()
+    private protected virtual BitmapSource ComposeEditedImage()
     {
         if (Editor.Items.Count == 0)
         {
@@ -459,6 +484,12 @@ public partial class PinWindow
     {
         var key = AnnotationOps.RealKey(e);
         var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        if (IsEditor && EditorKey(key, control))
+        {
+            e.Handled = true;
+            return;
+        }
+
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
         // While a selected element is being dragged, E rotates and R scales it;
@@ -673,7 +704,7 @@ public partial class PinWindow
         }
     }
 
-    private void SetTool(AnnotationTool tool)
+    private protected void SetTool(AnnotationTool tool)
     {
         _textEditor.Commit();
         _tool = tool;
@@ -693,9 +724,9 @@ public partial class PinWindow
         ClearAnnotationHover();
     }
 
-    private void Undo() => ApplyHistory(_history.Undo);
+    private protected void Undo() => ApplyHistory(_history.Undo);
 
-    private void Redo() => ApplyHistory(_history.Redo);
+    private protected void Redo() => ApplyHistory(_history.Redo);
 
     private void ApplyHistory(Func<List<Annotation>, bool> step)
     {
@@ -711,7 +742,7 @@ public partial class PinWindow
         Editor.InvalidateVisual();
     }
 
-    private void UpdateUndoButtons()
+    private protected void UpdateUndoButtons()
     {
         Toolbar.RefreshUndo(_history.CanUndo, _history.CanRedo);
     }
@@ -1354,7 +1385,7 @@ public partial class PinWindow
         return false;
     }
 
-    private void ClearSelection()
+    private protected void ClearSelection()
     {
         _freshSelection = null;
         _selected = null;
@@ -1371,7 +1402,7 @@ public partial class PinWindow
         Editor.InvalidateVisual();
     }
 
-    private void UpdateCursor(Point point)
+    private protected void UpdateCursor(Point point)
     {
         if (_tool is AnnotationTool.Select or AnnotationTool.None)
         {
@@ -1557,7 +1588,7 @@ public partial class PinWindow
     /// tool letters — must reach the pin: make sure it is the active window and the canvas has
     /// the keyboard focus (unless a text is being typed).
     /// </summary>
-    private void ReclaimKeyboard()
+    private protected void ReclaimKeyboard()
     {
         if (!_editMode || _textEditor.IsActive || _editingWatermark != null || Toolbar.IsMenuOpen)
         {

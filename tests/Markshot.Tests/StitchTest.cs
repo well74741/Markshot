@@ -83,12 +83,28 @@ static class StitchTest
         again.Add(Frame(page, 400));
         Check(again.Height == h, "scrolling back up adds nothing");
 
+        // down, up, down again (the reported bug): every row of the page exactly once
+        var yoyo = new ScrollStitcher(W, H);
+        foreach (var o in new[] { 0, 200, 400, 250, 100, 0, 150, 300, 450, 600, 380, 700, 900 }) yoyo.Add(Frame(page, o));
+        var y2 = yoyo.Result();
+        Check(y2.PixelHeight == Header + 900 + body + Footer, $"down / up / down: height {y2.PixelHeight} (expected {Header + 900 + body + Footer})");
+        var px2 = new byte[W * 4 * y2.PixelHeight];
+        y2.CopyPixels(px2, W * 4, 0);
+        var bad2 = 0;
+        for (var y = 0; y < 900 + body; y++)
+        for (var x = 0; x < W; x++)
+        {
+            var a = ((y + Header) * W + x) * 4; var b = (y * W + x) * 4;
+            if (px2[a] != page[b] || px2[a + 1] != page[b + 1] || px2[a + 2] != page[b + 2]) bad2++;
+        }
+        Check(bad2 == 0, $"down / up / down: content identical ({bad2} wrong pixels)");
+
         // ---- the session: frames come in on a timer, 完成 hands over the long image
         System.Windows.Application.Current.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
         var queue = new System.Collections.Generic.Queue<int>(new[] { 0, 150, 320, 500, 700, 900 });
         var current = 0;
         System.Windows.Media.Imaging.BitmapSource done = null;
-        var session = new Markshot.UI.ScrollCaptureSession(new System.Windows.Int32Rect(100, 100, W, H), image => done = image)
+        var session = new Markshot.UI.ScrollCaptureSession(new System.Windows.Int32Rect(100, 100, W, H), false, (_, image) => done = image)
         {
             Source = () => { if (queue.Count > 0) current = queue.Dequeue(); return Frame(page, current); }
         };
@@ -99,7 +115,7 @@ static class StitchTest
             System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
             System.Threading.Thread.Sleep(10);
         }
-        var panel = System.Windows.Application.Current.Windows.OfType<System.Windows.Window>().FirstOrDefault(w => w.Title == "Markshot 长截图");
+        var panel = System.Windows.Application.Current.Windows.OfType<System.Windows.Window>().FirstOrDefault(w => w.Title == "Markshot 长截图预览");
         if (panel?.Content is System.Windows.FrameworkElement root)
         {
             root.UpdateLayout();
@@ -108,7 +124,7 @@ static class StitchTest
             var e2 = new PngBitmapEncoder(); e2.Frames.Add(BitmapFrame.Create(shot));
             using (var f = File.Create("scroll_panel.png")) e2.Save(f);
         }
-        session.Finish();
+        session.Finish(Markshot.UI.ScrollCaptureAction.Edit);
         Check(done != null && done.PixelHeight == Header + 900 + body + Footer, $"session: 完成 gives the long image ({done?.PixelHeight})");
         Check(!System.Windows.Application.Current.Windows.OfType<System.Windows.Window>().Any(w => w.IsVisible), "session windows closed");
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");

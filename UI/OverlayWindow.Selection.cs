@@ -518,8 +518,14 @@ public partial class OverlayWindow
             region.Width,
             region.Height);
 
+        SelectRegion(local);
+    }
+
+    /// <summary>Selects an area (window pixels), starting the capture over from it.</summary>
+    private void SelectRegion(Rect local)
+    {
         local = Rect.Intersect(local, new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight));
-        if (local.Width < 2 || local.Height < 2)
+        if (local.IsEmpty || local.Width < 2 || local.Height < 2)
         {
             return;
         }

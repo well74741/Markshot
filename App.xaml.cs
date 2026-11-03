@@ -112,7 +112,8 @@ public partial class App : Application
             () => _pins.Any(pin => pin.IsClickThrough),
             RecorderMenuItems,
             ExportDiagnostics,
-            ShowPinHistory);
+            ShowPinHistory,
+            () => OpenEditor());
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -196,7 +197,8 @@ public partial class App : Application
         }
     }
 
-    public void StartCapture(bool demo = false)
+    /// <param name="selection">Start with this area selected (screen pixels), e.g. coming back from 长截图.</param>
+    public void StartCapture(bool demo = false, Int32Rect? selection = null)
     {
         if (_capturing || _shuttingDown)
         {
@@ -212,10 +214,17 @@ public partial class App : Application
             var overlay = new OverlayWindow(image, bounds, demo)
             {
                 // The pin is created while the capture is still on screen (no gap, no flicker).
+                InitialSelection = selection,
                 PinNow = (source, output) => CreatePin(output, (int)source.SelectionScreenRect.X, (int)source.SelectionScreenRect.Y,
                     source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow)
             };
             overlay.ShowDialog();
+
+            if (overlay.Result == CaptureAction.Edit && overlay.PinBaseImage != null)
+            {
+                OpenEditor(overlay.PinBaseImage, annotations: overlay.PinAnnotations);
+                return;
+            }
 
             if (overlay.Result == CaptureAction.Scroll)
             {
@@ -631,7 +640,77 @@ public partial class App : Application
         yield return ("退出录屏", () => r!.Command("exit"));
     }
 
-    /// <summary>长截图 on an area; when done the long image is copied and opened as a pin (fitted to the screen).</summary>
+    private readonly List<UI.ImageEditorWindow> _editors = new();
+
+    /// <summary>Opens the image editor (empty, or on an image with its editable annotations).</summary>
+    public UI.ImageEditorWindow OpenEditor(BitmapSource? image = null, string? path = null,
+        List<Annotations.Annotation>? annotations = null, UI.PinWindow? sourcePin = null)
+    {
+        var editor = new UI.ImageEditorWindow(image, path, annotations, sourcePin);
+        _editors.Add(editor);
+        editor.Closed += (_, _) => _editors.Remove(editor);
+        editor.Show();
+        editor.Activate();
+        return editor;
+    }
+
+    /// <summary>
+    /// 贴到屏幕 from the editor: where the pin it came from was (that one is replaced), else in the middle of
+    /// the given monitor; shrunk to fit. Annotations stay editable in the pin.
+    /// </summary>
+    public PinWindow PinFromEditor(BitmapSource baseImage, List<Annotations.Annotation> annotations, BitmapSource composed,
+        PinWindow? replace, Int32Rect work)
+    {
+        var fit = Math.Min(1, Math.Min((work.Width - 16) / (double)composed.PixelWidth, (work.Height - 16) / (double)composed.PixelHeight));
+        var x = work.X + (work.Width - (int)(composed.PixelWidth * fit)) / 2;
+        var y = work.Y + (work.Height - (int)(composed.PixelHeight * fit)) / 2;
+        if (replace != null && _pins.Contains(replace))
+        {
+            var snapshot = replace.Snapshot();
+            x = snapshot.Left;
+            y = snapshot.Top;
+            fit = Math.Min(fit, snapshot.Zoom);
+            replace.Close();
+        }
+
+        var pin = CreatePin(composed, x, y, baseImage, annotations.Count > 0 ? annotations : null, shapedShadow: ImageOps.HasTransparentCorner(composed));
+        pin.RestoreView(fit, 1);
+        return pin;
+    }
+
+    /// <summary>A save dialog for an image, then the usual "saved" prompt.</summary>
+    public void SaveImageAs(BitmapSource image)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "保存图片",
+            Filter = ImageFile.SaveFilter,
+            FileName = $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png"
+        };
+        var directory = Config.ResolveSaveDirectory();
+        if (Directory.Exists(directory))
+        {
+            dialog.InitialDirectory = directory;
+        }
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            ImageFile.Save(image, dialog.FileName);
+            ShowSavedPrompt(dialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("保存图片失败", ex);
+            MessageBox.Show("保存失败：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>长截图 on an area; it ends in the editor, the clipboard, a file or back in the capture.</summary>
     public void StartScrollCapture(Int32Rect area)
     {
         if (area.Width < 16 || area.Height < 16)
@@ -639,19 +718,31 @@ public partial class App : Application
             return;
         }
 
-        var session = new UI.ScrollCaptureSession(area, image =>
+        var session = new UI.ScrollCaptureSession(area, Config.ScrollHorizontal, (action, image) =>
         {
-            ClipboardService.CopyImage(image);
-            var work = Core.Recording.Monitors.Of(area).WorkArea;
-            var pin = CreatePin(image, area.X, work.Y + 8);
-            var zoom = Math.Min(1, (work.Height - 16) / (double)image.PixelHeight);
-            if (zoom < 1)
+            switch (action)
             {
-                pin.RestoreView(zoom, 1);
+                case UI.ScrollCaptureAction.Edit when image != null:
+                    OpenEditor(image);
+                    break;
+                case UI.ScrollCaptureAction.Copy when image != null:
+                    ClipboardService.CopyImage(image);
+                    _tray?.ShowBalloon("长截图已复制", $"{image.PixelWidth} × {image.PixelHeight}");
+                    break;
+                case UI.ScrollCaptureAction.Save when image != null:
+                    SaveImageAs(image);
+                    break;
+                case UI.ScrollCaptureAction.Cancel:
+                    // Back to the capture with the same area, once the session's windows are off the screen.
+                    _ = Task.Delay(150).ContinueWith(_ => StartCapture(selection: area), TaskScheduler.FromCurrentSynchronizationContext());
+                    break;
             }
-
-            _tray?.ShowBalloon("长截图完成", $"{image.PixelWidth} × {image.PixelHeight}，已复制并贴到屏幕。");
         });
+        session.DirectionChanged += horizontal =>
+        {
+            Config.ScrollHorizontal = horizontal;
+            Config.Save();
+        };
         session.Start();
     }
 
@@ -733,6 +824,11 @@ public partial class App : Application
         foreach (var pin in _pins.ToArray())
         {
             pin.Close();
+        }
+
+        foreach (var editor in _editors.ToArray())
+        {
+            editor.CloseWithoutAsking();
         }
 
         _hotkeys?.Dispose();

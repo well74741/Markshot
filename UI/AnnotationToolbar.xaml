@@ -77,9 +77,14 @@
                 <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
 
                 <StackPanel x:Name="CaptureActions" Orientation="Horizontal">
-                    <Button Style="{StaticResource IconToolButton}" Click="Scroll_Click" Tag="Scroll" ToolTip="长截图：滚动框内内容，自动拼接成长图">
-                        <Border Style="{StaticResource IconScrollMask}" />
-                    </Button>
+                    <StackPanel Orientation="Horizontal" Tag="Scroll" Background="Transparent">
+                        <Button x:Name="ScrollButton" Style="{StaticResource IconToolButton}" Click="Scroll_Click" ToolTip="长截图：滚动框内内容，自动拼接成长图（▾ 选择竖向 / 横向）">
+                            <Border x:Name="ScrollIcon" Style="{StaticResource IconScrollMask}" />
+                        </Button>
+                        <Button x:Name="ScrollChevron" Style="{StaticResource ChevronButton}" Click="ScrollMenu_Click" ToolTip="长截图方向">
+                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
+                        </Button>
+                    </StackPanel>
                     <Button Style="{StaticResource IconToolButton}" Click="Record_Click" Tag="Record" ToolTip="录屏：录制这个区域">
                         <Border Style="{StaticResource IconRecordMask}" />
                     </Button>
@@ -103,6 +108,9 @@
                                   ToolTip="原位翻译：像浏览器一样把选区里的文字直接替换成译文（开关会被记住）">
                         <Border Style="{StaticResource IconTranslateMask}" />
                     </ToggleButton>
+                    <Button Style="{StaticResource IconToolButton}" Click="Edit_Click" Tag="Edit" ToolTip="在图片编辑器里打开">
+                        <Border Style="{StaticResource IconEditMask}" />
+                    </Button>
                 </StackPanel>
 
                 <StackPanel x:Name="PinActions" Orientation="Horizontal" Visibility="Collapsed">
@@ -111,6 +119,25 @@
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" Tag="Apply" ToolTip="应用 (Ctrl+S)" Foreground="{StaticResource Accent}">
                         <Border Style="{StaticResource IconConfirmMask}" />
+                    </Button>
+                    <Button Style="{StaticResource IconToolButton}" Click="Edit_Click" Tag="Edit" ToolTip="在图片编辑器里打开">
+                        <Border Style="{StaticResource IconEditMask}" />
+                    </Button>
+                </StackPanel>
+
+                <!-- The image editor: open, save, copy and pin. -->
+                <StackPanel x:Name="EditorActions" Orientation="Horizontal" Visibility="Collapsed">
+                    <Button Style="{StaticResource IconToolButton}" Click="Open_Click" ToolTip="打开图片 (Ctrl+O)">
+                        <Border Style="{StaticResource IconOpenMask}" />
+                    </Button>
+                    <Button Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存 (Ctrl+S)">
+                        <Border Style="{StaticResource IconSaveMask}" />
+                    </Button>
+                    <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" ToolTip="复制 (Ctrl+C)">
+                        <Border Style="{StaticResource IconCopyMask}" />
+                    </Button>
+                    <Button Style="{StaticResource IconToolButton}" Click="Pin_Click" ToolTip="贴到屏幕 (Ctrl+T)" Foreground="{StaticResource Accent}">
+                        <Border Style="{StaticResource IconPinMask}" />
                     </Button>
                 </StackPanel>
             </StackPanel>

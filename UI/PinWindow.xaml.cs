@@ -14,7 +14,7 @@ public partial class PinWindow : Window
     private bool _fadedOut;
 
     // The annotation toolbar and the small window that carries it below the pin.
-    private readonly AnnotationToolbar Toolbar = new() { Visibility = Visibility.Collapsed };
+    private protected readonly AnnotationToolbar Toolbar = new() { Visibility = Visibility.Collapsed };
     private ToolbarHostWindow? _toolbarWindow;
     private PinMagnifier? _magnifier;
     private Point? _toolbarOffset;   // pixels from the image's top-left once the user dragged it
@@ -33,15 +33,15 @@ public partial class PinWindow : Window
         Close();
     }
 
-    private readonly AnnotationHistory _history = new();
-    private readonly InlineTextEditor _textEditor;
-    private BitmapSource _baseImage;
+    private protected readonly AnnotationHistory _history = new();
+    private protected readonly InlineTextEditor _textEditor;
+    private protected BitmapSource _baseImage;
 
-    private int _pixelWidth;
-    private int _pixelHeight;
+    private protected int _pixelWidth;
+    private protected int _pixelHeight;
     private int _left;
     private int _top;
-    private double _zoom = 1.0;
+    private protected double _zoom = 1.0;
     private double _opacity = 1.0;
     private bool _locked;
     private bool _clickThrough;
@@ -52,10 +52,10 @@ public partial class PinWindow : Window
     private int _dragStartLeft;
     private int _dragStartTop;
 
-    private bool _editMode;
-    private AnnotationTool _tool = AnnotationTool.Select;
+    private protected bool _editMode;
+    private protected AnnotationTool _tool = AnnotationTool.Select;
     private Annotation? _active;
-    private Annotation? _selected;
+    private protected Annotation? _selected;
     private Point _lastPoint;
     private bool _movingSelected;
     private bool _erasing;
@@ -91,8 +91,9 @@ public partial class PinWindow : Window
     private BitmapSource? _untranslatedBase;
     private CancellationTokenSource? _translateCts;
     private DispatcherTimer? _statusTimer;
-    private bool _suppressContextMenu;
+    private protected bool _suppressContextMenu;
     private bool _spaceExitGuard;
+    private bool _parked; // hidden while the image editor has this pin's picture
     private WatermarkAnnotation? _editingWatermark;
 
     // Press on an existing text: a click edits it, a drag moves it.
@@ -112,6 +113,17 @@ public partial class PinWindow : Window
     private double _corner;
 
     public BitmapSource SourceImage { get; private set; }
+
+    /// <summary>The image editor is this window with its own frame: it never moves, fades or leaves edit mode.</summary>
+    private protected virtual bool IsEditor => false;
+
+    private protected virtual double MinZoom => 0.1;
+
+    /// <summary>Keys of the image editor, before the annotation shortcuts. True = used.</summary>
+    private protected virtual bool EditorKey(Key key, bool control) => false;
+
+    /// <summary>The keyboard is in one of the editor's own input boxes: not a shortcut.</summary>
+    private protected virtual bool KeysBelongToUi => false;
 
     /// <param name="image">What the pin shows (annotations composed in).</param>
     /// <param name="baseImage">The image under the annotations, when they are handed over editable.</param>
@@ -163,7 +175,7 @@ public partial class PinWindow : Window
         Closing += (_, e) =>
         {
             // Exit animation first: fade out (160 ms), then really close.
-            if (!_fadedOut && !Dispatcher.HasShutdownStarted && IsLoaded)
+            if (!IsEditor && !_fadedOut && !Dispatcher.HasShutdownStarted && IsLoaded)
             {
                 e.Cancel = true;
                 if (!_fadingOut)
@@ -295,6 +307,11 @@ public partial class PinWindow : Window
     }
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        if (IsEditor)
+        {
+            return;
+        }
+
         UpdateFrame(); // ShapedShadow / CornerRadius are set after the constructor drew the first shadow
 
         var handle = new WindowInteropHelper(this).Handle;
@@ -319,7 +336,7 @@ public partial class PinWindow : Window
         RefreshTextLayer();
     }
 
-    private void ApplyBounds()
+    private protected void ApplyBounds()
     {
         var handle = new WindowInteropHelper(this).Handle;
         if (handle == IntPtr.Zero)
@@ -344,6 +361,11 @@ public partial class PinWindow : Window
         TextLayer.Height = imageHeight;
         TextLayer.Scale = 1.0 / _zoom;
         TextLayer.InvalidateVisual();
+        if (IsEditor)
+        {
+            RootGrid.Margin = new Thickness(0); // laid out by the editor's scroll area
+            return;
+        }
 
         // Room around the image for the shadow (grows with the shadow size setting).
         var pad = Pad;
@@ -375,7 +397,7 @@ public partial class PinWindow : Window
             windowTop,
             width,
             height,
-            Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+            Native.SWP_NOACTIVATE | (_parked ? 0 : Native.SWP_SHOWWINDOW));
         PlaceToolbar();
     }
 
@@ -404,6 +426,12 @@ public partial class PinWindow : Window
 
     private void UpdateFrame()
     {
+        if (IsEditor)
+        {
+            ImageShadowLayer.Visibility = Visibility.Collapsed;
+            return;
+        }
+
         var color = _clickThrough
             ? Color.FromRgb(0x2F, 0xC7, 0x6B)
             : _locked
@@ -452,6 +480,11 @@ public partial class PinWindow : Window
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (IsEditor && !ImageHost.IsMouseOver)
+        {
+            return;
+        }
+
         if (_locked || (_editMode && _tool != AnnotationTool.None && _tool != AnnotationTool.Select))
         {
             return;
@@ -550,6 +583,11 @@ public partial class PinWindow : Window
 
                 ClearSelection();
             }
+        }
+
+        if (IsEditor)
+        {
+            return; // the window does not move with the image
         }
 
         var cursor = Native.CursorPosition();
@@ -743,7 +781,7 @@ public partial class PinWindow : Window
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton != MouseButton.Middle || _locked)
+        if (e.ChangedButton != MouseButton.Middle || _locked || IsEditor)
         {
             return;
         }
@@ -777,8 +815,13 @@ public partial class PinWindow : Window
         e.Handled = true;
     }
 
-    private void OnMouseWheel(object sender, MouseWheelEventArgs e)
+    private protected void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (IsEditor && !ImageHost.IsMouseOver)
+        {
+            return;
+        }
+
         if (_textEditor.IsActive)
         {
             _textEditor.AdjustSize(e.Delta);
@@ -818,7 +861,7 @@ public partial class PinWindow : Window
             return;
         }
 
-        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        if (!IsEditor && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             _opacity = Math.Clamp(_opacity + (e.Delta > 0 ? 0.1 : -0.1), 0.2, 1.0);
             Img.Opacity = _opacity;
@@ -832,9 +875,9 @@ public partial class PinWindow : Window
         e.Handled = true;
     }
 
-    private void ZoomBy(double factor)
+    private protected void ZoomBy(double factor)
     {
-        var newZoom = Math.Clamp(_zoom * factor, 0.1, 8.0);
+        var newZoom = Math.Clamp(_zoom * factor, MinZoom, 8.0);
         if (Math.Abs(newZoom - _zoom) < 0.0001)
         {
             return;
@@ -868,14 +911,14 @@ public partial class PinWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (_textEditor.IsActive || _editingWatermark != null)
+        if (_textEditor.IsActive || _editingWatermark != null || KeysBelongToUi)
         {
             return;
         }
 
         var key = AnnotationOps.RealKey(e);
 
-        if (MatchesPinKey(App.Config.PinResetHotkey, key) &&
+        if (!IsEditor && MatchesPinKey(App.Config.PinResetHotkey, key) &&
             (!_editMode || _tool is AnnotationTool.None or AnnotationTool.Select) &&
             (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0)
         {

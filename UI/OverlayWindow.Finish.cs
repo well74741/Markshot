@@ -387,6 +387,21 @@ public partial class OverlayWindow
         CloseWith(CaptureAction.Scroll, _screen);
     }
 
+    /// <summary>编辑: the selection goes to the image editor, its annotations stay editable there.</summary>
+    private void EditAndClose()
+    {
+        if (!_hasSelection)
+        {
+            return;
+        }
+
+        CommitPendingText();
+        var rect = ClampToScreen(_selection);
+        PinBaseImage = Compose(includeAnnotations: false);
+        PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, new Point(Math.Round(rect.X), Math.Round(rect.Y)), PinBaseImage);
+        CloseWith(CaptureAction.Edit, PinBaseImage);
+    }
+
     private void OcrAndClose()
     {
         if (!_hasSelection)

@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.15`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.16`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -547,6 +547,22 @@ un.ps1 batch1 menu`。
 - `Core/Support.cs`：`Secrets`（DPAPI，`TranslationConfig.ApiKeyProtected`，旧明文 `ApiKey` 读入后不再写出）、`AutoStart`（HKCU Run，取消时也删安装器的启动快捷方式）、
   `Diagnostics.Export`（桌面 zip：logs、去掉 Key 的 config、系统 / 显示器信息）。
 - 录屏：保存的录像提示框多一个「播放」；托盘「录屏区域回中」（`RecorderController.Recenter`）。
+
+## 8.1.16 0.8.16 变更：图片编辑器
+
+- `UI/ImageEditorWindow : PinWindow`：直接继承贴图窗口的编辑逻辑，全部批注工具共用一份代码。贴图侧的扩展点：`IsEditor`、`MinZoom`、`EditorKey`、`KeysBelongToUi`，
+  虚方法 `ComposeEditedImage / Copy / Save / BuildContextMenu`，部分字段改 `private protected`。`IsEditor` 为真时不移动窗口、不淡入淡出、不画阴影、不退出编辑模式。
+  构造时把 `RootGrid` 从窗口搬进 `ScrollViewer`，工具栏放顶部（`AnnotationToolbarMode.Editor`），右侧面板放图片操作。
+- 撤销：`AnnotationHistory` 新增 `CaptureExtra / RestoreExtra / ExtraSize`，每步可带附加状态；编辑器存 `State(Origin, Base, Adjust)`（位图冻结后共享），图片总量超 1.5 GB 时丢最旧步骤。
+  `ChangeCount` 判断有无未保存修改。
+- 调色永远从 `_origin` 计算（滑条拉回去能完全还原）；拖动时屏幕用不超过 1400 px 的代理图预览，停手 350 ms 或需要结果时 `BakeAdjust` 算真实像素。
+  几何操作把当前结果变成新的 `_origin`，调色归零。镜像 / 90° / 矩形裁切时批注跟随且可编辑；缩放、任意角度、路径裁切、梯形校正会把批注合并进像素（可撤销）。
+- `Core/ImageOps`：`Adjust / Crop / Resize / Rotate / PathCrop / Keystone`（8 元线性方程解透视变换，双线性采样，透明不渗色）；`ImageFile`：WIC 读取（含 EXIF 方向），失败回退 SkiaSharp（WebP）；WebP 用 SkiaSharp 写，JPEG / BMP 铺白底。
+- `UI/EditorOverlay`：裁切 / 路径 / 梯形校正的交互层，坐标为图片像素。
+- 从贴图进入：原贴图隐藏（`_parked`，`ApplyBounds` 不再 SHOWWINDOW），「贴到屏幕」替换它；未贴就关闭编辑器则恢复显示。
+- 长截图：`ScrollStitcher` 改为在已拼内容里定位当前帧（上一位置前后一屏内逐行比较），来回滚动不重复追加；横向 = 帧转置后用同一算法；窗口显示前定位（`PlaceBeforeShow`）。
+  `ScrollCaptureSession` 期间注册全局 Tab / Esc（`RegisterHotKey`，结束即注销）。取消 = `StartCapture(selection: area)` 回到截图。
+- 测试：`imageops`（像素运算、文件往返）、`imageeditor`（集成：打开、调色、撤销、几何、裁切、贴图交接）、`stitch`（来回滚动）。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

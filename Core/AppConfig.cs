@@ -31,13 +31,16 @@ public sealed class AppConfig
     public string PinToolHidden { get; set; } = "";
 
     /// <summary>Order / hidden of the action buttons on the right of the annotation bar.</summary>
-    public string CaptureActionOrder { get; set; } = "Scroll,Record,Ocr,Close,Pin,Save,Copy,Translate";
+    public string CaptureActionOrder { get; set; } = "Scroll,Record,Ocr,Close,Pin,Save,Copy,Translate,Edit";
 
     public string CaptureActionHidden { get; set; } = "";
 
-    public string PinActionOrder { get; set; } = "Save,Apply";
+    public string PinActionOrder { get; set; } = "Save,Apply,Edit";
 
     public string PinActionHidden { get; set; } = "";
+
+    /// <summary>长截图 scrolls sideways (otherwise down).</summary>
+    public bool ScrollHorizontal { get; set; }
 
     /// <summary>录屏: opens the recorder (start / stop while it is open). Empty = no hotkey.</summary>
     public string RecordHotkey { get; set; } = "";

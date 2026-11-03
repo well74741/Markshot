@@ -13,7 +13,8 @@ public enum CaptureAction
     Pin,
     Translate,
     Record,
-    Scroll
+    Scroll,
+    Edit
 }
 
 public partial class OverlayWindow : Window
@@ -140,6 +141,9 @@ public partial class OverlayWindow : Window
     public BitmapSource? OutputImage { get; private set; }
 
     public Rect SelectionScreenRect { get; private set; }
+
+    /// <summary>Start with this area selected (screen pixels).</summary>
+    public Int32Rect? InitialSelection { get; init; }
 
     /// <summary>For pins: the selection without annotations (translation included).</summary>
     public BitmapSource? PinBaseImage { get; private set; }
@@ -346,6 +350,7 @@ public partial class OverlayWindow : Window
         Toolbar.TranslateRequested += TranslateAndClose;
         Toolbar.RecordRequested += RecordAndClose;
         Toolbar.ScrollRequested += ScrollAndClose;
+        Toolbar.EditRequested += EditAndClose;
         Toolbar.OcrRequested += OcrAndClose;
         _autoTranslate = App.Config.ImmersiveTranslate;
         Toolbar.SetTranslateEnabled(_autoTranslate);
@@ -414,6 +419,11 @@ public partial class OverlayWindow : Window
         {
             ApplyPhysicalBounds();
             UpdateScale();
+            if (InitialSelection is { } start)
+            {
+                SelectRegion(new Rect(start.X - _bounds.X, start.Y - _bounds.Y, start.Width, start.Height));
+            }
+
             UpdateSelectionVisuals();
         }), DispatcherPriority.Loaded);
     }

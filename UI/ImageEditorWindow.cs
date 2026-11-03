@@ -1,0 +1,1277 @@
+using System.Windows.Controls.Primitives;
+using Markshot.Annotations;
+using Markshot.Core.Recording;
+using Microsoft.Win32;
+
+namespace Markshot.UI;
+
+/// <summary>
+/// 图片编辑器: a normal window around the pin's annotation canvas — all annotation tools work the
+/// same as on a pin — with the image operations on the right: size, rotation, mirroring, crop,
+/// path cut-out, keystone correction and colour adjustments. Every operation is one undo step
+/// (the history also carries the image). Opens files, takes dropped files, saves in the common
+/// formats and pins the result back onto the screen.
+/// </summary>
+public sealed class ImageEditorWindow : PinWindow
+{
+    private const int PreviewSide = 1400;
+
+    /// <summary>The image state undone together with the annotations.</summary>
+    private sealed record State(BitmapSource Origin, BitmapSource Base, ImageAdjust Adjust);
+
+    private readonly DockPanel _layout = new();
+    private FrameworkElement? _panel;
+    private readonly ScrollViewer _scroller;
+    private readonly Border _dropHint;
+    private readonly Border _emptyHint;
+    private readonly Border _sessionBar;
+    private readonly TextBlock _sessionText = new() { FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center };
+    private readonly Button _sessionApply;
+    private readonly TextBlock _statusSize = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _statusZoom = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Width = 48, TextAlignment = TextAlignment.Center };
+    private readonly TextBox _widthBox = new();
+    private readonly TextBox _heightBox = new();
+    private readonly CheckBox _keepRatio = new() { Content = "锁定比例", IsChecked = true, FontSize = 12, Margin = new Thickness(0, 6, 0, 0) };
+    private readonly Slider _angle = new() { Minimum = -45, Maximum = 45, IsMoveToPointEnabled = true };
+    private readonly TextBlock _angleValue = new() { FontSize = 12, Width = 40, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+    private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _sliders = new();
+    private readonly ToggleButton _gray;
+    private readonly ToggleButton _invert;
+    private readonly DispatcherTimer _adjustTimer = new() { Interval = TimeSpan.FromMilliseconds(350) };
+    private BitmapSource _origin;
+    private BitmapSource? _proxy;
+    private ImageAdjust _adjust = new();
+    private bool _adjustPending;
+    private bool _syncingControls;
+    private EditorOverlay? _overlay;
+    private string? _path;
+    private PinWindow? _sourcePin;
+    private PinWindow? _waitingPin; // hidden while this editor is open: it is topmost and would cover the window
+    private bool _hasImage;
+    private bool _unsavedNew;
+    private long _savedChange;
+    private bool _forceClose;
+    private bool _firstFit = true;
+    private Point _panStart;
+    private Point _panOffset;
+    private bool _panning;
+
+    public ImageEditorWindow(BitmapSource? image = null, string? path = null, List<Annotation>? annotations = null, PinWindow? sourcePin = null)
+        : this(image == null ? ImageOps.FromPixels(new byte[4], 1, 1) : ImageOps.Normalize(image), image != null, path, annotations, sourcePin)
+    {
+    }
+
+    private ImageEditorWindow(BitmapSource image, bool hasImage, string? path, List<Annotation>? annotations, PinWindow? sourcePin)
+        : base(image, 0, 0, image, annotations)
+    {
+        _origin = image;
+        _path = path;
+        _sourcePin = sourcePin;
+        _waitingPin = sourcePin;
+        _hasImage = hasImage;
+        // Not saved anywhere yet (a capture, a long screenshot): closing asks first.
+        _unsavedNew = hasImage && path == null && sourcePin == null;
+
+        AllowsTransparency = false;
+        WindowStyle = WindowStyle.SingleBorderWindow;
+        ResizeMode = ResizeMode.CanResize;
+        ShowInTaskbar = true;
+        ShowActivated = true;
+        Topmost = false;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        var work = SystemParameters.WorkArea;
+        Width = Math.Min(1240, work.Width - 40);
+        Height = Math.Min(820, work.Height - 40);
+        MinWidth = 900;
+        MinHeight = 520;
+        FontFamily = new FontFamily("Microsoft YaHei UI");
+        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Markshot;component/Assets/markshot.ico"));
+        SetResourceReference(BackgroundProperty, Theme.Key(0xFF1A1A1A));
+        Theme.TrackTitleBar(this);
+        UpdateTitle();
+
+        // The pin's image area moves into a scroll area; the toolbar sits above it.
+        var canvas = RootGrid;
+        Content = null;
+        ImageHost.Background = (Brush)Application.Current.FindResource("SmallCheckerBrush");
+        canvas.HorizontalAlignment = HorizontalAlignment.Center;
+        canvas.VerticalAlignment = VerticalAlignment.Center;
+        _scroller = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Padding = new Thickness(16),
+            Content = canvas,
+            Focusable = false
+        };
+        _scroller.PreviewMouseWheel += Scroller_PreviewMouseWheel;
+        _scroller.PreviewMouseDown += Scroller_PreviewMouseDown;
+        _scroller.PreviewMouseMove += Scroller_PreviewMouseMove;
+        _scroller.PreviewMouseUp += Scroller_PreviewMouseUp;
+        _scroller.MouseLeftButtonDown += (_, _) =>
+        {
+            // A click on the empty space around the image: deselect.
+            if (!ImageHost.IsMouseOver && _overlay == null)
+            {
+                _textEditor.Commit();
+                ClearSelection();
+            }
+        };
+        SizeChanged += (_, _) =>
+        {
+            if (_firstFit && _hasImage && _scroller.ActualWidth > 0)
+            {
+                Fit();
+            }
+        };
+
+        _emptyHint = EmptyHint();
+        _dropHint = new Border
+        {
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
+            BorderThickness = new Thickness(2),
+            Margin = new Thickness(10),
+            CornerRadius = new CornerRadius(8),
+            BorderBrush = (Brush)Application.Current.FindResource("Accent"),
+            Background = new SolidColorBrush(Color.FromArgb(0x30, 0x4C, 0x8D, 0xFF)),
+            Child = new TextBlock { Text = "松开以打开图片", Foreground = Brushes.White, FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        };
+
+        _sessionApply = new Button { Content = "应用", Style = (Style)Application.Current.FindResource("PrimaryButton"), MinWidth = 64, Height = 28, Margin = new Thickness(14, 0, 0, 0) };
+        _sessionApply.Click += (_, _) => ApplySession();
+        var sessionCancel = new Button { Content = "取消", Style = (Style)Application.Current.FindResource("FooterButton"), MinWidth = 64, Height = 28, Margin = new Thickness(8, 0, 0, 0) };
+        sessionCancel.Click += (_, _) => CancelSession();
+        var sessionRow = new StackPanel { Orientation = Orientation.Horizontal };
+        _sessionText.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFF0F0F0));
+        sessionRow.Children.Add(_sessionText);
+        sessionRow.Children.Add(_sessionApply);
+        sessionRow.Children.Add(sessionCancel);
+        _sessionBar = new Border
+        {
+            Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 10, 0, 0),
+            Padding = new Thickness(14, 7, 8, 7),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Child = sessionRow
+        };
+        _sessionBar.SetResourceReference(Border.BackgroundProperty, "PanelBackground");
+        _sessionBar.SetResourceReference(Border.BorderBrushProperty, "PanelBorder");
+        UiScale.Attach(_sessionBar);
+
+        var middle = new Grid();
+        middle.Children.Add(_scroller);
+        middle.Children.Add(_emptyHint);
+        middle.Children.Add(_sessionBar);
+        middle.Children.Add(_dropHint);
+
+        _gray = TextToggle("灰度", "转为灰度图");
+        _invert = TextToggle("反色", "颜色取反");
+        var panel = BuildPanel();
+        var status = BuildStatusBar();
+        var top = new Border { Padding = new Thickness(8, 6, 8, 6), BorderThickness = new Thickness(0, 0, 0, 1), Child = Toolbar };
+        Toolbar.HorizontalAlignment = HorizontalAlignment.Center;
+        top.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
+        DockPanel.SetDock(top, Dock.Top);
+        DockPanel.SetDock(status, Dock.Bottom);
+        DockPanel.SetDock(panel, Dock.Right);
+        _layout.Children.Add(top);
+        _layout.Children.Add(status);
+        _layout.Children.Add(panel);
+        _layout.Children.Add(middle);
+        _layout.SetResourceReference(Panel.BackgroundProperty, Theme.Key(0xFF1A1A1A));
+        Content = _layout;
+
+        Toolbar.Visibility = Visibility.Visible;
+        Toolbar.OpenRequested += OpenDialog;
+        Toolbar.PinRequested += PinToScreen;
+        Toolbar.ToolChanged += _ => CancelSession();
+        Toolbar.PreviewMouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(new Action(ReclaimKeyboard), DispatcherPriority.Input);
+
+        _history.CaptureExtra = () =>
+        {
+            BakeAdjust(); // a step always holds finished pixels
+            return new State(_origin, _baseImage, _adjust);
+        };
+        _history.RestoreExtra = extra =>
+        {
+            if (extra is State state)
+            {
+                RestoreState(state);
+            }
+        };
+        _history.ExtraSize = extra => extra is State s
+            ? new (object, long)[] { (s.Origin, s.Origin.PixelWidth * 4L * s.Origin.PixelHeight), (s.Base, s.Base.PixelWidth * 4L * s.Base.PixelHeight) }
+            : Array.Empty<(object, long)>();
+        _adjustTimer.Tick += (_, _) =>
+        {
+            // Still holding a slider: the same step goes on.
+            if (Mouse.LeftButton != MouseButtonState.Pressed)
+            {
+                BakeAdjust();
+            }
+        };
+
+        AllowDrop = true;
+        DragEnter += OnDrag;
+        DragOver += OnDrag;
+        DragLeave += (_, _) => _dropHint.Visibility = Visibility.Collapsed;
+        Drop += OnDrop;
+        ContextMenuOpening += (_, e) =>
+        {
+            if (!ImageHost.IsMouseOver)
+            {
+                e.Handled = true;
+            }
+        };
+        Closing += OnClosingEditor;
+        Closed += (_, _) =>
+        {
+            _adjustTimer.Stop();
+            _waitingPin?.ShowAgain(); // not re-pinned: the pin it came from comes back as it was
+        };
+        Loaded += (_, _) =>
+        {
+            EnterEditMode();
+            RefreshPanel();
+            Fit();
+        };
+    }
+
+    private protected override bool IsEditor => true;
+
+    /// <summary>For tests: where 贴到屏幕 goes instead of the app (base image, annotations, composed picture).</summary>
+    public Func<BitmapSource, List<Annotation>, BitmapSource, PinWindow>? PinAction { get; init; }
+
+    private protected override double MinZoom => 0.02;
+
+    /// <summary>The picture as it is now (annotations and adjustments included).</summary>
+    public BitmapSource Composite => ComposeEditedImage();
+
+    public int ImageWidth => _baseImage.PixelWidth;
+
+    public int ImageHeight => _baseImage.PixelHeight;
+
+    public int AnnotationCount => Editor.Items.Count;
+
+    public bool HasImage => _hasImage;
+
+    public string? FilePath => _path;
+
+    /// <summary>Edited since the last save / copy / pin.</summary>
+    public bool IsDirty => _hasImage && (_unsavedNew || _history.ChangeCount != _savedChange || _adjustPending);
+
+    private protected override bool KeysBelongToUi =>
+        Keyboard.FocusedElement is TextBox box && !ReferenceEquals(box, TextEditor) && !ReferenceEquals(box, WatermarkEditor);
+
+    // ------------------------------------------------------------------ panel
+
+    private static TextBlock Label(string text, double size = 12)
+    {
+        var label = new TextBlock { Text = text, FontSize = size, VerticalAlignment = VerticalAlignment.Center };
+        label.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFA8A8A8));
+        return label;
+    }
+
+    private static ToggleButton TextToggle(string text, string tip) => new()
+    {
+        Content = text,
+        ToolTip = tip,
+        Style = (Style)Application.Current.FindResource("ToolToggle"),
+        Height = 30,
+        Margin = new Thickness(0, 0, 6, 0)
+    };
+
+    private static Button TextButton(string text, string tip, Action click)
+    {
+        var button = new Button
+        {
+            Content = text,
+            ToolTip = tip,
+            Style = (Style)Application.Current.FindResource("FooterButton"),
+            MinWidth = 0,
+            Height = 30,
+            Padding = new Thickness(8, 0, 8, 0),
+            Margin = new Thickness(0, 0, 6, 6)
+        };
+        button.Click += (_, _) => click();
+        return button;
+    }
+
+    private static Border Section(string title, params UIElement[] children)
+    {
+        var stack = new StackPanel();
+        var heading = new TextBlock { Text = title, FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
+        heading.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFE6E6E6));
+        stack.Children.Add(heading);
+        foreach (var child in children)
+        {
+            stack.Children.Add(child);
+        }
+
+        var card = new Border { Padding = new Thickness(12, 10, 12, 10), Margin = new Thickness(0, 0, 0, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Child = stack };
+        card.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF222222));
+        card.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
+        return card;
+    }
+
+    private FrameworkElement BuildPanel()
+    {
+        foreach (var box in new[] { _widthBox, _heightBox })
+        {
+            box.Style = (Style)Application.Current.FindResource("InputBox");
+            box.Width = 66;
+            box.Padding = new Thickness(6, 4, 6, 4);
+            box.PreviewKeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter)
+                {
+                    ApplyTypedSize();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    RefreshPanel();
+                    ReclaimKeyboard();
+                    e.Handled = true;
+                }
+            };
+        }
+
+        _widthBox.TextChanged += (_, _) => KeepRatio(_widthBox);
+        _heightBox.TextChanged += (_, _) => KeepRatio(_heightBox);
+        _keepRatio.SetResourceReference(ForegroundProperty, Theme.Key(0xFFD8D8D8));
+        var sizeRow = new StackPanel { Orientation = Orientation.Horizontal };
+        sizeRow.Children.Add(_widthBox);
+        sizeRow.Children.Add(new TextBlock { Text = "×", Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.Gray });
+        sizeRow.Children.Add(_heightBox);
+        var applySize = TextButton("应用", "改变图片尺寸（批注会合并进图片）", ApplyTypedSize);
+        applySize.Margin = new Thickness(8, 0, 0, 0);
+        sizeRow.Children.Add(applySize);
+
+        var turnRow = new WrapPanel();
+        turnRow.Children.Add(TextButton("左转 90°", "逆时针旋转 90°", () => Turn(false)));
+        turnRow.Children.Add(TextButton("右转 90°", "顺时针旋转 90°", () => Turn(true)));
+        turnRow.Children.Add(TextButton("水平镜像", "左右翻转", () => Flip(true)));
+        turnRow.Children.Add(TextButton("垂直镜像", "上下翻转", () => Flip(false)));
+        _angle.ValueChanged += (_, _) => PreviewAngle();
+        var angleRow = new DockPanel { Margin = new Thickness(0, 2, 0, 0) };
+        var angleLabel = Label("角度");
+        angleLabel.Margin = new Thickness(0, 0, 8, 0);
+        DockPanel.SetDock(angleLabel, Dock.Left);
+        DockPanel.SetDock(_angleValue, Dock.Right);
+        _angleValue.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFC8C8C8));
+        _angleValue.Text = "0°";
+        angleRow.Children.Add(angleLabel);
+        angleRow.Children.Add(_angleValue);
+        angleRow.Children.Add(_angle);
+        var applyAngle = TextButton("应用角度", "按角度旋转，画布随之变大（批注会合并进图片）", ApplyAngle);
+        applyAngle.Margin = new Thickness(0, 6, 0, 0);
+        applyAngle.HorizontalAlignment = HorizontalAlignment.Left;
+
+        var cutRow = new WrapPanel();
+        cutRow.Children.Add(TextButton("矩形裁切", "拖出要保留的区域（批注保持可编辑）", () => StartSession(EditorOverlayMode.Crop)));
+        cutRow.Children.Add(TextButton("路径裁切", "沿手绘路径抠图，路径外变透明", () => StartSession(EditorOverlayMode.Path)));
+        cutRow.Children.Add(TextButton("梯形校正", "拖动四个角对准倾斜的矩形，校正为正矩形", () => StartSession(EditorOverlayMode.Keystone)));
+
+        var colour = new StackPanel();
+        colour.Children.Add(AdjustSlider("亮度", "Brightness", -100, 100, 0));
+        colour.Children.Add(AdjustSlider("对比度", "Contrast", -100, 100, 0));
+        colour.Children.Add(AdjustSlider("饱和度", "Saturation", -100, 100, 0));
+        colour.Children.Add(AdjustSlider("透明度", "Opacity", 0, 100, 100));
+        var toggles = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+        _gray.Click += (_, _) => AdjustChanged();
+        _invert.Click += (_, _) => AdjustChanged();
+        toggles.Children.Add(_gray);
+        toggles.Children.Add(_invert);
+        var reset = TextButton("重置", "调色恢复默认", ResetAdjust);
+        reset.Margin = new Thickness(0);
+        toggles.Children.Add(reset);
+        colour.Children.Add(toggles);
+
+        var stack = new StackPanel { Margin = new Thickness(10) };
+        stack.Children.Add(Section("尺寸", sizeRow, _keepRatio));
+        stack.Children.Add(Section("旋转与镜像", turnRow, angleRow, applyAngle));
+        stack.Children.Add(Section("裁切", cutRow));
+        stack.Children.Add(Section("调色", colour));
+        UiScale.Attach(stack);
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = stack };
+        var frame = new Border { Width = 262, BorderThickness = new Thickness(1, 0, 0, 0), Child = scroll };
+        _panel = frame;
+        frame.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF151515));
+        frame.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
+        UiScale.Changed += () => frame.Width = 262 * UiScale.Factor;
+        frame.Width = 262 * UiScale.Factor;
+        return frame;
+    }
+
+    private FrameworkElement AdjustSlider(string title, string key, double min, double max, double start)
+    {
+        var slider = new Slider { Minimum = min, Maximum = max, Value = start, IsMoveToPointEnabled = true };
+        var value = new TextBlock { FontSize = 12, Width = 34, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Text = start.ToString("0", CultureInfo.InvariantCulture) };
+        value.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFC8C8C8));
+        _sliders[key] = (slider, value);
+        slider.ValueChanged += (_, _) =>
+        {
+            value.Text = Math.Round(slider.Value).ToString("0", CultureInfo.InvariantCulture);
+            AdjustChanged();
+        };
+        var row = new DockPanel { Margin = new Thickness(0, 0, 0, 2) };
+        var label = Label(title);
+        label.Width = 48;
+        DockPanel.SetDock(label, Dock.Left);
+        DockPanel.SetDock(value, Dock.Right);
+        row.Children.Add(label);
+        row.Children.Add(value);
+        row.Children.Add(slider);
+        return row;
+    }
+
+    private FrameworkElement BuildStatusBar()
+    {
+        Button Small(string text, string tip, Action click)
+        {
+            var button = TextButton(text, tip, click);
+            button.Height = 24;
+            button.Margin = new Thickness(4, 0, 0, 0);
+            button.FontSize = 11.5;
+            return button;
+        }
+
+        _statusSize.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFA8A8A8));
+        _statusZoom.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFC8C8C8));
+        var bar = new DockPanel { Margin = new Thickness(10, 4, 10, 4) };
+        var zoom = new StackPanel { Orientation = Orientation.Horizontal };
+        zoom.Children.Add(Small("−", "缩小（Ctrl+-）", () => ZoomStep(1 / 1.25)));
+        zoom.Children.Add(_statusZoom);
+        zoom.Children.Add(Small("+", "放大（Ctrl++）", () => ZoomStep(1.25)));
+        zoom.Children.Add(Small("适应", "适应窗口（Ctrl+0）", Fit));
+        zoom.Children.Add(Small("100%", "实际大小（Ctrl+1）", () => SetZoom(1)));
+        DockPanel.SetDock(zoom, Dock.Right);
+        bar.Children.Add(zoom);
+        bar.Children.Add(_statusSize);
+        var frame = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Child = bar };
+        frame.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
+        UiScale.Attach(bar);
+        return frame;
+    }
+
+    private Border EmptyHint()
+    {
+        var open = new Button { Content = "打开图片…", Style = (Style)Application.Current.FindResource("PrimaryButton"), Margin = new Thickness(0, 14, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
+        open.Click += (_, _) => OpenDialog();
+        var text = new TextBlock { Text = "把图片拖到这里，或点击打开", FontSize = 15, HorizontalAlignment = HorizontalAlignment.Center };
+        text.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFF9A9A9A));
+        var formats = new TextBlock { Text = "PNG · JPEG · WebP · BMP · GIF · TIFF · ICO", FontSize = 12, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
+        formats.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFF6E6E6E));
+        var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        stack.Children.Add(text);
+        stack.Children.Add(formats);
+        stack.Children.Add(open);
+        UiScale.Attach(stack);
+        return new Border { Child = stack, Background = Brushes.Transparent };
+    }
+
+    private void UpdateTitle() => Title = (_path != null ? Path.GetFileName(_path) + " - " : "") + "Markshot 图片编辑器";
+
+    /// <summary>Puts the current image's numbers into the controls.</summary>
+    private void RefreshPanel()
+    {
+        _syncingControls = true;
+        _widthBox.Text = _hasImage ? _baseImage.PixelWidth.ToString(CultureInfo.InvariantCulture) : "";
+        _heightBox.Text = _hasImage ? _baseImage.PixelHeight.ToString(CultureInfo.InvariantCulture) : "";
+        if (Math.Abs(_angle.Value) > 0.001)
+        {
+            ImageHost.RenderTransform = Transform.Identity; // a previewed angle that was not applied
+        }
+
+        _angle.Value = 0;
+        _sliders["Brightness"].Slider.Value = _adjust.Brightness;
+        _sliders["Contrast"].Slider.Value = _adjust.Contrast;
+        _sliders["Saturation"].Slider.Value = _adjust.Saturation;
+        _sliders["Opacity"].Slider.Value = _adjust.Opacity;
+        _gray.IsChecked = _adjust.Gray;
+        _invert.IsChecked = _adjust.Invert;
+        _syncingControls = false;
+        _emptyHint.Visibility = _hasImage ? Visibility.Collapsed : Visibility.Visible;
+        ImageHost.Visibility = _hasImage ? Visibility.Visible : Visibility.Collapsed;
+        if (_panel != null)
+        {
+            _panel.IsEnabled = _hasImage;
+        }
+
+        UpdateStatus();
+    }
+
+    private void UpdateStatus()
+    {
+        _statusSize.Text = _hasImage ? $"{_baseImage.PixelWidth} × {_baseImage.PixelHeight} 像素" + (_path != null ? "　·　" + _path : "") : "";
+        _statusZoom.Text = $"{_zoom * 100:0}%";
+    }
+
+    // ------------------------------------------------------------------ zoom and pan
+
+    private void SetZoom(double zoom)
+    {
+        _zoom = Math.Clamp(zoom, MinZoom, 8);
+        ApplyBounds();
+        _textEditor.Refresh();
+        var pointer = Mouse.GetPosition(ImageHost);
+        UpdateCursor(new Point(pointer.X / _zoom, pointer.Y / _zoom));
+        if (_overlay != null)
+        {
+            _overlay.Zoom = _zoom;
+            _overlay.InvalidateVisual();
+        }
+
+        UpdateStatus();
+    }
+
+    private void ZoomStep(double factor) => SetZoom(_zoom * factor);
+
+    /// <summary>Fits the image into the window (a very long one: fits its short side, the rest scrolls).</summary>
+    public void Fit()
+    {
+        if (!_hasImage || _scroller.ActualWidth <= 0)
+        {
+            return;
+        }
+
+        var width = Math.Max(50, _scroller.ActualWidth - 40);
+        var height = Math.Max(50, _scroller.ActualHeight - 40);
+        double w = _baseImage.PixelWidth, h = _baseImage.PixelHeight;
+        var fit = Math.Max(h / w, w / h) > 3 ? Math.Max(width / w, height / h) : Math.Min(width / w, height / h);
+        _firstFit = false;
+        SetZoom(Math.Min(1, fit));
+    }
+
+    /// <summary>
+    /// A selected element or an active tool takes the wheel as on a pin (size; Ctrl = opacity).
+    /// Otherwise the wheel scrolls the picture and Ctrl + wheel zooms at the pointer.
+    /// </summary>
+    private void Scroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        var drawing = _overlay == null && (_textEditor.IsActive || _selected != null || _tool is not (AnnotationTool.None or AnnotationTool.Select));
+        if (drawing && ImageHost.IsMouseOver)
+        {
+            OnMouseWheel(this, e);
+            return;
+        }
+
+        if (!control)
+        {
+            return; // the scroll area scrolls
+        }
+
+        var inImage = e.GetPosition(ImageHost);
+        var inView = e.GetPosition(_scroller);
+        var before = _zoom;
+        ZoomStep(e.Delta > 0 ? 1.1 : 1 / 1.1);
+        _scroller.UpdateLayout();
+        // The point under the mouse stays under the mouse.
+        var ratio = _zoom / before;
+        var moved = ImageHost.TranslatePoint(new Point(inImage.X * ratio, inImage.Y * ratio), _scroller);
+        _scroller.ScrollToHorizontalOffset(_scroller.HorizontalOffset + moved.X - inView.X);
+        _scroller.ScrollToVerticalOffset(_scroller.VerticalOffset + moved.Y - inView.Y);
+        e.Handled = true;
+    }
+
+    private void Scroller_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // The keyboard goes back to the canvas when it is clicked (the size boxes apply on Enter only).
+        if (KeysBelongToUi && (Keyboard.FocusedElement as DependencyObject) != null)
+        {
+            ReclaimKeyboard();
+        }
+
+        if (e.ChangedButton == MouseButton.Middle)
+        {
+            _panning = true;
+            _panStart = e.GetPosition(_scroller);
+            _panOffset = new Point(_scroller.HorizontalOffset, _scroller.VerticalOffset);
+            _scroller.CaptureMouse();
+            _scroller.Cursor = Cursors.SizeAll;
+            e.Handled = true;
+        }
+    }
+
+    private void Scroller_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_panning)
+        {
+            var delta = e.GetPosition(_scroller) - _panStart;
+            _scroller.ScrollToHorizontalOffset(_panOffset.X - delta.X);
+            _scroller.ScrollToVerticalOffset(_panOffset.Y - delta.Y);
+            e.Handled = true;
+        }
+    }
+
+    private void Scroller_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_panning && e.ChangedButton == MouseButton.Middle)
+        {
+            _panning = false;
+            _scroller.ReleaseMouseCapture();
+            _scroller.ClearValue(CursorProperty);
+            e.Handled = true;
+        }
+    }
+
+    // ------------------------------------------------------------------ the document
+
+    /// <summary>Starts over on an image (opened / dropped); not one undo step.</summary>
+    public void LoadImage(BitmapSource image, string? path)
+    {
+        CancelSession();
+        _textEditor.Commit();
+        ClearSelection();
+        _adjustTimer.Stop();
+        _adjustPending = false;
+        Editor.Items.Clear();
+        _history.Clear();
+        _savedChange = _history.ChangeCount;
+        _hasImage = true;
+        _path = path;
+        _waitingPin?.ShowAgain(); // another picture now: the pin it came from is unrelated from here on
+        _waitingPin = null;
+        _sourcePin = null;
+        _unsavedNew = path == null;
+        _adjust = new ImageAdjust();
+        _proxy = null;
+        var normal = ImageOps.Normalize(image);
+        _origin = normal;
+        SetBitmap(normal);
+        Editor.InvalidateVisual();
+        UpdateUndoButtons();
+        UpdateTitle();
+        RefreshPanel();
+        Fit();
+    }
+
+    /// <summary>The bitmap under the annotations changes (size included); mosaics are rebuilt from it.</summary>
+    private void SetBitmap(BitmapSource image)
+    {
+        _baseImage = image;
+        _pixelWidth = image.PixelWidth;
+        _pixelHeight = image.PixelHeight;
+        Editor.Source = image;
+        Img.Source = image;
+        foreach (var item in Editor.Items.Where(item => item is MosaicAnnotation or MosaicBrushAnnotation))
+        {
+            MosaicBuilder.Rebuild(item, image);
+        }
+
+        ApplyBounds();
+        Editor.InvalidateVisual();
+    }
+
+    private void RestoreState(State state)
+    {
+        _adjustTimer.Stop();
+        _adjustPending = false;
+        _origin = state.Origin;
+        _proxy = null;
+        _adjust = state.Adjust;
+        SetBitmap(state.Base);
+        RefreshPanel();
+    }
+
+    /// <summary>
+    /// One undoable change of the image's geometry: pending colour changes are finished first, what
+    /// comes out becomes the new starting point (the colour sliders return to neutral).
+    /// </summary>
+    private void GeometryStep(Func<BitmapSource> change)
+    {
+        if (!_hasImage)
+        {
+            return;
+        }
+
+        _textEditor.Commit();
+        ClearSelection();
+        _history.Checkpoint(Editor.Items);
+        var result = change();
+        _origin = result;
+        _proxy = null;
+        _adjust = new ImageAdjust();
+        SetBitmap(result);
+        UpdateUndoButtons();
+        RefreshPanel();
+    }
+
+    /// <summary>Annotations into the pixels: for operations they cannot follow (they stay undoable).</summary>
+    private BitmapSource Flattened()
+    {
+        var flat = ImageOps.Normalize(base.ComposeEditedImage());
+        Editor.Items.Clear();
+        return flat;
+    }
+
+    private protected override BitmapSource ComposeEditedImage()
+    {
+        BakeAdjust();
+        return base.ComposeEditedImage();
+    }
+
+    public void ResizeTo(int width, int height)
+    {
+        if (width >= 1 && height >= 1 && (width != _baseImage.PixelWidth || height != _baseImage.PixelHeight))
+        {
+            GeometryStep(() => ImageOps.Resize(Flattened(), width, height));
+            Fit();
+        }
+    }
+
+    private void ApplyTypedSize()
+    {
+        if (int.TryParse(_widthBox.Text.Trim(), out var width) && int.TryParse(_heightBox.Text.Trim(), out var height) &&
+            width is >= 1 and <= 30000 && height is >= 1 and <= 30000)
+        {
+            ResizeTo(width, height);
+        }
+
+        RefreshPanel();
+        ReclaimKeyboard();
+    }
+
+    private void KeepRatio(TextBox changed)
+    {
+        if (_syncingControls || _keepRatio.IsChecked != true || !changed.IsKeyboardFocused || !int.TryParse(changed.Text.Trim(), out var value) || value < 1)
+        {
+            return;
+        }
+
+        _syncingControls = true;
+        if (ReferenceEquals(changed, _widthBox))
+        {
+            _heightBox.Text = Math.Max(1, (int)Math.Round(value * (double)_baseImage.PixelHeight / _baseImage.PixelWidth)).ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            _widthBox.Text = Math.Max(1, (int)Math.Round(value * (double)_baseImage.PixelWidth / _baseImage.PixelHeight)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        _syncingControls = false;
+    }
+
+    public void Flip(bool horizontal)
+    {
+        var op = horizontal ? 'H' : 'V';
+        Orient(() => ApplyOrientation(op, record: false));
+    }
+
+    public void Turn(bool clockwise)
+    {
+        Orient(() =>
+        {
+            if (!clockwise)
+            {
+                ApplyOrientation('R', record: false);
+                return;
+            }
+
+            // Three turns the other way (annotations follow each); the picture swings once.
+            for (var i = 0; i < 3; i++)
+            {
+                var width = _baseImage.PixelWidth;
+                ApplyPinImageTransform(new RotateTransform(-90), p => new Point(p.Y, width - p.X), _baseImage.PixelHeight, width, 'R');
+            }
+
+            AnimateOrientation('R', clockwise: true);
+        });
+    }
+
+    /// <summary>A flip / quarter turn: annotations follow and stay editable.</summary>
+    private void Orient(Action turn)
+    {
+        GeometryStep(() =>
+        {
+            turn();
+            return ImageOps.Normalize(_baseImage);
+        });
+    }
+
+    private void PreviewAngle()
+    {
+        _angleValue.Text = $"{_angle.Value:0.#}°";
+        if (_syncingControls)
+        {
+            return;
+        }
+
+        ImageHost.RenderTransformOrigin = new Point(0.5, 0.5);
+        ImageHost.RenderTransform = new RotateTransform(_angle.Value);
+    }
+
+    private void ApplyAngle()
+    {
+        var angle = Math.Round(_angle.Value, 1);
+        ImageHost.RenderTransform = Transform.Identity;
+        if (Math.Abs(angle) >= 0.05)
+        {
+            RotateBy(angle);
+        }
+
+        RefreshPanel();
+    }
+
+    public void RotateBy(double degrees)
+    {
+        GeometryStep(() => ImageOps.Rotate(Flattened(), degrees));
+        Fit();
+    }
+
+    public void CropTo(Int32Rect rect)
+    {
+        GeometryStep(() =>
+        {
+            var cropped = ImageOps.Crop(_baseImage, rect);
+            // The annotations keep their place on the picture and stay editable.
+            var moved = AnnotationOps.ToPinSpace(Editor.Items, new Point(rect.X, rect.Y), cropped);
+            Editor.Items.Clear();
+            Editor.Items.AddRange(moved);
+            return cropped;
+        });
+        Fit();
+    }
+
+    public void PathCropTo(IReadOnlyList<Point> path)
+    {
+        GeometryStep(() => ImageOps.PathCrop(Flattened(), path, out _));
+        Fit();
+    }
+
+    public void KeystoneTo(IReadOnlyList<Point> quad)
+    {
+        GeometryStep(() => ImageOps.Keystone(Flattened(), quad));
+        Fit();
+    }
+
+    // ------------------------------------------------------------------ colour
+
+    private ImageAdjust AdjustFromControls() => new(
+        Math.Round(_sliders["Brightness"].Slider.Value),
+        Math.Round(_sliders["Contrast"].Slider.Value),
+        Math.Round(_sliders["Saturation"].Slider.Value),
+        Math.Round(_sliders["Opacity"].Slider.Value),
+        _gray.IsChecked == true,
+        _invert.IsChecked == true);
+
+    private void AdjustChanged()
+    {
+        if (_syncingControls || !_hasImage)
+        {
+            return;
+        }
+
+        SetAdjust(AdjustFromControls());
+    }
+
+    /// <summary>
+    /// Colour settings, always worked out from the image as it was before them (moving a slider back
+    /// really restores it). The screen follows at once on a smaller copy; the real pixels come
+    /// when the controls rest.
+    /// </summary>
+    public void SetAdjust(ImageAdjust adjust)
+    {
+        if (adjust == _adjust)
+        {
+            return;
+        }
+
+        if (!_adjustPending)
+        {
+            _history.Checkpoint(Editor.Items);
+            UpdateUndoButtons();
+        }
+
+        _adjust = adjust;
+        _adjustPending = true;
+        Img.Source = ImageOps.Adjust(Proxy(), adjust);
+        _adjustTimer.Stop();
+        _adjustTimer.Start();
+    }
+
+    private BitmapSource Proxy()
+    {
+        if (_proxy != null)
+        {
+            return _proxy;
+        }
+
+        var side = Math.Max(_origin.PixelWidth, _origin.PixelHeight);
+        _proxy = side <= PreviewSide
+            ? _origin
+            : ImageOps.Resize(_origin, Math.Max(1, _origin.PixelWidth * PreviewSide / side), Math.Max(1, _origin.PixelHeight * PreviewSide / side));
+        return _proxy;
+    }
+
+    private void BakeAdjust()
+    {
+        _adjustTimer.Stop();
+        if (!_adjustPending)
+        {
+            return;
+        }
+
+        _adjustPending = false;
+        SetBitmap(_adjust.IsNeutral ? _origin : ImageOps.Adjust(_origin, _adjust));
+    }
+
+    private void ResetAdjust() => SetAdjustAndControls(new ImageAdjust());
+
+    private void SetAdjustAndControls(ImageAdjust adjust)
+    {
+        SetAdjust(adjust);
+        RefreshPanel();
+    }
+
+    // ------------------------------------------------------------------ crop / path / keystone sessions
+
+    private void StartSession(EditorOverlayMode mode)
+    {
+        if (!_hasImage)
+        {
+            return;
+        }
+
+        CancelSession();
+        BakeAdjust();
+        _textEditor.Commit();
+        ClearSelection();
+        SetTool(AnnotationTool.None);
+        Toolbar.SetTool(AnnotationTool.None);
+        _overlay = new EditorOverlay(mode, _baseImage.PixelWidth, _baseImage.PixelHeight, _zoom);
+        _overlay.Changed += UpdateSessionBar;
+        ImageHost.Children.Add(_overlay);
+        _sessionText.Text = mode switch
+        {
+            EditorOverlayMode.Crop => "拖出要保留的区域，拖边角调整。Enter 应用，Esc 取消",
+            EditorOverlayMode.Path => "按住鼠标沿要保留的部分画一圈（按住 Shift 走直线）。Enter 应用，Esc 取消",
+            _ => "拖动四个角对准图中倾斜的矩形。Enter 应用，Esc 取消"
+        };
+        _sessionBar.Visibility = Visibility.Visible;
+        UpdateSessionBar();
+    }
+
+    private void UpdateSessionBar() => _sessionApply.IsEnabled = _overlay?.Ready == true;
+
+    private void ApplySession()
+    {
+        if (_overlay is not { Ready: true } overlay)
+        {
+            return;
+        }
+
+        CancelSession();
+        switch (overlay.Mode)
+        {
+            case EditorOverlayMode.Crop:
+            {
+                var r = overlay.Crop;
+                var left = (int)Math.Round(r.Left);
+                var top = (int)Math.Round(r.Top);
+                CropTo(new Int32Rect(left, top,
+                    Math.Clamp((int)Math.Round(r.Right) - left, 1, _baseImage.PixelWidth - left),
+                    Math.Clamp((int)Math.Round(r.Bottom) - top, 1, _baseImage.PixelHeight - top)));
+                break;
+            }
+
+            case EditorOverlayMode.Path:
+                PathCropTo(overlay.PathPoints);
+                break;
+            default:
+                KeystoneTo(overlay.Quad);
+                break;
+        }
+    }
+
+    private void CancelSession()
+    {
+        if (_overlay != null)
+        {
+            ImageHost.Children.Remove(_overlay);
+            _overlay = null;
+            _sessionBar.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    // ------------------------------------------------------------------ keys, menu
+
+    private protected override bool EditorKey(Key key, bool control)
+    {
+        if (_overlay != null)
+        {
+            switch (key)
+            {
+                case Key.Enter:
+                    ApplySession();
+                    return true;
+                case Key.Escape:
+                    CancelSession();
+                    return true;
+            }
+
+            if (!control)
+            {
+                return true; // tool letters wait until the crop / path / keystone is finished
+            }
+        }
+
+        if (!control)
+        {
+            if (key != Key.Escape || _selected != null)
+            {
+                return false;
+            }
+
+            // Esc puts the tool down; it never closes the editor by accident.
+            if (_tool is not (AnnotationTool.None or AnnotationTool.Select))
+            {
+                SetTool(AnnotationTool.None);
+                Toolbar.SetTool(AnnotationTool.None);
+            }
+
+            return true;
+        }
+
+        switch (key)
+        {
+            case Key.O:
+                OpenDialog();
+                return true;
+            case Key.S:
+                Save();
+                return true;
+            case Key.T:
+                PinToScreen();
+                return true;
+            case Key.D0 or Key.NumPad0:
+                Fit();
+                return true;
+            case Key.D1 or Key.NumPad1:
+                SetZoom(1);
+                return true;
+            case Key.OemPlus or Key.Add:
+                ZoomStep(1.25);
+                return true;
+            case Key.OemMinus or Key.Subtract:
+                ZoomStep(1 / 1.25);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private protected override void BuildContextMenu()
+    {
+        var menu = new ContextMenu();
+        void Add(string header, Action action, string gesture)
+        {
+            var item = new MenuItem { Header = header, InputGestureText = gesture };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+        }
+
+        Add("打开图片…", OpenDialog, "Ctrl+O");
+        Add("保存…", Save, "Ctrl+S");
+        Add("复制", Copy, "Ctrl+C");
+        Add("贴到屏幕", PinToScreen, "Ctrl+T");
+        menu.Items.Add(new Separator());
+        Add("适应窗口", Fit, "Ctrl+0");
+        Add("实际大小", () => SetZoom(1), "Ctrl+1");
+        ContextMenu = menu;
+    }
+
+    // ------------------------------------------------------------------ open, drop, save, copy, pin
+
+    private void OpenDialog()
+    {
+        var dialog = new OpenFileDialog { Title = "打开图片", Filter = ImageFile.OpenFilter };
+        if (_path != null && Path.GetDirectoryName(_path) is { } directory && Directory.Exists(directory))
+        {
+            dialog.InitialDirectory = directory;
+        }
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            OpenFile(dialog.FileName);
+        }
+    }
+
+    /// <summary>Opens a file here (asks first when the current picture has unsaved edits).</summary>
+    public bool OpenFile(string path)
+    {
+        if (!ConfirmDiscard())
+        {
+            return false;
+        }
+
+        try
+        {
+            LoadImage(ImageFile.Load(path), path);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("打开图片失败：" + path, ex);
+            MessageBox.Show(this, "无法打开这个图片：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+    }
+
+    private static string? DroppedImage(IDataObject data) =>
+        data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] files
+            ? files.FirstOrDefault(ImageFile.IsImage)
+            : null;
+
+    private void OnDrag(object sender, DragEventArgs e)
+    {
+        var ok = DroppedImage(e.Data) != null;
+        e.Effects = ok ? DragDropEffects.Copy : DragDropEffects.None;
+        _dropHint.Visibility = ok ? Visibility.Visible : Visibility.Collapsed;
+        e.Handled = true;
+    }
+
+    private void OnDrop(object sender, DragEventArgs e)
+    {
+        _dropHint.Visibility = Visibility.Collapsed;
+        if (DroppedImage(e.Data) is { } file)
+        {
+            OpenFile(file);
+        }
+
+        e.Handled = true;
+    }
+
+    private void MarkKept()
+    {
+        _unsavedNew = false;
+        _savedChange = _history.ChangeCount;
+    }
+
+    private protected override void Copy()
+    {
+        if (_hasImage && ClipboardService.CopyImage(ComposeEditedImage()))
+        {
+            MarkKept();
+        }
+    }
+
+    private protected override void Save()
+    {
+        if (!_hasImage)
+        {
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "保存图片",
+            Filter = ImageFile.SaveFilter,
+            FileName = _path != null ? Path.GetFileName(_path) : $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png",
+            FilterIndex = (_path != null ? Path.GetExtension(_path).ToLowerInvariant() : "") switch
+            {
+                ".jpg" or ".jpeg" or ".jfif" => 2,
+                ".webp" => 3,
+                ".bmp" => 4,
+                ".tif" or ".tiff" => 5,
+                _ => 1
+            }
+        };
+        var directory = _path != null ? Path.GetDirectoryName(_path) : App.Config.ResolveSaveDirectory();
+        if (directory != null && Directory.Exists(directory))
+        {
+            dialog.InitialDirectory = directory;
+        }
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            ImageFile.Save(ComposeEditedImage(), dialog.FileName);
+            _path = dialog.FileName;
+            MarkKept();
+            UpdateTitle();
+            UpdateStatus();
+            ((App)Application.Current).ShowSavedPrompt(dialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("保存图片失败", ex);
+            MessageBox.Show(this, "保存失败：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>贴到屏幕: the picture as a pin, its annotations still editable there; the editor stays open.</summary>
+    private void PinToScreen()
+    {
+        if (!_hasImage)
+        {
+            return;
+        }
+
+        _textEditor.Commit();
+        var composed = ComposeEditedImage();
+        var center = PointToScreen(new Point(ActualWidth / 2, ActualHeight / 2));
+        var work = Monitors.At((int)center.X, (int)center.Y).WorkArea;
+        var annotations = Editor.Items.Select(item => item.Clone()).ToList();
+        _sourcePin = PinAction != null
+            ? PinAction(_baseImage, annotations, composed)
+            : ((App)Application.Current).PinFromEditor(_baseImage, annotations, composed, _sourcePin, work);
+        _waitingPin = null;
+        MarkKept();
+    }
+
+    // ------------------------------------------------------------------ closing
+
+    /// <summary>True when the current picture may go (saved, or the user said so).</summary>
+    private bool ConfirmDiscard()
+    {
+        if (!IsDirty)
+        {
+            return true;
+        }
+
+        var answer = MessageBox.Show(this, "图片还没有保存，要保存吗？", "Markshot", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        if (answer == MessageBoxResult.Cancel)
+        {
+            return false;
+        }
+
+        if (answer == MessageBoxResult.Yes)
+        {
+            Save();
+            return !IsDirty;
+        }
+
+        return true;
+    }
+
+    private void OnClosingEditor(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_forceClose && !ConfirmDiscard())
+        {
+            e.Cancel = true;
+        }
+    }
+
+    /// <summary>Closes now (the app is shutting down, tests).</summary>
+    public void CloseWithoutAsking()
+    {
+        _forceClose = true;
+        Close();
+    }
+
+    /// <summary>Undo / redo for callers outside the annotation code (tests, menus).</summary>
+    public void UndoStep() => Undo();
+
+    public void RedoStep() => Redo();
+}

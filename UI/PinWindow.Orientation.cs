@@ -16,7 +16,7 @@ public partial class PinWindow
     private void RotatePinImageCounterClockwise() => ApplyOrientation('R', record: true);
 
     /// <summary>Flips ('H', 'V') or rotates 90° counter-clockwise ('R') the image under the annotations.</summary>
-    private void ApplyOrientation(char op, bool record)
+    private protected void ApplyOrientation(char op, bool record)
     {
         var width = _baseImage.PixelWidth;
         var height = _baseImage.PixelHeight;
@@ -52,7 +52,7 @@ public partial class PinWindow
     /// A quick turn after a flip / rotation: the new image starts where the old one was
     /// (mirrored, or turned back 90°) and swings into place (240 ms, shared curve).
     /// </summary>
-    private void AnimateOrientation(char op)
+    private protected void AnimateOrientation(char op, bool clockwise = false)
     {
         var scale = new ScaleTransform(1, 1);
         var rotate = new RotateTransform(0);
@@ -68,7 +68,7 @@ public partial class PinWindow
                 scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(-1, 1, duration) { EasingFunction = Motion.Ease });
                 break;
             default:
-                rotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(90, 0, duration) { EasingFunction = Motion.Ease });
+                rotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(clockwise ? -90 : 90, 0, duration) { EasingFunction = Motion.Ease });
                 break;
         }
     }
@@ -96,7 +96,7 @@ public partial class PinWindow
         ResetView();
     }
 
-    private void ApplyPinImageTransform(Transform transform, Func<Point, Point> map, int newWidth, int newHeight, char op)
+    private protected void ApplyPinImageTransform(Transform transform, Func<Point, Point> map, int newWidth, int newHeight, char op)
     {
         CancelInPlaceTranslation();
         _textEditor.Commit();

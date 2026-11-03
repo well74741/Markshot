@@ -5,7 +5,8 @@ namespace Markshot.UI;
 public enum AnnotationToolbarMode
 {
     Capture,
-    Pin
+    Pin,
+    Editor
 }
 
 public partial class AnnotationToolbar : UserControl
@@ -103,6 +104,8 @@ public partial class AnnotationToolbar : UserControl
     public event Action? ApplyRequested;
     public event Action? RecordRequested;
     public event Action? ScrollRequested;
+    public event Action? EditRequested;
+    public event Action? OpenRequested;
 
     /// <summary>The watermark switch: true = show a watermark, false = remove it.</summary>
     public event Action<bool>? WatermarkToggled;
@@ -135,6 +138,7 @@ public partial class AnnotationToolbar : UserControl
         InitPalette();
         SetTool(AnnotationTool.Select, notify: false);
         SetMode(AnnotationToolbarMode.Capture);
+        UpdateScrollIcon();
     }
 
     public AnnotationTool Tool => _tool;
@@ -206,6 +210,8 @@ public partial class AnnotationToolbar : UserControl
         _mode = mode;
         CaptureActions.Visibility = mode == AnnotationToolbarMode.Capture ? Visibility.Visible : Visibility.Collapsed;
         PinActions.Visibility = mode == AnnotationToolbarMode.Pin ? Visibility.Visible : Visibility.Collapsed;
+        EditorActions.Visibility = mode == AnnotationToolbarMode.Editor ? Visibility.Visible : Visibility.Collapsed;
+        DragHandle.Visibility = mode == AnnotationToolbarMode.Editor ? Visibility.Collapsed : Visibility.Visible;
         ApplyToolOrderFromConfig();
     }
 
@@ -213,8 +219,8 @@ public partial class AnnotationToolbar : UserControl
     {
         var config = App.Config;
         ApplyToolOrder(
-            _mode == AnnotationToolbarMode.Pin ? config.PinToolOrder : config.CaptureToolOrder,
-            _mode == AnnotationToolbarMode.Pin ? config.PinToolHidden : config.CaptureToolHidden);
+            _mode != AnnotationToolbarMode.Capture ? config.PinToolOrder : config.CaptureToolOrder,
+            _mode != AnnotationToolbarMode.Capture ? config.PinToolHidden : config.CaptureToolHidden);
         ApplyActionOrder(CaptureActions, config.CaptureActionOrder, config.CaptureActionHidden, ToolbarCatalog.CaptureActions);
         ApplyActionOrder(PinActions, config.PinActionOrder, config.PinActionHidden, ToolbarCatalog.PinActions);
     }
@@ -300,7 +306,7 @@ public partial class AnnotationToolbar : UserControl
         }
 
         var text = string.Join(",", keys);
-        var pin = _mode == AnnotationToolbarMode.Pin;
+        var pin = _mode != AnnotationToolbarMode.Capture;
         if (tools)
         {
             if (pin) config.PinToolOrder = text; else config.CaptureToolOrder = text;
@@ -848,7 +854,7 @@ public partial class AnnotationToolbar : UserControl
     private bool _suppressMenuOpen;
     private readonly HashSet<Button> _menuAnchors = new();
 
-    private void ShowVariantMenu(Button anchor, params (string Label, AnnotationTool Tool)[] items)
+    private void ShowAnchorMenu(Button anchor, IEnumerable<(string Label, bool Checked, Action Pick)> items)
     {
         // The arrow is an open / close switch. A press on it while its menu is open closes the menu;
         // the click that follows must not open it again. Which comes first (the menu's Closed or the
@@ -869,12 +875,10 @@ public partial class AnnotationToolbar : UserControl
         }
 
         var menu = new ContextMenu { PlacementTarget = anchor };
-        foreach (var (label, tool) in items)
+        foreach (var (label, isChecked, pick) in items)
         {
-            var item = new MenuItem { Header = label, IsChecked = FamilyOf(tool) == FamilyOf(_tool) && _tool == tool };
-            var target = tool;
-            item.Click += (_, _) => PickVariant(target);
-            item.IsChecked = _tool == tool;
+            var item = new MenuItem { Header = label, IsChecked = isChecked };
+            item.Click += (_, _) => pick();
             menu.Items.Add(item);
         }
 
@@ -895,6 +899,40 @@ public partial class AnnotationToolbar : UserControl
         anchor.ContextMenu = menu;
         menu.IsOpen = true;
     }
+
+    private void ShowVariantMenu(Button anchor, params (string Label, AnnotationTool Tool)[] items) =>
+        ShowAnchorMenu(anchor, items.Select(i => (i.Label, _tool == i.Tool, (Action)(() => PickVariant(i.Tool)))));
+
+    /// <summary>长截图 direction (the button's icon shows it; Tab switches during the capture too).</summary>
+    public bool ScrollHorizontal
+    {
+        get => App.Config?.ScrollHorizontal == true;
+        set
+        {
+            if (App.Config is { } config)
+            {
+                config.ScrollHorizontal = value;
+                config.Save();
+            }
+
+            UpdateScrollIcon();
+        }
+    }
+
+    private void UpdateScrollIcon()
+    {
+        if (ScrollIcon != null)
+        {
+            ScrollIcon.Style = (Style)FindResource(ScrollHorizontal ? "IconScrollHMask" : "IconScrollMask");
+        }
+    }
+
+    private void ScrollMenu_Click(object sender, RoutedEventArgs e) =>
+        ShowAnchorMenu((Button)sender, new (string, bool, Action)[]
+        {
+            ("竖向长截图", !ScrollHorizontal, () => ScrollHorizontal = false),
+            ("横向长截图", ScrollHorizontal, () => ScrollHorizontal = true)
+        });
 
     private void Variant_Checked(object sender, RoutedEventArgs e)
     {
@@ -1173,6 +1211,13 @@ public partial class AnnotationToolbar : UserControl
     private void Record_Click(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
 
     private void Scroll_Click(object sender, RoutedEventArgs e) => ScrollRequested?.Invoke();
+
+    private void Edit_Click(object sender, RoutedEventArgs e) => EditRequested?.Invoke();
+
+    private void Open_Click(object sender, RoutedEventArgs e) => OpenRequested?.Invoke();
+
+    /// <summary>Bar actions added by the image editor (it has its own Pin handling).</summary>
+    public bool IsEditorMode => _mode == AnnotationToolbarMode.Editor;
 
     private void Translate_Click(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke();
 

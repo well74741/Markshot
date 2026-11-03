@@ -64,6 +64,11 @@ public partial class PinWindow
 
     private void ShowToolbarWindow()
     {
+        if (IsEditor)
+        {
+            return; // the toolbar is part of the editor window
+        }
+
         if (_toolbarWindow == null)
         {
             _toolbarWindow = new ToolbarHostWindow(Toolbar) { Owner = this };

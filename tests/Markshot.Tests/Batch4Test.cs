@@ -102,14 +102,21 @@ static class Batch4Test
         Check(immediate > 30 && penHost.ActualHeight < 0.5, $"settings row slides closed, not instantly ({immediate:F1} → {penHost.ActualHeight:F1})");
 
         // width eases when switching to a tool with a wider row
-        bars[0].SetTool(AnnotationTool.Text);
-        Pump(60);
-        stack.UpdateLayout();
         var host0 = (FrameworkElement)bars[0].FindName("SettingsHost");
-        var midWidth = host0.ActualWidth;
-        Pump(400);
         stack.UpdateLayout();
-        Check(host0.ActualWidth > midWidth + 5, $"settings row width eases ({midWidth:F0} → {host0.ActualWidth:F0})");
+        var startWidth = host0.ActualWidth;
+        bars[0].SetTool(AnnotationTool.Text);
+        var widths = new System.Collections.Generic.List<double>();
+        for (var i = 0; i < 25; i++)
+        {
+            Pump(20);
+            stack.UpdateLayout();
+            widths.Add(host0.ActualWidth);
+        }
+
+        var endWidth = widths[^1];
+        var midWidth = widths.FirstOrDefault(w => w > startWidth + 1 && w < endWidth - 1);
+        Check(endWidth > startWidth + 5 && midWidth > 0, $"settings row width eases ({midWidth:F0} → {host0.ActualWidth:F0})");
         win.Close();
 
         // ---- rotation grips hug the corners and rotate; text edit frame moves in the band only

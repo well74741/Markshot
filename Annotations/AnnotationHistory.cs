@@ -8,6 +8,24 @@ namespace Markshot.Annotations;
 public sealed class AnnotationHistory
 {
     private const int MaxDepth = 50;
+    private const long MaxExtraBytes = 1500L * 1024 * 1024;
+
+    /// <summary>A snapshot of the elements plus whatever else the owner wants undone with them.</summary>
+    private sealed class Entry : List<Annotation>
+    {
+        public object? Extra;
+    }
+
+    /// <summary>State stored with every step (the image editor's bitmaps; frozen, so shared between steps).</summary>
+    public Func<object?>? CaptureExtra { get; set; }
+
+    public Action<object?>? RestoreExtra { get; set; }
+
+    /// <summary>The objects an extra keeps alive and their sizes: old steps are dropped above a memory limit.</summary>
+    public Func<object?, IEnumerable<(object Key, long Bytes)>>? ExtraSize { get; set; }
+
+    /// <summary>Counts every change, undo and redo (the editor compares it to know about unsaved changes).</summary>
+    public long ChangeCount { get; private set; }
 
     private readonly List<List<Annotation>> _undo = new();
     private readonly Stack<List<Annotation>> _redo = new();
@@ -104,6 +122,7 @@ public sealed class AnnotationHistory
             return false;
         }
 
+        ChangeCount++;
         _redo.Push(Snapshot(items));
         Restore(items, _undo[^1]);
         _undo.RemoveAt(_undo.Count - 1);
@@ -118,6 +137,7 @@ public sealed class AnnotationHistory
             return false;
         }
 
+        ChangeCount++;
         _undo.Add(Snapshot(items));
         Restore(items, _redo.Pop());
         return true;
@@ -132,6 +152,7 @@ public sealed class AnnotationHistory
 
     private void Push(List<Annotation> snapshot)
     {
+        ChangeCount++;
         _coalesceKey = null;
         _undo.Add(snapshot);
         if (_undo.Count > MaxDepth)
@@ -140,15 +161,43 @@ public sealed class AnnotationHistory
         }
 
         _redo.Clear();
+        TrimExtras();
     }
 
-    private static List<Annotation> Snapshot(IReadOnlyList<Annotation> items) =>
-        items.Select(item => item.Clone()).ToList();
+    private void TrimExtras()
+    {
+        if (ExtraSize == null)
+        {
+            return;
+        }
 
-    private static void Restore(List<Annotation> items, List<Annotation> snapshot)
+        while (_undo.Count > 1)
+        {
+            var total = _undo.OfType<Entry>().SelectMany(entry => ExtraSize(entry.Extra)).DistinctBy(item => item.Key).Sum(item => item.Bytes);
+            if (total <= MaxExtraBytes)
+            {
+                return;
+            }
+
+            _undo.RemoveAt(0);
+        }
+    }
+
+    private List<Annotation> Snapshot(IReadOnlyList<Annotation> items)
+    {
+        var entry = new Entry { Extra = CaptureExtra?.Invoke() };
+        entry.AddRange(items.Select(item => item.Clone()));
+        return entry;
+    }
+
+    private void Restore(List<Annotation> items, List<Annotation> snapshot)
     {
         items.Clear();
         // Clone again so the stored snapshot stays immutable if it is redone later.
         items.AddRange(snapshot.Select(item => item.Clone()));
+        if (snapshot is Entry entry)
+        {
+            RestoreExtra?.Invoke(entry.Extra);
+        }
     }
 }
