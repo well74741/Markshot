@@ -42,6 +42,7 @@ static class Program
         if (mode == "picker") PickerProbe.Run();
         if (mode == "theme") ThemeShot.Run();
         if (mode == "menu") MenuProbe.Run();
+        if (mode == "support") SupportTest.Run();
         if (mode == "firstopen") FirstOpenProbe.Run();
         if (mode == "cornerprobe") CornerProbe.Run();
     }

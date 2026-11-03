@@ -20,7 +20,8 @@ public sealed class TrayService : IDisposable
         Action exit,
         Func<bool>? canRestore = null,
         Func<bool>? anyClickThrough = null,
-        Func<IEnumerable<(string Header, Action Action)>>? recorderItems = null)
+        Func<IEnumerable<(string Header, Action Action)>>? recorderItems = null,
+        Action? diagnostics = null)
     {
         // The tray menu is a WPF menu in the app's dark rounded style (not the system one),
         // rebuilt on each open so it only lists what applies right now.
@@ -58,6 +59,10 @@ public sealed class TrayService : IDisposable
 
             menu.Items.Add(new System.Windows.Controls.Separator());
             Add("设置…", settings);
+            if (diagnostics != null)
+            {
+                Add("导出诊断信息", diagnostics);
+            }
             menu.Items.Add(new System.Windows.Controls.Separator());
             Add("退出", exit);
             return menu;

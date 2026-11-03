@@ -239,7 +239,37 @@ public sealed class TranslationConfig{
     /// <summary>OpenAI-compatible base URL, e.g. https://api.deepseek.com/v1</summary>
     public string BaseUrl { get; set; } = "https://api.deepseek.com/v1";
 
+    /// <summary>The key in plain text (memory only; saved encrypted as <see cref="ApiKeyProtected"/>).</summary>
+    [JsonIgnore]
     public string ApiKey { get; set; } = "";
+
+    /// <summary>Encrypted for this Windows user (DPAPI); another PC / user cannot read it.</summary>
+    public string ApiKeyProtected
+    {
+        get => Secrets.Protect(ApiKey);
+        set
+        {
+            if (!string.IsNullOrEmpty(value))
+            {
+                ApiKey = Secrets.Unprotect(value);
+            }
+        }
+    }
+
+    /// <summary>Older configs kept the key in plain text: read it once, never write it again.</summary>
+    [JsonPropertyName("ApiKey")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyApiKey
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrEmpty(value) && string.IsNullOrEmpty(ApiKey))
+            {
+                ApiKey = value;
+            }
+        }
+    }
 
     public string Model { get; set; } = "deepseek-chat";
 

@@ -46,6 +46,7 @@ public partial class SettingsWindow : Window
         LineKeyBox.Text = config.ToolLineHotkey;
         ShapeKeyBox.Text = config.ToolShapeHotkey;
         CopyFileCheck.IsChecked = config.CopyImageAsFile;
+        AutoStartCheck.IsChecked = AutoStart.IsEnabled;
         FillToolbarRow(CaptureToolsRow, ToolbarCatalog.Tools, config.CaptureToolOrder, config.CaptureToolHidden);
         FillToolbarRow(CaptureActionsRow, ToolbarCatalog.CaptureActions, config.CaptureActionOrder, config.CaptureActionHidden);
         FillToolbarRow(PinToolsRow, ToolbarCatalog.Tools, config.PinToolOrder, config.PinToolHidden);
@@ -404,6 +405,10 @@ public partial class SettingsWindow : Window
         _config.Theme = _theme;
         _config.UiSize = _uiSize;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
+        if ((AutoStartCheck.IsChecked == true) != AutoStart.IsEnabled)
+        {
+            AutoStart.Set(AutoStartCheck.IsChecked == true);
+        }
         (_config.CaptureToolOrder, _config.CaptureToolHidden) = ReadToolbarRow(CaptureToolsRow);
         (_config.CaptureActionOrder, _config.CaptureActionHidden) = ReadToolbarRow(CaptureActionsRow);
         (_config.PinToolOrder, _config.PinToolHidden) = ReadToolbarRow(PinToolsRow);

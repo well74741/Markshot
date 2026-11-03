@@ -3,12 +3,12 @@
 #   powershell -ExecutionPolicy Bypass -File tests\run.ps1 batch1 menu  only these
 # A suite fails when it prints a "FAIL …" line, crashes ("Unhandled exception") or exits non-zero.
 # Screenshots the suites write go to tests\out\.
-param([string[]]$Suites)
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Suites)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $all = @('batch1', 'batch2', 'batch3', 'batch4', 'batch5', 'batch6', 'batch7', 'batch8', 'batch9',
-         'editor', 'cornerprobe', 'picker', 'menu', 'theme', 'reccore', 'recflow')
+         'editor', 'cornerprobe', 'picker', 'menu', 'theme', 'support', 'reccore', 'recflow')
 if (-not $Suites -or $Suites.Count -eq 0) { $Suites = $all }
 
 $dotnet = Join-Path $env:USERPROFILE '.dotnet\dotnet.exe'

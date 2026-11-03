@@ -110,7 +110,8 @@ public partial class App : Application
             ShutdownApp,
             () => _closedPins.Count > 0 || History.Last != null,
             () => _pins.Any(pin => pin.IsClickThrough),
-            RecorderMenuItems);
+            RecorderMenuItems,
+            ExportDiagnostics);
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -508,6 +509,22 @@ public partial class App : Application
         };
         _settings.Show();
         _settings.Activate();
+    }
+
+    /// <summary>Tray 导出诊断信息: logs + config (no API key) + system report, zipped on the desktop.</summary>
+    private void ExportDiagnostics()
+    {
+        try
+        {
+            var path = Diagnostics.Export();
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+            _tray?.ShowBalloon("诊断信息已导出", Path.GetFileName(path) + "（已放在桌面，不含 API Key）");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("导出诊断信息失败", ex);
+            MessageBox.Show("导出诊断信息失败：" + ex.Message, "Markshot", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     /// <summary>The tray menu's 录屏 entries follow the recorder: 录屏 → 开始 / 停止 / 暂停 / 继续 / 退出录屏.</summary>
