@@ -219,7 +219,8 @@ public static class ToolCursors
             AnnotationTool.Highlighter => thickness * 4,
             _ => thickness
         };
-        var diameter = Math.Clamp((int)Math.Round(width * Math.Max(0.1, scale)), 6, 240);
+        // Down to 2 px: a thin brush shows thin (it used to stop at 6 and stay there).
+        var diameter = Math.Clamp((int)Math.Round(width * Math.Max(0.1, scale)), 2, 240);
         var ink = tool is AnnotationTool.Eraser or AnnotationTool.Cutout
             ? Colors.White
             : color ?? Color.FromRgb(0xF5, 0xF5, 0xF5);
@@ -254,8 +255,8 @@ public static class ToolCursors
                 var size = CursorSize(diameter);
                 var center = new Point(size / 2.0, size / 2.0);
                 var radius = diameter / 2.0;
-                var halo = new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 3.2);
-                var ring = new Pen(new SolidColorBrush(Color.FromRgb(255, 255, 255)), 1.6);
+                var halo = new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), diameter < 6 ? 2.2 : 3.2);
+                var ring = new Pen(new SolidColorBrush(Color.FromRgb(255, 255, 255)), diameter < 6 ? 1.1 : 1.6);
                 var fill = eraser ? new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)) : null;
                 dc.DrawEllipse(fill, halo, center, radius, radius);
                 dc.DrawEllipse(null, ring, center, radius, radius);
@@ -264,8 +265,12 @@ public static class ToolCursors
                     dc.DrawEllipse(null, new Pen(new SolidColorBrush(ink), 1.3), center, radius - 1.8, radius - 1.8);
                 }
 
-                dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)), null, center, 1.8, 1.8);
-                dc.DrawEllipse(Brushes.White, null, center, 0.9, 0.9);
+                if (diameter >= 8)
+                {
+                    // The centre dot; a small ring marks its centre itself (the dot would hide it).
+                    dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)), null, center, 1.8, 1.8);
+                    dc.DrawEllipse(Brushes.White, null, center, 0.9, 0.9);
+                }
             }
 
             var canvas = CursorSize(diameter);

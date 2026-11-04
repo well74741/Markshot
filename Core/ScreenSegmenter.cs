@@ -10,7 +10,8 @@ namespace Markshot.Core;
 /// </summary>
 public sealed class ScreenSegmenter
 {
-    private const int EdgeThreshold = 28;
+    private readonly int EdgeThreshold;
+    private readonly int _minSide;
     private readonly byte[] _pixels; // BGRA of the whole screenshot
     private readonly int _width;
     private readonly int _height;
@@ -19,8 +20,11 @@ public sealed class ScreenSegmenter
     private Int32Rect _region = Int32Rect.Empty;
     private Level[]? _levels;
 
-    public ScreenSegmenter(byte[] pixels, int width, int height, double scale)
+    /// <param name="sensitivity">识别灵敏度 1…5 (3: as before): fainter edges and smaller pieces count when higher.</param>
+    public ScreenSegmenter(byte[] pixels, int width, int height, double scale, int sensitivity = 3)
     {
+        EdgeThreshold = AppConfig.EdgeThresholdFor(sensitivity);
+        _minSide = AppConfig.MinSideFor(sensitivity);
         _pixels = pixels;
         _width = width;
         _height = height;
@@ -106,7 +110,7 @@ public sealed class ScreenSegmenter
                 }
             }
 
-            if (box.Width * (double)box.Height > regionArea * 0.7 || (box.Width < 4 && box.Height < 4))
+            if (box.Width * (double)box.Height > regionArea * 0.7 || (box.Width < _minSide && box.Height < _minSide))
             {
                 continue;
             }

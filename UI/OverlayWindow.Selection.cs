@@ -73,6 +73,7 @@ public partial class OverlayWindow
             CancelTranslation();
             UpdateTranslationVisuals();
             BrightClip.Rect = new Rect(0, 0, 0, 0);
+            UpdateHoverBright(); // before an area is chosen: the framed element is bright
             Editor.Selection = Rect.Empty;
             Editor.ShowSelectionChrome = false;
             Editor.InvalidateVisual();
@@ -551,7 +552,8 @@ public partial class OverlayWindow
     private void UpdateHover(Point point)
     {
         var config = App.Config;
-        if (_hasSelection || _dragging || (!config.DetectWindows && !config.DetectElements) ||
+        ElementDetector.MinSide = AppConfig.MinSideFor(config.DetectSensitivity);
+        if (_hasSelection || _dragging || !config.DetectAuto || (!config.DetectWindows && !config.DetectElements) ||
             (_tool != AnnotationTool.None && _tool != AnnotationTool.Select))
         {
             ClearHover();
@@ -706,7 +708,7 @@ public partial class OverlayWindow
             if (_segmenter == null)
             {
                 var (pixels, width, height) = ImageOps.ReadPixels(_screenPlain);
-                _segmenter = new ScreenSegmenter(pixels, width, height, _scale);
+                _segmenter = new ScreenSegmenter(pixels, width, height, _scale, App.Config.DetectSensitivity);
             }
 
             return _segmenter;
@@ -803,6 +805,7 @@ public partial class OverlayWindow
             StopHoverAnimation();
             Editor.HoverBounds = candidate.Local;
             Editor.ShowHover = true;
+            UpdateHoverBright();
             Editor.InvalidateVisual();
             return;
         }
@@ -820,6 +823,25 @@ public partial class OverlayWindow
 
     private const double HoverMs = 140;
 
+    /// <summary>The automatically framed area is shown bright (undimmed), like a chosen one; the rest stays dim.</summary>
+    private void UpdateHoverBright()
+    {
+        if (_hasSelection || _scale <= 0)
+        {
+            return;
+        }
+
+        var hover = Editor.ShowHover ? Editor.HoverBounds : Rect.Empty;
+        BrightClip.RadiusX = BrightClip.RadiusY = 0;
+        BrightClip.Rect = hover.IsEmpty || hover.Width <= 0
+            ? new Rect(0, 0, 0, 0)
+            : new Rect(hover.X / _scale, hover.Y / _scale, hover.Width / _scale, hover.Height / _scale);
+        if (!ReferenceEquals(BrightImage.Clip, BrightClip))
+        {
+            BrightImage.Clip = BrightClip;
+        }
+    }
+
     private void OnHoverFrame(object? sender, EventArgs e)
     {
         var t = Motion.Bezier(Math.Min(1, _hoverClock.Elapsed.TotalMilliseconds / HoverMs));
@@ -828,6 +850,7 @@ public partial class OverlayWindow
             _hoverFrom.Y + (_hoverTo.Y - _hoverFrom.Y) * t,
             _hoverFrom.Width + (_hoverTo.Width - _hoverFrom.Width) * t,
             _hoverFrom.Height + (_hoverTo.Height - _hoverFrom.Height) * t);
+        UpdateHoverBright();
         Editor.InvalidateVisual();
         if (t >= 1)
         {
@@ -855,6 +878,7 @@ public partial class OverlayWindow
 
         Editor.ShowHover = false;
         Editor.HoverBounds = Rect.Empty;
+        UpdateHoverBright();
         Editor.HoverLabel = null;
         Editor.InvalidateVisual();
     }

@@ -99,10 +99,13 @@ public static class ElementDetector
         return best;
     }
 
+    /// <summary>Smallest element offered (识别灵敏度; set when the capture looks).</summary>
+    public static int MinSide { get; set; } = 4;
+
     private static DetectedElement? Entry(AutomationElement element)
     {
         var bounds = Bounds(element);
-        if (bounds.IsEmpty || bounds.Width < 4 || bounds.Height < 4)
+        if (bounds.IsEmpty || bounds.Width < MinSide || bounds.Height < MinSide)
         {
             return null;
         }

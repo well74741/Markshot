@@ -89,7 +89,7 @@ static class Batch3Test
         // ---- wheel: thickness / size of the selection; Ctrl step for opacity
         var line = new LineAnnotation { Thickness = 3 };
         var size = (double?)Ops("WheelSize", line, 120, screen);
-        Check(size == 3.5 && line.Thickness == 3.5, "wheel up thickens a line");
+        Check(size == 4 && line.Thickness == 4, "wheel up thickens a line by one per notch");
         var brush = new MosaicBrushAnnotation { Thickness = 24 };
         Ops("WheelSize", brush, -120, screen);
         Check(brush.Thickness == 22, "wheel down thins the brush mosaic");

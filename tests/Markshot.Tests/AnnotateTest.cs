@@ -411,6 +411,29 @@ static class AnnotateTest
             ed.CloseWithoutAsking();
         }
 
+        // ---- the wheel sizes the pen one step per notch; the brush ring follows down to thin sizes
+        {
+            var we = new ImageEditorWindow(Blank(200, 120)) { Left = 40, Top = 40, ShowActivated = false };
+            we.Show();
+            Pump(200);
+            typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(we, new object[] { AnnotationTool.Pen });
+            typeof(PinWindow).GetField("_thickness", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(we, 3.0);
+            var sizes = new List<double>();
+            var wheel = typeof(PinWindow).GetMethod("AdjustActiveToolByWheel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            for (var i = 0; i < 3; i++)
+            {
+                wheel.Invoke(we, new object[] { 120 });
+                sizes.Add((double)typeof(PinWindow).GetField("_thickness", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(we)!);
+            }
+
+            var shown = ((TextBlock)((AnnotationToolbar)Get(we, "Toolbar")).FindName("WidthValue")).Text;
+            Check(sizes.SequenceEqual(new[] { 4.0, 5.0, 6.0 }) && shown == "6", $"每格滚轮 = 粗细 ±1 ({string.Join(",", sizes)}, shows {shown})");
+            Check(!ReferenceEquals(ToolCursors.Get(AnnotationTool.Pen, 2, Colors.Red, 1), ToolCursors.Get(AnnotationTool.Pen, 4, Colors.Red, 1)) &&
+                  !ReferenceEquals(ToolCursors.Get(AnnotationTool.Pen, 4, Colors.Red, 1), ToolCursors.Get(AnnotationTool.Pen, 5, Colors.Red, 1)),
+                "the brush ring keeps getting smaller below 6");
+            we.CloseWithoutAsking();
+        }
+
         // ---- editor: 选择 by default, 框选 / Shift 加选 / Ctrl 减选, 裁切与变形 on the selection, a paste is placed
         {
             var se = new ImageEditorWindow(Blank(300, 200)) { Left = 40, Top = 40, ShowActivated = false };

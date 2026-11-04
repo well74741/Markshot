@@ -103,7 +103,7 @@ internal static class AnnotationOps
                 brush.Thickness = Math.Clamp(brush.Thickness + step * 2, 4, 80);
                 return brush.Thickness;
             default:
-                annotation.Thickness = Math.Clamp(annotation.Thickness + step * 0.5, 1, 24);
+                annotation.Thickness = Math.Clamp(Math.Round(annotation.Thickness) + step, 1, 24); // one notch = one size
                 return annotation.Thickness;
         }
     }

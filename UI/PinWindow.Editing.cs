@@ -1764,7 +1764,7 @@ public partial class PinWindow
             AnnotationTool.MosaicBrush => Math.Clamp(_thickness + step * 2, 4, 80),
             AnnotationTool.Watermark => Math.Clamp(_thickness + step * 2, 10, 120),
             AnnotationTool.Eraser or AnnotationTool.Cutout => Math.Clamp(_thickness + step * 2, 4, 80),
-            _ => Math.Clamp(_thickness + step * 0.5, 1, 16)
+            _ => Math.Clamp(Math.Round(_thickness) + step, 1, 16) // one notch = one size (it was 0.5: 2–3 notches per visible step)
         };
 
         _thickness = value;

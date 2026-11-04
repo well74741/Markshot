@@ -46,8 +46,11 @@ public partial class SettingsWindow : Window
         LineKeyBox.Text = config.ToolLineHotkey;
         ShapeKeyBox.Text = config.ToolShapeHotkey;
         CopyFileCheck.IsChecked = config.CopyImageAsFile;
+        DetectAutoCheck.IsChecked = config.DetectAuto;
+        DetectSensitivitySlider.Value = Math.Clamp(config.DetectSensitivity, 1, 5);
         DetectElementsCheck.IsChecked = config.DetectElements;
         DetectWindowsCheck.IsChecked = config.DetectWindows;
+        DetectAuto_Click(this, new RoutedEventArgs());
         CaptureCursorCheck.IsChecked = config.CaptureShowCursor;
         OpenWithCheck.IsChecked = config.RegisterOpenWith;
         CaptureCursorKeyBox.Text = config.CaptureCursorKey;
@@ -198,6 +201,23 @@ public partial class SettingsWindow : Window
     /// instead of starting a capture). The rest of the time they work with the settings open.
     /// </summary>
     public event Action<bool>? RecordingHotkey;
+
+    /// <summary>The parts of 自动识别 only matter while it is on.</summary>
+    private void DetectAuto_Click(object sender, RoutedEventArgs e)
+    {
+        var on = DetectAutoCheck.IsChecked == true;
+        DetectElementsCheck.IsEnabled = DetectWindowsCheck.IsEnabled = DetectSensitivityRow.IsEnabled = on;
+        DetectSensitivityRow.Opacity = DetectElementsCheck.Opacity = DetectWindowsCheck.Opacity = on ? 1 : 0.45;
+    }
+
+    private void DetectSensitivity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (DetectSensitivityValue != null)
+        {
+            var level = (int)Math.Round(e.NewValue);
+            DetectSensitivityValue.Text = level switch { 1 => "1 · 低", 2 => "2", 3 => "3 · 默认", 4 => "4", _ => "5 · 高" };
+        }
+    }
 
     private void HotkeyBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => RecordingHotkey?.Invoke(false);
 
@@ -479,6 +499,8 @@ public partial class SettingsWindow : Window
         _config.Theme = _theme;
         _config.UiSize = _uiSize;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
+        _config.DetectAuto = DetectAutoCheck.IsChecked == true;
+        _config.DetectSensitivity = (int)Math.Round(DetectSensitivitySlider.Value);
         _config.DetectElements = DetectElementsCheck.IsChecked == true;
         _config.DetectWindows = DetectWindowsCheck.IsChecked == true;
         _config.CaptureShowCursor = CaptureCursorCheck.IsChecked == true;

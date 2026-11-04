@@ -104,6 +104,18 @@ public sealed class AppConfig
     /// <summary>截图识别: hovering frames the UI element under the mouse (text, picture, table, button …).</summary>
     public bool DetectElements { get; set; } = true;
 
+    /// <summary>自动识别截图区域 as a whole (元素 / 窗口 are its two parts).</summary>
+    public bool DetectAuto { get; set; } = true;
+
+    /// <summary>识别灵敏度 1 (low: only clear, larger things) … 5 (high: faint edges, small things); 3 as before.</summary>
+    public int DetectSensitivity { get; set; } = 3;
+
+    /// <summary>Edge contrast the picture-based detection needs at a sensitivity.</summary>
+    public static int EdgeThresholdFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 44, 2 => 36, 4 => 20, 5 => 14, _ => 28 };
+
+    /// <summary>Smallest element (pixels, either side) the detection offers at a sensitivity.</summary>
+    public static int MinSideFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 16, 2 => 10, 5 => 3, _ => 4 };
+
     /// <summary>After saving an image, ask whether to open its folder.</summary>
     public bool AskOpenFolderAfterSave { get; set; } = true;
 

@@ -123,6 +123,24 @@ static class CaptureTest
             "over a paragraph line: the line, then the paragraph");
         Check(segmenter.At(whole, 600, 300).Count == 0, "over empty background: nothing");
 
+        // 识别灵敏度: a faint box (contrast 20) is found only when the detection is sensitive
+        var faint = new byte[300 * 200 * 4];
+        for (var y = 0; y < 200; y++)
+        for (var x = 0; x < 300; x++)
+        {
+            var inBox = x >= 100 && x < 180 && y >= 60 && y < 120;
+            var v = (byte)(inBox ? 220 : 240);
+            var i = (y * 300 + x) * 4;
+            faint[i] = faint[i + 1] = faint[i + 2] = v;
+            faint[i + 3] = 255;
+        }
+
+        var faintRegion = new Int32Rect(0, 0, 300, 200);
+        Check(new ScreenSegmenter(faint, 300, 200, 1, 3).At(faintRegion, 140, 60).Count == 0 &&
+              new ScreenSegmenter(faint, 300, 200, 1, 5).At(faintRegion, 140, 60).Count > 0,
+            "识别灵敏度 高 finds a faint box that 默认 leaves alone");
+        Check(AppConfig.MinSideFor(1) > AppConfig.MinSideFor(3) && AppConfig.EdgeThresholdFor(1) > AppConfig.EdgeThresholdFor(5), "低 asks for larger, clearer things");
+
         // ---- the capture window, not shown: hover frames, 显示鼠标, 辅助线
         var screen = Solid(300, 200, 40, 40, 40);
         var overlay = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
@@ -134,6 +152,10 @@ static class CaptureTest
         Call(overlay, "SetHoverChain", list);
         var editor = (Markshot.Annotations.AnnotationEditor)overlay.FindName("Editor");
         Check(editor.ShowHover && editor.HoverBounds == new Rect(50, 50, 40, 20) && editor.HoverLabel!.StartsWith("按钮"), "hover frames the smallest element");
+        var bright = (RectangleGeometry)overlay.FindName("BrightClip");
+        var scale = (double)Get(overlay, "_scale");
+        Check(bright.Rect.Width > 0 && Math.Abs(bright.Rect.X - 50 / scale) < 0.5 && Math.Abs(bright.Rect.Width - 40 / scale) < 0.5,
+            $"the framed element is shown bright, the rest dim ({bright.Rect})");
         Check((bool)Call(overlay, "StepHoverLevel", 120) && (Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "wheel up: the element around it");
         Pump(400);
         Check(editor.HoverBounds == new Rect(20, 20, 200, 120), "the frame slides there (animated)");
