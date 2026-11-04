@@ -43,6 +43,9 @@ public abstract class Annotation
 
     public double Rotation { get; set; }
 
+    /// <summary>Not drawn meanwhile (the editor's overlay shows it while a box / warp is open).</summary>
+    public bool Hidden { get; set; }
+
     public abstract void Draw(DrawingContext dc);
 
     /// <summary>
@@ -58,6 +61,7 @@ public abstract class Annotation
     public virtual Annotation Clone()
     {
         var copy = (Annotation)MemberwiseClone();
+        copy.Hidden = false; // only the live element is hidden, never a stored step
         copy.EraseMasks = EraseMasks?.Select(m => m.Clone()).ToList();
         copy.MaskCache = null;
         copy.MaskCacheKey = null;
@@ -581,20 +585,10 @@ public sealed class ImageAnnotation : Annotation
 
     public ImageAdjust? Adjust { get; set; }
 
-    /// <summary>Drawn by the editor's overlay meanwhile (调节框, warp).</summary>
-    public bool Hidden { get; set; }
-
     /// <summary>How pictures are scaled in the render going on (the editor: crisp pixels when zoomed far in).</summary>
     public static BitmapScalingMode Scaling { get; set; } = BitmapScalingMode.HighQuality;
 
     public override bool Erasable => false;
-
-    public override Annotation Clone()
-    {
-        var copy = (ImageAnnotation)base.Clone();
-        copy.Hidden = false; // only the live element is hidden, never a stored step
-        return copy;
-    }
 
     public override void Draw(DrawingContext dc)
     {

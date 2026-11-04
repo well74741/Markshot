@@ -16,6 +16,11 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
 
+                <!-- 选择 (the image editor): click / 框选 / Shift 加选 / Ctrl 减选; on when no tool is in hand. -->
+                <RadioButton x:Name="ToolSelect" Style="{StaticResource IconToolRadio}" Visibility="Collapsed"
+                             Tag="Select" GroupName="Tool" Click="Tool_Click" ToolTip="选择 (Esc)：单击选中，拖动框选，Shift 加选，Ctrl 减选">
+                    <Border Style="{StaticResource IconSelectMask}" />
+                </RadioButton>
                 <StackPanel x:Name="ToolItems" Orientation="Horizontal">
                 <RadioButton x:Name="ToolShape" Style="{StaticResource IconToolRadio}"
                              Tag="Rectangle" GroupName="Tool" Click="Tool_Click" ToolTip="图形：矩形/椭圆">

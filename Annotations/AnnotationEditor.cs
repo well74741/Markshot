@@ -25,6 +25,12 @@ public sealed class AnnotationEditor : FrameworkElement
     /// <summary>How pictures on the canvas are scaled on the screen (the editor switches it with the zoom).</summary>
     public BitmapScalingMode PictureScaling { get; set; } = BitmapScalingMode.HighQuality;
 
+    /// <summary>Elements selected together (the image editor's 多选); each gets a dashed frame.</summary>
+    public IReadOnlyList<Annotation>? Group { get; set; }
+
+    /// <summary>框选: the rectangle being dragged (canvas pixels).</summary>
+    public Rect? Marquee { get; set; }
+
     /// <summary>吸色 (Alt with the pen): the cross at this canvas point, with the colour under it; null = off.</summary>
     public (Point At, Color? Color)? Eyedrop { get; set; }
 
@@ -214,11 +220,37 @@ public sealed class AnnotationEditor : FrameworkElement
             DrawLassoDraft(dc);
         }
 
+        if (Group is { Count: > 0 } group)
+        {
+            foreach (var member in group)
+            {
+                DrawGroupFrame(dc, member);
+            }
+        }
+
+        if (Marquee is { } marquee)
+        {
+            var unit = Scale;
+            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x26, 0x3B, 0x82, 0xF6)), new Pen(Accent, 1.2 * unit), marquee);
+        }
+
         if (Eyedrop is { } eyedrop)
         {
             DrawEyedrop(dc, eyedrop.At, eyedrop.Color);
         }
 
+        dc.Pop();
+    }
+
+    /// <summary>A member of a 多选: its dashed outline (no handles), turned with it.</summary>
+    private void DrawGroupFrame(DrawingContext dc, Annotation annotation)
+    {
+        var unit = Scale;
+        var frame = SelectionFrame(annotation.Bounds, unit);
+        var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
+        dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
+        dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)), 1.4 * unit), frame);
+        dc.DrawRectangle(null, new Pen(Accent, 1.4 * unit) { DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0) }, frame);
         dc.Pop();
     }
 
@@ -251,6 +283,11 @@ public sealed class AnnotationEditor : FrameworkElement
     public static void DrawItem(DrawingContext dc, Annotation annotation, Geometry? liveEraser = null, Brush? highlight = null,
         double liveStrength = 1)
     {
+        if (annotation.Hidden)
+        {
+            return;
+        }
+
         var bounds = annotation.Bounds;
         var pops = 0;
         if (liveEraser != null && annotation.Erasable && !bounds.IsEmpty)

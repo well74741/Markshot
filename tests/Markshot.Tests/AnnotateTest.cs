@@ -61,6 +61,9 @@ static class AnnotateTest
     static object Get(object o, string name) =>
         typeof(PinWindow).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(o)!;
 
+    static void CallEd(object o, string name, params object[] args) =>
+        typeof(ImageEditorWindow).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(o, args);
+
     static void Call(object o, string name, params object[] args) =>
         typeof(PinWindow).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(o, args);
 
@@ -406,6 +409,75 @@ static class AnnotateTest
             (cfg.EditorActionOrder, cfg.EditorActionHidden, cfg.EditorToolHidden) = (oldOrder, oldHidden, oldTools);
             edBar.ApplyToolOrderFromConfig();
             ed.CloseWithoutAsking();
+        }
+
+        // ---- editor: 选择 by default, 框选 / Shift 加选 / Ctrl 减选, 裁切与变形 on the selection, a paste is placed
+        {
+            var se = new ImageEditorWindow(Blank(300, 200)) { Left = 40, Top = 40, ShowActivated = false };
+            se.Show();
+            Pump(300);
+            var seBar = (AnnotationToolbar)Get(se, "Toolbar");
+            var selectButton = (RadioButton)seBar.FindName("ToolSelect");
+            Check(selectButton.Visibility == Visibility.Visible && selectButton.IsChecked == true, "the editor opens in 选择");
+            var its = ((AnnotationEditor)Get(se, "Editor")).Items;
+            var opened = its.OfType<ImageAnnotation>().First();
+            var ra = new RectAnnotation { Rect = new Rect(20, 20, 40, 30), Color = Colors.Red, Thickness = 3 };
+            var eb = new EllipseAnnotation { Rect = new Rect(100, 60, 40, 40), Color = Colors.Blue, Thickness = 3 };
+            var rc = new RectAnnotation { Rect = new Rect(200, 120, 30, 30), Color = Colors.Green, Thickness = 3 };
+            its.AddRange(new Annotation[] { ra, eb, rc });
+            se.MarqueeSelect(new Rect(10, 10, 140, 100), 0);
+            Check(se.SelectedElements.Contains(ra) && se.SelectedElements.Contains(eb) && !se.SelectedElements.Contains(rc), "框选: what the rectangle touches");
+            se.SelectElements(new Annotation[] { ra, eb });
+            se.MarqueeSelect(new Rect(195, 115, 10, 10), 1);
+            Check(se.SelectedElements.Contains(rc) && se.SelectedElements.Contains(ra), "Shift 框选 adds");
+            se.MarqueeSelect(new Rect(15, 15, 10, 10), 2);
+            Check(!se.SelectedElements.Contains(ra) && !se.SelectedElements.Contains(opened) && se.SelectedElements.Count == 2, "Ctrl 框选 takes away");
+
+            // 调节框 on the 多选: each moves with the box and stays what it is
+            CallEd(se, "StartSession", EditorOverlayMode.Transform);
+            var groupBox = (EditorOverlay)typeof(ImageEditorWindow).GetField("_overlay", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se)!;
+            var boxStart = groupBox.TransformStart;
+            groupBox.TransformRect = new Rect(boxStart.X + 10, boxStart.Y + 5, boxStart.Width, boxStart.Height);
+            Check(eb.Hidden && rc.Hidden, "the box shows them meanwhile");
+            CallEd(se, "ApplySession");
+            Pump(30);
+            Check(eb.Rect.X == 110 && rc.Rect.Y == 125 && !eb.Hidden && its.Contains(eb) && se.SelectedElements.Count == 2, "调节框 on a 多选 moves each element (they stay editable and selected)");
+
+            // 路径裁切 on the 多选: they become one picture, cut along the path
+            CallEd(se, "StartSession", EditorOverlayMode.Path);
+            var pathBox = (EditorOverlay)typeof(ImageEditorWindow).GetField("_overlay", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se)!;
+            pathBox.PathPoints.AddRange(new[] { new Point(90, 40), new Point(260, 40), new Point(260, 180), new Point(90, 180) });
+            CallEd(se, "ApplySession");
+            Pump(30);
+            Check(!its.Contains(eb) && !its.Contains(rc) && its.OfType<ImageAnnotation>().Count() == 2 && its.Contains(ra), "路径裁切 on a 多选: merged into one picture and cut; the rest stays");
+
+            // 矩形裁切 on a selected picture: the picture is cut, the canvas stays
+            se.SelectElements(new Annotation[] { opened });
+            CallEd(se, "StartSession", EditorOverlayMode.Crop);
+            var cropBox = (EditorOverlay)typeof(ImageEditorWindow).GetField("_overlay", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se)!;
+            cropBox.Crop = new Rect(50, 40, 100, 80);
+            CallEd(se, "ApplySession");
+            Pump(30);
+            Check(opened.Rect == new Rect(50, 40, 100, 80) && se.ImageWidth == 300 && se.ImageHeight == 200, $"矩形裁切 on the selected picture: it is cut, the canvas stays ({opened.Rect})");
+
+            // a paste is placed: Esc takes it back (no undo step left), Enter or a click elsewhere keeps it
+            var clipboard = typeof(PinWindow).Assembly.GetType("Markshot.UI.AnnotationClipboard")!;
+            clipboard.GetMethod("Copy")!.Invoke(null, new object[] { ra });
+            var seHistory = (AnnotationHistory)Get(se, "_history");
+            var depth = seHistory.Depth;
+            var count = its.Count;
+            Call(se, "PasteAnnotation");
+            Check(its.Count == count + 1 && se.PastePending, "pasted: waiting to be placed");
+            Call(se, "EditorKey", Key.Escape, false);
+            Check(its.Count == count && seHistory.Depth == depth && !se.PastePending, "Esc cancels the paste, no undo step left");
+            Call(se, "PasteAnnotation");
+            Call(se, "EditorKey", Key.Enter, false);
+            Check(its.Count == count + 1 && !se.PastePending && se.SelectedElements.Count == 0, "Enter places it");
+            Call(se, "PasteAnnotation");
+            Call(se, "ClearSelection");
+            typeof(ImageEditorWindow).GetMethod("AfterInput", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(se, null);
+            Check(its.Count == count + 2 && !se.PastePending, "a click on the empty space places it too");
+            se.CloseWithoutAsking();
         }
 
         // ---- 抠除 on a pin: the hole is see-through (no shadow plate behind it)

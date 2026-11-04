@@ -59,6 +59,17 @@ public sealed class ImageEditorWindow : PinWindow
     private ImageAnnotation? _anglePicture; // turned live while the angle slider moves
     private double _angleBase;
     private long _noticeUntil;
+    private readonly List<Annotation> _group = new(); // 多选 (two or more; one element is the plain selection)
+    private bool _marqueeOn;
+    private Point _marqueeStart;
+    private int _marqueeMode; // 0 replace, 1 add (Shift), 2 remove (Ctrl)
+    private bool _groupMoving;
+    private bool _groupMoved;
+    private Point _groupLast;
+    private List<Annotation>? _sessionItems; // what a session works on when it is not one picture (merged for it)
+    private ImageAnnotation? _sessionMerged;
+    private Annotation? _pendingPaste; // pasted, not placed yet: Esc takes it back, a click elsewhere keeps it
+    private int _pasteDepth;
     private bool _adjustPending;
     private bool _syncingControls;
     private EditorOverlay? _overlay;
@@ -138,6 +149,9 @@ public sealed class ImageEditorWindow : PinWindow
         _stage.PreviewMouseDown += Stage_PreviewMouseDown;
         _stage.PreviewMouseMove += Stage_PreviewMouseMove;
         _stage.PreviewMouseUp += Stage_PreviewMouseUp;
+        _stage.PreviewMouseLeftButtonDown += Stage_SelectDown;
+        _stage.PreviewMouseMove += Stage_SelectMove;
+        _stage.PreviewMouseLeftButtonUp += Stage_SelectUp;
         _stage.MouseLeftButtonDown += (_, _) =>
         {
             // A click on the empty space around the image: deselect.
@@ -223,9 +237,23 @@ public sealed class ImageEditorWindow : PinWindow
 
             var at = e.GetPosition(ImageHost);
             // On a picture (or the empty canvas: the first picture), not on an annotation.
-            var hit = AnnotationOps.HitTest(Editor.Items, new Point(at.X / _zoom, at.Y / _zoom), 7 / _zoom);
-            if (hit is null or ImageAnnotation)
+            var pixel = new Point(at.X / _zoom, at.Y / _zoom);
+            var hit = AnnotationOps.HitTest(Editor.Items, pixel, 7 / _zoom);
+            if (_group.Count > 1 && (hit == null || InGroup(pixel)))
             {
+                StartSession(EditorOverlayMode.Transform); // the box around all of them
+                e.Handled = true;
+            }
+            else if (hit is not (null or ImageAnnotation or TextAnnotation or WatermarkAnnotation))
+            {
+                ClearGroup();
+                SelectQuietly(hit); // an annotation gets the box too
+                StartSession(EditorOverlayMode.Transform);
+                e.Handled = true;
+            }
+            else if (hit is null or ImageAnnotation)
+            {
+                ClearGroup();
                 if (hit is ImageAnnotation picture)
                 {
                     SelectQuietly(picture);
@@ -248,6 +276,7 @@ public sealed class ImageEditorWindow : PinWindow
         Toolbar.PasteRequested += PasteImage;
         Toolbar.PinRequested += PinToScreen;
         Toolbar.ToolChanged += _ => CancelSession();
+        Toolbar.ToolChanged += _ => ClearGroup();
         Toolbar.ToolChanged += _ => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
         Toolbar.VariantChanged += _ => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
         PreviewMouseUp += (_, _) => Dispatcher.BeginInvoke(new Action(AfterInput), DispatcherPriority.Input);
@@ -277,6 +306,8 @@ public sealed class ImageEditorWindow : PinWindow
         {
             // The elements are new copies now: nothing may hold on to the old ones.
             CancelSession();
+            ClearGroup();
+            _pendingPaste = null;
             _adjustPending = false;
             _adjustTarget = null;
             _anglePicture = null;
@@ -359,7 +390,8 @@ public sealed class ImageEditorWindow : PinWindow
     public int AnnotationCount => Editor.Items.Count(item => item is not ImageAnnotation);
 
     /// <summary>What the panel's picture operations work on: the selected picture, else the first one.</summary>
-    private ImageAnnotation? Target => _sessionPicture ?? _selected as ImageAnnotation ?? Editor.Items.OfType<ImageAnnotation>().FirstOrDefault();
+    private ImageAnnotation? Target => _sessionPicture ?? _selected as ImageAnnotation ?? _group.OfType<ImageAnnotation>().FirstOrDefault() ??
+                                       Editor.Items.OfType<ImageAnnotation>().FirstOrDefault();
 
     /// <summary>Where that picture is on the canvas (tests).</summary>
     public Rect PictureRect => Target?.Rect ?? Rect.Empty;
@@ -807,6 +839,14 @@ public sealed class ImageEditorWindow : PinWindow
         {
             text = "单击放拐点 · 双击 / Enter / 右键结束 · Backspace 撤回 · Shift 45° · Esc 放弃";
         }
+        else if (_pendingPaste != null && ReferenceEquals(_selected, _pendingPaste))
+        {
+            text = "粘贴中：拖动摆放 · 拖手柄缩放 / 旋转 · Enter 或点击空白处完成 · Esc 取消粘贴";
+        }
+        else if (_group.Count > 1)
+        {
+            text = $"已选 {_group.Count} 个元素 · 拖动一起移动 · 方向键微调 · Delete 删除 · Shift 加选 / Ctrl 减选 · 双击调节框 · 裁切与变形作用于选中元素";
+        }
         else if (_selected != null)
         {
             text = "拖动移动 · 拖手柄缩放 / 旋转 · Alt+滚轮 大小 · Ctrl+滚轮 透明度 · Ctrl+C / V 复制粘贴 · Delete 删除 · Esc 取消选择";
@@ -826,7 +866,7 @@ public sealed class ImageEditorWindow : PinWindow
                 AnnotationTool.Number => "单击放序号 · Alt+滚轮 大小",
                 AnnotationTool.Eraser => "拖动擦掉批注 · Alt+滚轮 橡皮大小 · Ctrl+滚轮 擦除强度 · Tab 抠除",
                 AnnotationTool.Cutout => "拖动把图片和批注一起擦成透明 · Alt+滚轮 大小 · Tab 擦除",
-                _ => "单击选中图片 / 批注 · 拖动移动 · 双击图片调节框 · 右键调整层级 · Ctrl+V 粘贴图片 · Ctrl+Z 撤销"
+                _ => "选择：单击选中 · 空白处拖动框选 · Shift 加选 · Ctrl 减选 · Ctrl+A 全选 · 双击调节框 · 右键调整层级 · Ctrl+V 粘贴图片"
             } + " · " + view;
         }
 
@@ -938,6 +978,8 @@ public sealed class ImageEditorWindow : PinWindow
         _savedChange = _history.ChangeCount;
         _hasImage = true;
         _path = path;
+        ClearGroup();
+        _pendingPaste = null;
         _waitingPin?.ShowAgain(); // another picture now: the pin it came from is unrelated from here on
         _waitingPin = null;
         _sourcePin = null;
@@ -1023,6 +1065,11 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>After a click or a key: the panel follows the selection, mosaics what moved under them.</summary>
     private void AfterInput()
     {
+        if (_pendingPaste != null && !ReferenceEquals(_selected, _pendingPaste))
+        {
+            _pendingPaste = null; // placed: a click elsewhere keeps it
+        }
+
         UpdateHint();
         if (_overlay != null)
         {
@@ -1044,6 +1091,303 @@ public sealed class ImageEditorWindow : PinWindow
             RebuildMosaics();
             Editor.InvalidateVisual();
         }
+    }
+
+    /// <summary>What is selected now (a 多选, the one element, or nothing).</summary>
+    public IReadOnlyList<Annotation> SelectedElements => _group.Count > 0 ? _group : _selected != null ? new[] { _selected } : Array.Empty<Annotation>();
+
+    private static bool Selectable(Annotation item) => item is not (CutoutAnnotation or WatermarkAnnotation) && !item.Hidden;
+
+    /// <summary>Selects these (one: the plain selection with its handles; several: a 多选).</summary>
+    public void SelectElements(IEnumerable<Annotation> items)
+    {
+        var list = items.Where(Selectable).Distinct().ToList();
+        ClearGroup();
+        if (list.Count == 1)
+        {
+            SelectAnnotation(list[0]);
+        }
+        else
+        {
+            ClearSelection();
+            if (list.Count > 1)
+            {
+                _group.AddRange(Editor.Items.Where(list.Contains)); // in layer order
+                Editor.Group = _group;
+            }
+        }
+
+        Editor.InvalidateVisual();
+        UpdateHint();
+    }
+
+    private void ClearGroup()
+    {
+        if (_group.Count == 0)
+        {
+            return;
+        }
+
+        _group.Clear();
+        Editor.Group = null;
+        Editor.InvalidateVisual();
+    }
+
+    private bool InGroup(Point pixel) => _group.Any(member => AnnotationEditor.RotatedBounds(member).Contains(pixel));
+
+    /// <summary>框选 done: what the rectangle touches replaces (0), joins (1, Shift) or leaves (2, Ctrl) the selection.</summary>
+    public void MarqueeSelect(Rect area, int mode)
+    {
+        var touched = Editor.Items.Where(item => Selectable(item) && AnnotationEditor.RotatedBounds(item).IntersectsWith(area)).ToList();
+        var current = SelectedElements.ToList();
+        SelectElements(mode switch
+        {
+            1 => current.Concat(touched),
+            2 => current.Where(item => !touched.Contains(item)),
+            _ => touched
+        });
+    }
+
+    private void Stage_SelectDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!_hasImage || _overlay != null || e.ClickCount != 1 || _textEditor.IsActive || _polyline != null ||
+            _tool is not (AnnotationTool.None or AnnotationTool.Select))
+        {
+            return;
+        }
+
+        var at = e.GetPosition(ImageHost);
+        var point = new Point(at.X / _zoom, at.Y / _zoom);
+        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+        var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        if (!shift && !ctrl && _selected != null)
+        {
+            // The handles / rotation of the one selected element: the canvas handles them.
+            var frame = AnnotationEditor.HitFrame(_selected, point, 1 / _zoom);
+            if (frame.IsHandle || frame.Rotate)
+            {
+                return;
+            }
+        }
+
+        var hit = HitAnnotation(point);
+        if (shift || ctrl)
+        {
+            _textEditor.Commit();
+            if (hit != null)
+            {
+                var list = SelectedElements.ToList();
+                if (shift && !list.Contains(hit))
+                {
+                    list.Add(hit);
+                }
+                else if (ctrl)
+                {
+                    list.Remove(hit);
+                }
+
+                SelectElements(list);
+            }
+            else
+            {
+                BeginMarquee(point, shift ? 1 : 2);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        if (_group.Count > 1 && InGroup(point))
+        {
+            // Inside the 多选: they move together.
+            _groupMoving = true;
+            _groupMoved = false;
+            _groupLast = point;
+            _history.Arm(Editor.Items);
+            _stage.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
+        ClearGroup();
+        if (hit != null)
+        {
+            return; // one element: selected and moved as before
+        }
+
+        _textEditor.Commit();
+        ClearSelection();
+        BeginMarquee(point, 0);
+        e.Handled = true;
+    }
+
+    private void BeginMarquee(Point point, int mode)
+    {
+        _marqueeOn = true;
+        _marqueeMode = mode;
+        _marqueeStart = point;
+        Editor.Marquee = new Rect(point, point);
+        _stage.CaptureMouse();
+        Editor.InvalidateVisual();
+    }
+
+    private void Stage_SelectMove(object sender, MouseEventArgs e)
+    {
+        if (!_marqueeOn && !_groupMoving)
+        {
+            return;
+        }
+
+        var at = e.GetPosition(ImageHost);
+        var point = new Point(at.X / _zoom, at.Y / _zoom);
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            EndSelectDrag(point);
+            return;
+        }
+
+        if (_marqueeOn)
+        {
+            Editor.Marquee = new Rect(_marqueeStart, point);
+        }
+        else
+        {
+            var delta = point - _groupLast;
+            if (!_groupMoved && delta.Length * _zoom < 2)
+            {
+                return;
+            }
+
+            if (!_groupMoved)
+            {
+                _groupMoved = true;
+                _history.CommitArmed();
+                UpdateUndoButtons();
+            }
+
+            foreach (var member in _group)
+            {
+                member.Translate(delta.X, delta.Y);
+            }
+
+            _groupLast = point;
+        }
+
+        Editor.InvalidateVisual();
+        e.Handled = true;
+    }
+
+    private void Stage_SelectUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_marqueeOn && !_groupMoving)
+        {
+            return;
+        }
+
+        var at = e.GetPosition(ImageHost);
+        EndSelectDrag(new Point(at.X / _zoom, at.Y / _zoom));
+        e.Handled = true;
+    }
+
+    private void EndSelectDrag(Point point)
+    {
+        if (_stage.IsMouseCaptured)
+        {
+            _stage.ReleaseMouseCapture();
+        }
+
+        if (_marqueeOn)
+        {
+            _marqueeOn = false;
+            var area = new Rect(_marqueeStart, point);
+            Editor.Marquee = null;
+            if (area.Width * _zoom >= 3 || area.Height * _zoom >= 3)
+            {
+                MarqueeSelect(area, _marqueeMode);
+            }
+
+            Editor.InvalidateVisual();
+        }
+
+        _groupMoving = false;
+    }
+
+    private void DeleteGroup()
+    {
+        if (_group.Count == 0)
+        {
+            return;
+        }
+
+        _history.Checkpoint(Editor.Items);
+        Editor.Items.RemoveAll(item => _group.Contains(item));
+        ClearGroup();
+        UpdateUndoButtons();
+        RefreshPanel();
+        RebuildMosaics();
+        Editor.InvalidateVisual();
+    }
+
+    /// <summary>A 多选 to the top / bottom of the stack (their order among themselves stays).</summary>
+    private void MoveGroupLayer(bool top)
+    {
+        var ordered = Editor.Items.Where(_group.Contains).ToList();
+        _history.Checkpoint(Editor.Items);
+        Editor.Items.RemoveAll(item => _group.Contains(item));
+        if (top)
+        {
+            Editor.Items.AddRange(ordered);
+        }
+        else
+        {
+            Editor.Items.InsertRange(0, ordered);
+        }
+
+        UpdateUndoButtons();
+        Editor.InvalidateVisual();
+    }
+
+    /// <summary>Pasted (Ctrl+V / 粘贴图片): it stays selected to be placed; Esc takes it back, Enter or a click elsewhere keeps it.</summary>
+    private protected override void OnPasted(Annotation element, int depth)
+    {
+        ClearGroup();
+        _pendingPaste = element;
+        _pasteDepth = depth;
+        UpdateHint();
+    }
+
+    public bool PastePending => _pendingPaste != null;
+
+    /// <summary>Enter (or a click on the empty space) while placing a paste: it stays where it is.</summary>
+    public void FinishPaste()
+    {
+        if (_pendingPaste == null)
+        {
+            return;
+        }
+
+        _pendingPaste = null;
+        ClearSelection();
+        UpdateHint();
+    }
+
+    /// <summary>Esc while placing a paste: gone, no undo step left behind.</summary>
+    public void CancelPaste()
+    {
+        if (_pendingPaste is not { } pasted)
+        {
+            return;
+        }
+
+        _pendingPaste = null;
+        ClearSelection();
+        Editor.Items.Remove(pasted);
+        _history.TrimTo(_pasteDepth);
+        UpdateUndoButtons();
+        RebuildMosaics();
+        RefreshPanel();
+        Editor.InvalidateVisual();
+        Notice("已取消粘贴");
     }
 
     /// <summary>A line in the status bar for a moment.</summary>
@@ -1112,6 +1456,7 @@ public sealed class ImageEditorWindow : PinWindow
         _history.Checkpoint(Editor.Items);
         _beforeGroup.Clear();
         _lastGroup = null;
+        ClearGroup();
         _adjustTimer.Stop();
         _adjustPending = false;
         _adjustTarget = null;
@@ -1341,6 +1686,7 @@ public sealed class ImageEditorWindow : PinWindow
 
         GeometryStep(EditGroup.Cut, () =>
         {
+            Realize(picture);
             var result = ImageOps.PathCrop(picture.Image!, path.Select(point => ToLocal(picture, point)).ToList(), out var origin);
             PlaceLocal(picture, new Rect(origin.X, origin.Y, result.PixelWidth, result.PixelHeight), result);
         });
@@ -1356,11 +1702,132 @@ public sealed class ImageEditorWindow : PinWindow
 
         GeometryStep(EditGroup.Cut, () =>
         {
+            Realize(picture);
             var corners = quad.Select(point => ToLocal(picture, point)).ToList();
             var result = ImageOps.Keystone(picture.Image!, corners);
             var x = (corners.Min(p => p.X) + corners.Max(p => p.X)) / 2;
             var y = (corners.Min(p => p.Y) + corners.Max(p => p.Y)) / 2;
             PlaceLocal(picture, new Rect(x - result.PixelWidth / 2.0, y - result.PixelHeight / 2.0, result.PixelWidth, result.PixelHeight), result);
+        });
+    }
+
+    /// <summary>Several elements (an annotation) drawn into one picture element, at the canvas' scale; not inserted yet.</summary>
+    private ImageAnnotation Merge(IReadOnlyList<Annotation> items)
+    {
+        var bounds = Rect.Empty;
+        foreach (var item in items)
+        {
+            var b = AnnotationEditor.RotatedBounds(item);
+            if (item is not ImageAnnotation)
+            {
+                b.Inflate(item.Thickness * 2 + 4, item.Thickness * 2 + 4); // strokes, outlines
+            }
+
+            bounds.Union(b);
+        }
+
+        var x = Math.Floor(bounds.X);
+        var y = Math.Floor(bounds.Y);
+        var width = Math.Clamp((int)Math.Ceiling(bounds.Right - x), 1, 30000);
+        var height = Math.Clamp((int)Math.Ceiling(bounds.Bottom - y), 1, 30000);
+        var ordered = Editor.Items.Where(items.Contains).ToList(); // in their layer order
+        var image = ImageOps.Render(width, height, dc =>
+        {
+            dc.PushTransform(new TranslateTransform(-x, -y));
+            foreach (var item in ordered)
+            {
+                AnnotationEditor.DrawItem(dc, item);
+            }
+
+            dc.Pop();
+        });
+        return new ImageAnnotation { Image = image, Rect = new Rect(x, y, width, height) };
+    }
+
+    /// <summary>A merged picture of the session takes the place of what it was made of (at the topmost one's layer).</summary>
+    private void Realize(ImageAnnotation picture)
+    {
+        if (!ReferenceEquals(picture, _sessionMerged) || _sessionItems == null || Editor.Items.Contains(picture))
+        {
+            return;
+        }
+
+        var at = _sessionItems.Max(item => Editor.Items.IndexOf(item));
+        Editor.Items.Insert(at + 1, picture);
+        Editor.Items.RemoveAll(item => _sessionItems.Contains(item));
+    }
+
+    /// <summary>矩形裁切 of a selection: the picture keeps what lies in <paramref name="area"/> (canvas pixels), cut straight.</summary>
+    public void CropPicture(ImageAnnotation picture, Rect area)
+    {
+        if (picture.Image == null || Rect.Intersect(AnnotationEditor.RotatedBounds(picture), area) is var inside && inside.IsEmpty || inside.Width < 1 || inside.Height < 1)
+        {
+            Notice("裁切区域没有碰到选中的元素");
+            return;
+        }
+
+        GeometryStep(EditGroup.Cut, () =>
+        {
+            Realize(picture);
+            if (Math.Abs(picture.Rotation) < 0.01)
+            {
+                // Straight picture: cut in its own pixels (no resampling).
+                var r = picture.Rect;
+                var sx = picture.Image!.PixelWidth / r.Width;
+                var sy = picture.Image.PixelHeight / r.Height;
+                var left = Math.Clamp((int)Math.Round((inside.X - r.X) * sx), 0, picture.Image.PixelWidth - 1);
+                var top = Math.Clamp((int)Math.Round((inside.Y - r.Y) * sy), 0, picture.Image.PixelHeight - 1);
+                var right = Math.Clamp((int)Math.Round((inside.Right - r.X) * sx), left + 1, picture.Image.PixelWidth);
+                var bottom = Math.Clamp((int)Math.Round((inside.Bottom - r.Y) * sy), top + 1, picture.Image.PixelHeight);
+                var cut = new Int32Rect(left, top, right - left, bottom - top);
+                PlaceLocal(picture, new Rect(cut.X, cut.Y, cut.Width, cut.Height), ImageOps.Crop(picture.Image, cut));
+                return;
+            }
+
+            // Turned: what it shows, cut straight (the angle goes into the pixels).
+            var (shown, place) = RenderedPicture(picture);
+            var x = Math.Clamp((int)Math.Round(inside.X - place.X), 0, shown.PixelWidth - 1);
+            var y = Math.Clamp((int)Math.Round(inside.Y - place.Y), 0, shown.PixelHeight - 1);
+            var w = Math.Clamp((int)Math.Round(inside.Width), 1, shown.PixelWidth - x);
+            var h = Math.Clamp((int)Math.Round(inside.Height), 1, shown.PixelHeight - y);
+            picture.Image = ImageOps.Crop(shown, new Int32Rect(x, y, w, h));
+            picture.Origin = null;
+            picture.Adjust = null;
+            picture.Rotation = 0;
+            picture.Rect = new Rect(place.X + x, place.Y + y, w, h);
+        });
+    }
+
+    /// <summary>调节框 of a selection: each element moves, scales and turns with the box (they stay editable).</summary>
+    public void TransformItems(IReadOnlyList<Annotation> items, Rect from, Rect to, double angle)
+    {
+        if (from.Width < 0.5 || from.Height < 0.5)
+        {
+            return;
+        }
+
+        var sx = to.Width / from.Width;
+        var sy = to.Height / from.Height;
+        var pivot = new Point(to.X + to.Width / 2, to.Y + to.Height / 2);
+        GeometryStep(Math.Abs(angle) > 0.05 ? EditGroup.Turn : EditGroup.Cut, () =>
+        {
+            foreach (var item in items)
+            {
+                var b = item.Bounds;
+                var centre = new Point(b.X + b.Width / 2, b.Y + b.Height / 2);
+                var placed = AnnotationEditor.RotatePoint(new Point(to.X + (centre.X - from.X) * sx, to.Y + (centre.Y - from.Y) * sy), pivot, angle);
+                if (Math.Abs(sx - 1) > 0.001 || Math.Abs(sy - 1) > 0.001)
+                {
+                    AnnotationOps.Resize(item, new Rect(placed.X - b.Width * sx / 2, placed.Y - b.Height * sy / 2, Math.Max(1, b.Width * sx), Math.Max(1, b.Height * sy)), 4);
+                }
+
+                var now = item.Bounds;
+                item.Translate(placed.X - (now.X + now.Width / 2), placed.Y - (now.Y + now.Height / 2));
+                if (Math.Abs(angle) > 0.05)
+                {
+                    item.Rotation = Math.IEEERemainder(item.Rotation + angle, 360);
+                }
+            }
         });
     }
 
@@ -1397,6 +1864,7 @@ public sealed class ImageEditorWindow : PinWindow
 
         GeometryStep(EditGroup.Cut, () =>
         {
+            Realize(picture);
             var (source, place) = RenderedPicture(picture);
             var image = ImageOps.Warp(source, mesh.Translated(-place.X, -place.Y), out var origin);
             picture.Image = image;
@@ -1539,7 +2007,27 @@ public sealed class ImageEditorWindow : PinWindow
             ApplyAngle();
         }
 
-        var picture = mode == EditorOverlayMode.Crop ? null : Target;
+        // On the selection: one picture as it is; several elements / an annotation merged into a picture
+        // for it (the 调节框 moves and scales them each, they stay what they are). Nothing selected: the
+        // canvas (矩形裁切) or the first picture.
+        _sessionItems = null;
+        _sessionMerged = null;
+        var subject = _group.Count > 1 ? _group.ToList() : _selected is { } one and not WatermarkAnnotation ? new List<Annotation> { one } : null;
+        ImageAnnotation? picture;
+        if (subject is [ImageAnnotation single])
+        {
+            picture = single;
+        }
+        else if (subject != null)
+        {
+            _sessionItems = subject;
+            picture = _sessionMerged = Merge(subject);
+        }
+        else
+        {
+            picture = mode == EditorOverlayMode.Crop ? null : Target;
+        }
+
         if (mode != EditorOverlayMode.Crop && picture?.Image == null)
         {
             Notice("画布上没有图片");
@@ -1549,8 +2037,12 @@ public sealed class ImageEditorWindow : PinWindow
         BakeAdjust();
         _textEditor.Commit();
         ClearSelection();
+        var keepGroup = _sessionItems;
         SetTool(AnnotationTool.None);
         Toolbar.SetTool(AnnotationTool.None);
+        _group.Clear();
+        Editor.Group = null;
+        _sessionItems = keepGroup;
         _sessionPicture = picture;
         _overlay = new EditorOverlay(mode, _baseImage.PixelWidth, _baseImage.PixelHeight, _zoom);
         _overlay.Changed += UpdateSessionBar;
@@ -1579,6 +2071,26 @@ public sealed class ImageEditorWindow : PinWindow
             // The box draws the picture now; the element is hidden so the uncovered parts show the
             // checkerboard, as they will be transparent. The canvas itself never changes here.
             picture.Hidden = true;
+            Editor.InvalidateVisual();
+        }
+
+        if (mode == EditorOverlayMode.Crop && picture != null)
+        {
+            // The crop starts on the selection (it cuts the selected elements, not the canvas).
+            var around = Rect.Intersect(AnnotationEditor.RotatedBounds(picture), new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight));
+            if (!around.IsEmpty)
+            {
+                _overlay.Crop = around;
+            }
+        }
+
+        if (_sessionItems != null && mode is EditorOverlayMode.Transform or EditorOverlayMode.Mesh)
+        {
+            foreach (var item in _sessionItems)
+            {
+                item.Hidden = true; // the overlay shows them meanwhile
+            }
+
             Editor.InvalidateVisual();
         }
 
@@ -1614,7 +2126,7 @@ public sealed class ImageEditorWindow : PinWindow
         ImageHost.Children.Add(_overlay);
         _sessionText.Text = mode switch
         {
-            EditorOverlayMode.Crop => "拖出画布要保留的区域，拖边角调整。Enter 应用，Esc 取消",
+            EditorOverlayMode.Crop => picture != null ? "拖出选中元素要保留的区域，拖边角调整。Enter 应用，Esc 取消" : "拖出画布要保留的区域，拖边角调整。Enter 应用，Esc 取消",
             EditorOverlayMode.Path => "按住鼠标沿要保留的部分画一圈（按住 Shift 走直线）。Enter 应用，Esc 取消",
             EditorOverlayMode.Mesh => "先单击图片交叉拆分一次，然后拖动交点、边角和蓝色手柄弯曲图片。Enter 应用，Esc 取消",
             EditorOverlayMode.Transform => "拖四角等比缩放（Shift 自由），框边外拖动旋转（Shift 15°）。Enter 或点击远处应用，Esc 取消",
@@ -1641,10 +2153,27 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         var picture = _sessionPicture;
+        var items = _sessionItems;
+        var merged = _sessionMerged;
         CancelSession();
         _sessionPicture = picture; // the panel's Target while it is applied
+        _sessionItems = items;
+        _sessionMerged = merged;
+        if (items != null && overlay.Mode == EditorOverlayMode.Transform)
+        {
+            TransformItems(items, overlay.TransformStart, overlay.TransformRect, overlay.TransformAngle);
+            _sessionPicture = null;
+            _sessionItems = null;
+            _sessionMerged = null;
+            SelectElements(items);
+            return;
+        }
+
         switch (overlay.Mode)
         {
+            case EditorOverlayMode.Crop when picture != null:
+                CropPicture(picture, overlay.Crop);
+                break;
             case EditorOverlayMode.Crop:
             {
                 var r = overlay.Crop;
@@ -1671,6 +2200,15 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         _sessionPicture = null;
+        _sessionItems = null;
+        _sessionMerged = null;
+        if (merged != null && Editor.Items.Contains(merged))
+        {
+            SelectQuietly(merged); // the merged result stays selected
+            RefreshPanel();
+            return;
+        }
+
         KeepWorkingOn(picture);
     }
 
@@ -1694,8 +2232,21 @@ public sealed class ImageEditorWindow : PinWindow
             _sessionBar.Visibility = Visibility.Collapsed;
             _cropSize.Visibility = Visibility.Collapsed;
             var picture = _sessionPicture;
+            var items = _sessionItems;
             _sessionPicture = null;
-            if (picture != null)
+            _sessionItems = null;
+            _sessionMerged = null;
+            if (items != null)
+            {
+                foreach (var item in items)
+                {
+                    item.Hidden = false;
+                }
+
+                Editor.InvalidateVisual();
+                SelectElements(items); // the selection comes back
+            }
+            else if (picture != null)
             {
                 picture.Hidden = false;
                 Editor.InvalidateVisual();
@@ -1726,6 +2277,51 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 return true; // tool letters wait until the crop / path / keystone is finished
             }
+        }
+
+        if (!control && key == Key.Escape && _pendingPaste != null && ReferenceEquals(_selected, _pendingPaste))
+        {
+            CancelPaste();
+            return true;
+        }
+
+        if (!control && key == Key.Enter && _pendingPaste != null && ReferenceEquals(_selected, _pendingPaste))
+        {
+            FinishPaste();
+            return true;
+        }
+
+        if (_group.Count > 1)
+        {
+            switch (key)
+            {
+                case Key.Escape when !control:
+                    ClearGroup();
+                    UpdateHint();
+                    return true;
+                case Key.Delete or Key.Back when !control:
+                    DeleteGroup();
+                    return true;
+                case Key.Left or Key.Right or Key.Up or Key.Down when !control:
+                {
+                    var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 10 : 1;
+                    _history.CheckpointCoalesced(Editor.Items, _group);
+                    foreach (var member in _group)
+                    {
+                        member.Translate(key == Key.Left ? -step : key == Key.Right ? step : 0, key == Key.Up ? -step : key == Key.Down ? step : 0);
+                    }
+
+                    UpdateUndoButtons();
+                    Editor.InvalidateVisual();
+                    return true;
+                }
+            }
+        }
+
+        if (control && key == Key.A && _hasImage)
+        {
+            SelectElements(Editor.Items); // 全选
+            return true;
         }
 
         if (!control)
@@ -1791,7 +2387,15 @@ public sealed class ImageEditorWindow : PinWindow
 
         // On an element (or with one selected, no tool in hand): its own menu first (layers, copy, delete).
         var pointer = Mouse.GetPosition(ImageHost);
-        if (_hasImage && _overlay == null && _tool is AnnotationTool.None or AnnotationTool.Select &&
+        if (_hasImage && _overlay == null && _group.Count > 1)
+        {
+            Add($"置于顶层（{_group.Count} 个）", () => MoveGroupLayer(true), "");
+            Add($"置于底层（{_group.Count} 个）", () => MoveGroupLayer(false), "");
+            Add("删除选中的元素", DeleteGroup, "Delete");
+            menu.Items.Add(new Separator());
+        }
+
+        if (_hasImage && _overlay == null && _group.Count <= 1 && _tool is AnnotationTool.None or AnnotationTool.Select &&
             (HitAnnotation(new Point(pointer.X / _zoom, pointer.Y / _zoom)) ?? _selected) is { } element)
         {
             SelectAnnotation(element);
@@ -2129,6 +2733,7 @@ public sealed class ImageEditorWindow : PinWindow
         _history.Checkpoint(Editor.Items);
         _beforeGroup.Clear();
         _lastGroup = null;
+        ClearGroup();
         Editor.Items.Clear();
         Editor.Items.AddRange(initial.Items.Select(item => item.Clone()));
         RestoreState(initial.State);

@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.28`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.29`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,15 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.29 0.8.29 变更
+
+- 编辑器默认「选择」（浮动栏最左的 `ToolSelect`，仅编辑器显示；没有工具时就是它）。空白处（画布外也行）拖动框选（`Editor.Marquee`，碰到即选），
+  Shift 单击 / 框选加选，Ctrl 单击 / 框选减选，Ctrl+A 全选；多选 `_group`（≥2 个，各画虚线框 `Editor.Group`），框内拖动一起移动，方向键微调，Delete 删除，右键置顶 / 置底 / 删除。
+- 裁切与变形作用于选中元素：单张图片照旧；多选或批注先 `Merge` 成一张图片（会话结束应用时 `Realize` 替换原元素，取消则不变）；
+  矩形裁切有选中时裁选中的元素（`CropPicture`，画布不变），没选中时裁画布；双击调节框对多选 / 批注逐个移动缩放旋转（`TransformItems`，仍可编辑）。
+- `Annotation.Hidden` 移到基类（`DrawItem` 跳过，克隆时清掉）。
+- 粘贴（Ctrl+V / 粘贴图片 / 粘贴元素）后处于「待放置」：Esc 取消（`AnnotationHistory.TrimTo` 去掉这一步），Enter 或点击空白处完成。
 
 ## 8.1.28 0.8.28 变更
 

@@ -74,6 +74,20 @@ public sealed class AnnotationHistory
         }
     }
 
+    /// <summary>How many steps can be undone (to drop the steps of something cancelled later).</summary>
+    public int Depth => _undo.Count;
+
+    /// <summary>Forgets the steps after <paramref name="depth"/> (a cancelled paste leaves no step behind).</summary>
+    public void TrimTo(int depth)
+    {
+        if (depth >= 0 && depth < _undo.Count)
+        {
+            _undo.RemoveRange(depth, _undo.Count - depth);
+            _redo.Clear();
+            _armed = null;
+        }
+    }
+
     /// <summary>Changes every stored step (a capture's steps get the editor's picture element).</summary>
     public void ForEachStep(Action<List<Annotation>> change)
     {

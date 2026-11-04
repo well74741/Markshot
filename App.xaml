@@ -341,6 +341,11 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/folder_open.png" /></Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="IconSelectMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/select.png" /></Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="IconPasteMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/open.png" /></Setter.Value>

@@ -196,16 +196,23 @@ public partial class PinWindow
         var fit = Math.Min(1, Math.Min(cw * 0.8 / w, ch * 0.8 / h));
         var size = new Size(Math.Max(1, w * fit), Math.Max(1, h * fit));
         var element = new ImageAnnotation { Image = image, Rect = new Rect((cw - size.Width) / 2, (ch - size.Height) / 2, size.Width, size.Height) };
+        var depth = _history.Depth;
         _history.Checkpoint(Editor.Items);
         Editor.Items.Add(element);
         UpdateUndoButtons();
         SetTool(AnnotationTool.None);
         SelectAnnotation(element);
         Editor.InvalidateVisual();
+        OnPasted(element, depth);
         return true;
     }
 
     private protected virtual bool AcceptPastedPicture(BitmapSource picture) => false;
+
+    /// <summary>Something was pasted (<paramref name="depth"/>: the undo depth before it).</summary>
+    private protected virtual void OnPasted(Annotation element, int depth)
+    {
+    }
 
     private protected void PasteAnnotation()
     {
@@ -219,6 +226,7 @@ public partial class PinWindow
             return;
         }
 
+        var depth = _history.Depth;
         _history.Checkpoint(Editor.Items);
         if (pasted is MosaicAnnotation mosaic)
         {
@@ -233,6 +241,7 @@ public partial class PinWindow
 
         UpdateUndoButtons();
         SelectQuietly(pasted);
+        OnPasted(pasted, depth);
     }
 
     private void ConvertSelected(AnnotationTool variant)

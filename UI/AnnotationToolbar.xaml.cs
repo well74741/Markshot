@@ -221,6 +221,8 @@ public partial class AnnotationToolbar : UserControl
         CaptureActions.Visibility = mode == AnnotationToolbarMode.Capture ? Visibility.Visible : Visibility.Collapsed;
         PinActions.Visibility = mode == AnnotationToolbarMode.Pin ? Visibility.Visible : Visibility.Collapsed;
         EditorActions.Visibility = mode == AnnotationToolbarMode.Editor ? Visibility.Visible : Visibility.Collapsed;
+        ToolSelect.Visibility = mode == AnnotationToolbarMode.Editor ? Visibility.Visible : Visibility.Collapsed;
+        ToolSelect.IsChecked = mode == AnnotationToolbarMode.Editor && _tool is AnnotationTool.None or AnnotationTool.Select;
         DragHandle.Visibility = Visibility.Visible;
         ApplyToolOrderFromConfig();
     }
@@ -358,6 +360,7 @@ public partial class AnnotationToolbar : UserControl
         ToolNumber.IsChecked = false;
         ToolMosaic.IsChecked = false;
         ToolEraser.IsChecked = false;
+        ToolSelect.IsChecked = IsEditorMode; // no tool in hand: the editor is in 选择
         SettingsHost.IsOpen = false;
         _configuring = false;
         ToolChanged?.Invoke(AnnotationTool.None);
@@ -518,6 +521,7 @@ public partial class AnnotationToolbar : UserControl
     private void CheckMainButton(AnnotationTool tool)
     {
         var family = FamilyOf(tool);
+        ToolSelect.IsChecked = IsEditorMode && tool is AnnotationTool.None or AnnotationTool.Select;
         ToolShape.IsChecked = family == ToolFamily.Shape;
         ToolPen.IsChecked = family == ToolFamily.Pen;
         ToolArrow.IsChecked = family == ToolFamily.Line;
@@ -863,6 +867,13 @@ public partial class AnnotationToolbar : UserControl
         if (_configuring || sender is not RadioButton { Tag: string tag } ||
             !Enum.TryParse<AnnotationTool>(tag, out var tool))
         {
+            return;
+        }
+
+        if (tool == AnnotationTool.Select)
+        {
+            // 选择 stays on when clicked again.
+            DeactivateTools();
             return;
         }
 
