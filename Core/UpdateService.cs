@@ -56,8 +56,12 @@ public static class UpdateService
     /// Newest package from the built-in GitHub repository and, when set, the custom folder /
     /// repository URL; null when nothing is newer than this build.
     /// </summary>
+    /// <summary>Why the last check found nothing when it could not reach the source (null = it did check).</summary>
+    public static string? LastFailure { get; private set; }
+
     public static async Task<Package?> FindNewestAsync(string? custom, CancellationToken cancellationToken = default)
     {
+        LastFailure = null;
         var builtIn = FindNewerAsync(DefaultRepository, cancellationToken);
         Package? own = null;
         if (!string.IsNullOrWhiteSpace(custom) &&
@@ -125,8 +129,9 @@ public static class UpdateService
         }
         catch (Exception ex)
         {
-            // Offline, rate-limited, private repository (404) …: just no update this time.
+            // Offline, rate-limited, private repository (404) …: no answer this time (not "up to date").
             Log.Info("检查 GitHub 更新失败：" + ex.Message);
+            LastFailure = ex.Message.Contains("403") ? "GitHub 暂时限制了访问次数" : "连不上 GitHub";
             return null;
         }
     }

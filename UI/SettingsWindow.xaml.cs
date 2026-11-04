@@ -807,7 +807,9 @@ public partial class SettingsWindow : Window
         UpdateButton.Visibility = Visibility.Collapsed;
         if (!quiet)
         {
-            StatusText.Text = !string.IsNullOrWhiteSpace(folder) && !UpdateService.IsGitHub(folder) && !Directory.Exists(folder)
+            StatusText.Text = UpdateService.LastFailure is { } failure
+                ? $"检查更新失败（{failure}），请稍后再试；也可以到 {UpdateService.DefaultRepository}/releases 手动下载"
+                : !string.IsNullOrWhiteSpace(folder) && !UpdateService.IsGitHub(folder) && !Directory.Exists(folder)
                 ? $"已是最新版本（{AppVersion.Display}）。自定义更新路径不存在：{folder}"
                 : $"已是最新版本（{AppVersion.Display}）";
         }
