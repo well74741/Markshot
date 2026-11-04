@@ -22,6 +22,12 @@ public sealed class AnnotationEditor : FrameworkElement
 
     public BitmapSource? Source { get; set; }
 
+    /// <summary>How pictures on the canvas are scaled on the screen (the editor switches it with the zoom).</summary>
+    public BitmapScalingMode PictureScaling { get; set; } = BitmapScalingMode.HighQuality;
+
+    /// <summary>吸色 (Alt with the pen): the cross at this canvas point, with the colour under it; null = off.</summary>
+    public (Point At, Color? Color)? Eyedrop { get; set; }
+
     public double Scale { get; set; } = 1.0;
 
     public Rect Selection { get; set; } = Rect.Empty;
@@ -162,10 +168,13 @@ public sealed class AnnotationEditor : FrameworkElement
         }
 
         var live = LiveEraser is { Count: > 0 } ? EraseStroke.Widen(LiveEraser, LiveEraserWidth) : null;
+        ImageAnnotation.Scaling = PictureScaling;
         foreach (var annotation in DrawOrder(Items))
         {
             DrawItem(dc, annotation, live, ReferenceEquals(annotation, HoverWatermark) ? Accent : null, LiveEraserStrength);
         }
+
+        ImageAnnotation.Scaling = BitmapScalingMode.HighQuality; // saved / copied pictures always are
 
         if (Preview != null)
         {
@@ -205,7 +214,33 @@ public sealed class AnnotationEditor : FrameworkElement
             DrawLassoDraft(dc);
         }
 
+        if (Eyedrop is { } eyedrop)
+        {
+            DrawEyedrop(dc, eyedrop.At, eyedrop.Color);
+        }
+
         dc.Pop();
+    }
+
+    /// <summary>The picking cross: open in the middle (the picked pixel stays visible), a ring in the colour.</summary>
+    private void DrawEyedrop(DrawingContext dc, Point at, Color? color)
+    {
+        var unit = Scale; // canvas pixels per DIP
+        foreach (var (brush, width) in new[] { (Brushes.Black, 3.0), (Brushes.White, 1.0) })
+        {
+            var pen = new Pen(brush, width * unit);
+            foreach (var (x, y) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+            {
+                dc.DrawLine(pen, new Point(at.X + x * 4 * unit, at.Y + y * 4 * unit), new Point(at.X + x * 14 * unit, at.Y + y * 14 * unit));
+            }
+        }
+
+        if (color is { } picked)
+        {
+            var centre = new Point(at.X + 22 * unit, at.Y + 22 * unit);
+            dc.DrawEllipse(new SolidColorBrush(picked), new Pen(Brushes.White, 2 * unit), centre, 9 * unit, 9 * unit);
+            dc.DrawEllipse(null, new Pen(Brushes.Black, 1 * unit), centre, 10.5 * unit, 10.5 * unit);
+        }
     }
 
     /// <summary>
@@ -342,7 +377,8 @@ public sealed class AnnotationEditor : FrameworkElement
         }
 
         var rest = items.Where(item => !ReferenceEquals(item, watermark)).ToList();
-        var lastMosaic = rest.FindLastIndex(item => item is MosaicAnnotation or MosaicBrushAnnotation);
+        // Above the picture(s) and mosaics, below the other elements.
+        var lastMosaic = rest.FindLastIndex(item => item is MosaicAnnotation or MosaicBrushAnnotation or ImageAnnotation);
         rest.Insert(lastMosaic + 1, watermark);
         return rest;
     }

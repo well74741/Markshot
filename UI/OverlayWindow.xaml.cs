@@ -79,6 +79,10 @@ public partial class OverlayWindow : Window
     private int _numberCounter = 1;
 
     private Color _color = Color.FromRgb(0xFF, 0x33, 0x00);
+    private PenEyedropper? _eyedropperInstance;
+
+    /// <summary>吸色 with the pen: reads the screen as it is shown (translation included).</summary>
+    private PenEyedropper _eyedropper => _eyedropperInstance ??= new PenEyedropper(Editor, point => PenEyedropper.Sample(EffectiveScreen, point));
     private double _thickness = 3;
     private bool _fill;
     private double _corner;
@@ -673,6 +677,14 @@ public partial class OverlayWindow : Window
     /// <summary>The capture window's own keys (显示鼠标, 辅助线) on press. True = used.</summary>
     private bool CaptureKeyDown(Key key, bool repeat)
     {
+        if (key is Key.LeftAlt or Key.RightAlt && PenEyedropper.IsPen(_tool))
+        {
+            // With the pen, Alt is 吸色 (not a 辅助线 tap).
+            _tapKey = null;
+            _eyedropper.Update(_tool, ToPixels(Mouse.GetPosition(InputLayer)), _gesture != null);
+            return true;
+        }
+
         var config = App.Config;
         var modifiers = Keyboard.Modifiers;
         foreach (var configured in new[] { config.CrosshairKey, config.CaptureCursorKey })
@@ -712,6 +724,11 @@ public partial class OverlayWindow : Window
     /// <summary>A lone modifier released with nothing else pressed: its switch.</summary>
     private bool CaptureKeyUp(Key key)
     {
+        if (key is Key.LeftAlt or Key.RightAlt)
+        {
+            _eyedropper.Hide();
+        }
+
         if (_tapKey != key)
         {
             return false;

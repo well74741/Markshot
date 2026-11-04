@@ -74,6 +74,15 @@ public sealed class AnnotationHistory
         }
     }
 
+    /// <summary>Changes every stored step (a capture's steps get the editor's picture element).</summary>
+    public void ForEachStep(Action<List<Annotation>> change)
+    {
+        foreach (var step in _undo.Concat(_redo))
+        {
+            change(step);
+        }
+    }
+
     /// <summary>Records the current state as one undo step.</summary>
     public void Checkpoint(IReadOnlyList<Annotation> items)
     {

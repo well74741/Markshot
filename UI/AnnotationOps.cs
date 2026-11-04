@@ -93,6 +93,8 @@ internal static class AnnotationOps
             case WatermarkAnnotation watermark:
                 watermark.FontSize = Math.Clamp(watermark.FontSize + step * 2, 10, 120);
                 return watermark.FontSize;
+            case ImageAnnotation:
+                return null; // a picture has no stroke (Ctrl + wheel: its opacity)
             case MosaicAnnotation mosaic:
                 mosaic.BlockSize = Math.Clamp(mosaic.BlockSize + step * 2, 4, 40);
                 MosaicBuilder.Rebuild(mosaic, source);

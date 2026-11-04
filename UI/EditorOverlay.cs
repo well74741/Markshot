@@ -57,7 +57,7 @@ public sealed class EditorOverlay : FrameworkElement
     public Point[] Quad { get; }
 
     /// <summary>网格形变: the warp being edited (image pixels).</summary>
-    public WarpMesh Warp { get; }
+    public WarpMesh Warp { get; set; }
 
     /// <summary>The warped picture and where it goes (image pixels); a small copy is fine.</summary>
     public Func<WarpMesh, (BitmapSource Image, Rect Place)>? WarpPreview { get; set; }
@@ -79,6 +79,11 @@ public sealed class EditorOverlay : FrameworkElement
 
     public double TransformAngle { get; set; }
 
+    /// <summary>Where the box began: nothing to apply until it differs.</summary>
+    public Rect TransformStart { get; set; }
+
+    public double TransformStartAngle { get; set; }
+
     /// <summary>The picture drawn in the box (a small copy is fine).</summary>
     public BitmapSource? TransformPreview { get; set; }
 
@@ -97,8 +102,9 @@ public sealed class EditorOverlay : FrameworkElement
         EditorOverlayMode.Path => !_drawing && PathPoints.Count >= 3,
         EditorOverlayMode.Crop => Crop.Width >= 2 && Crop.Height >= 2,
         EditorOverlayMode.Mesh => Warp.Changed,
-        EditorOverlayMode.Transform => Math.Abs(TransformAngle) > 0.05 ||
-                                       Math.Abs(TransformRect.Width - _imageWidth) >= 1 || Math.Abs(TransformRect.Height - _imageHeight) >= 1,
+        EditorOverlayMode.Transform => Math.Abs(TransformAngle - TransformStartAngle) > 0.05 ||
+                                       (TransformRect.TopLeft - TransformStart.TopLeft).Length >= 0.5 ||
+                                       Math.Abs(TransformRect.Width - TransformStart.Width) >= 0.5 || Math.Abs(TransformRect.Height - TransformStart.Height) >= 0.5,
         _ => true
     };
 
@@ -362,8 +368,7 @@ public sealed class EditorOverlay : FrameworkElement
             _warpDirty = false;
         }
 
-        // The warped picture covers the original (which shows through nowhere).
-        dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1A)), null, all);
+        // The picture element is hidden meanwhile: what the warp leaves uncovered will be transparent.
         if (_warpImage is { } warped)
         {
             dc.DrawImage(warped.Image, ToDip(warped.Place));

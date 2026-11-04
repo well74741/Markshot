@@ -16,6 +16,17 @@ public partial class OverlayWindow
         }
 
         var point = ToPixels(e.GetPosition(InputLayer));
+        if (PenEyedropper.IsPen(_tool) && PenEyedropper.AltDown && _hasSelection)
+        {
+            // 吸色: Alt + click with the pen takes the colour under the cross.
+            if (_eyedropper.Pick(point) is { } picked)
+            {
+                Toolbar.PickColor(picked);
+            }
+
+            e.Handled = true;
+            return;
+        }
 
         if (_textEditor.Target is { } editingText)
         {
@@ -335,6 +346,18 @@ public partial class OverlayWindow
         }
 
         var point = ToPixels(e.GetPosition(InputLayer));
+        if (_hasSelection && _eyedropper.Update(_tool, point, _gesture != null))
+        {
+            Magnifier.Visibility = Visibility.Collapsed;
+            InputLayer.Cursor = Cursors.None; // the cross is the pointer
+            return;
+        }
+
+        if (InputLayer.Cursor == Cursors.None)
+        {
+            UpdateCursorToPointer();
+        }
+
         if (ShouldShowMagnifier(point))
         {
             UpdateMagnifier(point);
@@ -373,6 +396,7 @@ public partial class OverlayWindow
 
         if (_gesture != null)
         {
+            _gesture.Pressure = PenEyedropper.Pressure(e, InputLayer); // tablet pen: the width follows the pressure
             _gesture.Move(point, IsShiftDown, IsCtrlDown);
             Editor.InvalidateVisual();
             return;

@@ -7,17 +7,18 @@ namespace Markshot.UI;
 
 /// <summary>
 /// 图片编辑器: a normal window around the pin's annotation canvas — all annotation tools work the
-/// same as on a pin — with the image operations on the right: size, rotation, mirroring, crop,
-/// path cut-out, keystone correction and colour adjustments. Every operation is one undo step
-/// (the history also carries the image). Opens files, takes dropped files, saves in the common
-/// formats and pins the result back onto the screen.
+/// same as on a pin. The canvas is transparent and has its own size (画布尺寸, 矩形裁切); the opened
+/// picture is an element on it (<see cref="ImageAnnotation"/>) next to pasted pictures and annotations,
+/// in any layer order. Angle, 调节框, colours, path cut-out, keystone and warp work on the selected
+/// picture (or the first one). Every operation is one undo step. Opens files, takes dropped files,
+/// saves in the common formats and pins the result back onto the screen.
 /// </summary>
 public sealed class ImageEditorWindow : PinWindow
 {
     private const int PreviewSide = 1400;
 
-    /// <summary>The image state undone together with the annotations.</summary>
-    private sealed record State(BitmapSource Origin, BitmapSource Base, ImageAdjust Adjust);
+    /// <summary>What is undone together with the elements: the canvas (and, for the memory budget, the pictures' bitmaps).</summary>
+    private sealed record State(BitmapSource Base, IReadOnlyList<BitmapSource> Pictures);
 
     private readonly DockPanel _layout = new();
     private FrameworkElement? _panel;
@@ -50,9 +51,14 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly Dictionary<EditGroup, (State State, List<Annotation> Items)> _beforeGroup = new();
     private EditGroup? _lastGroup;
     private readonly DispatcherTimer _adjustTimer = new() { Interval = TimeSpan.FromMilliseconds(350) };
-    private BitmapSource _origin;
     private BitmapSource? _proxy;
-    private ImageAdjust _adjust = new();
+    private BitmapSource? _proxyOf;
+    private ImageAnnotation? _adjustTarget; // whose colours are being moved (finished when the controls rest)
+    private ImageAnnotation? _sessionPicture; // what a 调节框 / path / keystone / warp works on
+    private ImageAnnotation? _panelPicture; // whose numbers the panel shows
+    private ImageAnnotation? _anglePicture; // turned live while the angle slider moves
+    private double _angleBase;
+    private long _noticeUntil;
     private bool _adjustPending;
     private bool _syncingControls;
     private EditorOverlay? _overlay;
@@ -84,13 +90,20 @@ public sealed class ImageEditorWindow : PinWindow
     private ImageEditorWindow(BitmapSource image, bool hasImage, string? path, List<Annotation>? annotations, PinWindow? sourcePin)
         : base(image, 0, 0, image, annotations)
     {
-        _origin = image;
         _path = path;
         _sourcePin = sourcePin;
         _waitingPin = sourcePin;
         _hasImage = hasImage;
         // Not saved anywhere yet (a capture, a long screenshot): closing asks first.
         _unsavedNew = hasImage && path == null && sourcePin == null;
+        if (hasImage)
+        {
+            // The picture is an element at the bottom of the stack, on a transparent canvas of its size.
+            Editor.Items.Insert(0, new ImageAnnotation { Image = image, Rect = new Rect(0, 0, image.PixelWidth, image.PixelHeight) });
+            _baseImage = ImageOps.Blank(image.PixelWidth, image.PixelHeight);
+            Editor.Source = _baseImage;
+            Img.Source = _baseImage;
+        }
 
         AllowsTransparency = false;
         WindowStyle = WindowStyle.SingleBorderWindow;
@@ -209,8 +222,15 @@ public sealed class ImageEditorWindow : PinWindow
             }
 
             var at = e.GetPosition(ImageHost);
-            if (AnnotationOps.HitTest(Editor.Items, new Point(at.X / _zoom, at.Y / _zoom), 7 / _zoom) == null)
+            // On a picture (or the empty canvas: the first picture), not on an annotation.
+            var hit = AnnotationOps.HitTest(Editor.Items, new Point(at.X / _zoom, at.Y / _zoom), 7 / _zoom);
+            if (hit is null or ImageAnnotation)
             {
+                if (hit is ImageAnnotation picture)
+                {
+                    SelectQuietly(picture);
+                }
+
                 StartSession(EditorOverlayMode.Transform);
                 e.Handled = true;
             }
@@ -225,12 +245,13 @@ public sealed class ImageEditorWindow : PinWindow
 
         Toolbar.Visibility = Visibility.Visible;
         Toolbar.OpenRequested += OpenDialog;
+        Toolbar.PasteRequested += PasteImage;
         Toolbar.PinRequested += PinToScreen;
         Toolbar.ToolChanged += _ => CancelSession();
         Toolbar.ToolChanged += _ => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
         Toolbar.VariantChanged += _ => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
-        PreviewMouseUp += (_, _) => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
-        PreviewKeyUp += (_, _) => Dispatcher.BeginInvoke(new Action(UpdateHint), DispatcherPriority.Input);
+        PreviewMouseUp += (_, _) => Dispatcher.BeginInvoke(new Action(AfterInput), DispatcherPriority.Input);
+        PreviewKeyUp += (_, _) => Dispatcher.BeginInvoke(new Action(AfterInput), DispatcherPriority.Input);
         SourceInitialized += (_, _) =>
         {
             // A lone Alt (Alt + wheel sizes the brush) must not put the window into menu mode.
@@ -250,13 +271,22 @@ public sealed class ImageEditorWindow : PinWindow
         _history.CaptureExtra = () =>
         {
             BakeAdjust(); // a step always holds finished pixels
-            return new State(_origin, _baseImage, _adjust);
+            return CurrentState();
         };
         _history.RestoreExtra = extra =>
         {
+            // The elements are new copies now: nothing may hold on to the old ones.
+            CancelSession();
+            _adjustPending = false;
+            _adjustTarget = null;
+            _anglePicture = null;
             if (extra is State state)
             {
                 RestoreState(state);
+            }
+            else
+            {
+                RefreshPanel(); // a capture's step: same canvas
             }
 
             // Undo / redo: which group changed the picture last is not known any more.
@@ -265,7 +295,7 @@ public sealed class ImageEditorWindow : PinWindow
             UpdateResetButtons();
         };
         _history.ExtraSize = extra => extra is State s
-            ? new (object, long)[] { (s.Origin, s.Origin.PixelWidth * 4L * s.Origin.PixelHeight), (s.Base, s.Base.PixelWidth * 4L * s.Base.PixelHeight) }
+            ? s.Pictures.Append(s.Base).Select(bitmap => ((object)bitmap, bitmap.PixelWidth * 4L * bitmap.PixelHeight)).ToArray()
             : Array.Empty<(object, long)>();
         _adjustTimer.Tick += (_, _) =>
         {
@@ -302,7 +332,7 @@ public sealed class ImageEditorWindow : PinWindow
             _adjustTimer.Stop();
             _waitingPin?.ShowAgain(); // not re-pinned: the pin it came from comes back as it was
         };
-        _initial = (new State(_origin, _baseImage, _adjust), Editor.Items.Select(item => item.Clone()).ToList());
+        _initial = (CurrentState(), Editor.Items.Select(item => item.Clone()).ToList());
         Loaded += (_, _) =>
         {
             EnterEditMode();
@@ -325,7 +355,21 @@ public sealed class ImageEditorWindow : PinWindow
 
     public int ImageHeight => _baseImage.PixelHeight;
 
-    public int AnnotationCount => Editor.Items.Count;
+    /// <summary>The elements that are no pictures.</summary>
+    public int AnnotationCount => Editor.Items.Count(item => item is not ImageAnnotation);
+
+    /// <summary>What the panel's picture operations work on: the selected picture, else the first one.</summary>
+    private ImageAnnotation? Target => _sessionPicture ?? _selected as ImageAnnotation ?? Editor.Items.OfType<ImageAnnotation>().FirstOrDefault();
+
+    /// <summary>Where that picture is on the canvas (tests).</summary>
+    public Rect PictureRect => Target?.Rect ?? Rect.Empty;
+
+    public double PictureAngle => Target?.Rotation ?? 0;
+
+    private ImageAdjust _adjust => Target?.Adjust ?? new ImageAdjust();
+
+    private State CurrentState() => new(_baseImage, Editor.Items.OfType<ImageAnnotation>()
+        .SelectMany(picture => new[] { picture.Image, picture.Origin }).OfType<BitmapSource>().Distinct().ToList());
 
     public bool HasImage => _hasImage;
 
@@ -429,7 +473,7 @@ public sealed class ImageEditorWindow : PinWindow
         sizeRow.Children.Add(_widthBox);
         sizeRow.Children.Add(new TextBlock { Text = "×", Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.Gray });
         sizeRow.Children.Add(_heightBox);
-        var applySize = TextButton("应用", "改变画布尺寸：图片居中不缩放，多出的地方透明（图片本身的大小用双击图片的调节框）", ApplyTypedSize);
+        var applySize = TextButton("应用", "改变画布尺寸：内容居中不缩放，多出的地方透明（图片本身的大小用双击图片的调节框）", ApplyTypedSize);
         applySize.Margin = new Thickness(8, 0, 0, 0);
         sizeRow.Children.Add(applySize);
 
@@ -449,13 +493,13 @@ public sealed class ImageEditorWindow : PinWindow
         angleRow.Children.Add(angleLabel);
         angleRow.Children.Add(_angleValue);
         angleRow.Children.Add(_angle);
-        var applyAngle = TextButton("应用角度", "按角度旋转，画布随之变大（批注会合并进图片）", ApplyAngle);
+        var applyAngle = TextButton("应用角度", "转动选中的图片（没选中时是第一张）；画布不变，批注不受影响", ApplyAngle);
         applyAngle.Margin = new Thickness(0, 6, 0, 0);
         applyAngle.HorizontalAlignment = HorizontalAlignment.Left;
 
         var cutRow = new WrapPanel();
-        cutRow.Children.Add(TextButton("矩形裁切", "拖出要保留的区域（批注保持可编辑）", () => StartSession(EditorOverlayMode.Crop)));
-        cutRow.Children.Add(TextButton("路径裁切", "沿手绘路径抠图，路径外变透明", () => StartSession(EditorOverlayMode.Path)));
+        cutRow.Children.Add(TextButton("矩形裁切", "把画布裁成拖出的区域（图片和批注保持可编辑）", () => StartSession(EditorOverlayMode.Crop)));
+        cutRow.Children.Add(TextButton("路径裁切", "沿手绘路径抠选中的图片，路径外变透明", () => StartSession(EditorOverlayMode.Path)));
         cutRow.Children.Add(TextButton("梯形校正", "拖动四个角对准倾斜的矩形，校正为正矩形", () => StartSession(EditorOverlayMode.Keystone)));
         cutRow.Children.Add(TextButton("网格形变", "像 PS 的变形：单击图片交叉拆分网格，拖动交点、边角和手柄弯曲图片", () => StartSession(EditorOverlayMode.Mesh)));
 
@@ -578,12 +622,15 @@ public sealed class ImageEditorWindow : PinWindow
         _syncingControls = true;
         _widthBox.Text = _hasImage ? _baseImage.PixelWidth.ToString(CultureInfo.InvariantCulture) : "";
         _heightBox.Text = _hasImage ? _baseImage.PixelHeight.ToString(CultureInfo.InvariantCulture) : "";
-        if (Math.Abs(_angle.Value) > 0.001)
+        if (_anglePicture != null)
         {
-            ImageHost.RenderTransform = Transform.Identity; // a previewed angle that was not applied
+            _anglePicture.Rotation = _angleBase; // a previewed angle that was not applied
+            _anglePicture = null;
+            Editor.InvalidateVisual();
         }
 
         _angle.Value = 0;
+        _panelPicture = Target;
         _sliders["Brightness"].Slider.Value = _adjust.Brightness;
         _sliders["Contrast"].Slider.Value = _adjust.Contrast;
         _sliders["Saturation"].Slider.Value = _adjust.Saturation;
@@ -605,7 +652,7 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void UpdateStatus()
     {
-        _statusSize.Text = _hasImage ? $"{_baseImage.PixelWidth} × {_baseImage.PixelHeight} 像素" + (_path != null ? "　·　" + _path : "") : "";
+        _statusSize.Text = _hasImage ? $"画布 {_baseImage.PixelWidth} × {_baseImage.PixelHeight} 像素" + (_path != null ? "　·　" + _path : "") : "";
         _statusZoom.Text = $"{_zoom * 100:0}%";
     }
 
@@ -617,7 +664,7 @@ public sealed class ImageEditorWindow : PinWindow
         var at = anchor ?? new Point(_stage.ActualWidth / 2, _stage.ActualHeight / 2);
         var before = _zoom;
         _zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
-        RenderOptions.SetBitmapScalingMode(Img, _zoom >= 3 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
+        Editor.PictureScaling = _zoom >= 3 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality;
         var ratio = _zoom / before;
         _pan = new Point(at.X - (at.X - _pan.X) * ratio, at.Y - (at.Y - _pan.Y) * ratio);
         ApplyBounds();
@@ -728,6 +775,11 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void UpdateHint()
     {
+        if (Environment.TickCount64 < _noticeUntil)
+        {
+            return; // a short notice is on show
+        }
+
         const string view = "滚轮缩放 · 中键拖动画布 · F 适应窗口";
         string text;
         if (!_hasImage)
@@ -740,7 +792,7 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 EditorOverlayMode.Crop => "拖出保留区域 · 拖边角调整 · 拖框内移动",
                 EditorOverlayMode.Path => "按住沿边缘画一圈 · Shift 直线段",
-                EditorOverlayMode.Transform => "拖边角调尺寸 · 框外拖动旋转 · Shift 等比 / 15°",
+                EditorOverlayMode.Transform => "拖四角等比缩放（Shift 自由）· 框边外拖动旋转（Shift 15°）· 点击远处应用",
                 EditorOverlayMode.Mesh => _overlay.WarpSplit
                     ? "拖动图片带动最近的交点 · 拖交点 / 边角移动 · 拖蓝色手柄弯曲边线"
                     : "单击图片交叉拆分一次（虚线预览位置），之后只需拖动",
@@ -766,7 +818,7 @@ public sealed class ImageEditorWindow : PinWindow
                 AnnotationTool.Rectangle or AnnotationTool.Ellipse => "拖动绘制 · Shift 正方形 / 圆 · Ctrl 圆角 · 按住空格移动 · Alt+滚轮 线宽 · Tab 换样式",
                 AnnotationTool.Arrow or AnnotationTool.Line => "拖动绘制 · Shift 45° · E 旋转 · 按住空格移动 · Alt+滚轮 粗细 · Tab 箭头 / 直线",
                 AnnotationTool.Polyline => "单击放第一个点 · 也可拖出一段 · Alt+滚轮 粗细",
-                AnnotationTool.Pen or AnnotationTool.Highlighter => "拖动书写 · Shift 直线 · Alt+滚轮 笔刷大小 · Ctrl+滚轮 透明度 · Tab 画笔 / 荧光笔",
+                AnnotationTool.Pen or AnnotationTool.Highlighter => "拖动书写 · 按住 Alt 单击吸色 · Shift 直线 · Alt+滚轮 笔刷大小 · Ctrl+滚轮 透明度 · Tab 画笔 / 荧光笔",
                 AnnotationTool.Mosaic => "拖出打码区域 · Alt+滚轮 程度 · Tab 画笔马赛克",
                 AnnotationTool.MosaicBrush => "涂抹打码 · Shift 直线 · Alt+滚轮 笔刷大小 · Tab 区域马赛克",
                 AnnotationTool.Text => "单击输入文字 · 单击已有文字编辑 · 拖动移动 · Alt+滚轮 字号",
@@ -774,7 +826,7 @@ public sealed class ImageEditorWindow : PinWindow
                 AnnotationTool.Number => "单击放序号 · Alt+滚轮 大小",
                 AnnotationTool.Eraser => "拖动擦掉批注 · Alt+滚轮 橡皮大小 · Ctrl+滚轮 擦除强度 · Tab 抠除",
                 AnnotationTool.Cutout => "拖动把图片和批注一起擦成透明 · Alt+滚轮 大小 · Tab 擦除",
-                _ => "单击批注选中 · 拖动移动 · Ctrl+Z 撤销 · Ctrl+S 保存 · Ctrl+T 贴到屏幕"
+                _ => "单击选中图片 / 批注 · 拖动移动 · 双击图片调节框 · 右键调整层级 · Ctrl+V 粘贴图片 · Ctrl+Z 撤销"
             } + " · " + view;
         }
 
@@ -882,7 +934,6 @@ public sealed class ImageEditorWindow : PinWindow
         _history.Clear();
         _beforeGroup.Clear();
         _lastGroup = null;
-        _rotationBase = null;
         _initial = null; // set when the new picture is in
         _savedChange = _history.ChangeCount;
         _hasImage = true;
@@ -891,16 +942,18 @@ public sealed class ImageEditorWindow : PinWindow
         _waitingPin = null;
         _sourcePin = null;
         _unsavedNew = path == null;
-        _adjust = new ImageAdjust();
         _proxy = null;
+        _proxyOf = null;
+        _adjustTarget = null;
+        _anglePicture = null;
         var normal = ImageOps.Normalize(image);
-        _origin = normal;
-        SetBitmap(normal);
+        Editor.Items.Add(new ImageAnnotation { Image = normal, Rect = new Rect(0, 0, normal.PixelWidth, normal.PixelHeight) });
+        SetBitmap(ImageOps.Blank(normal.PixelWidth, normal.PixelHeight));
         Editor.InvalidateVisual();
         UpdateUndoButtons();
         UpdateTitle();
         RefreshPanel();
-        _initial = (new State(_origin, _baseImage, _adjust), new List<Annotation>());
+        _initial = (CurrentState(), Editor.Items.Select(item => item.Clone()).ToList());
         Fit();
         UpdateHint();
     }
@@ -913,11 +966,7 @@ public sealed class ImageEditorWindow : PinWindow
         _pixelHeight = image.PixelHeight;
         Editor.Source = image;
         Img.Source = image;
-        foreach (var item in Editor.Items.Where(item => item is MosaicAnnotation or MosaicBrushAnnotation))
-        {
-            MosaicBuilder.Rebuild(item, image);
-        }
-
+        RebuildMosaics();
         ApplyBounds();
         MoveTo(_pan);
         Editor.InvalidateVisual();
@@ -927,24 +976,101 @@ public sealed class ImageEditorWindow : PinWindow
     {
         _adjustTimer.Stop();
         _adjustPending = false;
-        _origin = state.Origin;
-        _proxy = null;
-        _adjust = state.Adjust;
+        _adjustTarget = null;
+        _anglePicture = null;
         SetBitmap(state.Base);
         RefreshPanel();
     }
 
+    private BitmapSource? _mosaicSource;
+    private string? _mosaicKey;
+
+    private string PictureKey() => string.Join(";", Editor.Items.OfType<ImageAnnotation>().Select(p =>
+        $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(p.Image)},{p.Rect},{p.Rotation},{p.Opacity},{p.Hidden}")) + $"|{_baseImage.PixelWidth}x{_baseImage.PixelHeight}";
+
+    private protected override BitmapSource EyedropSource => MosaicSource;
+
+    /// <summary>What a mosaic blurs: the pictures as they lie on the canvas.</summary>
+    private protected override BitmapSource MosaicSource
+    {
+        get
+        {
+            var key = PictureKey();
+            if (_mosaicSource == null || _mosaicKey != key)
+            {
+                _mosaicKey = key;
+                _mosaicSource = ImageOps.Render(_baseImage.PixelWidth, _baseImage.PixelHeight, dc =>
+                {
+                    foreach (var picture in Editor.Items.OfType<ImageAnnotation>())
+                    {
+                        AnnotationEditor.DrawItem(dc, picture);
+                    }
+                });
+            }
+
+            return _mosaicSource;
+        }
+    }
+
+    private void RebuildMosaics()
+    {
+        foreach (var item in Editor.Items.Where(item => item is MosaicAnnotation or MosaicBrushAnnotation))
+        {
+            MosaicBuilder.Rebuild(item, MosaicSource);
+        }
+    }
+
+    /// <summary>After a click or a key: the panel follows the selection, mosaics what moved under them.</summary>
+    private void AfterInput()
+    {
+        UpdateHint();
+        if (_overlay != null)
+        {
+            return;
+        }
+
+        if (_anglePicture != null && !ReferenceEquals(Target, _anglePicture))
+        {
+            ApplyAngle(); // another picture chosen: the angle stays with the one it was set for
+        }
+
+        if (!ReferenceEquals(Target, _panelPicture))
+        {
+            RefreshPanel();
+        }
+
+        if (_mosaicKey != PictureKey() && Editor.Items.Any(item => item is MosaicAnnotation or MosaicBrushAnnotation))
+        {
+            RebuildMosaics();
+            Editor.InvalidateVisual();
+        }
+    }
+
+    /// <summary>A line in the status bar for a moment.</summary>
+    private void Notice(string text)
+    {
+        _noticeUntil = Environment.TickCount64 + 2500;
+        _statusHint.Text = text;
+        _statusHint.ToolTip = text;
+    }
+
     /// <summary>
-    /// One undoable change of the image's geometry: pending colour changes are finished first, what
-    /// comes out becomes the new starting point (the colour sliders return to neutral).
+    /// One undoable change of the canvas or a picture: pending colours and angle are finished first.
+    /// A selected picture stays selected (the elements stay elements).
     /// </summary>
-    private void GeometryStep(EditGroup group, Func<BitmapSource> change)
+    private void GeometryStep(EditGroup group, Action change)
     {
         if (!_hasImage)
         {
             return;
         }
 
+        if (_anglePicture != null)
+        {
+            ApplyAngle();
+        }
+
+        var keep = _selected as ImageAnnotation;
         _textEditor.Commit();
         ClearSelection();
         BakeAdjust();
@@ -956,17 +1082,20 @@ public sealed class ImageEditorWindow : PinWindow
 
         if (!_beforeGroup.ContainsKey(group))
         {
-            _beforeGroup[group] = (new State(_origin, _baseImage, _adjust), Editor.Items.Select(item => item.Clone()).ToList());
+            _beforeGroup[group] = (CurrentState(), Editor.Items.Select(item => item.Clone()).ToList());
         }
 
         _lastGroup = group;
         _history.Checkpoint(Editor.Items);
-        var result = change();
-        _origin = result;
-        _proxy = null;
-        _adjust = new ImageAdjust();
-        SetBitmap(result);
+        change();
+        RebuildMosaics();
+        Editor.InvalidateVisual();
         UpdateUndoButtons();
+        if (keep != null && Editor.Items.Contains(keep))
+        {
+            SelectQuietly(keep);
+        }
+
         RefreshPanel();
     }
 
@@ -985,12 +1114,10 @@ public sealed class ImageEditorWindow : PinWindow
         _lastGroup = null;
         _adjustTimer.Stop();
         _adjustPending = false;
-        _origin = before.State.Origin;
-        _proxy = null;
-        _adjust = before.State.Adjust;
-        SetBitmap(before.State.Base);
+        _adjustTarget = null;
         Editor.Items.Clear();
         Editor.Items.AddRange(before.Items.Select(item => item.Clone()));
+        SetBitmap(before.State.Base);
         Editor.InvalidateVisual();
         UpdateUndoButtons();
         RefreshPanel();
@@ -1016,27 +1143,15 @@ public sealed class ImageEditorWindow : PinWindow
         }
     }
 
-    /// <summary>Annotations into the pixels: for operations they cannot follow (they stay undoable).</summary>
-    private BitmapSource Flattened()
-    {
-        var flat = ImageOps.Normalize(base.ComposeEditedImage());
-        Editor.Items.Clear();
-        return flat;
-    }
-
     private protected override BitmapSource ComposeEditedImage()
     {
+        if (_sessionPicture is { Hidden: true })
+        {
+            CancelSession(); // saved or copied with a box open: the picture as it is
+        }
+
         BakeAdjust();
         return base.ComposeEditedImage();
-    }
-
-    public void ResizeTo(int width, int height)
-    {
-        if (width >= 1 && height >= 1 && (width != _baseImage.PixelWidth || height != _baseImage.PixelHeight))
-        {
-            GeometryStep(EditGroup.Size, () => ImageOps.Resize(Flattened(), width, height));
-            Fit();
-        }
     }
 
     private void ApplyTypedSize()
@@ -1077,6 +1192,7 @@ public sealed class ImageEditorWindow : PinWindow
         Orient(() => ApplyOrientation(op, record: false));
     }
 
+    /// <summary>The whole canvas turns (pictures and annotations follow, all stay elements).</summary>
     public void Turn(bool clockwise)
     {
         Orient(() =>
@@ -1104,61 +1220,55 @@ public sealed class ImageEditorWindow : PinWindow
         GeometryStep(EditGroup.Turn, () =>
         {
             turn();
-            return ImageOps.Normalize(_baseImage);
+            SetBitmap(ImageOps.Normalize(_baseImage));
         });
     }
 
+    /// <summary>The slider turns the target picture live; 应用角度 makes it an undo step.</summary>
     private void PreviewAngle()
     {
         _angleValue.Text = $"{_angle.Value:0.#}°";
-        if (_syncingControls)
+        if (_syncingControls || Target is not { } picture)
         {
             return;
         }
 
-        ImageHost.RenderTransformOrigin = new Point(0.5, 0.5);
-        ImageHost.RenderTransform = new RotateTransform(_angle.Value);
+        if (_anglePicture == null)
+        {
+            _anglePicture = picture;
+            _angleBase = picture.Rotation;
+        }
+
+        _anglePicture.Rotation = Math.IEEERemainder(_angleBase + _angle.Value, 360);
+        Editor.InvalidateVisual();
     }
 
     private void ApplyAngle()
     {
-        var angle = Math.Round(_angle.Value, 1);
-        ImageHost.RenderTransform = Transform.Identity;
-        if (Math.Abs(angle) >= 0.05)
+        if (_anglePicture is { } picture)
         {
-            RotateBy(angle);
+            var angle = Math.Round(_angle.Value, 1);
+            picture.Rotation = _angleBase;
+            _anglePicture = null;
+            if (Math.Abs(angle) >= 0.05)
+            {
+                GeometryStep(EditGroup.Turn, () => picture.Rotation = Math.IEEERemainder(picture.Rotation + angle, 360));
+            }
         }
 
         RefreshPanel();
     }
 
-    /// <summary>
-    /// 应用角度. Several angles in a row turn the picture as it was before the first of them by the
-    /// sum, so the canvas only ever holds the turned picture (it used to turn the previous result,
-    /// transparent corners included, and grew each time).
-    /// </summary>
+    /// <summary>任意角度: the picture element turns; the canvas keeps its size, what leaves it is only out of view.</summary>
     public void RotateBy(double degrees)
     {
-        var continuing = _rotationBase != null && _history.ChangeCount == _rotationChange;
-        var total = (continuing ? _rotationTotal : 0) + degrees;
-        total = Math.IEEERemainder(total, 360);
-        var from = continuing ? _rotationBase : null;
-        GeometryStep(EditGroup.Turn, () =>
+        if (Target is { } picture)
         {
-            var source = from ?? Flattened();
-            _rotationBase = source;
-            return Math.Abs(total) < 0.01 ? source : ImageOps.Rotate(source, total);
-        });
-        _rotationTotal = total;
-        _rotationChange = _history.ChangeCount;
-        Fit();
+            GeometryStep(EditGroup.Turn, () => picture.Rotation = Math.IEEERemainder(picture.Rotation + degrees, 360));
+        }
     }
 
-    private BitmapSource? _rotationBase;
-    private double _rotationTotal;
-    private long _rotationChange = -1;
-
-    /// <summary>画布尺寸: the canvas grows / shrinks around the picture (centred, not scaled; annotations stay editable).</summary>
+    /// <summary>画布尺寸: the background grows / shrinks around its content (centred, nothing scaled or cut for good; all stay elements).</summary>
     public void CanvasTo(int width, int height)
     {
         if (width < 1 || height < 1 || (width == _baseImage.PixelWidth && height == _baseImage.PixelHeight))
@@ -1166,52 +1276,135 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
-        GeometryStep(EditGroup.Size, () =>
-        {
-            var source = _baseImage;
-            var offset = new Point(Math.Round((width - source.PixelWidth) / 2.0), Math.Round((height - source.PixelHeight) / 2.0));
-            var canvas = ImageOps.Canvas(source, width, height, offset);
-            var moved = AnnotationOps.ToPinSpace(Editor.Items, new Point(-offset.X, -offset.Y), canvas);
-            Editor.Items.Clear();
-            Editor.Items.AddRange(moved);
-            return canvas;
-        });
-        Fit();
+        var offset = new Point(Math.Round((width - _baseImage.PixelWidth) / 2.0), Math.Round((height - _baseImage.PixelHeight) / 2.0));
+        ChangeCanvas(EditGroup.Size, width, height, new Point(-offset.X, -offset.Y));
     }
 
-    public void CropTo(Int32Rect rect)
+    /// <summary>矩形裁切: the canvas becomes that part of itself; pictures and annotations keep their place and stay elements.</summary>
+    public void CropTo(Int32Rect rect) => ChangeCanvas(EditGroup.Cut, rect.Width, rect.Height, new Point(rect.X, rect.Y));
+
+    private void ChangeCanvas(EditGroup group, int width, int height, Point origin)
     {
-        // A crop keeps the picture as it is now (turned included): the next angle starts from here.
-        _rotationBase = null;
-        GeometryStep(EditGroup.Cut, () =>
+        GeometryStep(group, () =>
         {
-            var cropped = ImageOps.Crop(_baseImage, rect);
-            // The annotations keep their place on the picture and stay editable.
-            var moved = AnnotationOps.ToPinSpace(Editor.Items, new Point(rect.X, rect.Y), cropped);
-            Editor.Items.Clear();
-            Editor.Items.AddRange(moved);
-            return cropped;
+            // In place: the elements stay the same objects (a selected picture stays selected).
+            foreach (var item in Editor.Items)
+            {
+                item.Translate(-origin.X, -origin.Y);
+                if (item is WatermarkAnnotation watermark)
+                {
+                    watermark.Rect = new Rect(0, 0, width, height);
+                }
+            }
+
+            SetBitmap(ImageOps.Blank(width, height)); // the mosaics are rebuilt on it
         });
         Fit();
     }
 
+    /// <summary>A canvas point in the picture's own pixels.</summary>
+    private static Point ToLocal(ImageAnnotation picture, Point point)
+    {
+        var r = picture.Rect;
+        var turned = AnnotationEditor.RotatePoint(point, new Point(r.X + r.Width / 2, r.Y + r.Height / 2), -picture.Rotation);
+        return new Point((turned.X - r.X) * picture.Image!.PixelWidth / r.Width, (turned.Y - r.Y) * picture.Image.PixelHeight / r.Height);
+    }
+
+    private static Point FromLocal(ImageAnnotation picture, Point local)
+    {
+        var r = picture.Rect;
+        var flat = new Point(r.X + local.X * r.Width / picture.Image!.PixelWidth, r.Y + local.Y * r.Height / picture.Image.PixelHeight);
+        return AnnotationEditor.RotatePoint(flat, new Point(r.X + r.Width / 2, r.Y + r.Height / 2), picture.Rotation);
+    }
+
+    /// <summary>The picture's pixels replaced by what lies at <paramref name="local"/> of the old ones (at the same scale and angle).</summary>
+    private static void PlaceLocal(ImageAnnotation picture, Rect local, BitmapSource result)
+    {
+        var r = picture.Rect;
+        var scaleX = r.Width / picture.Image!.PixelWidth;
+        var scaleY = r.Height / picture.Image.PixelHeight;
+        var inner = new Rect(r.X + local.X * scaleX, r.Y + local.Y * scaleY, local.Width * scaleX, local.Height * scaleY);
+        var centre = AnnotationEditor.RotatePoint(new Point(inner.X + inner.Width / 2, inner.Y + inner.Height / 2), new Point(r.X + r.Width / 2, r.Y + r.Height / 2), picture.Rotation);
+        picture.Rect = new Rect(centre.X - inner.Width / 2, centre.Y - inner.Height / 2, inner.Width, inner.Height);
+        picture.Image = result;
+        picture.Origin = null; // what comes out is the new starting point: colours back to neutral
+        picture.Adjust = null;
+    }
+
+    /// <summary>路径裁切: the target picture, along a path on the canvas; the canvas stays.</summary>
     public void PathCropTo(IReadOnlyList<Point> path)
     {
-        GeometryStep(EditGroup.Cut, () => ImageOps.PathCrop(Flattened(), path, out _));
-        Fit();
+        if (Target is not { Image: not null } picture)
+        {
+            return;
+        }
+
+        GeometryStep(EditGroup.Cut, () =>
+        {
+            var result = ImageOps.PathCrop(picture.Image!, path.Select(point => ToLocal(picture, point)).ToList(), out var origin);
+            PlaceLocal(picture, new Rect(origin.X, origin.Y, result.PixelWidth, result.PixelHeight), result);
+        });
     }
 
+    /// <summary>梯形校正: the target picture; the straightened result stays where the corners were.</summary>
     public void KeystoneTo(IReadOnlyList<Point> quad)
     {
-        GeometryStep(EditGroup.Cut, () => ImageOps.Keystone(Flattened(), quad));
-        Fit();
+        if (Target is not { Image: not null } picture)
+        {
+            return;
+        }
+
+        GeometryStep(EditGroup.Cut, () =>
+        {
+            var corners = quad.Select(point => ToLocal(picture, point)).ToList();
+            var result = ImageOps.Keystone(picture.Image!, corners);
+            var x = (corners.Min(p => p.X) + corners.Max(p => p.X)) / 2;
+            var y = (corners.Min(p => p.Y) + corners.Max(p => p.Y)) / 2;
+            PlaceLocal(picture, new Rect(x - result.PixelWidth / 2.0, y - result.PixelHeight / 2.0, result.PixelWidth, result.PixelHeight), result);
+        });
     }
 
-    /// <summary>网格形变 with a warp (annotations go into the pixels); the canvas fits the warped picture.</summary>
+    /// <summary>The picture as it lies on the canvas (turned and scaled), for the warp, and where that is.</summary>
+    private static (BitmapSource Image, Rect Place) RenderedPicture(ImageAnnotation picture)
+    {
+        var r = picture.Rect;
+        if (Math.Abs(picture.Rotation) < 0.01 && Math.Abs(r.Width - picture.Image!.PixelWidth) < 0.5 && Math.Abs(r.Height - picture.Image.PixelHeight) < 0.5)
+        {
+            return (picture.Image!, r);
+        }
+
+        var bounds = AnnotationEditor.RotatedBounds(picture);
+        var width = Math.Max(1, (int)Math.Ceiling(bounds.Width));
+        var height = Math.Max(1, (int)Math.Ceiling(bounds.Height));
+        var image = ImageOps.Render(width, height, dc =>
+        {
+            dc.PushTransform(new TranslateTransform(-bounds.X, -bounds.Y));
+            dc.PushTransform(new RotateTransform(picture.Rotation, r.X + r.Width / 2, r.Y + r.Height / 2));
+            dc.DrawImage(picture.Image, r);
+            dc.Pop();
+            dc.Pop();
+        });
+        return (image, new Rect(bounds.X, bounds.Y, width, height));
+    }
+
+    /// <summary>网格形变 of the target picture (a warp in canvas coordinates); it may reach past the canvas.</summary>
     public void WarpTo(WarpMesh mesh)
     {
-        GeometryStep(EditGroup.Cut, () => ImageOps.Warp(Flattened(), mesh, out _));
-        Fit();
+        if (Target is not { Image: not null } picture)
+        {
+            return;
+        }
+
+        GeometryStep(EditGroup.Cut, () =>
+        {
+            var (source, place) = RenderedPicture(picture);
+            var image = ImageOps.Warp(source, mesh.Translated(-place.X, -place.Y), out var origin);
+            picture.Image = image;
+            picture.Origin = null;
+            picture.Adjust = null;
+            picture.Rotation = 0;
+            picture.Rect = new Rect(place.X + origin.X, place.Y + origin.Y, image.PixelWidth, image.PixelHeight);
+        });
     }
 
     /// <summary>曲线: the curve window; the picture follows while points are dragged, 取消 puts it back.</summary>
@@ -1222,7 +1415,12 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
-        var window = new CurvesWindow(_adjust.Curve, Proxy()) { Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        if (Target is not { } picture)
+        {
+            return;
+        }
+
+        var window = new CurvesWindow(_adjust.Curve, Proxy((picture.Origin ?? picture.Image)!)) { Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         window.CurveChanged += curve => SetAdjust(_adjust with { Curve = ToneCurve.IsStraight(curve) ? null : curve });
         window.ShowDialog();
         RefreshPanel();
@@ -1257,9 +1455,14 @@ public sealed class ImageEditorWindow : PinWindow
     /// </summary>
     public void SetAdjust(ImageAdjust adjust)
     {
-        if (adjust.SameAs(_adjust))
+        if (Target is not { Image: not null } picture || adjust.SameAs(picture.Adjust ?? new ImageAdjust()))
         {
             return;
+        }
+
+        if (_adjustPending && !ReferenceEquals(_adjustTarget, picture))
+        {
+            BakeAdjust();
         }
 
         if (!_adjustPending)
@@ -1268,24 +1471,28 @@ public sealed class ImageEditorWindow : PinWindow
             UpdateUndoButtons();
         }
 
-        _adjust = adjust;
+        picture.Origin ??= picture.Image;
+        picture.Adjust = adjust;
+        _adjustTarget = picture;
         _adjustPending = true;
-        Img.Source = ImageOps.Adjust(Proxy(), adjust);
+        picture.Image = ImageOps.Adjust(Proxy(picture.Origin), adjust);
+        Editor.InvalidateVisual();
         _adjustTimer.Stop();
         _adjustTimer.Start();
     }
 
-    private BitmapSource Proxy()
+    private BitmapSource Proxy(BitmapSource origin)
     {
-        if (_proxy != null)
+        if (_proxy != null && ReferenceEquals(_proxyOf, origin))
         {
             return _proxy;
         }
 
-        var side = Math.Max(_origin.PixelWidth, _origin.PixelHeight);
+        var side = Math.Max(origin.PixelWidth, origin.PixelHeight);
+        _proxyOf = origin;
         _proxy = side <= PreviewSide
-            ? _origin
-            : ImageOps.Resize(_origin, Math.Max(1, _origin.PixelWidth * PreviewSide / side), Math.Max(1, _origin.PixelHeight * PreviewSide / side));
+            ? origin
+            : ImageOps.Resize(origin, Math.Max(1, origin.PixelWidth * PreviewSide / side), Math.Max(1, origin.PixelHeight * PreviewSide / side));
         return _proxy;
     }
 
@@ -1298,7 +1505,14 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         _adjustPending = false;
-        SetBitmap(_adjust.IsNeutral ? _origin : ImageOps.Adjust(_origin, _adjust));
+        if (_adjustTarget is { Origin: not null, Adjust: not null } picture)
+        {
+            picture.Image = picture.Adjust.IsNeutral ? picture.Origin : ImageOps.Adjust(picture.Origin, picture.Adjust);
+        }
+
+        _adjustTarget = null;
+        RebuildMosaics();
+        Editor.InvalidateVisual();
     }
 
     private void ResetAdjust() => SetAdjustAndControls(new ImageAdjust());
@@ -1319,19 +1533,25 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         CancelSession();
+        // A previewed angle is applied first: the tool works on the turned picture (it used to be dropped).
+        if (_anglePicture != null)
+        {
+            ApplyAngle();
+        }
+
+        var picture = mode == EditorOverlayMode.Crop ? null : Target;
+        if (mode != EditorOverlayMode.Crop && picture?.Image == null)
+        {
+            Notice("画布上没有图片");
+            return;
+        }
+
         BakeAdjust();
         _textEditor.Commit();
         ClearSelection();
         SetTool(AnnotationTool.None);
         Toolbar.SetTool(AnnotationTool.None);
-        // A previewed angle is applied first: the tool works on the turned picture (it used to be dropped).
-        if (Math.Abs(_angle.Value) >= 0.05)
-        {
-            ApplyAngle();
-        }
-
-        _angle.Value = 0;
-        ImageHost.RenderTransform = Transform.Identity;
+        _sessionPicture = picture;
         _overlay = new EditorOverlay(mode, _baseImage.PixelWidth, _baseImage.PixelHeight, _zoom);
         _overlay.Changed += UpdateSessionBar;
         _overlay.Changed += UpdateHint;
@@ -1350,38 +1570,54 @@ public sealed class ImageEditorWindow : PinWindow
         _overlay.ShowSizeLabel = false;
         if (mode == EditorOverlayMode.Transform)
         {
-            var whole = ImageOps.Normalize(base.ComposeEditedImage());
+            var whole = picture!.Image!;
             var side = Math.Max(whole.PixelWidth, whole.PixelHeight);
             _overlay.TransformPreview = side <= 1400 ? whole
                 : ImageOps.Resize(whole, Math.Max(1, whole.PixelWidth * 1400 / side), Math.Max(1, whole.PixelHeight * 1400 / side));
-            _overlay.TransformRect = new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight);
-            // The picture is drawn by the box now; the real one is hidden (not darkened) so the
-            // uncovered parts show the checkerboard, as they will be transparent.
-            Img.Opacity = 0;
-            Editor.Visibility = Visibility.Hidden;
+            _overlay.TransformRect = _overlay.TransformStart = picture.Rect;
+            _overlay.TransformAngle = _overlay.TransformStartAngle = picture.Rotation;
+            // The box draws the picture now; the element is hidden so the uncovered parts show the
+            // checkerboard, as they will be transparent. The canvas itself never changes here.
+            picture.Hidden = true;
+            Editor.InvalidateVisual();
+        }
+
+        if (mode == EditorOverlayMode.Keystone)
+        {
+            // The corners start a little inside the picture, wherever it lies on the canvas.
+            var w = (double)picture!.Image!.PixelWidth;
+            var h = (double)picture.Image.PixelHeight;
+            var inset = Math.Min(w, h) * 0.08;
+            _overlay.Quad[0] = FromLocal(picture, new Point(inset, inset));
+            _overlay.Quad[1] = FromLocal(picture, new Point(w - inset, inset));
+            _overlay.Quad[2] = FromLocal(picture, new Point(w - inset, h - inset));
+            _overlay.Quad[3] = FromLocal(picture, new Point(inset, h - inset));
         }
 
         if (mode == EditorOverlayMode.Mesh)
         {
-            // The warp is previewed on a small copy of the picture with its annotations.
-            var whole = ImageOps.Normalize(base.ComposeEditedImage());
+            // The warp is edited where the picture lies, previewed on a small copy of it.
+            var (whole, place) = RenderedPicture(picture!);
+            _overlay.Warp = new WarpMesh(place.Width, place.Height).Translated(place.X, place.Y);
             var side = Math.Max(whole.PixelWidth, whole.PixelHeight);
             var small = side <= 700 ? whole : ImageOps.Resize(whole, Math.Max(1, whole.PixelWidth * 700 / side), Math.Max(1, whole.PixelHeight * 700 / side));
             var scale = small.PixelWidth / (double)whole.PixelWidth;
             _overlay.WarpPreview = mesh =>
             {
-                var image = ImageOps.Warp(small, mesh.Scaled(scale), out var origin, 32);
-                return (image, new Rect(origin.X / scale, origin.Y / scale, image.PixelWidth / scale, image.PixelHeight / scale));
+                var image = ImageOps.Warp(small, mesh.Translated(-place.X, -place.Y).Scaled(scale), out var origin, 32);
+                return (image, new Rect(place.X + origin.X / scale, place.Y + origin.Y / scale, image.PixelWidth / scale, image.PixelHeight / scale));
             };
+            picture!.Hidden = true;
+            Editor.InvalidateVisual();
         }
 
         ImageHost.Children.Add(_overlay);
         _sessionText.Text = mode switch
         {
-            EditorOverlayMode.Crop => "拖出要保留的区域，拖边角调整。Enter 应用，Esc 取消",
+            EditorOverlayMode.Crop => "拖出画布要保留的区域，拖边角调整。Enter 应用，Esc 取消",
             EditorOverlayMode.Path => "按住鼠标沿要保留的部分画一圈（按住 Shift 走直线）。Enter 应用，Esc 取消",
             EditorOverlayMode.Mesh => "先单击图片交叉拆分一次，然后拖动交点、边角和蓝色手柄弯曲图片。Enter 应用，Esc 取消",
-            EditorOverlayMode.Transform => "拖边角调尺寸（Shift 等比），框外拖动旋转（Shift 15°）。Enter 应用，Esc 取消",
+            EditorOverlayMode.Transform => "拖四角等比缩放（Shift 自由），框边外拖动旋转（Shift 15°）。Enter 或点击远处应用，Esc 取消",
             _ => "拖动四个角对准图中倾斜的矩形。Enter 应用，Esc 取消"
         };
         _sessionBar.Visibility = Visibility.Visible;
@@ -1404,7 +1640,9 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
+        var picture = _sessionPicture;
         CancelSession();
+        _sessionPicture = picture; // the panel's Target while it is applied
         switch (overlay.Mode)
         {
             case EditorOverlayMode.Crop:
@@ -1425,12 +1663,26 @@ public sealed class ImageEditorWindow : PinWindow
                 WarpTo(overlay.Warp);
                 break;
             case EditorOverlayMode.Transform:
-                TransformTo((int)Math.Round(overlay.TransformRect.Width), (int)Math.Round(overlay.TransformRect.Height), overlay.TransformAngle);
+                TransformTo(overlay.TransformRect, overlay.TransformAngle);
                 break;
             default:
                 KeystoneTo(overlay.Quad);
                 break;
         }
+
+        _sessionPicture = null;
+        KeepWorkingOn(picture);
+    }
+
+    /// <summary>After a session on a picture other than the first: it stays the one the panel works on.</summary>
+    private void KeepWorkingOn(ImageAnnotation? picture)
+    {
+        if (picture != null && Editor.Items.Contains(picture) && !ReferenceEquals(picture, Editor.Items.OfType<ImageAnnotation>().First()))
+        {
+            SelectQuietly(picture);
+        }
+
+        RefreshPanel();
     }
 
     private void CancelSession()
@@ -1441,8 +1693,15 @@ public sealed class ImageEditorWindow : PinWindow
             _overlay = null;
             _sessionBar.Visibility = Visibility.Collapsed;
             _cropSize.Visibility = Visibility.Collapsed;
-            Img.Opacity = 1;
-            Editor.Visibility = Visibility.Visible;
+            var picture = _sessionPicture;
+            _sessionPicture = null;
+            if (picture != null)
+            {
+                picture.Hidden = false;
+                Editor.InvalidateVisual();
+                KeepWorkingOn(picture);
+            }
+
             UpdateHint();
         }
     }
@@ -1530,9 +1789,10 @@ public sealed class ImageEditorWindow : PinWindow
             menu.Items.Add(item);
         }
 
-        // On an element: its own menu first (copy, delete, layers).
+        // On an element (or with one selected, no tool in hand): its own menu first (layers, copy, delete).
         var pointer = Mouse.GetPosition(ImageHost);
-        if (_hasImage && _overlay == null && HitAnnotation(new Point(pointer.X / _zoom, pointer.Y / _zoom)) is { } element)
+        if (_hasImage && _overlay == null && _tool is AnnotationTool.None or AnnotationTool.Select &&
+            (HitAnnotation(new Point(pointer.X / _zoom, pointer.Y / _zoom)) ?? _selected) is { } element)
         {
             SelectAnnotation(element);
             var index = Editor.Items.IndexOf(element);
@@ -1548,28 +1808,27 @@ public sealed class ImageEditorWindow : PinWindow
                 Editor.Items.Remove(element);
                 ClearSelection();
                 UpdateUndoButtons();
+                RefreshPanel();
                 Editor.InvalidateVisual();
             }, "Delete");
             menu.Items.Add(new Separator());
-            var layers = new MenuItem { Header = "调整上下层" };
             void Layer(string header, int to, bool enabled)
             {
                 var item = new MenuItem { Header = header, IsEnabled = enabled };
                 item.Click += (_, _) => MoveLayer(element, to);
-                layers.Items.Add(item);
+                menu.Items.Add(item);
             }
 
-            Layer("置于顶层", top, index < top);
             Layer("上移一层", index + 1, index < top);
             Layer("下移一层", index - 1, index > 0);
+            Layer("置于顶层", top, index < top);
             Layer("置于底层", 0, index > 0);
-            menu.Items.Add(layers);
             menu.Items.Add(new Separator());
         }
 
         if (_hasImage && (ClipboardService.HasImage || AnnotationClipboard.HasContent))
         {
-            Add("粘贴", PasteFromMenu, "Ctrl+V");
+            Add("粘贴", PasteAnnotation, "Ctrl+V");
         }
 
         Add("打开图片…", OpenDialog, "Ctrl+O");
@@ -1582,7 +1841,43 @@ public sealed class ImageEditorWindow : PinWindow
         ContextMenu = menu;
     }
 
-    private void PasteFromMenu() => typeof(PinWindow).GetMethod("PasteAnnotation", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(this, null);
+    /// <summary>The bar's 粘贴图片 button: always the picture in the clipboard.</summary>
+    public void PasteImage()
+    {
+        if (!PastePicture(force: true))
+        {
+            Notice("剪贴板里没有图片");
+        }
+    }
+
+    /// <summary>Into an empty editor a pasted picture comes in like an opened one.</summary>
+    private protected override bool AcceptPastedPicture(BitmapSource picture)
+    {
+        if (_hasImage)
+        {
+            return false;
+        }
+
+        LoadImage(picture, null);
+        return true;
+    }
+
+    /// <summary>A capture's undo steps know nothing of the picture element: each gets it (at the bottom).</summary>
+    public override void AdoptHistory(AnnotationHistory history)
+    {
+        if (Editor.Items.OfType<ImageAnnotation>().FirstOrDefault() is { } picture)
+        {
+            history.ForEachStep(step =>
+            {
+                if (!step.OfType<ImageAnnotation>().Any())
+                {
+                    step.Insert(0, picture.Clone());
+                }
+            });
+        }
+
+        base.AdoptHistory(history);
+    }
 
     // ------------------------------------------------------------------ open, drop, save, copy, pin
 
@@ -1703,10 +1998,20 @@ public sealed class ImageEditorWindow : PinWindow
         var composed = ComposeEditedImage();
         var center = PointToScreen(new Point(ActualWidth / 2, ActualHeight / 2));
         var work = Monitors.At((int)center.X, (int)center.Y).WorkArea;
-        var annotations = Editor.Items.Select(item => item.Clone()).ToList();
+        // A pin has one picture under its annotations: everything up to the topmost picture goes into
+        // it, what lies above stays editable there (the holes of 抠除 always do).
+        var lastPicture = Editor.Items.FindLastIndex(item => item is ImageAnnotation);
+        var flat = ImageOps.Render(_baseImage.PixelWidth, _baseImage.PixelHeight, dc =>
+        {
+            foreach (var item in Editor.Items.Take(lastPicture + 1))
+            {
+                AnnotationEditor.DrawItem(dc, item);
+            }
+        });
+        var annotations = Editor.Items.Where((item, i) => i > lastPicture || item is CutoutAnnotation).Select(item => item.Clone()).ToList();
         _sourcePin = PinAction != null
-            ? PinAction(_baseImage, annotations, composed)
-            : ((App)Application.Current).PinFromEditor(_baseImage, annotations, composed, _sourcePin, work);
+            ? PinAction(flat, annotations, composed)
+            : ((App)Application.Current).PinFromEditor(flat, annotations, composed, _sourcePin, work);
         _waitingPin = null;
         MarkKept();
         CloseWithoutAsking(); // pinned: the editor's job is done
@@ -1785,22 +2090,29 @@ public sealed class ImageEditorWindow : PinWindow
 
     // ------------------------------------------------------------------ 调节框, crop size, reset all, checkerboard
 
-    /// <summary>调节框 applied: a new size, then the angle (annotations go into the pixels; one undo step).</summary>
-    public void TransformTo(int width, int height, double angle)
+    /// <summary>调节框 applied: the picture element gets that place, size and angle (one undo step; the canvas stays as it is).</summary>
+    public void TransformTo(Rect rect, double angle)
     {
-        width = Math.Clamp(width, 1, 30000);
-        height = Math.Clamp(height, 1, 30000);
-        GeometryStep(Math.Abs(angle) > 0.05 ? EditGroup.Turn : EditGroup.Size, () =>
+        if (Target is not { } picture)
         {
-            var image = Flattened();
-            if (width != image.PixelWidth || height != image.PixelHeight)
-            {
-                image = ImageOps.Resize(image, width, height);
-            }
+            return;
+        }
 
-            return Math.Abs(angle) > 0.05 ? ImageOps.Rotate(image, angle) : image;
+        var turned = Math.Abs(angle - picture.Rotation) > 0.05;
+        GeometryStep(turned ? EditGroup.Turn : EditGroup.Cut, () =>
+        {
+            picture.Rect = new Rect(rect.X, rect.Y, Math.Clamp(rect.Width, 1, 30000), Math.Clamp(rect.Height, 1, 30000));
+            picture.Rotation = angle;
         });
-        Fit();
+    }
+
+    /// <summary>The target picture's size on the canvas (its top-left stays; the canvas does not change).</summary>
+    public void ResizeTo(int width, int height)
+    {
+        if (Target is { } picture && width >= 1 && height >= 1)
+        {
+            TransformTo(new Rect(picture.Rect.X, picture.Rect.Y, width, height), picture.Rotation);
+        }
     }
 
     /// <summary>重置所有修改: the picture and annotations as they were when opened (one undo step).</summary>
@@ -1817,10 +2129,9 @@ public sealed class ImageEditorWindow : PinWindow
         _history.Checkpoint(Editor.Items);
         _beforeGroup.Clear();
         _lastGroup = null;
-        _rotationBase = null;
-        RestoreState(initial.State);
         Editor.Items.Clear();
         Editor.Items.AddRange(initial.Items.Select(item => item.Clone()));
+        RestoreState(initial.State);
         Editor.InvalidateVisual();
         UpdateUndoButtons();
         RefreshPanel();

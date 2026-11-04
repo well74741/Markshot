@@ -43,6 +43,9 @@ internal sealed class PinMagnifier
         };
     }
 
+    /// <summary>True while Alt belongs to something else (the pen's 吸色).</summary>
+    public Func<bool>? Paused { get; set; }
+
     public void Hide()
     {
         _source = null;
@@ -52,7 +55,7 @@ internal sealed class PinMagnifier
     private void Update()
     {
         var altDown = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-        if (!altDown || !IsPointerOverHost() || !_host.IsVisible)
+        if (!altDown || Paused?.Invoke() == true || !IsPointerOverHost() || !_host.IsVisible)
         {
             Hide();
             if (!IsPointerOverHost())

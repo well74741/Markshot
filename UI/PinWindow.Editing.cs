@@ -144,7 +144,7 @@ public partial class PinWindow
 
         if (_textEditor.Target is { } editing)
         {
-            AnnotationStyler.Apply(editing, Toolbar, _baseImage);
+            AnnotationStyler.Apply(editing, Toolbar, MosaicSource);
             _textEditor.MarkDirty();
             _textEditor.Refresh();
             return;
@@ -153,7 +153,7 @@ public partial class PinWindow
         if (_tool == AnnotationTool.Watermark && AnnotationOps.FindWatermark(Editor.Items) is { } watermark)
         {
             _history.CheckpointCoalesced(Editor.Items, watermark);
-            AnnotationStyler.Apply(watermark, Toolbar, _baseImage);
+            AnnotationStyler.Apply(watermark, Toolbar, MosaicSource);
             UpdateUndoButtons();
             Editor.InvalidateVisual();
             return;
@@ -165,17 +165,30 @@ public partial class PinWindow
         }
 
         _history.CheckpointCoalesced(Editor.Items, _selected);
-        AnnotationStyler.Apply(_selected, Toolbar, _baseImage);
+        AnnotationStyler.Apply(_selected, Toolbar, MosaicSource);
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
 
-    /// <summary>Ctrl+V: a picture copied in Windows (newer than a copied element) becomes a picture element.</summary>
-    private bool PastePicture()
+    private PenEyedropper _eyedropper = null!;
+
+    /// <summary>What 吸色 reads: the picture as shown (the editor: its pictures on the canvas).</summary>
+    private protected virtual BitmapSource EyedropSource => _baseImage;
+
+    /// <summary>What a mosaic blurs: the picture under the annotations (the editor: its picture elements).</summary>
+    private protected virtual BitmapSource MosaicSource => _baseImage;
+
+    /// <summary>Editor: a picture copied in Windows (newer than a copied element, or <paramref name="force"/>d) becomes a picture element.</summary>
+    private protected bool PastePicture(bool force = false)
     {
-        if (!AnnotationClipboard.SystemClipboardIsNewer || ClipboardService.TryGetImage() is not { } picture)
+        if (!IsEditor || (!force && !AnnotationClipboard.SystemClipboardIsNewer) || ClipboardService.TryGetImage() is not { } picture)
         {
             return false;
+        }
+
+        if (AcceptPastedPicture(picture))
+        {
+            return true;
         }
 
         var image = ImageOps.Normalize(picture);
@@ -192,7 +205,9 @@ public partial class PinWindow
         return true;
     }
 
-    private void PasteAnnotation()
+    private protected virtual bool AcceptPastedPicture(BitmapSource picture) => false;
+
+    private protected void PasteAnnotation()
     {
         if (PastePicture())
         {
@@ -207,7 +222,7 @@ public partial class PinWindow
         _history.Checkpoint(Editor.Items);
         if (pasted is MosaicAnnotation mosaic)
         {
-            MosaicBuilder.Rebuild(mosaic, _baseImage);
+            MosaicBuilder.Rebuild(mosaic, MosaicSource);
         }
 
         Editor.Items.Add(pasted);
@@ -495,7 +510,9 @@ public partial class PinWindow
         if (_resizingAnnotation)
         {
             var target = AnnotationOps.ResizeFromHandle(
-                _annotationStartBounds, _selected.Rotation, _annotationHandle, point + _resizeGrab, IsShiftDown);
+                _annotationStartBounds, _selected.Rotation, _annotationHandle, point + _resizeGrab,
+                // A picture's corners keep its ratio (Shift frees them), like the 调节框.
+                _selected is ImageAnnotation ? (_annotationHandle % 2 == 0) != IsShiftDown : IsShiftDown);
             AnnotationOps.Resize(_selected, target, _annotationHandle);
             Editor.InvalidateVisual();
             return true;
@@ -767,7 +784,7 @@ public partial class PinWindow
     }
 
     /// <summary>The capture's undo steps (in this pin's space): Ctrl+Z in the pin goes on from there.</summary>
-    public void AdoptHistory(AnnotationHistory history)
+    public virtual void AdoptHistory(AnnotationHistory history)
     {
         _history.Adopt(history);
         UpdateUndoButtons();
@@ -794,7 +811,7 @@ public partial class PinWindow
     private protected void UpdateUndoButtons()
     {
         Toolbar.RefreshUndo(_history.CanUndo, _history.CanRedo);
-        Toolbar.SetCanClear(Editor.Items.Count > 0);
+        Toolbar.SetCanClear(Editor.Items.Any(item => item is not ImageAnnotation));
     }
 
     private Point ToPixels(Point dip) => new(dip.X / _zoom, dip.Y / _zoom);
@@ -802,6 +819,18 @@ public partial class PinWindow
     private void Input_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         var point = ToPixels(e.GetPosition(InputLayer));
+        if (PenEyedropper.IsPen(_tool) && PenEyedropper.AltDown)
+        {
+            // 吸色: Alt + click with the pen takes the colour under the cross.
+            if (_eyedropper.Pick(point) is { } picked)
+            {
+                Toolbar.PickColor(picked);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (_textEditor.Target is { } editingText)
         {
             // The frame of the text being typed moves / resizes / rotates it; typing continues.
@@ -971,6 +1000,17 @@ public partial class PinWindow
     private void Input_MouseMove(object sender, MouseEventArgs e)
     {
         var point = ToPixels(e.GetPosition(InputLayer));
+        if (_eyedropper.Update(_tool, point, _gesture != null))
+        {
+            InputLayer.Cursor = Cursors.None; // the cross is the pointer
+            return;
+        }
+
+        if (InputLayer.Cursor == Cursors.None)
+        {
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
+        }
+
         if (UpdateTextPress(point))
         {
             return;
@@ -991,6 +1031,7 @@ public partial class PinWindow
 
         if (_gesture != null)
         {
+            _gesture.Pressure = PenEyedropper.Pressure(e, InputLayer); // tablet pen: the width follows the pressure
             _gesture.Move(point, IsShiftDown, IsCtrlDown);
             Editor.InvalidateVisual();
             return;
@@ -1239,7 +1280,7 @@ public partial class PinWindow
     private void StartAnnotation(Point point)
     {
         ClearSelection();
-        _active = AnnotationOps.Create(_tool, point, Toolbar, _number, _baseImage);
+        _active = AnnotationOps.Create(_tool, point, Toolbar, _number, MosaicSource);
         if (_active == null)
         {
             return;
@@ -1367,7 +1408,11 @@ public partial class PinWindow
     {
         _selected = annotation;
         Editor.Selected = annotation;
-        Toolbar.SyncFrom(annotation);
+        if (annotation is not ImageAnnotation)
+        {
+            Toolbar.SyncFrom(annotation); // a picture has no colour or stroke to show
+        }
+
         ClearAnnotationHover();
         Editor.InvalidateVisual();
     }
@@ -1506,6 +1551,18 @@ public partial class PinWindow
         _tool = AnnotationTool.None;
         Toolbar.SetTool(AnnotationTool.None);
         Toolbar.SetSelection(annotation);
+        if (annotation is ImageAnnotation)
+        {
+            // A picture has no colour or stroke: the tools keep theirs.
+            InputLayer.IsHitTestVisible = false;
+            InputLayer.Cursor = Cursors.Arrow;
+            ImageHost.Cursor = Cursors.Arrow;
+            ClearAnnotationHover();
+            Editor.Selected = annotation;
+            Editor.InvalidateVisual();
+            return;
+        }
+
         Toolbar.SetColor(annotation.Color);
         var size = annotation switch
         {
@@ -1728,12 +1785,12 @@ public partial class PinWindow
                 Toolbar.SetOpacity(_selected.Opacity);
             }
         }
-        else if (AnnotationOps.WheelSize(_selected, delta, _baseImage) is { } size)
+        else if (AnnotationOps.WheelSize(_selected, delta, MosaicSource) is { } size)
         {
             _thickness = size;
             Toolbar.SetThickness(size);
         }
-        else
+        else if (_selected is not ImageAnnotation)
         {
             Toolbar.SyncFrom(_selected);
         }
@@ -1751,9 +1808,10 @@ public partial class PinWindow
     }
 
     /// <summary>Removes every annotation from the pin (undoable while editing).</summary>
+    /// <summary>清空批注: everything drawn goes; pictures on the editor's canvas are no annotations and stay.</summary>
     private void ClearAnnotations()
     {
-        if (Editor.Items.Count == 0)
+        if (!Editor.Items.Any(item => item is not ImageAnnotation))
         {
             return;
         }
@@ -1764,7 +1822,7 @@ public partial class PinWindow
             _history.Checkpoint(Editor.Items);
         }
 
-        Editor.Items.Clear();
+        Editor.Items.RemoveAll(item => item is not ImageAnnotation);
         ClearSelection();
         UpdateUndoButtons();
         Editor.InvalidateVisual();

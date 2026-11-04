@@ -383,6 +383,41 @@ public sealed class WarpMesh
         Changed = true;
     }
 
+    /// <summary>The same warp moved by an offset (the editor edits it where the picture is on the canvas).</summary>
+    public WarpMesh Translated(double dx, double dy)
+    {
+        var copy = new WarpMesh(Width, Height)
+        {
+            U = new List<double>(U),
+            V = new List<double>(V),
+            Anchors = (Point[,])Anchors.Clone(),
+            Across = (Point[,,])Across.Clone(),
+            Down = (Point[,,])Down.Clone(),
+            Changed = Changed
+        };
+        for (var r = 0; r < copy.Anchors.GetLength(0); r++)
+        for (var c = 0; c < copy.Anchors.GetLength(1); c++)
+        {
+            copy.Anchors[r, c] = new Point(Anchors[r, c].X + dx, Anchors[r, c].Y + dy);
+        }
+
+        for (var i = 0; i < copy.Across.GetLength(0); i++)
+        for (var j = 0; j < copy.Across.GetLength(1); j++)
+        for (var k = 0; k < 2; k++)
+        {
+            copy.Across[i, j, k] = new Point(Across[i, j, k].X + dx, Across[i, j, k].Y + dy);
+        }
+
+        for (var i = 0; i < copy.Down.GetLength(0); i++)
+        for (var j = 0; j < copy.Down.GetLength(1); j++)
+        for (var k = 0; k < 2; k++)
+        {
+            copy.Down[i, j, k] = new Point(Down[i, j, k].X + dx, Down[i, j, k].Y + dy);
+        }
+
+        return copy;
+    }
+
     /// <summary>The warp of a picture <paramref name="scale"/> times this size (the editor previews on a small copy).</summary>
     public WarpMesh Scaled(double scale)
     {

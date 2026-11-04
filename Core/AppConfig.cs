@@ -44,7 +44,7 @@ public sealed class AppConfig
 
     public string EditorToolHidden { get; set; } = "";
 
-    public string EditorActionOrder { get; set; } = "Open,Save,Copy,Pin";
+    public string EditorActionOrder { get; set; } = "Paste,Open,Save,Clear,Copy,Pin";
 
     public string EditorActionHidden { get; set; } = "";
 

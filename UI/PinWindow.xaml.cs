@@ -165,12 +165,31 @@ public partial class PinWindow : Window
         // Alt over the pin: the capture magnifier at the pointer.
         if (!IsEditor)
         {
-            _magnifier = new PinMagnifier(ImageHost, () => CurrentImage, ToPixels); // the editor uses Alt for Alt + wheel
+            _magnifier = new PinMagnifier(ImageHost, () => CurrentImage, ToPixels) // the editor uses Alt for Alt + wheel
+            {
+                Paused = () => _editMode && PenEyedropper.IsPen(_tool)
+            };
         }
+
+        _eyedropper = new PenEyedropper(Editor, point => PenEyedropper.Sample(EyedropSource, point));
 
         Motion.PopOnShow(Toolbar, fromAbove: true);
         Motion.FadeOnShow(PinStatus);
-        SourceInitialized += (_, _) => ApplyBounds();
+        SourceInitialized += (_, _) =>
+        {
+            ApplyBounds();
+            // A lone Alt (the pen's 吸色) must not put the window into menu mode: mouse moves would stop.
+            System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle)?.AddHook(
+                (IntPtr _, int message, IntPtr wParam, IntPtr _, ref bool handled) =>
+                {
+                    if (message == 0x0112 && (wParam.ToInt64() & 0xFFF0) == 0xF100 && _editMode && PenEyedropper.IsPen(_tool))
+                    {
+                        handled = true;
+                    }
+
+                    return IntPtr.Zero;
+                });
+        };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(new Action(ApplyBounds));
         Activated += (_, _) => UpdateFrame();
         Deactivated += (_, _) =>
@@ -944,6 +963,12 @@ public partial class PinWindow : Window
         }
 
         var key = AnnotationOps.RealKey(e);
+        if (key is Key.LeftAlt or Key.RightAlt && _editMode && _gesture == null &&
+            _eyedropper.Update(_tool, ToPixels(Mouse.GetPosition(ImageHost)), drawing: false))
+        {
+            e.Handled = true; // 吸色: the cross shows at once, no menu
+            return;
+        }
 
         if (!IsEditor && MatchesPinKey(App.Config.PinResetHotkey, key) &&
             (!_editMode || _tool is AnnotationTool.None or AnnotationTool.Select) &&
@@ -1069,6 +1094,11 @@ public partial class PinWindow : Window
     private void OnPreviewKeyUp(object sender, KeyEventArgs e)
     {
         var key = AnnotationOps.RealKey(e);
+        if (key is Key.LeftAlt or Key.RightAlt)
+        {
+            _eyedropper.Hide();
+        }
+
         if (key == Key.Space)
         {
             _spaceExitGuard = false;

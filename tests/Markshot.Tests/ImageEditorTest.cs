@@ -161,10 +161,10 @@ static class ImageEditorTest
         // ---- mirror / turn: annotations follow and stay editable
         editor.Flip(true);
         Pump(30);
-        Check(editor.ImageWidth == 400 && At(editor.Composite, 395, 5).G == 200 && ((RectAnnotation)items[0]).Rect.Left == 250, "水平镜像 (the annotation follows)");
+        Check(editor.ImageWidth == 400 && At(editor.Composite, 395, 5).G == 200 && items.OfType<RectAnnotation>().First().Rect.Left == 250, "水平镜像 (the annotation follows)");
         editor.UndoStep();
         Pump(30);
-        Check(Same(editor.Composite, clean) && ((RectAnnotation)items[0]).Rect.Left == 100, "undo a mirror");
+        Check(Same(editor.Composite, clean) && items.OfType<RectAnnotation>().First().Rect.Left == 100, "undo a mirror");
         editor.Flip(false);
         Pump(30);
         Check(At(editor.Composite, 5, 295).G == 200, "垂直镜像");
@@ -180,19 +180,21 @@ static class ImageEditorTest
         Pump(30);
         Check(Same(editor.Composite, clean), "after all that, undo is back at the start");
 
-        // ---- size / angle merge the annotations, undo brings them back
+        // ---- the opened picture is an element on a transparent canvas: its size / angle change it, never the canvas
+        Check(items[0] is ImageAnnotation && editor.PictureRect == new Rect(0, 0, 400, 300), "the picture is an element at the bottom");
         editor.ResizeTo(200, 150);
         Pump(30);
-        Check(editor.ImageWidth == 200 && editor.ImageHeight == 150 && editor.AnnotationCount == 0 && At(editor.Composite, 50, 30).G > 150, "尺寸 (annotations go into the pixels)");
+        Check(editor.ImageWidth == 400 && editor.ImageHeight == 300 && editor.PictureRect == new Rect(0, 0, 200, 150) && editor.AnnotationCount == 1 && At(editor.Composite, 300, 250).A == 0,
+            "picture size: the picture shrinks, the canvas keeps its size (the rest transparent), annotations stay editable");
         editor.UndoStep();
         Pump(30);
-        Check(editor.ImageWidth == 400 && editor.AnnotationCount == 1 && Same(editor.Composite, clean), "undo a resize: size and annotations back");
-        var rectLeft = ((RectAnnotation)items[0]).Rect.Left;
+        Check(editor.PictureRect == new Rect(0, 0, 400, 300) && editor.AnnotationCount == 1 && Same(editor.Composite, clean), "undo a resize");
+        var rectLeft = items.OfType<RectAnnotation>().First().Rect.Left;
         editor.CanvasTo(500, 400);
         Pump(30);
         Check(editor.ImageWidth == 500 && editor.ImageHeight == 400 && At(editor.Composite, 10, 10).A == 0 && At(editor.Composite, 55, 55).G == 200,
             "画布尺寸: a bigger canvas, the picture centred and not scaled, the rest transparent");
-        Check(editor.AnnotationCount == 1 && ((RectAnnotation)items[0]).Rect.Left == rectLeft + 50, "画布尺寸: the annotations move with the picture and stay editable");
+        Check(editor.AnnotationCount == 1 && items.OfType<RectAnnotation>().First().Rect.Left == rectLeft + 50, "画布尺寸: the annotations move with the picture and stay editable");
         editor.CanvasTo(300, 200);
         Pump(30);
         Check(editor.ImageWidth == 300 && editor.ImageHeight == 200, "画布尺寸: a smaller canvas cuts round the centre");
@@ -201,24 +203,24 @@ static class ImageEditorTest
         Check(editor.ImageWidth == 400 && Same(editor.Composite, clean), "undo the canvas sizes");
         editor.RotateBy(30);
         Pump(30);
-        Check(editor.ImageWidth > 400 && At(editor.Composite, 1, 1).A == 0, "任意角度 (the canvas grows, corners transparent)");
+        Check(editor.ImageWidth == 400 && Math.Abs(editor.PictureAngle - 30) < 0.01 && At(editor.Composite, 1, 1).A == 0, "任意角度: the picture turns, the canvas keeps its size");
         editor.RotateBy(30);
         editor.RotateBy(30);
         Pump(30);
-        Check(editor.ImageWidth == 300 && editor.ImageHeight == 400, $"three times 30° = 90°: no growing border ({editor.ImageWidth}×{editor.ImageHeight})");
+        Check(editor.ImageWidth == 400 && editor.ImageHeight == 300 && Math.Abs(editor.PictureAngle - 90) < 0.01, $"three times 30° = 90° on the element ({editor.PictureAngle})");
         editor.RotateBy(-90);
         Pump(30);
-        Check(editor.ImageWidth == 400 && editor.ImageHeight == 300 && Same(editor.Composite, Flat(clean)), "turned back: exactly the picture again");
+        Check(Math.Abs(editor.PictureAngle) < 0.01 && Same(editor.Composite, Flat(clean)), "turned back: exactly the picture again");
         editor.UndoStep(); editor.UndoStep(); editor.UndoStep(); editor.UndoStep();
         Pump(30);
 
         // ---- crop keeps annotations editable at their place on the picture
         editor.CropTo(new Int32Rect(50, 40, 300, 200));
         Pump(30);
-        Check(editor.ImageWidth == 300 && editor.ImageHeight == 200 && ((RectAnnotation)items[0]).Rect.Left == 50 && ((RectAnnotation)items[0]).Rect.Top == 20, "矩形裁切");
+        Check(editor.ImageWidth == 300 && editor.ImageHeight == 200 && items.OfType<RectAnnotation>().First().Rect.Left == 50 && items.OfType<RectAnnotation>().First().Rect.Top == 20, "矩形裁切");
         editor.UndoStep();
         Pump(30);
-        Check(((RectAnnotation)items[0]).Rect.Left == 100 && editor.ImageWidth == 400, "undo a crop");
+        Check(items.OfType<RectAnnotation>().First().Rect.Left == 100 && editor.ImageWidth == 400, "undo a crop");
 
         // ---- the interactive sessions: path, crop, keystone
         Call(editor, "StartSession", EditorOverlayMode.Path);
@@ -230,7 +232,8 @@ static class ImageEditorTest
         Check(overlay.Ready, "路径裁切: a path can be applied");
         Call(editor, "ApplySession");
         Pump(50);
-        Check(editor.ImageWidth == 300 && editor.ImageHeight == 230 && At(editor.Composite, 150, 10).A == 255 && At(editor.Composite, 2, 225).A == 0, "路径裁切: bounding box, transparent outside");
+        Check(editor.ImageWidth == 400 && editor.PictureRect == new Rect(50, 50, 300, 230) && At(editor.Composite, 200, 60).A == 255 && At(editor.Composite, 52, 275).A == 0 && At(editor.Composite, 10, 10).A == 0,
+            $"路径裁切: the picture is cut (bounding box), the canvas stays ({editor.PictureRect})");
         Check(ImageOps.HasTransparentCorner(editor.Composite), "the cut-out counts as a shape (a pin's shadow follows it)");
         editor.UndoStep();
         Pump(30);
@@ -242,7 +245,8 @@ static class ImageEditorTest
         Shot((FrameworkElement)editor.Content, "editor_keystone.png");
         Call(editor, "ApplySession");
         Pump(50);
-        Check(editor.ImageWidth == 380 && editor.ImageHeight >= 250 && At(editor.Composite, 3, editor.ImageHeight / 2).A == 255, $"梯形校正 ({editor.ImageWidth}×{editor.ImageHeight})");
+        Check(editor.ImageWidth == 400 && Math.Abs(editor.PictureRect.Width - 380) < 0.5 && editor.PictureRect.Height >= 250 && At(editor.Composite, 15, 150).A == 255,
+            $"梯形校正: the picture is straightened where it was ({editor.PictureRect})");
         editor.UndoStep();
         Pump(30);
         Call(editor, "StartSession", EditorOverlayMode.Crop);
@@ -253,16 +257,16 @@ static class ImageEditorTest
 
         // ---- sections' 重置: back to before that group's changes, while it was the last kind of change
         Check(!editor.CanReset("Size") && !editor.CanReset("Turn") && !editor.CanReset("Cut"), "nothing to reset at first");
-        editor.ResizeTo(200, 150);
-        editor.ResizeTo(100, 75);
+        editor.CanvasTo(500, 400);
+        editor.CanvasTo(600, 500);
         Pump(30);
-        Check(editor.CanReset("Size") && editor.ImageWidth == 100, "after two resizes the size can be reset");
+        Check(editor.CanReset("Size") && editor.ImageWidth == 600, "after two canvas sizes the size can be reset");
         editor.Reset("Size");
         Pump(30);
-        Check(editor.ImageWidth == 400 && editor.AnnotationCount == 1 && Same(editor.Composite, clean) && !editor.CanReset("Size"), "尺寸 重置: original size and annotations back");
+        Check(editor.ImageWidth == 400 && editor.AnnotationCount == 1 && Same(editor.Composite, clean) && !editor.CanReset("Size"), "画布尺寸 重置: original canvas and places back");
         editor.UndoStep();
         Pump(30);
-        Check(editor.ImageWidth == 100, "the reset is one undo step");
+        Check(editor.ImageWidth == 600, "the reset is one undo step");
         editor.RedoStep();
         Pump(30);
         editor.Turn(true);
@@ -305,7 +309,7 @@ static class ImageEditorTest
         var stage = (Canvas)Field(editor, "_stage");
         Check(deep > 30 && deep <= 32, $"zooms in to 3200 % ({deep * 100:0} %)");
         Check(checker.Width <= stage.ActualWidth + 1 && checker.Height <= stage.ActualHeight + 1, "the checkerboard covers only the view, not the 12 800 px picture");
-        Check(RenderOptions.GetBitmapScalingMode((Image)Field(editor, "Img")) == BitmapScalingMode.NearestNeighbor, "close up the pixels stay sharp");
+        Check(((AnnotationEditor)Field(editor, "Editor")).PictureScaling == BitmapScalingMode.NearestNeighbor, "close up the pixels stay sharp");
         var before = editor.PanOffset;
         var watch = System.Diagnostics.Stopwatch.StartNew();
         for (var i = 0; i < 60; i++) { editor.PanBy(new Vector(7, 3)); ((FrameworkElement)editor.Content).UpdateLayout(); }
@@ -324,7 +328,7 @@ static class ImageEditorTest
         editor.Width += 60;
         Pump(100);
         Check(Math.Abs(editor.ToolbarBounds.Y - 30) < 3, "moved by its grip: it stays there");
-        Check(editor.Hint.Contains("滚轮缩放") && editor.Hint.Contains("单击批注选中"), "status bar: no tool");
+        Check(editor.Hint.Contains("滚轮缩放") && editor.Hint.Contains("单击选中"), "status bar: no tool");
         ((AnnotationToolbar)Field(editor, "Toolbar")).SetTool(AnnotationTool.Pen);
         typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, new object[] { AnnotationTool.Pen });
         Call(editor, "UpdateHint");
@@ -350,8 +354,8 @@ static class ImageEditorTest
         Shot((FrameworkElement)editor.Content, "editor_mesh.png");
         Call(editor, "ApplySession");
         Pump(50);
-        Check(At(editor.Composite, 230 - 0, 150 + editor.ImageHeight - 300).R == 200, "warp applied: the red half reaches the dragged crossing");
-        Check(editor.ImageHeight > 300 && editor.ImageWidth == 400, $"the canvas grew to hold the bent top edge ({editor.ImageWidth}×{editor.ImageHeight})");
+        Check(At(editor.Composite, 230, 150).R == 200, "warp applied: the red half reaches the dragged crossing");
+        Check(editor.ImageHeight == 300 && editor.PictureRect.Top < 0, $"the bent top edge reaches past the canvas, the canvas stays ({editor.PictureRect})");
         editor.UndoStep();
         Pump(30);
         Check(Same(editor.Composite, clean), "undo the mesh");
@@ -388,7 +392,7 @@ static class ImageEditorTest
         box.DragTransform(new Point(150, 450));
         Check(box.Ready && Math.Abs(box.TransformAngle) > 10 && Field(editor, "_overlay") != null, $"just outside the box turns it ({box.TransformAngle:0}°)");
         box.TransformAngle = 0;
-        Check(((Image)Field(editor, "Img")).Opacity == 0, "调节框: the picture is not darkened but hidden (the box draws it, the rest shows the checkerboard)");
+        Check(items.OfType<ImageAnnotation>().First().Hidden, "调节框: the picture element is hidden (the box draws it, the rest shows the checkerboard)");
         var sizeLabel = (Border)Field(editor, "_cropSize");
         Pump(50);
         Check(sizeLabel.Visibility == Visibility.Visible, "调节框: the editable size label like the capture's");
@@ -399,8 +403,9 @@ static class ImageEditorTest
         };
         editor.RaiseEvent(keyDown);
         Pump(50);
-        Check(editor.ImageWidth == 300 && editor.ImageHeight == 200, $"调节框 applied with Enter: new size ({editor.ImageWidth}×{editor.ImageHeight})");
-        Check(((Image)Field(editor, "Img")).Opacity == 1, "the picture shows again");
+        Check(editor.PictureRect.Width == 300 && editor.PictureRect.Height == 200 && editor.ImageWidth == 400 && editor.ImageHeight == 300,
+            $"调节框 applied with Enter: the picture's size, never the canvas ({editor.PictureRect}, canvas {editor.ImageWidth}×{editor.ImageHeight})");
+        Check(!items.OfType<ImageAnnotation>().First().Hidden, "the picture shows again");
         editor.UndoStep();
         Pump(30);
         // a click well away from the box applies it
@@ -410,13 +415,13 @@ static class ImageEditorTest
         Check(box.TransformHit(new Point(380, 290)) == "outside", "far from the box counts as outside");
         box.PressTransform(new Point(380, 290));
         Pump(50);
-        Check(Field(editor, "_overlay") == null && editor.ImageWidth == 200, $"a click outside the 调节框 applies it and leaves ({editor.ImageWidth})");
+        Check(Field(editor, "_overlay") == null && editor.PictureRect.Width == 200 && editor.ImageWidth == 400, $"a click outside the 调节框 applies it and leaves ({editor.PictureRect})");
         editor.UndoStep();
         Pump(30);
         // a previewed angle is kept when a tool starts (applied first)
         ((Slider)Field(editor, "_angle")).Value = 30;
         Call(editor, "StartSession", EditorOverlayMode.Mesh);
-        Check(editor.ImageWidth > 400 && ((Slider)Field(editor, "_angle")).Value == 0, $"网格变形 starts on the turned picture ({editor.ImageWidth})");
+        Check(Math.Abs(editor.PictureAngle - 30) < 0.01 && ((Slider)Field(editor, "_angle")).Value == 0, $"网格变形 starts on the turned picture ({editor.PictureAngle})");
         Call(editor, "CancelSession");
         editor.UndoStep();
         Pump(30);
@@ -432,26 +437,24 @@ static class ImageEditorTest
         box.TransformAngle = 30;
         Call(editor, "ApplySession");
         Pump(50);
-        Check(At(editor.Composite, 1, 1).A == 0 && editor.ImageWidth > 200, "smaller and turned: the uncovered corners are transparent");
+        Check(At(editor.Composite, 1, 1).A == 0 && editor.ImageWidth == 400, "smaller and turned: the uncovered parts are transparent, the canvas stays");
         editor.UndoStep();
         Pump(30);
 
         // a rectangle crop after turning keeps the turned picture (cut straight, no turning back)
         editor.RotateBy(30);
         Pump(30);
-        var turnedWidth = editor.ImageWidth;
         editor.CropTo(new Int32Rect(60, 60, 200, 150));
         Pump(30);
-        Check(editor.ImageWidth == 200 && editor.ImageHeight == 150, "crop after an angle: straight 200×150");
+        Check(editor.ImageWidth == 200 && editor.ImageHeight == 150 && Math.Abs(editor.PictureAngle - 30) < 0.01, "crop after an angle: the canvas straight 200×150, the picture keeps its angle");
         editor.RotateBy(10);
         Pump(30);
-        Check(editor.ImageWidth < turnedWidth, $"the next angle turns the cropped picture, not the old one ({editor.ImageWidth} < {turnedWidth})");
+        Check(Math.Abs(editor.PictureAngle - 40) < 0.01 && editor.ImageWidth == 200, $"the next angle goes on from there ({editor.PictureAngle})");
         editor.UndoStep(); editor.UndoStep(); editor.UndoStep();
         Pump(30);
         Check(Same(editor.Composite, clean), "undo back");
-        ((Slider)Field(editor, "_angle")).Value = 30; // previewed, not applied
         Call(editor, "StartSession", EditorOverlayMode.Crop);
-        Check(((FrameworkElement)Field(editor, "ImageHost")).RenderTransform.Value.IsIdentity, "a crop is never tilted by a previewed angle");
+        Check(((FrameworkElement)Field(editor, "ImageHost")).RenderTransform.Value.IsIdentity, "a crop is never tilted");
         editor.TypeCropSize(120, 80);
         var cropBox = ((EditorOverlay)Field(editor, "_overlay")).Crop;
         Check(cropBox.Width == 120 && cropBox.Height == 80, "the crop size label takes typed numbers");
@@ -462,10 +465,10 @@ static class ImageEditorTest
         Pump(30);
         editor.ResetAll();
         Pump(30);
-        Check(editor.ImageWidth == 400 && Same(editor.Composite, clean) && editor.AnnotationCount == 1, "重置所有修改: as opened");
+        Check(editor.PictureRect == new Rect(0, 0, 400, 300) && Same(editor.Composite, clean) && editor.AnnotationCount == 1, "重置所有修改: as opened");
         editor.UndoStep();
         Pump(30);
-        Check(editor.ImageWidth == 200, "and undoable");
+        Check(editor.PictureRect.Width == 200, "and undoable");
         editor.ResetAll();
         Pump(30);
 

@@ -208,7 +208,35 @@ public sealed class CreationGesture
         return RotateAround(mid, _start, _rotation) + _offset;
     }
 
+    /// <summary>The tablet pen's pressure now (null: a mouse); a pen stroke keeps one value per point.</summary>
+    public float? Pressure { get; set; }
+
+    private void KeepPressure()
+    {
+        if (Pressure is not { } pressure || Target is not PenAnnotation pen)
+        {
+            return;
+        }
+
+        pen.Pressures ??= new List<float>();
+        if (pen.Pressures.Count > pen.Points.Count)
+        {
+            pen.Pressures.RemoveRange(pen.Points.Count, pen.Pressures.Count - pen.Points.Count);
+        }
+
+        while (pen.Pressures.Count < pen.Points.Count)
+        {
+            pen.Pressures.Add(pressure);
+        }
+    }
+
     private void MoveFreehand(Point pointer, bool shift)
+    {
+        MoveFreehandPoints(pointer, shift);
+        KeepPressure();
+    }
+
+    private void MoveFreehandPoints(Point pointer, bool shift)
     {
         var points = FreehandPoints!;
         if (_moving && _moveSnapshot != null)

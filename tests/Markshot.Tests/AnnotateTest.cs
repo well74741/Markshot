@@ -51,6 +51,13 @@ static class AnnotateTest
         return px[(y * w + x) * 4 + 3];
     }
 
+    static byte PixelA(BitmapSource image, int x, int y)
+    {
+        var px = new byte[4];
+        new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0).CopyPixels(new Int32Rect(x, y, 1, 1), px, 4, 0);
+        return px[3];
+    }
+
     static object Get(object o, string name) =>
         typeof(PinWindow).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(o)!;
 
@@ -150,17 +157,17 @@ static class AnnotateTest
         Call(editor, "FinishPolyline");
         Pump(30);
         var items = ((AnnotationEditor)Get(editor, "Editor")).Items;
-        Check(items.Count == 1 && items[0] is PolylineAnnotation { Points.Count: 3 }, "折线 lands as one element");
+        Check(items.Count(i => i is not ImageAnnotation) == 1 && items[^1] is PolylineAnnotation { Points.Count: 3 }, "折线 lands as one element");
         editor.Flip(true);
         Pump(30);
-        Check(((PolylineAnnotation)items[0]).Points[0].X == 280, "mirroring moves the corners");
+        Check(items.OfType<PolylineAnnotation>().First().Points[0].X == 280, "mirroring moves the corners");
         editor.UndoStep();
         editor.UndoStep();
         Pump(30);
-        Check(items.Count == 0, "undo removes it");
+        Check(!items.Any(i => i is not ImageAnnotation), "undo removes it");
         Call(editor, "StartAnnotation", new Point(20, 20));
         Call(editor, "CancelGesture");
-        Check(Get(editor, "_polyline") == null && items.Count == 0, "Esc drops a polyline being placed");
+        Check(Get(editor, "_polyline") == null && !items.Any(i => i is not ImageAnnotation), "Esc drops a polyline being placed");
 
         toolbar.SetTool(AnnotationTool.Arrow);
         Call(editor, "SetTool", AnnotationTool.Arrow);
@@ -300,10 +307,10 @@ static class AnnotateTest
         Check(((FrameworkElement)toolbarCut.FindName("ClearPinButton")) is { } && toolbarCut.FindName("ClearPinButton") is Button, "clear button exists");
         Call(cutEditor, "UpdateUndoButtons");
         typeof(PinWindow).GetMethod("ClearAnnotations", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(cutEditor, null);
-        Check(cutItems.Count == 0, "清空批注 removes everything");
+        Check(cutItems.Count == 1 && cutItems[0] is ImageAnnotation, "清空批注 removes every annotation, the picture stays");
         cutEditor.UndoStep();
         Pump(30);
-        Check(cutItems.Count == 3, "and it can be undone");
+        Check(cutItems.Count(i => i is not ImageAnnotation) == 3, "and it can be undone");
         cutEditor.CloseWithoutAsking();
 
         // ---- editor: copy / paste after typing in a box, pictures pasted as elements, layers
@@ -322,13 +329,14 @@ static class AnnotateTest
             Call(ed, "ReclaimKeyboard");
             Check(Keyboard.FocusedElement is not TextBox, "leaving the box gives the keyboard back to the canvas (copy / paste work again)");
             var mover = typeof(PinWindow).GetMethod("MoveLayer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-            mover.Invoke(ed, new object[] { first, 1 });
-            Check(edItems[1] == first, "上移一层");
+            Check(edItems[0] is ImageAnnotation && edItems.Count == 3, "the opened picture is an element at the bottom");
+            mover.Invoke(ed, new object[] { first, 2 });
+            Check(edItems[2] == first, "上移一层");
             mover.Invoke(ed, new object[] { first, 0 });
-            Check(edItems[0] == first, "置于底层");
+            Check(edItems[0] == first && edItems[1] is ImageAnnotation, "置于底层: an annotation can go under the picture");
             ed.UndoStep();
             Pump(30);
-            Check(edItems.Count == 2 && edItems[1] is RectAnnotation { Color: var layerColor } && layerColor == Colors.Red, "layer change is undoable");
+            Check(edItems.Count == 3 && edItems[2] is RectAnnotation { Color: var layerColor } && layerColor == Colors.Red, "layer change is undoable");
 
             var picture = new ImageAnnotation { Image = Blank(60, 40), Rect = new Rect(100, 100, 60, 40) };
             edItems.Add(picture);
@@ -337,16 +345,63 @@ static class AnnotateTest
             picture.Translate(10, 5);
             Check(picture.Rect.X == 110, "and moves");
             Check(picture.Clone() is ImageAnnotation { Image: not null }, "and copies");
+            Check(!picture.Erasable, "the eraser leaves pictures alone (抠除 cuts through them)");
+
+            // a second picture on the canvas: the panel works on the selected one, layers mix with annotations
+            var opened = edItems.OfType<ImageAnnotation>().First();
+            typeof(PinWindow).GetMethod("SelectQuietly", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ed, new object[] { picture });
+            ed.RotateBy(15);
+            Pump(30);
+            Check(Math.Abs(picture.Rotation - 15) < 0.01 && Math.Abs(opened.Rotation) < 0.01 && ed.ImageWidth == 300, "an angle turns the selected picture only; the canvas stays");
+            mover.Invoke(ed, new object[] { picture, 0 });
+            Check(edItems[0] == picture, "a picture goes to the bottom like any element");
+            ed.CanvasTo(400, 260);
+            Pump(30);
+            Check(ed.ImageWidth == 400 && ed.ImageHeight == 260 && opened.Rect.X == 50 && opened.Rect.Y == 30 && opened.Rect.Width == 300,
+                $"画布尺寸: a bigger background, pictures moved to stay centred, not scaled ({opened.Rect})");
+            var flat = ed.Composite;
+            Check(flat.PixelWidth == 400 && PixelA(flat, 5, 5) == 0, "the added background is transparent");
+
+            // 吸色 reads the pictures on the canvas
+            var source = (BitmapSource)typeof(ImageEditorWindow).GetProperty("EyedropSource", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(ed)!;
+            Check(PenEyedropper.Sample(source, new Point(60, 40)) == Colors.White && PenEyedropper.Sample(source, new Point(5, 5)) == null,
+                "吸色: the colour of the picture under the cross, nothing on the empty background");
+            var bar = (AnnotationToolbar)Get(ed, "Toolbar");
+            bar.PickColor(Color.FromRgb(10, 120, 200));
+            Check(bar.Color == Color.FromRgb(10, 120, 200), "a picked colour becomes the pen's colour");
+            var editorLayer = (AnnotationEditor)Get(ed, "Editor");
+            editorLayer.Eyedrop = (new Point(60, 40), Colors.White);
+            editorLayer.InvalidateVisual();
+            Pump(30);
+            editorLayer.Eyedrop = null;
+
+            // the bar: 粘贴图片, 打开图片, 清空批注
+            var actions = ((Panel)bar.FindName("EditorActions")).Children.OfType<FrameworkElement>().Select(x => (string)x.Tag).ToList();
+            Check(actions.Take(3).SequenceEqual(new[] { "Paste", "Open", "Save" }) && actions.Contains("Clear"), $"editor bar: paste, open, save, clear … ({string.Join(",", actions)})");
+            // (the clipboard itself is left alone here: it is the user's)
+
+            // tablet pressure: a stroke is thin where the pen pressed lightly, thick where it pressed hard
+            var stroke = new PenAnnotation { Thickness = 10, Color = Colors.Black };
+            stroke.Points.AddRange(new[] { new Point(10, 20), new Point(60, 20), new Point(110, 20) });
+            stroke.Pressures = new List<float> { 0.05f, 0.5f, 1f };
+            var pressureShot = Render(stroke, 130, 40);
+            int Thick(int x) => Enumerable.Range(0, 40).Count(y => PixelA(pressureShot, x, y) > 128);
+            Check(Thick(15) < Thick(60) && Thick(60) < Thick(105), $"笔压: the width follows the pressure ({Thick(15)} < {Thick(60)} < {Thick(105)})");
+            var pressed = new PenAnnotation();
+            pressed.Points.Add(new Point(0, 0));
+            var gesture = new CreationGesture(pressed, new Point(0, 0)) { Pressure = 0.3f };
+            gesture.Move(new Point(20, 0), false, false);
+            Check(((PenAnnotation)gesture.Target).Pressures is { Count: 2 } p && Math.Abs(p[1] - 0.3f) < 0.001, "a pen stroke keeps the pressure of each point");
             var edBar = (AnnotationToolbar)Get(ed, "Toolbar");
             var cfg = Markshot.App.Config;
             var (oldOrder, oldHidden, oldTools) = (cfg.EditorActionOrder, cfg.EditorActionHidden, cfg.EditorToolHidden);
-            cfg.EditorActionOrder = "Pin,Open,Save,Copy";
-            cfg.EditorActionHidden = "Copy";
+            cfg.EditorActionOrder = "Pin,Paste,Open,Save,Clear,Copy";
+            cfg.EditorActionHidden = "Copy,Clear";
             cfg.EditorToolHidden = "Number";
             edBar.ApplyToolOrderFromConfig();
             var edActions = (Panel)edBar.FindName("EditorActions");
             var shown = edActions.Children.OfType<FrameworkElement>().Where(x => x.Visibility == Visibility.Visible).Select(x => (string)x.Tag);
-            Check(string.Join(",", shown) == "Pin,Open,Save", $"the editor bar has its own order / hidden buttons ({string.Join(",", shown)})");
+            Check(string.Join(",", shown) == "Pin,Paste,Open,Save", $"the editor bar has its own order / hidden buttons ({string.Join(",", shown)})");
             Check(!((FrameworkElement)edBar.FindName("ToolNumber")).IsVisible, "and its own hidden tools");
             (cfg.EditorActionOrder, cfg.EditorActionHidden, cfg.EditorToolHidden) = (oldOrder, oldHidden, oldTools);
             edBar.ApplyToolOrderFromConfig();

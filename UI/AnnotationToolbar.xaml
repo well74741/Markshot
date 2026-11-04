@@ -139,11 +139,17 @@
 
                 <!-- The image editor: open, save, copy and pin. -->
                 <StackPanel x:Name="EditorActions" Orientation="Horizontal" Visibility="Collapsed">
+                    <Button Style="{StaticResource IconToolButton}" Click="Paste_Click" Tag="Paste" ToolTip="粘贴剪贴板里的图片 (Ctrl+V)">
+                        <Border Style="{StaticResource IconPasteMask}" />
+                    </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Open_Click" Tag="Open" ToolTip="打开图片 (Ctrl+O)">
                         <Border Style="{StaticResource IconOpenMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Save_Click" Tag="Save" ToolTip="保存 (Ctrl+S)">
                         <Border Style="{StaticResource IconSaveMask}" />
+                    </Button>
+                    <Button x:Name="ClearEditorButton" Style="{StaticResource IconToolButton}" Click="Clear_Click" Tag="Clear" ToolTip="清空所有批注，图片保留（可撤销）" IsEnabled="False">
+                        <Border Style="{StaticResource IconTrashMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" Tag="Copy" ToolTip="复制 (Ctrl+C)">
                         <Border Style="{StaticResource IconCopyMask}" />

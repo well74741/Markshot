@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.26`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.27`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,18 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.27 0.8.27 变更
+
+- 图片编辑器改为「透明画布 + 图片元素」：打开的图片是 `ImageAnnotation`（`Image` / `Origin` / `Adjust` / `Rotation` / `Hidden`），`_baseImage` 只是透明画布（画布尺寸）。
+  图片可与粘贴的图片、批注任意排层（右键直接有 上移一层 / 下移一层 / 置于顶层 / 置于底层）；橡皮擦不擦图片（`Erasable=false`），抠除照样穿透。
+- 面板操作对象 `Target` = 会话中的图片 → 选中的图片 → 第一张图片。角度、调节框（`TransformTo(Rect, angle)`）、调色、路径裁切、梯形校正、网格变形只改该图片；
+  画布尺寸（`CanvasTo`）、矩形裁切（`CropTo`）、左右转 / 镜像改整个画布（元素原地平移，保持同一对象）。画布永远不会被调节框 / 角度撑大或裁掉。
+- 马赛克 / 吸色的取样源 `MosaicSource` = 画布上图片的渲染（缓存，`PictureKey` 变了重建）；水印画在最上面一张图片 / 马赛克之上。
+- 贴到屏幕：最上面一张图片及其下方的内容合成为贴图底图，其上的批注（和抠除）仍可编辑。截图的撤销步骤交给编辑器时补上图片元素（`AdoptHistory` 覆写）。
+- 浮动栏新增「粘贴图片」（原打开按钮的图标）、「打开图片」（ui-icons 的 打开.png → `folder_open.png`）、「清空批注」（图片保留）；旧的顺序配置自动补入新按钮。
+- 画笔 / 荧光笔：按住 Alt 显示吸色十字（`PenEyedropper`，截图、贴图、编辑器通用；截图里此时 Alt 不切换辅助线，贴图的放大镜暂停），单击取色（`AnnotationToolbar.PickColor`）。
+- 数位板笔压：`CreationGesture.Pressure`（`StylusPoint.PressureFactor`）→ `PenAnnotation.Pressures`，有笔压时按点变宽绘制（同向绕行的圆 + 四边形，Nonzero 填充）。
 
 ## 8.1.26 0.8.26 变更
 

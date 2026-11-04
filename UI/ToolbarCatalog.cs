@@ -8,7 +8,7 @@ internal static class ToolbarCatalog
     public static readonly string[] Tools = { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
     public static readonly string[] CaptureActions = { "Scroll", "Record", "Ocr", "Close", "Clear", "Pin", "Save", "Copy", "Translate", "Edit" };
     public static readonly string[] PinActions = { "Close", "Save", "Clear", "Apply", "Edit" };
-    public static readonly string[] EditorActions = { "Open", "Save", "Copy", "Pin" };
+    public static readonly string[] EditorActions = { "Paste", "Open", "Save", "Clear", "Copy", "Pin" };
 
     public static string Label(string key) => key switch
     {
@@ -23,6 +23,7 @@ internal static class ToolbarCatalog
         "Close" => "关闭",
         "Clear" => "清空批注",
         "Open" => "打开图片",
+        "Paste" => "粘贴图片",
         "Pin" => "贴图",
         "Save" => "保存",
         "Copy" => "复制",
@@ -57,6 +58,7 @@ internal static class ToolbarCatalog
             "Close" => "IconCloseMask",
             "Clear" => "IconTrashMask",
             "Open" => "IconOpenMask",
+            "Paste" => "IconPasteMask",
             "Pin" => "IconPinMask",
             "Save" => "IconSaveMask",
             "Copy" => "IconCopyMask",

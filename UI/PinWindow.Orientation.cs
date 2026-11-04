@@ -162,6 +162,8 @@ public partial class PinWindow
                 break;
             case ImageAnnotation picture:
                 picture.Rect = MapRect(picture.Rect, map);
+                picture.Image = picture.Image == null ? null : ImageOps.Normalize(new TransformedBitmap(picture.Image, transform));
+                picture.Origin = picture.Origin == null ? null : ImageOps.Normalize(new TransformedBitmap(picture.Origin, transform));
                 break;
             case TextAnnotation text:
             {

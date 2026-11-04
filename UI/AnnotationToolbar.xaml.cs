@@ -115,6 +115,7 @@ public partial class AnnotationToolbar : UserControl
     public event Action? ScrollRequested;
     public event Action? EditRequested;
     public event Action? OpenRequested;
+    public event Action? PasteRequested;
 
     /// <summary>The watermark switch: true = show a watermark, false = remove it.</summary>
     public event Action<bool>? WatermarkToggled;
@@ -379,6 +380,15 @@ public partial class AnnotationToolbar : UserControl
         }
 
         _configuring = false;
+    }
+
+    /// <summary>吸色: the colour taken from the picture becomes the custom colour in use (SettingsChanged).</summary>
+    public void PickColor(Color color)
+    {
+        _customColor = Color.FromRgb(color.R, color.G, color.B);
+        _color = _customColor;
+        UpdateSwatches();
+        SettingsChanged?.Invoke();
     }
 
     public void SetColor(Color color)
@@ -1286,6 +1296,8 @@ public partial class AnnotationToolbar : UserControl
 
     private void Open_Click(object sender, RoutedEventArgs e) => OpenRequested?.Invoke();
 
+    private void Paste_Click(object sender, RoutedEventArgs e) => PasteRequested?.Invoke();
+
     /// <summary>Bar actions added by the image editor (it has its own Pin handling).</summary>
     public bool IsEditorMode => _mode == AnnotationToolbarMode.Editor;
 
@@ -1314,6 +1326,7 @@ public partial class AnnotationToolbar : UserControl
     {
         ClearCaptureButton.IsEnabled = canClear;
         ClearPinButton.IsEnabled = canClear;
+        ClearEditorButton.IsEnabled = canClear;
     }
 
     /// <summary>The eraser button's 抠除 style is in hand.</summary>

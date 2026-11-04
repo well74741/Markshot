@@ -402,10 +402,62 @@ public class PenAnnotation : Annotation
         var copy = (PenAnnotation)base.Clone();
         copy.Points = new List<Point>(Points);
         copy.Corners = new HashSet<int>(Corners);
+        copy.Pressures = Pressures == null ? null : new List<float>(Pressures);
         return copy;
     }
 
     public bool Highlight { get; set; }
+
+    /// <summary>Tablet pen pressure (0…1) of each point; null for a stroke drawn with the mouse.</summary>
+    public List<float>? Pressures { get; set; }
+
+    /// <summary>Width at a pressure: 0.5 (a pen resting normally) is the set thickness.</summary>
+    public double WidthAt(float pressure) => (Highlight ? Thickness * 4 : Thickness) * Math.Clamp(0.2 + 1.6 * pressure, 0.2, 1.8);
+
+    /// <summary>The stroke with a width per point: one filled shape, so it overlaps itself cleanly.</summary>
+    private Geometry PressureShape()
+    {
+        var shape = new StreamGeometry { FillRule = FillRule.Nonzero };
+        using (var context = shape.Open())
+        {
+            void Dot(Point at, double radius)
+            {
+                var size = new Size(radius, radius);
+                context.BeginFigure(new Point(at.X - radius, at.Y), true, true);
+                context.ArcTo(new Point(at.X + radius, at.Y), size, 0, false, SweepDirection.Clockwise, true, false);
+                context.ArcTo(new Point(at.X - radius, at.Y), size, 0, false, SweepDirection.Clockwise, true, false);
+            }
+
+            for (var i = 0; i < Points.Count; i++)
+            {
+                var radius = WidthAt(Pressures![i]) / 2;
+                Dot(Points[i], radius);
+                if (i == 0)
+                {
+                    continue;
+                }
+
+                var from = Points[i - 1];
+                var along = Points[i] - from;
+                if (along.Length < 0.01)
+                {
+                    continue;
+                }
+
+                along.Normalize();
+                var side = new Vector(-along.Y, along.X);
+                var before = WidthAt(Pressures[i - 1]) / 2;
+                // Same winding as the dots: with Nonzero an opposite one would punch holes.
+                context.BeginFigure(from + side * before, true, true);
+                context.LineTo(from - side * before, true, false);
+                context.LineTo(Points[i] - side * radius, true, false);
+                context.LineTo(Points[i] + side * radius, true, false);
+            }
+        }
+
+        shape.Freeze();
+        return shape;
+    }
 
     public override void Draw(DrawingContext dc)
     {
@@ -417,6 +469,12 @@ public class PenAnnotation : Annotation
         var baseColor = Highlight
             ? Color.FromArgb(90, Color.R, Color.G, Color.B)
             : Color;
+
+        if (Pressures != null && Pressures.Count == Points.Count)
+        {
+            dc.DrawGeometry(new SolidColorBrush(baseColor), null, PressureShape());
+            return;
+        }
 
         if (Points.Count == 1)
         {
@@ -507,19 +565,53 @@ public class PenAnnotation : Annotation
     }
 }
 
-/// <summary>A picture placed on the canvas (pasted): moved, resized and turned like a box.</summary>
+/// <summary>
+/// A picture on the image editor's canvas (the opened picture, pasted ones): moved, resized, turned
+/// and layered like any element. Not touched by the eraser (抠除 cuts through it).
+/// </summary>
 public sealed class ImageAnnotation : Annotation
 {
     public Rect Rect { get; set; }
 
+    /// <summary>What is shown (colours applied; a smaller copy while a slider moves).</summary>
     public BitmapSource? Image { get; set; }
+
+    /// <summary>The pixels before the colour settings; null = <see cref="Image"/>.</summary>
+    public BitmapSource? Origin { get; set; }
+
+    public ImageAdjust? Adjust { get; set; }
+
+    /// <summary>Drawn by the editor's overlay meanwhile (调节框, warp).</summary>
+    public bool Hidden { get; set; }
+
+    /// <summary>How pictures are scaled in the render going on (the editor: crisp pixels when zoomed far in).</summary>
+    public static BitmapScalingMode Scaling { get; set; } = BitmapScalingMode.HighQuality;
+
+    public override bool Erasable => false;
+
+    public override Annotation Clone()
+    {
+        var copy = (ImageAnnotation)base.Clone();
+        copy.Hidden = false; // only the live element is hidden, never a stored step
+        return copy;
+    }
 
     public override void Draw(DrawingContext dc)
     {
-        if (Image != null && Rect.Width >= 1 && Rect.Height >= 1)
+        if (Image == null || Hidden || Rect.Width < 1 || Rect.Height < 1)
         {
-            dc.DrawImage(Image, Rect);
+            return;
         }
+
+        // Its own scaling: the canvas around it is nearest-neighbour (for the mosaic blocks).
+        var group = new DrawingGroup();
+        RenderOptions.SetBitmapScalingMode(group, Scaling);
+        using (var context = group.Open())
+        {
+            context.DrawImage(Image, Rect);
+        }
+
+        dc.DrawDrawing(group);
     }
 
     public override Rect Bounds => Rect;
