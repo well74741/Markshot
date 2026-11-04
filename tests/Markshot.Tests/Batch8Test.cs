@@ -99,6 +99,17 @@ static class Batch8Test
         var checkedOk = (bool)result.GetType().GetField("Item1")!.GetValue(result)!;
         Console.WriteLine("   release page checked: " + checkedOk);
         Check(checkedOk, "the release page names the latest installer (no API quota needed)");
+        var latest = UpdateService.LatestOnPageAsync("well74741", "Markshot", CancellationToken.None).GetAwaiter().GetResult();
+        Check(latest.Package != null, "the release page has an installer");
+        if (latest.Package is { } found2)
+        {
+            // The link must really download (it once lacked the owner / repository: 404).
+            using var http = new System.Net.Http.HttpClient();
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Markshot-test");
+            using var head = http.Send(new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Head, found2.Path));
+            Console.WriteLine("   " + found2.Path + " -> " + (int)head.StatusCode);
+            Check(found2.Path.StartsWith("https://github.com/well74741/Markshot/releases/download/") && head.IsSuccessStatusCode, "the installer link from the release page downloads");
+        }
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
     }

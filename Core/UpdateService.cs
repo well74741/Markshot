@@ -142,6 +142,13 @@ public static class UpdateService
     /// </summary>
     private static async Task<(bool Checked, Package? Package)> FindNewerOnPageAsync(string owner, string repo, CancellationToken cancellationToken)
     {
+        var (found, latest) = await LatestOnPageAsync(owner, repo, cancellationToken);
+        return (found, latest != null && Compare(latest.Version, AppVersion.Display) > 0 ? latest : null);
+    }
+
+    /// <summary>The newest installer the release page offers, whatever this build is (Checked = false: page not readable).</summary>
+    public static async Task<(bool Checked, Package? Package)> LatestOnPageAsync(string owner, string repo, CancellationToken cancellationToken)
+    {
         try
         {
             using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true }) { Timeout = TimeSpan.FromSeconds(15) };
@@ -167,7 +174,7 @@ public static class UpdateService
                 var version = match.Groups[1].Value.TrimEnd('.');
                 if (Parse(version).Length > 0 && (best == null || Compare(version, best.Version) > 0))
                 {
-                    best = new Package("https://github.com" + match.Value, version, Remote: true);
+                    best = new Package($"https://github.com/{owner}/{repo}" + match.Value, version, Remote: true);
                 }
             }
 
@@ -176,7 +183,7 @@ public static class UpdateService
                 return (false, null); // page layout changed: let the API try
             }
 
-            return (true, Compare(best.Version, AppVersion.Display) > 0 ? best : null);
+            return (true, best);
         }
         catch (Exception ex)
         {
