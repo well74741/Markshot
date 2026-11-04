@@ -145,6 +145,26 @@ static class CaptureTest
         Call(overlay, "SetHoverChain", list);
         Check((Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "the chosen level stays while the mouse stays on the element");
 
+        // Esc: one press leaves the capture (default); with the setting off it steps back first
+        void SetField(object o, string name, object value) => typeof(OverlayWindow).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(o, value);
+        var config = Markshot.App.Config;
+        var escBefore = config.EscExitsCapture;
+        config.EscExitsCapture = false;
+        var stepper = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        SetField(stepper, "_hasSelection", true);
+        SetField(stepper, "_selection", new Rect(10, 10, 100, 80));
+        Call(stepper, "HandleEscape");
+        Check(!(bool)Get(stepper, "_hasSelection") && !(bool)Get(stepper, "_finishing"), "Esc with 逐步退出: the area goes first, the capture stays");
+        stepper.Close();
+        config.EscExitsCapture = true;
+        var leaver = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        SetField(leaver, "_hasSelection", true);
+        SetField(leaver, "_selection", new Rect(10, 10, 100, 80));
+        Call(leaver, "HandleEscape");
+        Pump(300);
+        Check((bool)Get(leaver, "_finishing") || (bool)Get(leaver, "_closed"), "Esc (default): one press leaves the capture with an area chosen");
+        config.EscExitsCapture = escBefore;
+
         // the hover asks the screenshot when UI Automation has nothing (no window behind here: handle 0)
         var pageOverlay = new OverlayWindow(pageShot, new Int32Rect(0, 0, 640, 320));
         typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!

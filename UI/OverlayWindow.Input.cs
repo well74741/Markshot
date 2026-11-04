@@ -939,6 +939,34 @@ public partial class OverlayWindow
         ClearAnnotationHover();
     }
 
+    /// <summary>Esc in the capture: out at once (默认), or step back first (先放下工具 / 取消选中、再取消选区，再退出).</summary>
+    private void HandleEscape()
+    {
+        if (App.Config.EscExitsCapture)
+        {
+            CancelCapture(); // one Esc: out (the setting can make it step back first)
+        }
+        else if (_selectedAnnotation != null)
+        {
+            ClearAnnotationSelection();
+        }
+        else if (_tool != AnnotationTool.None && _tool != AnnotationTool.Select)
+        {
+            SetTool(AnnotationTool.Select);
+        }
+        else if (_hasSelection)
+        {
+            _hasSelection = false;
+            _selection = Rect.Empty;
+            ClearAnnotationSelection();
+            UpdateSelectionVisuals();
+        }
+        else
+        {
+            CancelCapture();
+        }
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (_finishing)
@@ -1137,26 +1165,7 @@ public partial class OverlayWindow
 
         if (key == Key.Escape)
         {
-            if (_selectedAnnotation != null)
-            {
-                ClearAnnotationSelection();
-            }
-            else if (_tool != AnnotationTool.None && _tool != AnnotationTool.Select)
-            {
-                SetTool(AnnotationTool.Select);
-            }
-            else if (_hasSelection)
-            {
-                _hasSelection = false;
-                _selection = Rect.Empty;
-                ClearAnnotationSelection();
-                UpdateSelectionVisuals();
-            }
-            else
-            {
-                CancelCapture();
-            }
-
+            HandleEscape();
             e.Handled = true;
             return;
         }

@@ -107,6 +107,9 @@ public sealed class AppConfig
     /// <summary>After saving an image, ask whether to open its folder.</summary>
     public bool AskOpenFolderAfterSave { get; set; } = true;
 
+    /// <summary>截图里按一次 Esc 直接退出；关掉时逐步退出（先放下工具 / 取消选中，再取消选区，最后退出）。</summary>
+    public bool EscExitsCapture { get; set; } = true;
+
     /// <summary>Translate every capture selection in place (the toolbar's translate toggle remembers it).</summary>
     public bool ImmersiveTranslate { get; set; }
 

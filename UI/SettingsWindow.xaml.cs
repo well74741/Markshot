@@ -60,6 +60,7 @@ public partial class SettingsWindow : Window
         FillToolbarRow(EditorToolsRow, ToolbarCatalog.Tools, config.EditorToolOrder, config.EditorToolHidden);
         FillToolbarRow(EditorActionsRow, ToolbarCatalog.EditorActions, config.EditorActionOrder, config.EditorActionHidden);
         AskOpenFolderCheck.IsChecked = config.AskOpenFolderAfterSave;
+        EscExitsCheck.IsChecked = config.EscExitsCapture;
         SaveDirBox.Text = config.SaveDirectory;
         UpdatePathBox.Text = UpdateService.EffectivePath(config);
         Loaded += (_, _) => RefreshUpdate(quiet: true);
@@ -500,6 +501,7 @@ public partial class SettingsWindow : Window
         (_config.EditorToolOrder, _config.EditorToolHidden) = ReadToolbarRow(EditorToolsRow);
         (_config.EditorActionOrder, _config.EditorActionHidden) = ReadToolbarRow(EditorActionsRow);
         _config.AskOpenFolderAfterSave = AskOpenFolderCheck.IsChecked == true;
+        _config.EscExitsCapture = EscExitsCheck.IsChecked == true;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
         // Keep following the installer's folder unless another one was entered.
