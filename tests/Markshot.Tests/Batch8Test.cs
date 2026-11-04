@@ -91,6 +91,14 @@ static class Batch8Test
         File.WriteAllText(Path.Combine(dir, "Markshot-Setup-9.9.99.exe"), "");
         var found = UpdateService.FindNewestAsync(dir).GetAwaiter().GetResult();
         Check(found?.Version == "9.9.99", $"custom folder is checked as well ({found?.Version})");
+        // the release page (no API quota): finds the published installer when the network is there
+        var page = (System.Threading.Tasks.Task)typeof(UpdateService).GetMethod("FindNewerOnPageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, new object[] { "well74741", "Markshot", CancellationToken.None })!;
+        ((System.Threading.Tasks.Task)page).Wait();
+        var result = page.GetType().GetProperty("Result")!.GetValue(page)!;
+        var checkedOk = (bool)result.GetType().GetField("Item1")!.GetValue(result)!;
+        Console.WriteLine("   release page checked: " + checkedOk);
+        Check(checkedOk, "the release page names the latest installer (no API quota needed)");
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
     }

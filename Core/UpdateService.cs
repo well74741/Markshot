@@ -83,14 +83,23 @@ public static class UpdateService
             return await Task.Run(() => FindNewer(source), cancellationToken);
         }
 
+        var segments = new Uri(source).AbsolutePath.Trim('/').Split('/');
+        if (segments.Length < 2)
+        {
+            return null;
+        }
+
+        // The release web page first: the anonymous API allows only 60 requests an hour per IP,
+        // which a shared office network uses up quickly (403 rate limit = "no update" before).
+        var fromPage = await FindNewerOnPageAsync(segments[0], segments[1].Replace(".git", ""), cancellationToken);
+        if (fromPage.Checked)
+        {
+            return fromPage.Package;
+        }
+
         try
         {
-            var parts = new Uri(source).AbsolutePath.Trim('/').Split('/');
-            if (parts.Length < 2)
-            {
-                return null;
-            }
-
+            var parts = segments;
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Markshot/" + AppVersion.Display);
             client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
@@ -119,6 +128,55 @@ public static class UpdateService
             // Offline, rate-limited, private repository (404) …: just no update this time.
             Log.Info("检查 GitHub 更新失败：" + ex.Message);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Latest release via github.com itself (no API quota): /releases/latest redirects to the tag,
+    /// the tag's asset list names the installer. Checked = false when the page could not be read.
+    /// </summary>
+    private static async Task<(bool Checked, Package? Package)> FindNewerOnPageAsync(string owner, string repo, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true }) { Timeout = TimeSpan.FromSeconds(15) };
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Markshot/" + AppVersion.Display);
+            using var latest = await client.GetAsync($"https://github.com/{owner}/{repo}/releases/latest", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            latest.EnsureSuccessStatusCode();
+            var landed = latest.RequestMessage?.RequestUri?.AbsolutePath ?? "";
+            var marker = "/releases/tag/";
+            var at = landed.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (at < 0)
+            {
+                return (false, null);
+            }
+
+            var tag = Uri.UnescapeDataString(landed[(at + marker.Length)..]);
+            var html = await client.GetStringAsync($"https://github.com/{owner}/{repo}/releases/expanded_assets/{Uri.EscapeDataString(tag)}", cancellationToken);
+            Package? best = null;
+            var pattern = new System.Text.RegularExpressions.Regex(
+                @"/releases/download/[^""/]+/" + System.Text.RegularExpressions.Regex.Escape(SetupPrefix) + @"([0-9][0-9.]*)\.exe",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            foreach (System.Text.RegularExpressions.Match match in pattern.Matches(html))
+            {
+                var version = match.Groups[1].Value.TrimEnd('.');
+                if (Parse(version).Length > 0 && (best == null || Compare(version, best.Version) > 0))
+                {
+                    best = new Package("https://github.com" + match.Value, version, Remote: true);
+                }
+            }
+
+            if (best == null)
+            {
+                return (false, null); // page layout changed: let the API try
+            }
+
+            return (true, Compare(best.Version, AppVersion.Display) > 0 ? best : null);
+        }
+        catch (Exception ex)
+        {
+            Log.Info("从 GitHub 页面检查更新失败：" + ex.Message);
+            return (false, null);
         }
     }
 
