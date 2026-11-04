@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.IO;
 using System.Linq;
@@ -78,6 +79,28 @@ static class Batch7Test
         hint.Invoke(settings, new object?[] { false, null }); // the mouse leaves afterwards
         Pump(400);
         Check(cup.Opacity > 0.95, "QR code put away: the coffee cup is back");
+        // the QR code turns over to the WeChat one while hovered (drawer out), back on leaving
+        hint.Invoke(settings, new object?[] { false, 144.0 });
+        var turn = typeof(SettingsWindow).GetMethod("TurnQr", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        turn.Invoke(settings, new object[] { true });
+        Pump(400);
+        var qrImage = (Image)settings.FindName("DrawerQr");
+        Check(settings.ShowsSecondQr && ((BitmapImage)qrImage.Source).UriSource.ToString().Contains("wechat") && ((ScaleTransform)settings.FindName("DrawerQrScale")).ScaleX == 1,
+            "hovered: turned over to the WeChat code (upright again)");
+        turn.Invoke(settings, new object[] { false });
+        turn.Invoke(settings, new object[] { true });
+        turn.Invoke(settings, new object[] { false }); // in and out quickly: ends on the first code
+        Pump(700);
+        Check(!settings.ShowsSecondQr && !((BitmapImage)qrImage.Source).UriSource.ToString().Contains("wechat"), "left: back to the first code");
+        // the global hotkeys rest only while a hotkey box takes keys
+        var recording = new List<bool>();
+        settings.RecordingHotkey += r => recording.Add(r);
+        settings.Activate();
+        ((TextBox)settings.FindName("CaptureHotkeyBox")).Focus();
+        Pump(50);
+        Keyboard.ClearFocus();
+        Pump(50);
+        Check(recording.Count >= 2 && recording[0] && !recording[^1], $"hotkeys rest while a hotkey box has the keyboard, come back after ({string.Join(",", recording)})");
         settings.Close();
 
         // ---- the saved prompt

@@ -192,8 +192,17 @@ public partial class SettingsWindow : Window
         }
     }
 
+    /// <summary>
+    /// True while a hotkey box takes keys: the global hotkeys rest meanwhile (pressing F1 there sets the field
+    /// instead of starting a capture). The rest of the time they work with the settings open.
+    /// </summary>
+    public event Action<bool>? RecordingHotkey;
+
+    private void HotkeyBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => RecordingHotkey?.Invoke(false);
+
     private void HotkeyBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
+        RecordingHotkey?.Invoke(true);
         if (sender is TextBox box)
         {
             box.Tag = box.Text;
@@ -544,6 +553,10 @@ public partial class SettingsWindow : Window
         if (height is { } target)
         {
             _drawerOpen = target >= 1;
+            if (!_drawerOpen)
+            {
+                ResetQr();
+            }
         }
 
         // The state the drawer is going to (not its height mid-animation): put away = the cup again.
@@ -718,11 +731,76 @@ public partial class SettingsWindow : Window
         }
     }
 
-    /// <summary>The QR code: grey dots on the dark theme, dark dots on the light one.</summary>
+    /// <summary>The QR code: grey dots on the dark theme, dark dots on the light one (the first or, turned over, the WeChat one).</summary>
     private void UpdateDrawerQr() =>
-        DrawerQr.Source = new BitmapImage(new Uri(Theme.IsLight
-            ? "pack://application:,,,/Markshot;component/Assets/donate_qr_light.png"
-            : "pack://application:,,,/Markshot;component/Assets/donate_qr.png"));
+        DrawerQr.Source = new BitmapImage(new Uri("pack://application:,,,/Markshot;component/Assets/donate_qr" +
+            (_qrSecond ? "_wechat" : "") + (Theme.IsLight ? "_light" : "") + ".png"));
+
+    private bool _qrSecond; // the WeChat code is showing
+    private bool _qrWanted;
+    private bool _qrTurning;
+
+    /// <summary>The code being shown (tests): false the first, true the WeChat one.</summary>
+    public bool ShowsSecondQr => _qrSecond;
+
+    private void DrawerQr_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (_drawerOpen && !_drawerDragging)
+        {
+            TurnQr(true);
+        }
+    }
+
+    private void DrawerQr_MouseLeave(object sender, MouseEventArgs e) => TurnQr(false);
+
+    /// <summary>
+    /// Turns the card over horizontally: it narrows to its middle line, the other code comes in, it widens
+    /// again (the shared curve, half of Motion.Base each way). A change of mind meanwhile turns it once more.
+    /// </summary>
+    private void TurnQr(bool second)
+    {
+        _qrWanted = second;
+        if (_qrTurning || _qrSecond == second)
+        {
+            return;
+        }
+
+        _qrTurning = true;
+        var half = TimeSpan.FromMilliseconds(Motion.Base.TimeSpan.TotalMilliseconds / 2);
+        var close = new System.Windows.Media.Animation.DoubleAnimation(1, 0, half) { EasingFunction = Motion.Ease };
+        close.Completed += (_, _) =>
+        {
+            _qrSecond = !_qrSecond;
+            UpdateDrawerQr();
+            var open = new System.Windows.Media.Animation.DoubleAnimation(0, 1, half) { EasingFunction = Motion.Ease };
+            open.Completed += (_, _) =>
+            {
+                _qrTurning = false;
+                if (_qrWanted != _qrSecond)
+                {
+                    TurnQr(_qrWanted);
+                }
+            };
+            DrawerQrScale.BeginAnimation(ScaleTransform.ScaleXProperty, open);
+        };
+        DrawerQrScale.BeginAnimation(ScaleTransform.ScaleXProperty, close);
+    }
+
+    /// <summary>Put away: the first code again, at once.</summary>
+    private void ResetQr()
+    {
+        _qrWanted = false;
+        if (!_qrSecond && !_qrTurning)
+        {
+            return;
+        }
+
+        DrawerQrScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        DrawerQrScale.ScaleX = 1;
+        _qrTurning = false;
+        _qrSecond = false;
+        UpdateDrawerQr();
+    }
 
     private string _shadowColor = "#6A6A6A";
 

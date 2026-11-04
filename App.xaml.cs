@@ -578,11 +578,20 @@ public partial class App : Application
             return;
         }
 
-        // Suspend global hotkeys so pressing F1 inside the recorder updates the
-        // field instead of opening the capture overlay.
-        _hotkeys?.UnregisterAll();
-
         _settings = new SettingsWindow(Config);
+        // The global hotkeys keep working with the settings open; they rest only while a hotkey box takes
+        // keys (pressing F1 there sets the field instead of opening the capture overlay).
+        _settings.RecordingHotkey += recording =>
+        {
+            if (recording)
+            {
+                _hotkeys?.UnregisterAll();
+            }
+            else if (!_shuttingDown)
+            {
+                ApplyHotkeys();
+            }
+        };
         _settings.Closed += (_, _) =>
         {
             var saved = _settings?.Saved == true;

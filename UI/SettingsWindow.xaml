@@ -271,9 +271,16 @@
                             VerticalAlignment="Center" />
                 </Border>
                 <Border x:Name="DrawerPanel" Height="0" ClipToBounds="True">
-                    <Image x:Name="DrawerQr" Source="pack://application:,,,/Markshot;component/Assets/donate_qr.png"
-                           Width="136" Height="136" VerticalAlignment="Top" Margin="0,0,0,8"
-                           RenderOptions.BitmapScalingMode="HighQuality" />
+                    <!-- Hovered, the code turns over (horizontally) to the WeChat one and back on leaving. -->
+                    <Border x:Name="DrawerQrHost" Background="Transparent" Width="136" Height="136" VerticalAlignment="Top" Margin="0,0,0,8"
+                            MouseEnter="DrawerQr_MouseEnter" MouseLeave="DrawerQr_MouseLeave">
+                        <Image x:Name="DrawerQr" Source="pack://application:,,,/Markshot;component/Assets/donate_qr.png"
+                               RenderTransformOrigin="0.5,0.5" RenderOptions.BitmapScalingMode="HighQuality">
+                            <Image.RenderTransform>
+                                <ScaleTransform x:Name="DrawerQrScale" />
+                            </Image.RenderTransform>
+                        </Image>
+                    </Border>
                 </Border>
             </StackPanel>
             </Grid>
@@ -308,23 +315,23 @@
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="截图" Style="{StaticResource RowLabel}" />
                                 <TextBox Grid.Row="0" Grid.Column="1" x:Name="CaptureHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
                                 <TextBlock Grid.Row="0" Grid.Column="3" Text="贴剪贴板" Style="{StaticResource RowLabel}" />
                                 <TextBox Grid.Row="0" Grid.Column="4" x:Name="PinHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="鼠标穿透" Style="{StaticResource RowLabel}" />
                                 <TextBox Grid.Row="2" Grid.Column="1" x:Name="MouseThroughHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
                                 <TextBlock Grid.Row="2" Grid.Column="3" Text="恢复贴图" Style="{StaticResource RowLabel}"
                                            ToolTip="重新打开最近关闭的贴图" />
                                 <TextBox Grid.Row="2" Grid.Column="4" x:Name="RestorePinHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
 
                                 <TextBlock Grid.Row="4" Grid.Column="0" Text="录屏" Style="{StaticResource RowLabel}"
                                            ToolTip="打开录屏；录屏打开时按一下开始，录制中再按一下停止" />
                                 <TextBox Grid.Row="4" Grid.Column="1" x:Name="RecordHotkeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"
                                        Text="点击输入框后直接按组合键，也可以按鼠标中键 / 侧键（可配合 Ctrl / Alt / Shift）；Backspace 清除，Esc 还原；除截图外都可留空。" />
@@ -345,11 +352,11 @@
                                 <TextBlock Grid.Column="0" Text="显示鼠标" Style="{StaticResource RowLabel}"
                                            ToolTip="截图里显示 / 隐藏鼠标指针（会记住）" />
                                 <TextBox Grid.Column="1" x:Name="CaptureCursorKeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="CaptureKeyBox_PreviewKeyDown" PreviewKeyUp="CaptureKeyBox_PreviewKeyUp" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="CaptureKeyBox_PreviewKeyDown" PreviewKeyUp="CaptureKeyBox_PreviewKeyUp" />
                                 <TextBlock Grid.Column="3" Text="辅助线" Style="{StaticResource RowLabel}"
                                            ToolTip="以鼠标为中心显示贯通屏幕的十字线，再按一次关闭" />
                                 <TextBox Grid.Column="4" x:Name="CrosshairKeyBox" Style="{StaticResource HotkeyField}"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" PreviewKeyDown="CaptureKeyBox_PreviewKeyDown" PreviewKeyUp="CaptureKeyBox_PreviewKeyUp" />
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="CaptureKeyBox_PreviewKeyDown" PreviewKeyUp="CaptureKeyBox_PreviewKeyUp" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap"
                                        Text="只在截图窗口里生效（选区前后都可以）。可以是组合键，也可以单独一个 Alt / Ctrl / Shift（单按一下切换，按住拖动等操作不受影响）。" />
