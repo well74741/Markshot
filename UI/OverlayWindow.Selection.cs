@@ -761,7 +761,49 @@ public partial class OverlayWindow
         Math.Abs(a.X - b.X) <= 3 && Math.Abs(a.Y - b.Y) <= 3 && Math.Abs(a.Right - b.Right) <= 3 && Math.Abs(a.Bottom - b.Bottom) <= 3;
 
     /// <summary>New frames under the mouse. The level the wheel chose stays when its frame is still offered.</summary>
+    private DispatcherTimer? _hoverDwell;
+    private List<HoverCandidate>? _pendingHover;
+
+    /// <summary>
+    /// A new element under the pointer: the frame moves there once the pointer has rested on it a moment
+    /// (识别灵敏度 sets how long), so sweeping over a page does not make it jump about. The first frame and
+    /// staying on the framed element answer at once.
+    /// </summary>
     private void SetHoverChain(List<HoverCandidate> chain)
+    {
+        var delay = AppConfig.HoverDelayFor(App.Config.DetectSensitivity);
+        var shown = _hoverLevel < _hoverChain.Count ? _hoverChain[_hoverLevel].Local : Rect.Empty;
+        var stays = chain.Any(candidate => ElementDetector.Same(candidate.Local, shown));
+        if (delay <= 0 || !Editor.ShowHover || _hoverChain.Count == 0 || stays)
+        {
+            _hoverDwell?.Stop();
+            _pendingHover = null;
+            ApplyHoverChain(chain);
+            return;
+        }
+
+        _pendingHover = chain;
+        if (_hoverDwell == null)
+        {
+            _hoverDwell = new DispatcherTimer(DispatcherPriority.Input);
+            _hoverDwell.Tick += (_, _) =>
+            {
+                _hoverDwell.Stop();
+                var pending = _pendingHover;
+                _pendingHover = null;
+                if (pending != null && !_hasSelection && !_closed)
+                {
+                    ApplyHoverChain(pending);
+                }
+            };
+        }
+
+        _hoverDwell.Interval = TimeSpan.FromMilliseconds(delay);
+        _hoverDwell.Stop();
+        _hoverDwell.Start(); // every move onto something else starts the wait again
+    }
+
+    private void ApplyHoverChain(List<HoverCandidate> chain)
     {
         var shown = _hoverLevel < _hoverChain.Count ? _hoverChain[_hoverLevel].Local : Rect.Empty;
         _hoverChain = chain;
@@ -844,7 +886,7 @@ public partial class OverlayWindow
 
     private void OnHoverFrame(object? sender, EventArgs e)
     {
-        var t = Motion.Bezier(Math.Min(1, _hoverClock.Elapsed.TotalMilliseconds / HoverMs));
+        var t = Motion.Bezier(Math.Min(1, _hoverClock.Elapsed.TotalMilliseconds / AppConfig.HoverSlideFor(App.Config.DetectSensitivity)));
         Editor.HoverBounds = new Rect(
             _hoverFrom.X + (_hoverTo.X - _hoverFrom.X) * t,
             _hoverFrom.Y + (_hoverTo.Y - _hoverFrom.Y) * t,
@@ -885,6 +927,8 @@ public partial class OverlayWindow
 
     private void ClearHover()
     {
+        _hoverDwell?.Stop();
+        _pendingHover = null;
         _elementWanted = null;
         if (_hoverTarget == null && !Editor.ShowHover)
         {

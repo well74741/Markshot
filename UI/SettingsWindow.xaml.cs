@@ -216,6 +216,7 @@ public partial class SettingsWindow : Window
         {
             var level = (int)Math.Round(e.NewValue);
             DetectSensitivityValue.Text = level switch { 1 => "1 · 低", 2 => "2", 3 => "3 · 默认", 4 => "4", _ => "5 · 高" };
+            DetectSensitivityValue.ToolTip = $"换框前停留 {AppConfig.HoverDelayFor(level)} ms";
         }
     }
 
@@ -543,8 +544,36 @@ public partial class SettingsWindow : Window
                 : 60;
 
         Saved = true;
-        Close();
+        SavedChanges?.Invoke(); // applied now; the window stays open
+        ShowSavedNotice();
     }
+
+    /// <summary>保存 pressed: the app applies the settings (the window stays open, no balloon / sound).</summary>
+    public event Action? SavedChanges;
+
+    private DispatcherTimer? _noticeTimer;
+    private string? _statusBefore;
+
+    /// <summary>A quiet line in the footer for a moment.</summary>
+    private void ShowSavedNotice()
+    {
+        _noticeTimer?.Stop();
+        _statusBefore ??= StatusText.Text;
+        StatusText.Text = "✓ 设置已保存并生效";
+        StatusText.SetResourceReference(TextBlock.ForegroundProperty, "Accent");
+        _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+        _noticeTimer.Tick += (_, _) =>
+        {
+            _noticeTimer.Stop();
+            StatusText.Text = _statusBefore ?? "";
+            StatusText.ClearValue(TextBlock.ForegroundProperty);
+            _statusBefore = null;
+        };
+        _noticeTimer.Start();
+    }
+
+    /// <summary>The footer line (tests).</summary>
+    public string StatusLine => StatusText.Text;
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
 

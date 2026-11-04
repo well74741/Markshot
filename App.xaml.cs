@@ -592,32 +592,37 @@ public partial class App : Application
                 ApplyHotkeys();
             }
         };
+        // 保存 applies at once and the window stays; closing drops what was changed but not saved.
+        _settings.SavedChanges += () =>
+        {
+            Config.Save();
+            PreviewPinShadow(null);
+            foreach (var pin in _pins)
+            {
+                pin.ApplyShadowSettings();
+            }
+
+            foreach (var editor in _editors)
+            {
+                editor.ApplyToolbarOrder();
+            }
+
+            _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {PinHotkeyLabel}");
+            if (!_shuttingDown)
+            {
+                ApplyHotkeys();
+            }
+        };
         _settings.Closed += (_, _) =>
         {
-            var saved = _settings?.Saved == true;
             _settings = null;
-            PreviewPinShadow(null); // drop an unsaved preview (saved values are re-applied below)
-            if (!saved)
+            PreviewPinShadow(null); // drop an unsaved preview
+            // Back to the saved look (the 样式 page previews at once).
+            Theme.Apply(Config.Theme);
+            UiScale.Apply(Config.UiSize);
+            foreach (var pin in _pins)
             {
-                // Not saved: back to the saved look (the 样式 page previews at once).
-                Theme.Apply(Config.Theme);
-                UiScale.Apply(Config.UiSize);
-            }
-            if (saved)
-            {
-                Config.Save();
-                foreach (var pin in _pins)
-                {
-                    pin.ApplyShadowSettings();
-                }
-
-                foreach (var editor in _editors)
-                {
-                    editor.ApplyToolbarOrder();
-                }
-
-                _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {PinHotkeyLabel}");
-                _tray?.ShowBalloon("设置已保存", "快捷键与翻译配置已更新。");
+                pin.ApplyShadowSettings();
             }
 
             if (!_shuttingDown)

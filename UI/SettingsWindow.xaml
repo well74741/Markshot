@@ -132,6 +132,37 @@
             </Setter>
         </Style>
 
+        <!-- Every check box of the settings: a small pill switch (the 原位翻译 one's look, sized for 12 px rows). -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Background="Transparent">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="Track" Width="28" Height="16" CornerRadius="8" Background="{DynamicResource T_FF4A4A4A}"
+                                    VerticalAlignment="Center">
+                                <Ellipse x:Name="Knob" Width="10" Height="10" Fill="#F2F2F2"
+                                         HorizontalAlignment="Left" Margin="3,0" />
+                            </Border>
+                            <ContentPresenter Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" TextElement.FontSize="{TemplateBinding FontSize}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{StaticResource Accent}" />
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Pill switch -->
         <Style x:Key="Switch" TargetType="ToggleButton">
             <Setter Property="Cursor" Value="Hand" />
@@ -693,7 +724,7 @@
                                            Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
                                 <Slider x:Name="DetectSensitivitySlider" Minimum="1" Maximum="5" TickFrequency="1" IsSnapToTickEnabled="True"
                                         IsMoveToPointEnabled="True" Width="180" VerticalAlignment="Center" ValueChanged="DetectSensitivity_Changed"
-                                        ToolTip="低：只框住明显、较大的内容；高：淡的边框、很小的元素也框住" />
+                                        ToolTip="低：鼠标停稳一会儿才换框，只框明显、较大的内容；高：跟手快，淡的边框、很小的元素也框住" />
                             </DockPanel>
                             <CheckBox x:Name="CaptureCursorCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="截图包含鼠标指针（截图中也可用快捷键切换）" />
@@ -801,7 +832,7 @@
         <Border Grid.Column="1" Grid.Row="1" BorderBrush="{DynamicResource T_14FFFFFF}" BorderThickness="0,1,0,0" Padding="24,12,20,14">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button Content="取消" Style="{StaticResource FooterButton}" Click="Cancel_Click" IsCancel="True" />
+                    <Button Content="关闭" ToolTip="关闭设置（没保存的修改不生效）" Style="{StaticResource FooterButton}" Click="Cancel_Click" IsCancel="True" />
                     <Button Content="保存" Style="{StaticResource PrimaryButton}" Click="Save_Click" Margin="8,0,0,0"
                             IsDefault="True" />
                 </StackPanel>

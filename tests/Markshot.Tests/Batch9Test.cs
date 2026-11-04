@@ -51,6 +51,13 @@ static class Batch9Test
         var enc = new PngBitmapEncoder();
         enc.Frames.Add(BitmapFrame.Create(bmp));
         using (var f = File.Create("settings_toolbar_page.png")) enc.Save(f);
+        settings.ShowPage("General");
+        settings.UpdateLayout();
+        var shot2 = new RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+        shot2.Render(root);
+        var enc2 = new PngBitmapEncoder();
+        enc2.Frames.Add(BitmapFrame.Create(shot2));
+        using (var f2 = File.Create("settings_general_page.png")) enc2.Save(f2);
         settings.Close();
 
         // ---- long-press on a real toolbar button (which captures the mouse itself) picks it up and drops it on release

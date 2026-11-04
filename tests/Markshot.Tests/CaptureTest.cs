@@ -167,6 +167,25 @@ static class CaptureTest
         Call(overlay, "SetHoverChain", list);
         Check((Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "the chosen level stays while the mouse stays on the element");
 
+        // 识别灵敏度 sets how long the pointer rests before the frame moves to another element
+        var hoverConfig = Markshot.App.Config;
+        var sensitivityBefore = hoverConfig.DetectSensitivity;
+        hoverConfig.DetectSensitivity = 1;
+        var restChain = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
+        restChain.Add(Activator.CreateInstance(candidateType, new Rect(200, 120, 60, 40), "图片"));
+        var framedBefore = editor.HoverBounds;
+        Call(overlay, "SetHoverChain", restChain);
+        Pump(120);
+        Check(editor.HoverBounds == framedBefore, "低灵敏度: the frame waits while the pointer has not rested");
+        Pump(AppConfig.HoverDelayFor(1) + 450);
+        Check(editor.HoverBounds == new Rect(200, 120, 60, 40), "… and moves there once it has");
+        hoverConfig.DetectSensitivity = 5;
+        Call(overlay, "SetHoverChain", list);
+        Pump(250);
+        Check(editor.HoverBounds == new Rect(50, 50, 40, 20), $"高灵敏度: the frame moves at once ({editor.HoverBounds})");
+        Check(AppConfig.HoverDelayFor(1) > AppConfig.HoverDelayFor(3) && AppConfig.HoverDelayFor(3) > AppConfig.HoverDelayFor(5), "the levels differ clearly in delay");
+        hoverConfig.DetectSensitivity = sensitivityBefore;
+
         // Esc: one press leaves the capture (default); with the setting off it steps back first
         void SetField(object o, string name, object value) => typeof(OverlayWindow).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(o, value);
         var config = Markshot.App.Config;

@@ -113,6 +113,12 @@ public sealed class AppConfig
     /// <summary>Edge contrast the picture-based detection needs at a sensitivity.</summary>
     public static int EdgeThresholdFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 44, 2 => 36, 4 => 20, 5 => 14, _ => 28 };
 
+    /// <summary>How long (ms) the pointer rests on another element before the frame moves there: low sensitivity = calm.</summary>
+    public static int HoverDelayFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 520, 2 => 340, 4 => 90, 5 => 0, _ => 200 };
+
+    /// <summary>The frame's slide to the new element (ms).</summary>
+    public static int HoverSlideFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 260, 2 => 210, 4 => 130, 5 => 100, _ => 170 };
+
     /// <summary>Smallest element (pixels, either side) the detection offers at a sensitivity.</summary>
     public static int MinSideFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 16, 2 => 10, 5 => 3, _ => 4 };
 

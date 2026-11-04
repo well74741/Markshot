@@ -101,6 +101,15 @@ static class Batch7Test
         Keyboard.ClearFocus();
         Pump(50);
         Check(recording.Count >= 2 && recording[0] && !recording[^1], $"hotkeys rest while a hotkey box has the keyboard, come back after ({string.Join(",", recording)})");
+        var escCheck = (CheckBox)settings.FindName("EscExitsCheck");
+        escCheck.ApplyTemplate();
+        Check(escCheck.Template.FindName("Track", escCheck) is Border { Width: 28 }, "settings check boxes are small pill switches");
+        var savedEvents = 0;
+        settings.SavedChanges += () => savedEvents++;
+        typeof(SettingsWindow).GetMethod("Save_Click", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(settings, new object[] { settings, new RoutedEventArgs() });
+        Pump(100);
+        Check(settings.IsVisible && settings.Saved && savedEvents == 1 && settings.StatusLine.Contains("已保存"), "保存: applied, the window stays open, a quiet notice in the footer");
         settings.Close();
 
         // ---- the saved prompt
