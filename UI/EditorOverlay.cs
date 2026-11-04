@@ -286,13 +286,34 @@ public sealed class EditorOverlay : FrameworkElement
             }
         }
 
-        return TransformRect.Contains(local) ? "move" : "rotate";
+        if (TransformRect.Contains(local))
+        {
+            return "move";
+        }
+
+        // Just outside the box turns it; further out a click applies the box.
+        var outside = TransformRect;
+        outside.Inflate(RotateReach / Zoom, RotateReach / Zoom);
+        return outside.Contains(local) ? "rotate" : "outside";
     }
+
+    /// <summary>How far outside the box (DIP) a press still turns it.</summary>
+    private const double RotateReach = 36;
+
+    /// <summary>A click away from the 调节框: apply it.</summary>
+    public event Action? CommitRequested;
 
     /// <summary>A press of the box (tests and the mouse).</summary>
     public void PressTransform(Point pixel)
     {
         _transformDrag = TransformHit(pixel);
+        if (_transformDrag == "outside")
+        {
+            _transformDrag = null;
+            CommitRequested?.Invoke();
+            return;
+        }
+
         _transformStart = pixel;
         _transformOrigin = TransformRect;
         _angleOrigin = TransformAngle;
@@ -325,7 +346,7 @@ public sealed class EditorOverlay : FrameworkElement
 
             default:
                 TransformRect = UI.AnnotationOps.ResizeFromHandle(_transformOrigin, TransformAngle, int.Parse(_transformDrag, CultureInfo.InvariantCulture),
-                    pixel, (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
+                    pixel, (_transformDrag is "0" or "2" or "4" or "6") != ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)); // corners keep the ratio, Shift frees them
                 break;
         }
 
@@ -734,6 +755,7 @@ public sealed class EditorOverlay : FrameworkElement
                 {
                     "move" => Cursors.SizeAll,
                     "rotate" => ToolCursors.GetRotationCursor(true),
+                    "outside" => Cursors.Arrow,
                     "0" or "4" => Cursors.SizeNWSE,
                     "2" or "6" => Cursors.SizeNESW,
                     "1" or "5" => Cursors.SizeNS,

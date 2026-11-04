@@ -170,8 +170,35 @@ public partial class PinWindow
         Editor.InvalidateVisual();
     }
 
+    /// <summary>Ctrl+V: a picture copied in Windows (newer than a copied element) becomes a picture element.</summary>
+    private bool PastePicture()
+    {
+        if (!AnnotationClipboard.SystemClipboardIsNewer || ClipboardService.TryGetImage() is not { } picture)
+        {
+            return false;
+        }
+
+        var image = ImageOps.Normalize(picture);
+        double w = image.PixelWidth, h = image.PixelHeight, cw = _baseImage.PixelWidth, ch = _baseImage.PixelHeight;
+        var fit = Math.Min(1, Math.Min(cw * 0.8 / w, ch * 0.8 / h));
+        var size = new Size(Math.Max(1, w * fit), Math.Max(1, h * fit));
+        var element = new ImageAnnotation { Image = image, Rect = new Rect((cw - size.Width) / 2, (ch - size.Height) / 2, size.Width, size.Height) };
+        _history.Checkpoint(Editor.Items);
+        Editor.Items.Add(element);
+        UpdateUndoButtons();
+        SetTool(AnnotationTool.None);
+        SelectAnnotation(element);
+        Editor.InvalidateVisual();
+        return true;
+    }
+
     private void PasteAnnotation()
     {
+        if (PastePicture())
+        {
+            return;
+        }
+
         if (AnnotationClipboard.Paste(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight)) is not { } pasted)
         {
             return;
@@ -597,7 +624,7 @@ public partial class PinWindow
             return;
         }
 
-        if (control && key == Key.V && AnnotationClipboard.HasContent)
+        if (control && key == Key.V && (AnnotationClipboard.HasContent || (IsEditor && ClipboardService.HasImage)))
         {
             PasteAnnotation();
             e.Handled = true;
@@ -1336,7 +1363,7 @@ public partial class PinWindow
     }
 
     /// <summary>Selects an element without switching tools (the text tool keeps working).</summary>
-    private void SelectQuietly(Annotation annotation)
+    private protected void SelectQuietly(Annotation annotation)
     {
         _selected = annotation;
         Editor.Selected = annotation;
@@ -1451,9 +1478,29 @@ public partial class PinWindow
         }
     }
 
-    private Annotation? HitAnnotation(Point point) => AnnotationOps.HitTest(Editor.Items, point, 7 / _zoom);
+    private protected Annotation? HitAnnotation(Point point) => AnnotationOps.HitTest(Editor.Items, point, 7 / _zoom);
 
-    private void SelectAnnotation(Annotation annotation)
+    /// <summary>上下层: the selected element moves within the stack (one undo step).</summary>
+    private protected void MoveLayer(Annotation annotation, int to)
+    {
+        var items = Editor.Items;
+        var from = items.IndexOf(annotation);
+        to = Math.Clamp(to, 0, items.Count - 1);
+        if (from < 0 || from == to)
+        {
+            return;
+        }
+
+        _history.Checkpoint(items);
+        var moved = items[from];
+        items.RemoveAt(from);
+        items.Insert(to, moved);
+        SelectQuietly(moved);
+        UpdateUndoButtons();
+        Editor.InvalidateVisual();
+    }
+
+    private protected void SelectAnnotation(Annotation annotation)
     {
         _selected = annotation;
         _tool = AnnotationTool.None;
@@ -1746,8 +1793,12 @@ public partial class PinWindow
             Activate();
         }
 
-        InputLayer.Focus();
-        Keyboard.Focus(InputLayer);
+        // The drawing layer takes the keyboard; if it cannot (hidden), the window does: keys must
+        // never stay with a size box the user has left.
+        if (!InputLayer.Focus())
+        {
+            Keyboard.Focus(this);
+        }
     }
 
     /// <summary>A cut-out being drawn is cancelled (right click / Esc): the hole goes again.</summary>

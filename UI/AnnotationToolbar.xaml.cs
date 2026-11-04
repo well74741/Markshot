@@ -228,8 +228,9 @@ public partial class AnnotationToolbar : UserControl
     {
         var config = App.Config;
         ApplyToolOrder(
-            _mode != AnnotationToolbarMode.Capture ? config.PinToolOrder : config.CaptureToolOrder,
-            _mode != AnnotationToolbarMode.Capture ? config.PinToolHidden : config.CaptureToolHidden);
+            _mode switch { AnnotationToolbarMode.Capture => config.CaptureToolOrder, AnnotationToolbarMode.Editor => config.EditorToolOrder, _ => config.PinToolOrder },
+            _mode switch { AnnotationToolbarMode.Capture => config.CaptureToolHidden, AnnotationToolbarMode.Editor => config.EditorToolHidden, _ => config.PinToolHidden });
+        ApplyActionOrder(EditorActions, config.EditorActionOrder, config.EditorActionHidden, ToolbarCatalog.EditorActions);
         ApplyActionOrder(CaptureActions, config.CaptureActionOrder, config.CaptureActionHidden, ToolbarCatalog.CaptureActions);
         ApplyActionOrder(PinActions, config.PinActionOrder, config.PinActionHidden, ToolbarCatalog.PinActions);
     }
@@ -288,6 +289,8 @@ public partial class AnnotationToolbar : UserControl
             _captureActionsReorder.Reordered += keys => SaveOrder(keys, tools: false);
             _pinActionsReorder = new ReorderBehavior(PinActions);
             _pinActionsReorder.Reordered += keys => SaveOrder(keys, tools: false);
+            var editorActionsReorder = new ReorderBehavior(EditorActions);
+            editorActionsReorder.Reordered += keys => SaveOrder(keys, tools: false);
         }
     }
 
@@ -315,14 +318,14 @@ public partial class AnnotationToolbar : UserControl
         }
 
         var text = string.Join(",", keys);
-        var pin = _mode != AnnotationToolbarMode.Capture;
-        if (tools)
+        switch (_mode, tools)
         {
-            if (pin) config.PinToolOrder = text; else config.CaptureToolOrder = text;
-        }
-        else
-        {
-            if (pin) config.PinActionOrder = text; else config.CaptureActionOrder = text;
+            case (AnnotationToolbarMode.Capture, true): config.CaptureToolOrder = text; break;
+            case (AnnotationToolbarMode.Capture, false): config.CaptureActionOrder = text; break;
+            case (AnnotationToolbarMode.Editor, true): config.EditorToolOrder = text; break;
+            case (AnnotationToolbarMode.Editor, false): config.EditorActionOrder = text; break;
+            case (_, true): config.PinToolOrder = text; break;
+            default: config.PinActionOrder = text; break;
         }
 
         config.Save();

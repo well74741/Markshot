@@ -214,6 +214,10 @@ public static class ImageOps
         return new[] { 0, width - 1, (height - 1) * width, height * width - 1 }.Any(i => pixels[i * 4 + 3] < 250);
     }
 
+    /// <summary>A canvas of a new size with the picture at <paramref name="offset"/> (unscaled); the rest transparent.</summary>
+    public static BitmapSource Canvas(BitmapSource source, int width, int height, Point offset) =>
+        Draw(width, height, dc => dc.DrawImage(source, new Rect(offset.X, offset.Y, source.PixelWidth, source.PixelHeight)));
+
     public static BitmapSource Crop(BitmapSource source, Int32Rect rect)
     {
         var cropped = new CroppedBitmap(source, rect);

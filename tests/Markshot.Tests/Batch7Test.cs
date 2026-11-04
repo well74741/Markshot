@@ -68,6 +68,16 @@ static class Batch7Test
         enc.Frames.Add(BitmapFrame.Create(bmp));
         using (var f = File.Create("settings_drawer.png")) enc.Save(f);
         Console.WriteLine("   wrote settings_drawer.png");
+        var hint = typeof(SettingsWindow).GetMethod("ShowDrawerHint", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var cup = (FrameworkElement)settings.FindName("DrawerCoffee");
+        hint.Invoke(settings, new object?[] { false, 144.0 });
+        Pump(400);
+        Check(cup.Opacity < 0.05, "QR code out: no cup");
+        hint.Invoke(settings, new object?[] { false, 0.0 }); // put away (height still animating)
+        Pump(400);
+        hint.Invoke(settings, new object?[] { false, null }); // the mouse leaves afterwards
+        Pump(400);
+        Check(cup.Opacity > 0.95, "QR code put away: the coffee cup is back");
         settings.Close();
 
         // ---- the saved prompt

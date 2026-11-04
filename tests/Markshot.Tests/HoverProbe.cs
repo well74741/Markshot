@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -183,5 +184,57 @@ static class DeskProbe
             Console.WriteLine($"({x},{y}) window class={cls} bounds={target?.Bounds} elements={chain.Count} in {sw.ElapsedMilliseconds} ms: " +
                 string.Join(" | ", chain.Take(4).Select(c => $"{c.Bounds.Width}x{c.Bounds.Height}")));
         }
+    }
+}
+
+// Ctrl+C / Ctrl+V as real key events. Ctrl is set in this thread's own key state only: no real input.
+static class CopyProbe
+{
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool SetKeyboardState(byte[] state);
+
+    public static void Run()
+    {
+        Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var state = new byte[256];
+        var image = BitmapSource.Create(200, 120, 96, 96, PixelFormats.Bgra32, null, new byte[200 * 120 * 4], 800);
+        image.Freeze();
+        var editor = new ImageEditorWindow(image) { Left = 40, Top = 40, ShowActivated = false };
+        editor.Show();
+        var frame = new DispatcherFrame();
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        t.Tick += (_, _) => { t.Stop(); frame.Continue = false; };
+        t.Start();
+        Dispatcher.PushFrame(frame);
+        var items = ((AnnotationEditor)typeof(PinWindow).GetField("Editor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(editor)!).Items;
+        var rect = new RectAnnotation { Rect = new Rect(20, 20, 50, 40), Color = Colors.Red, Thickness = 3 };
+        items.Add(rect);
+        typeof(PinWindow).GetMethod("SelectAnnotation", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, new object[] { rect });
+        void Press(Key key)
+        {
+            state[0x11] = 0x80; state[0xA2] = 0x80;
+            SetKeyboardState(state);
+            Console.WriteLine($"mods {Keyboard.Modifiers} focused {Keyboard.FocusedElement?.GetType().Name} selected {typeof(PinWindow).GetField("_selected", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(editor) != null}");
+            var e = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(editor)!, 0, key) { RoutedEvent = UIElement.PreviewKeyDownEvent };
+            editor.RaiseEvent(e);
+            Console.WriteLine($"{key}: handled {e.Handled}, items {items.Count}");
+            state[0x11] = 0; state[0xA2] = 0;
+            SetKeyboardState(state);
+        }
+
+        Press(Key.C);
+        Press(Key.V);
+        Press(Key.V);
+        var bounds = items.Select(i => i.Bounds.ToString());
+        Console.WriteLine(string.Join(" | ", bounds));
+        // the same after the keyboard was in the panel's size box
+        var box = (TextBox)typeof(ImageEditorWindow).GetField("_widthBox", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(editor)!;
+        box.Focus();
+        Console.WriteLine("box focused: " + box.IsKeyboardFocused);
+        Press(Key.V);
+        typeof(PinWindow).GetMethod("ReclaimKeyboard", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, null);
+        Console.WriteLine("after reclaim: " + Keyboard.FocusedElement?.GetType().Name);
+        Press(Key.V);
+        editor.CloseWithoutAsking();
     }
 }

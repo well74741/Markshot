@@ -29,7 +29,7 @@
             <Image x:Name="Img" Stretch="Fill" SnapsToDevicePixels="True" />
             <ui:PinTextLayer x:Name="TextLayer" />
             <annotations:AnnotationEditor x:Name="Editor" Visibility="Collapsed" IsHitTestVisible="False" />
-            <Rectangle x:Name="InputLayer" Fill="Transparent" Visibility="Collapsed"
+            <Rectangle x:Name="InputLayer" Fill="Transparent" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}"
                        MouseLeftButtonDown="Input_MouseLeftButtonDown"
                        MouseMove="Input_MouseMove"
                        MouseLeftButtonUp="Input_MouseLeftButtonUp"

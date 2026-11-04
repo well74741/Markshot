@@ -39,6 +39,15 @@ public sealed class AppConfig
 
     public string PinActionHidden { get; set; } = "";
 
+    /// <summary>The image editor's floating bar: tools and its own buttons (open, save, copy, pin).</summary>
+    public string EditorToolOrder { get; set; } = "Shape,Pen,Arrow,Text,Number,Mosaic,Eraser";
+
+    public string EditorToolHidden { get; set; } = "";
+
+    public string EditorActionOrder { get; set; } = "Open,Save,Copy,Pin";
+
+    public string EditorActionHidden { get; set; } = "";
+
     /// <summary>长截图 scrolls sideways (otherwise down).</summary>
     public bool ScrollHorizontal { get; set; }
 

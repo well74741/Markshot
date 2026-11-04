@@ -372,6 +372,9 @@ internal static class AnnotationOps
                 };
                 number.Radius = Math.Clamp(badge / 2, 8, 80);
                 break;
+            case ImageAnnotation picture:
+                picture.Rect = target;
+                break;
             case PenAnnotation pen:
                 ScalePoints(pen.Points, source, target);
                 break;
@@ -521,7 +524,16 @@ internal static class AnnotationClipboard
     {
         _item = annotation.Clone();
         _pastes = 0;
+        _copiedAt = GetClipboardSequenceNumber();
     }
+
+    private static uint _copiedAt;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
+
+    /// <summary>Something (a picture …) was copied in Windows after the element was copied here.</summary>
+    public static bool SystemClipboardIsNewer => _item == null || GetClipboardSequenceNumber() != _copiedAt;
 
     /// <summary>A copy offset a little further for each paste, kept inside <paramref name="canvas"/>.</summary>
     public static Annotation? Paste(Rect canvas)

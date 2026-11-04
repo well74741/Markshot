@@ -543,6 +543,8 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="8" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Text="截图模式" Style="{StaticResource RowLabel}" />
                                 <Border Grid.Column="1" Background="{DynamicResource T_FF1B1B1B}" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
@@ -558,6 +560,14 @@
                                         <StackPanel x:Name="PinToolsRow" Orientation="Horizontal" />
                                         <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
                                         <StackPanel x:Name="PinActionsRow" Orientation="Horizontal" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Grid.Row="4" Text="图片编辑器" Style="{StaticResource RowLabel}" />
+                                <Border Grid.Row="4" Grid.Column="1" Background="{DynamicResource T_FF1B1B1B}" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel x:Name="EditorToolsRow" Orientation="Horizontal" />
+                                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                                        <StackPanel x:Name="EditorActionsRow" Orientation="Horizontal" />
                                     </StackPanel>
                                 </Border>
                             </Grid>

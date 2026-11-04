@@ -306,6 +306,53 @@ static class AnnotateTest
         Check(cutItems.Count == 3, "and it can be undone");
         cutEditor.CloseWithoutAsking();
 
+        // ---- editor: copy / paste after typing in a box, pictures pasted as elements, layers
+        {
+            var ed = new ImageEditorWindow(Blank(300, 200)) { Left = 40, Top = 40, ShowActivated = false };
+            ed.Show();
+            Pump(300);
+            var edItems = ((AnnotationEditor)Get(ed, "Editor")).Items;
+            var first = new RectAnnotation { Rect = new Rect(20, 20, 50, 40), Color = Colors.Red, Thickness = 3 };
+            var second = new RectAnnotation { Rect = new Rect(40, 40, 50, 40), Color = Colors.Blue, Thickness = 3 };
+            edItems.Add(first);
+            edItems.Add(second);
+            var sizeBox = (TextBox)typeof(ImageEditorWindow).GetField("_widthBox", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(ed)!;
+            sizeBox.Focus();
+            Check(sizeBox.IsKeyboardFocused, "the size box has the keyboard");
+            Call(ed, "ReclaimKeyboard");
+            Check(Keyboard.FocusedElement is not TextBox, "leaving the box gives the keyboard back to the canvas (copy / paste work again)");
+            var mover = typeof(PinWindow).GetMethod("MoveLayer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            mover.Invoke(ed, new object[] { first, 1 });
+            Check(edItems[1] == first, "上移一层");
+            mover.Invoke(ed, new object[] { first, 0 });
+            Check(edItems[0] == first, "置于底层");
+            ed.UndoStep();
+            Pump(30);
+            Check(edItems.Count == 2 && edItems[1] is RectAnnotation { Color: var layerColor } && layerColor == Colors.Red, "layer change is undoable");
+
+            var picture = new ImageAnnotation { Image = Blank(60, 40), Rect = new Rect(100, 100, 60, 40) };
+            edItems.Add(picture);
+            typeof(PinWindow).Assembly.GetType("Markshot.UI.AnnotationOps")!.GetMethod("Resize")!.Invoke(null, new object[] { picture, new Rect(100, 100, 120, 80), 4 });
+            Check(picture.Rect.Width == 120 && picture.Bounds.Height == 80, "a picture element resizes");
+            picture.Translate(10, 5);
+            Check(picture.Rect.X == 110, "and moves");
+            Check(picture.Clone() is ImageAnnotation { Image: not null }, "and copies");
+            var edBar = (AnnotationToolbar)Get(ed, "Toolbar");
+            var cfg = Markshot.App.Config;
+            var (oldOrder, oldHidden, oldTools) = (cfg.EditorActionOrder, cfg.EditorActionHidden, cfg.EditorToolHidden);
+            cfg.EditorActionOrder = "Pin,Open,Save,Copy";
+            cfg.EditorActionHidden = "Copy";
+            cfg.EditorToolHidden = "Number";
+            edBar.ApplyToolOrderFromConfig();
+            var edActions = (Panel)edBar.FindName("EditorActions");
+            var shown = edActions.Children.OfType<FrameworkElement>().Where(x => x.Visibility == Visibility.Visible).Select(x => (string)x.Tag);
+            Check(string.Join(",", shown) == "Pin,Open,Save", $"the editor bar has its own order / hidden buttons ({string.Join(",", shown)})");
+            Check(!((FrameworkElement)edBar.FindName("ToolNumber")).IsVisible, "and its own hidden tools");
+            (cfg.EditorActionOrder, cfg.EditorActionHidden, cfg.EditorToolHidden) = (oldOrder, oldHidden, oldTools);
+            edBar.ApplyToolOrderFromConfig();
+            ed.CloseWithoutAsking();
+        }
+
         // ---- 抠除 on a pin: the hole is see-through (no shadow plate behind it)
         var holePin = new PinWindow(Blank(120, 80), -4000, -4000, Blank(120, 80), null) { Left = -4000, Top = -4000, ShowActivated = false };
         holePin.Show();

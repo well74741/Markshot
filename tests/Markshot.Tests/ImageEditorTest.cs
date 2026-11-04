@@ -187,6 +187,18 @@ static class ImageEditorTest
         editor.UndoStep();
         Pump(30);
         Check(editor.ImageWidth == 400 && editor.AnnotationCount == 1 && Same(editor.Composite, clean), "undo a resize: size and annotations back");
+        var rectLeft = ((RectAnnotation)items[0]).Rect.Left;
+        editor.CanvasTo(500, 400);
+        Pump(30);
+        Check(editor.ImageWidth == 500 && editor.ImageHeight == 400 && At(editor.Composite, 10, 10).A == 0 && At(editor.Composite, 55, 55).G == 200,
+            "画布尺寸: a bigger canvas, the picture centred and not scaled, the rest transparent");
+        Check(editor.AnnotationCount == 1 && ((RectAnnotation)items[0]).Rect.Left == rectLeft + 50, "画布尺寸: the annotations move with the picture and stay editable");
+        editor.CanvasTo(300, 200);
+        Pump(30);
+        Check(editor.ImageWidth == 300 && editor.ImageHeight == 200, "画布尺寸: a smaller canvas cuts round the centre");
+        editor.UndoStep(); editor.UndoStep();
+        Pump(30);
+        Check(editor.ImageWidth == 400 && Same(editor.Composite, clean), "undo the canvas sizes");
         editor.RotateBy(30);
         Pump(30);
         Check(editor.ImageWidth > 400 && At(editor.Composite, 1, 1).A == 0, "任意角度 (the canvas grows, corners transparent)");
@@ -368,10 +380,13 @@ static class ImageEditorTest
         var box = (EditorOverlay)Field(editor, "_overlay");
         Check(box.TransformRect == new Rect(0, 0, 400, 300) && !box.Ready, "调节框 starts on the picture");
         box.PressTransform(new Point(400, 300));
-        box.DragTransform(new Point(300, 200));
-        box.PressTransform(new Point(500, 150)); // outside: turning
+        box.DragTransform(new Point(300, 260));
+        Check(Math.Abs(box.TransformRect.Width / box.TransformRect.Height - 4.0 / 3) < 0.02, $"调节框 corners keep the ratio ({box.TransformRect.Width:0}x{box.TransformRect.Height:0})");
+        box.TransformRect = new Rect(0, 0, 300, 200);
+        var reachPx = 20 / box.Zoom;
+        box.PressTransform(new Point(300 + reachPx, 100)); // just outside: turning
         box.DragTransform(new Point(150, 450));
-        Check(box.Ready && box.TransformRect.Width < 400 && Math.Abs(box.TransformAngle) > 10, $"handles resize, outside turns ({box.TransformRect.Width:0}x{box.TransformRect.Height:0}, {box.TransformAngle:0}°)");
+        Check(box.Ready && Math.Abs(box.TransformAngle) > 10 && Field(editor, "_overlay") != null, $"just outside the box turns it ({box.TransformAngle:0}°)");
         box.TransformAngle = 0;
         Check(((Image)Field(editor, "Img")).Opacity == 0, "调节框: the picture is not darkened but hidden (the box draws it, the rest shows the checkerboard)");
         var sizeLabel = (Border)Field(editor, "_cropSize");
@@ -388,6 +403,24 @@ static class ImageEditorTest
         Check(((Image)Field(editor, "Img")).Opacity == 1, "the picture shows again");
         editor.UndoStep();
         Pump(30);
+        // a click well away from the box applies it
+        Call(editor, "StartSession", EditorOverlayMode.Transform);
+        box = (EditorOverlay)Field(editor, "_overlay");
+        box.TransformRect = new Rect(0, 0, 200, 150);
+        Check(box.TransformHit(new Point(380, 290)) == "outside", "far from the box counts as outside");
+        box.PressTransform(new Point(380, 290));
+        Pump(50);
+        Check(Field(editor, "_overlay") == null && editor.ImageWidth == 200, $"a click outside the 调节框 applies it and leaves ({editor.ImageWidth})");
+        editor.UndoStep();
+        Pump(30);
+        // a previewed angle is kept when a tool starts (applied first)
+        ((Slider)Field(editor, "_angle")).Value = 30;
+        Call(editor, "StartSession", EditorOverlayMode.Mesh);
+        Check(editor.ImageWidth > 400 && ((Slider)Field(editor, "_angle")).Value == 0, $"网格变形 starts on the turned picture ({editor.ImageWidth})");
+        Call(editor, "CancelSession");
+        editor.UndoStep();
+        Pump(30);
+        Check(Same(editor.Composite, clean), "undo the angle");
         // typed size: around the box's centre; shrinking + turning leaves see-through corners
         Call(editor, "StartSession", EditorOverlayMode.Transform);
         box = (EditorOverlay)Field(editor, "_overlay");

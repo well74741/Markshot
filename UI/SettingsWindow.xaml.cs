@@ -57,6 +57,8 @@ public partial class SettingsWindow : Window
         FillToolbarRow(CaptureActionsRow, ToolbarCatalog.CaptureActions, config.CaptureActionOrder, config.CaptureActionHidden);
         FillToolbarRow(PinToolsRow, ToolbarCatalog.Tools, config.PinToolOrder, config.PinToolHidden);
         FillToolbarRow(PinActionsRow, ToolbarCatalog.PinActions, config.PinActionOrder, config.PinActionHidden);
+        FillToolbarRow(EditorToolsRow, ToolbarCatalog.Tools, config.EditorToolOrder, config.EditorToolHidden);
+        FillToolbarRow(EditorActionsRow, ToolbarCatalog.EditorActions, config.EditorActionOrder, config.EditorActionHidden);
         AskOpenFolderCheck.IsChecked = config.AskOpenFolderAfterSave;
         SaveDirBox.Text = config.SaveDirectory;
         UpdatePathBox.Text = UpdateService.EffectivePath(config);
@@ -486,6 +488,8 @@ public partial class SettingsWindow : Window
         (_config.CaptureActionOrder, _config.CaptureActionHidden) = ReadToolbarRow(CaptureActionsRow);
         (_config.PinToolOrder, _config.PinToolHidden) = ReadToolbarRow(PinToolsRow);
         (_config.PinActionOrder, _config.PinActionHidden) = ReadToolbarRow(PinActionsRow);
+        (_config.EditorToolOrder, _config.EditorToolHidden) = ReadToolbarRow(EditorToolsRow);
+        (_config.EditorActionOrder, _config.EditorActionHidden) = ReadToolbarRow(EditorActionsRow);
         _config.AskOpenFolderAfterSave = AskOpenFolderCheck.IsChecked == true;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
@@ -526,18 +530,25 @@ public partial class SettingsWindow : Window
     private void DrawerHandle_MouseEnter(object sender, MouseEventArgs e)
     {
         Theme.Bind(DrawerBar, Border.BackgroundProperty, 0x99FFFFFF);
-        if (DrawerHeight < 1)
+        if (!_drawerOpen)
         {
             ShowDrawerHint(true);
         }
     }
 
     /// <summary>The hint text on hover, the coffee cup otherwise (neither while the QR code is out).</summary>
+    private bool _drawerOpen;
+
     private void ShowDrawerHint(bool text, double? height = null)
     {
-        var open = (height ?? DrawerHeight) >= 1;
-        Motion.Fade(DrawerHint, text ? 1 : 0);
-        Motion.Fade(DrawerCoffee, text || open ? 0 : 1);
+        if (height is { } target)
+        {
+            _drawerOpen = target >= 1;
+        }
+
+        // The state the drawer is going to (not its height mid-animation): put away = the cup again.
+        Motion.Fade(DrawerHint, text && !_drawerOpen ? 1 : 0);
+        Motion.Fade(DrawerCoffee, text || _drawerOpen ? 0 : 1);
     }
 
     private void DrawerHandle_MouseLeave(object sender, MouseEventArgs e)
@@ -612,7 +623,7 @@ public partial class SettingsWindow : Window
         {
             EasingFunction = Motion.Ease
         });
-        ShowDrawerHint(target < 1 && DrawerHandle.IsMouseOver, target);
+        ShowDrawerHint(target < 1 && ((UIElement)sender).IsMouseOver, target);
         e.Handled = true;
     }
 

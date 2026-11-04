@@ -50,6 +50,7 @@ static class Program
         if (mode == "annotate") AnnotateTest.Run();
         if (mode == "capture") CaptureTest.Run();
         if (mode == "hover") HoverProbe.Run();
+        if (mode == "copyprobe") CopyProbe.Run();
         if (mode == "files") FilesTest.Run();
         if (mode == "deskprobe") DeskProbe.Run();
         if (mode == "hoverhost") HoverProbe.Host(args[1]);

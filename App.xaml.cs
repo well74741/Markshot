@@ -602,6 +602,11 @@ public partial class App : Application
                     pin.ApplyShadowSettings();
                 }
 
+                foreach (var editor in _editors)
+                {
+                    editor.ApplyToolbarOrder();
+                }
+
                 _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {PinHotkeyLabel}");
                 _tray?.ShowBalloon("设置已保存", "快捷键与翻译配置已更新。");
             }

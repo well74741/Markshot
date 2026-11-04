@@ -160,6 +160,9 @@ public partial class PinWindow
                     pen.Points[i] = map(pen.Points[i]);
                 }
                 break;
+            case ImageAnnotation picture:
+                picture.Rect = MapRect(picture.Rect, map);
+                break;
             case TextAnnotation text:
             {
                 // Text stays readable: move its centre, do not mirror the glyphs.

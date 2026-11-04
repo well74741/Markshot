@@ -35,6 +35,21 @@ public static class ClipboardService
         }
     }
 
+    public static bool HasImage
+    {
+        get
+        {
+            try
+            {
+                return Clipboard.ContainsImage();
+            }
+            catch (COMException)
+            {
+                return false;
+            }
+        }
+    }
+
     public static BitmapSource? TryGetImage()
     {
         try

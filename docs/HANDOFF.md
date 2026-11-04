@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.23`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.24`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,17 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.24 0.8.24 变更
+
+- 键盘焦点：`InputLayer` 可获得焦点，`ReclaimKeyboard` 拿不到时退回窗口；编辑器窗口 `PreviewMouseDown` 点到非输入框的地方就收回键盘（尺寸标签点空白退出、复制粘贴批注在输入过尺寸后也能用）。
+- 编辑器：开始裁切 / 路径 / 网格变形 / 调节框前，若有预览中的角度先 `ApplyAngle` 应用（不再丢掉）。
+- 调节框：四角默认等比（Shift 自由），边手柄自由；`TransformHit` 新增 "outside"（框外 36 DIP 以内仍是旋转），点得更远触发 `CommitRequested` → 应用并退出（未改动则取消）。
+- 右侧「尺寸」改为「画布尺寸」：`CanvasTo` / `ImageOps.Canvas`，图片居中不缩放，多出部分透明，批注随之平移仍可编辑；`ResizeTo`（缩放）保留给调节框和测试。
+- 图片元素 `ImageAnnotation`：Ctrl+V / 右键「粘贴」时，系统剪贴板比上次复制的批注新（`GetClipboardSequenceNumber`）就把图片作为元素贴进画布（最多占画布 80%）；可移动、缩放、旋转、复制。
+- 编辑器右键在元素上：复制元素 / 删除元素 / 调整上下层（置于顶层、上移一层、下移一层、置于底层，`PinWindow.MoveLayer`，可撤销）。
+- 编辑器浮动工具栏有自己的排序与显示：`EditorToolOrder/Hidden`、`EditorActionOrder/Hidden`，`EditorActions` 按钮带 Tag 且可长按拖动排序；设置「工具栏」页新增「图片编辑器」一行；保存设置后 `ImageEditorWindow.ApplyToolbarOrder` 刷新。
+- 设置抽屉：咖啡图标换成新样式；按目标状态 `_drawerOpen`（而非动画中的高度）决定显示，收回二维码后咖啡图标重新出现。
 
 ## 8.2 动效（0.8.01 起，参照 Sketchplayer《技术文档_动效》总原则）
 

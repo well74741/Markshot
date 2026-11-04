@@ -289,6 +289,13 @@ public sealed class ImageEditorWindow : PinWindow
             }
         };
         Closing += OnClosingEditor;
+        PreviewMouseDown += (_, e) =>
+        {
+            if (KeysBelongToUi && e.OriginalSource is DependencyObject source && !InsideTextBox(source))
+            {
+                Dispatcher.BeginInvoke(new Action(ReclaimKeyboard), DispatcherPriority.Input);
+            }
+        };
         Closed += (_, _) =>
         {
             Theme.Changed -= OnThemeChanged;
@@ -422,7 +429,7 @@ public sealed class ImageEditorWindow : PinWindow
         sizeRow.Children.Add(_widthBox);
         sizeRow.Children.Add(new TextBlock { Text = "×", Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.Gray });
         sizeRow.Children.Add(_heightBox);
-        var applySize = TextButton("应用", "改变图片尺寸（批注会合并进图片）", ApplyTypedSize);
+        var applySize = TextButton("应用", "改变画布尺寸：图片居中不缩放，多出的地方透明（图片本身的大小用双击图片的调节框）", ApplyTypedSize);
         applySize.Margin = new Thickness(8, 0, 0, 0);
         sizeRow.Children.Add(applySize);
 
@@ -474,7 +481,7 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         var stack = new StackPanel { Margin = new Thickness(10) };
-        stack.Children.Add(Section("尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio));
+        stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio));
         stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow, angleRow, applyAngle));
         stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
         stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
@@ -1037,7 +1044,7 @@ public sealed class ImageEditorWindow : PinWindow
         if (int.TryParse(_widthBox.Text.Trim(), out var width) && int.TryParse(_heightBox.Text.Trim(), out var height) &&
             width is >= 1 and <= 30000 && height is >= 1 and <= 30000)
         {
-            ResizeTo(width, height);
+            CanvasTo(width, height);
         }
 
         RefreshPanel();
@@ -1150,6 +1157,27 @@ public sealed class ImageEditorWindow : PinWindow
     private BitmapSource? _rotationBase;
     private double _rotationTotal;
     private long _rotationChange = -1;
+
+    /// <summary>画布尺寸: the canvas grows / shrinks around the picture (centred, not scaled; annotations stay editable).</summary>
+    public void CanvasTo(int width, int height)
+    {
+        if (width < 1 || height < 1 || (width == _baseImage.PixelWidth && height == _baseImage.PixelHeight))
+        {
+            return;
+        }
+
+        GeometryStep(EditGroup.Size, () =>
+        {
+            var source = _baseImage;
+            var offset = new Point(Math.Round((width - source.PixelWidth) / 2.0), Math.Round((height - source.PixelHeight) / 2.0));
+            var canvas = ImageOps.Canvas(source, width, height, offset);
+            var moved = AnnotationOps.ToPinSpace(Editor.Items, new Point(-offset.X, -offset.Y), canvas);
+            Editor.Items.Clear();
+            Editor.Items.AddRange(moved);
+            return canvas;
+        });
+        Fit();
+    }
 
     public void CropTo(Int32Rect rect)
     {
@@ -1296,13 +1324,29 @@ public sealed class ImageEditorWindow : PinWindow
         ClearSelection();
         SetTool(AnnotationTool.None);
         Toolbar.SetTool(AnnotationTool.None);
-        // A previewed (not applied) angle must not tilt the crop / path / handles.
+        // A previewed angle is applied first: the tool works on the turned picture (it used to be dropped).
+        if (Math.Abs(_angle.Value) >= 0.05)
+        {
+            ApplyAngle();
+        }
+
         _angle.Value = 0;
         ImageHost.RenderTransform = Transform.Identity;
         _overlay = new EditorOverlay(mode, _baseImage.PixelWidth, _baseImage.PixelHeight, _zoom);
         _overlay.Changed += UpdateSessionBar;
         _overlay.Changed += UpdateHint;
         _overlay.Changed += PlaceCropSize;
+        _overlay.CommitRequested += () => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_overlay?.Ready == true)
+            {
+                ApplySession();
+            }
+            else
+            {
+                CancelSession();
+            }
+        }));
         _overlay.ShowSizeLabel = false;
         if (mode == EditorOverlayMode.Transform)
         {
@@ -1486,6 +1530,48 @@ public sealed class ImageEditorWindow : PinWindow
             menu.Items.Add(item);
         }
 
+        // On an element: its own menu first (copy, delete, layers).
+        var pointer = Mouse.GetPosition(ImageHost);
+        if (_hasImage && _overlay == null && HitAnnotation(new Point(pointer.X / _zoom, pointer.Y / _zoom)) is { } element)
+        {
+            SelectAnnotation(element);
+            var index = Editor.Items.IndexOf(element);
+            var top = Editor.Items.Count - 1;
+            if (AnnotationClipboard.CanCopy(element))
+            {
+                Add("复制元素", () => AnnotationClipboard.Copy(element), "Ctrl+C");
+            }
+
+            Add("删除元素", () =>
+            {
+                _history.Checkpoint(Editor.Items);
+                Editor.Items.Remove(element);
+                ClearSelection();
+                UpdateUndoButtons();
+                Editor.InvalidateVisual();
+            }, "Delete");
+            menu.Items.Add(new Separator());
+            var layers = new MenuItem { Header = "调整上下层" };
+            void Layer(string header, int to, bool enabled)
+            {
+                var item = new MenuItem { Header = header, IsEnabled = enabled };
+                item.Click += (_, _) => MoveLayer(element, to);
+                layers.Items.Add(item);
+            }
+
+            Layer("置于顶层", top, index < top);
+            Layer("上移一层", index + 1, index < top);
+            Layer("下移一层", index - 1, index > 0);
+            Layer("置于底层", 0, index > 0);
+            menu.Items.Add(layers);
+            menu.Items.Add(new Separator());
+        }
+
+        if (_hasImage && (ClipboardService.HasImage || AnnotationClipboard.HasContent))
+        {
+            Add("粘贴", PasteFromMenu, "Ctrl+V");
+        }
+
         Add("打开图片…", OpenDialog, "Ctrl+O");
         Add("保存…", Save, "Ctrl+S");
         Add("复制", Copy, "Ctrl+C");
@@ -1495,6 +1581,8 @@ public sealed class ImageEditorWindow : PinWindow
         Add("实际大小", () => SetZoom(1), "Ctrl+1");
         ContextMenu = menu;
     }
+
+    private void PasteFromMenu() => typeof(PinWindow).GetMethod("PasteAnnotation", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(this, null);
 
     // ------------------------------------------------------------------ open, drop, save, copy, pin
 
@@ -1670,6 +1758,24 @@ public sealed class ImageEditorWindow : PinWindow
     }
 
     private bool _closedWindow;
+
+    /// <summary>Settings saved: the floating bar's order / visibility again.</summary>
+    public void ApplyToolbarOrder() => Toolbar.ApplyToolOrderFromConfig();
+
+    private static bool InsideTextBox(DependencyObject? element)
+    {
+        while (element != null)
+        {
+            if (element is TextBox)
+            {
+                return true;
+            }
+
+            element = element is Visual ? VisualTreeHelper.GetParent(element) : LogicalTreeHelper.GetParent(element);
+        }
+
+        return false;
+    }
 
     protected override void OnClosed(EventArgs e)
     {

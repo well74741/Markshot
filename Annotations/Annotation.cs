@@ -507,6 +507,26 @@ public class PenAnnotation : Annotation
     }
 }
 
+/// <summary>A picture placed on the canvas (pasted): moved, resized and turned like a box.</summary>
+public sealed class ImageAnnotation : Annotation
+{
+    public Rect Rect { get; set; }
+
+    public BitmapSource? Image { get; set; }
+
+    public override void Draw(DrawingContext dc)
+    {
+        if (Image != null && Rect.Width >= 1 && Rect.Height >= 1)
+        {
+            dc.DrawImage(Image, Rect);
+        }
+    }
+
+    public override Rect Bounds => Rect;
+
+    public override void Translate(double dx, double dy) => Rect = new Rect(Rect.X + dx, Rect.Y + dy, Rect.Width, Rect.Height);
+}
+
 /// <summary>
 /// 抠除: an eraser stroke that cuts a transparent hole through the picture and every annotation
 /// (above and below it, drawn later or earlier). Not drawn itself, never selected; the holes of all
