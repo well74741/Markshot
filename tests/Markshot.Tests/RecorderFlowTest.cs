@@ -129,6 +129,7 @@ static class RecorderFlowTest
         // ---- record 1.2 s, pause 0.4 s, record 0.5 s
         controller.Start();
         Check(PumpUntil(() => controller.Phase == RecordPhase.Recording, 8000), "recording starts (" + notice + ")");
+        var wall = System.Diagnostics.Stopwatch.StartNew();
         Pump(1200);
         controller.TogglePause();
         Check(controller.Phase == RecordPhase.Paused, "paused");
@@ -144,12 +145,15 @@ static class RecorderFlowTest
         Shot(frameWindow!, "rec_frame_pills.png");
         controller.SetKeys(false);
         var recordedTime = controller.Elapsed;
+        var wallTime = wall.Elapsed.TotalSeconds;
         var stopTask = controller.StopAsync();
         Check(PumpUntil(() => controller.Phase == RecordPhase.Preview, 15000), "stops into the preview (" + notice + ")");
         PumpUntil(() => stopTask.IsCompleted, 3000);
         if (stopTask.IsFaulted) Console.WriteLine("stop failed: " + stopTask.Exception);
         var take = controller.Take;
-        Check(take != null && Math.Abs(take.Duration - recordedTime) < 0.2 && recordedTime < 3.0, $"take {take?.Duration:0.00}s = recording time {recordedTime:0.00}s (pause left out)");
+        // The 0.4 s pause is left out: shorter than the wall clock by about that (a slow machine adds to both).
+        Check(take != null && Math.Abs(take.Duration - recordedTime) < 0.2 && recordedTime < wallTime - 0.25,
+            $"take {take?.Duration:0.00}s = recording time {recordedTime:0.00}s, {wallTime:0.00}s on the clock (pause left out)");
         Pump(800);
         Console.WriteLine("windows: " + string.Join(", ", Application.Current.Windows.OfType<Window>().Select(w => w.GetType().Name + ":" + w.IsVisible)));
         var preview = Application.Current.Windows.OfType<Window>().FirstOrDefault(w => w.GetType().Name == "RecordPreviewWindow");
