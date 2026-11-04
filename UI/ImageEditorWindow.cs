@@ -140,6 +140,9 @@ public sealed class ImageEditorWindow : PinWindow
         // The checkerboard behind see-through parts covers only the visible part of the picture: on the
         // picture itself it would be tiled over the whole (zoomed) size, which made zooming in slow.
         ImageHost.Background = Brushes.Transparent;
+        // A transparent area far around the canvas: a selected element's frame and handles can stick out of
+        // the canvas (or lie beside it) and still be grabbed, its cursors shown.
+        ImageHost.Children.Insert(0, new System.Windows.Shapes.Rectangle { Fill = Brushes.Transparent, Margin = new Thickness(-20000) });
         _checker.Fill = CheckerBrush();
         Theme.Changed += OnThemeChanged;
         _stage = new Canvas { ClipToBounds = true, Background = Brushes.Transparent, Focusable = false };
@@ -239,6 +242,11 @@ public sealed class ImageEditorWindow : PinWindow
             // On a picture (or the empty canvas: the first picture), not on an annotation.
             var pixel = new Point(at.X / _zoom, at.Y / _zoom);
             var hit = AnnotationOps.HitTest(Editor.Items, pixel, 7 / _zoom);
+            if (hit == null && !InGroup(pixel) && !new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight).Contains(pixel))
+            {
+                return; // beside the canvas: nothing to open
+            }
+
             if (_group.Count > 1 && (hit == null || InGroup(pixel)))
             {
                 StartSession(EditorOverlayMode.Transform); // the box around all of them
@@ -532,8 +540,8 @@ public sealed class ImageEditorWindow : PinWindow
         var cutRow = new WrapPanel();
         cutRow.Children.Add(TextButton("矩形裁切", "把画布裁成拖出的区域（图片和批注保持可编辑）", () => StartSession(EditorOverlayMode.Crop)));
         cutRow.Children.Add(TextButton("路径裁切", "沿手绘路径抠选中的图片，路径外变透明", () => StartSession(EditorOverlayMode.Path)));
-        cutRow.Children.Add(TextButton("梯形校正", "拖动四个角对准倾斜的矩形，校正为正矩形", () => StartSession(EditorOverlayMode.Keystone)));
-        cutRow.Children.Add(TextButton("网格形变", "像 PS 的变形：单击图片交叉拆分网格，拖动交点、边角和手柄弯曲图片", () => StartSession(EditorOverlayMode.Mesh)));
+        cutRow.Children.Add(TextButton("梯形校正", "先选中元素：拖动四个角对准倾斜的矩形，校正为正矩形", () => StartSession(EditorOverlayMode.Keystone)));
+        cutRow.Children.Add(TextButton("网格形变", "先选中元素：像 PS 的变形，单击交叉拆分网格，拖动交点、边角和手柄弯曲", () => StartSession(EditorOverlayMode.Mesh)));
 
         var colour = new StackPanel();
         colour.Children.Add(AdjustSlider("亮度", "Brightness", -100, 100, 0));
@@ -558,7 +566,7 @@ public sealed class ImageEditorWindow : PinWindow
 
         var stack = new StackPanel { Margin = new Thickness(10) };
         stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio));
-        stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow, angleRow, applyAngle));
+        stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow));
         stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
         stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
         var resetAll = TextButton("重置所有修改", "回到打开时的样子（图片和批注；可用 Ctrl+Z 撤销）", ResetAll);
@@ -2023,6 +2031,11 @@ public sealed class ImageEditorWindow : PinWindow
             _sessionItems = subject;
             picture = _sessionMerged = Merge(subject);
         }
+        else if (mode is EditorOverlayMode.Keystone or EditorOverlayMode.Mesh)
+        {
+            Notice(mode == EditorOverlayMode.Keystone ? "梯形校正：请先选中要校正的元素" : "网格形变：请先选中要变形的元素");
+            return;
+        }
         else
         {
             picture = mode == EditorOverlayMode.Crop ? null : Target;
@@ -2070,7 +2083,11 @@ public sealed class ImageEditorWindow : PinWindow
             _overlay.TransformAngle = _overlay.TransformStartAngle = picture.Rotation;
             // The box draws the picture now; the element is hidden so the uncovered parts show the
             // checkerboard, as they will be transparent. The canvas itself never changes here.
-            picture.Hidden = true;
+            if (_sessionItems == null)
+            {
+                picture.Hidden = true;
+            }
+
             Editor.InvalidateVisual();
         }
 
@@ -2119,7 +2136,11 @@ public sealed class ImageEditorWindow : PinWindow
                 var image = ImageOps.Warp(small, mesh.Translated(-place.X, -place.Y).Scaled(scale), out var origin, 32);
                 return (image, new Rect(place.X + origin.X / scale, place.Y + origin.Y / scale, image.PixelWidth / scale, image.PixelHeight / scale));
             };
-            picture!.Hidden = true;
+            if (_sessionItems == null)
+            {
+                picture!.Hidden = true; // (a merged picture is not on the canvas yet: its parts are hidden instead)
+            }
+
             Editor.InvalidateVisual();
         }
 
@@ -2236,6 +2257,11 @@ public sealed class ImageEditorWindow : PinWindow
             _sessionPicture = null;
             _sessionItems = null;
             _sessionMerged = null;
+            if (picture != null)
+            {
+                picture.Hidden = false;
+            }
+
             if (items != null)
             {
                 foreach (var item in items)

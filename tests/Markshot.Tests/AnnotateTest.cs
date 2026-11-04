@@ -451,6 +451,20 @@ static class AnnotateTest
             Pump(30);
             Check(!its.Contains(eb) && !its.Contains(rc) && its.OfType<ImageAnnotation>().Count() == 2 && its.Contains(ra), "路径裁切 on a 多选: merged into one picture and cut; the rest stays");
 
+            // 网格形变 on a 多选: merged and warped, and still visible
+            var picturesBefore = its.OfType<ImageAnnotation>().ToList();
+            se.SelectElements(new Annotation[] { ra, opened });
+            CallEd(se, "StartSession", EditorOverlayMode.Mesh);
+            var warpBox = (EditorOverlay)typeof(ImageEditorWindow).GetField("_overlay", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se)!;
+            var corner = warpBox.Warp.Anchors[0, 0];
+            warpBox.DragWarp((0, 0, 0, 0), new Point(corner.X + 20, corner.Y + 10));
+            CallEd(se, "ApplySession");
+            Pump(30);
+            var warped = its.OfType<ImageAnnotation>().First(p => !picturesBefore.Contains(p));
+            Check(!its.Contains(ra) && !its.Contains(opened) && its.All(i => !i.Hidden) && PixelA(se.Composite, 150, 100) == 255,
+                "网格形变 on a 多选: one warped picture, visible (it used to stay hidden)");
+            opened = warped;
+
             // 矩形裁切 on a selected picture: the picture is cut, the canvas stays
             se.SelectElements(new Annotation[] { opened });
             CallEd(se, "StartSession", EditorOverlayMode.Crop);

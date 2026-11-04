@@ -182,6 +182,9 @@ static class ImageEditorTest
 
         // ---- the opened picture is an element on a transparent canvas: its size / angle change it, never the canvas
         Check(items[0] is ImageAnnotation && editor.PictureRect == new Rect(0, 0, 400, 300), "the picture is an element at the bottom");
+        var host = (FrameworkElement)Field(editor, "ImageHost");
+        Check(VisualTreeHelper.HitTest(host, new Point(-40, -40)) != null && VisualTreeHelper.HitTest(host, new Point(host.ActualWidth + 40, 10)) != null,
+            "beside the canvas the mouse still reaches it (frames / handles sticking out can be grabbed)");
         editor.ResizeTo(200, 150);
         Pump(30);
         Check(editor.ImageWidth == 400 && editor.ImageHeight == 300 && editor.PictureRect == new Rect(0, 0, 200, 150) && editor.AnnotationCount == 1 && At(editor.Composite, 300, 250).A == 0,
@@ -237,6 +240,7 @@ static class ImageEditorTest
         Check(ImageOps.HasTransparentCorner(editor.Composite), "the cut-out counts as a shape (a pin's shadow follows it)");
         editor.UndoStep();
         Pump(30);
+        typeof(ImageEditorWindow).GetMethod("SelectElements")!.Invoke(editor, new object[] { new Annotation[] { items.OfType<ImageAnnotation>().First() } });
         Call(editor, "StartSession", EditorOverlayMode.Keystone);
         overlay = (EditorOverlay)Field(editor, "_overlay");
         overlay.Quad[0] = new Point(60, 30); overlay.Quad[1] = new Point(340, 30); overlay.Quad[2] = new Point(390, 280); overlay.Quad[3] = new Point(10, 280);
@@ -333,12 +337,14 @@ static class ImageEditorTest
         typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, new object[] { AnnotationTool.Pen });
         Call(editor, "UpdateHint");
         Check(editor.Hint.Contains("Alt+滚轮 笔刷大小"), "status bar: the pen's keys");
+        typeof(ImageEditorWindow).GetMethod("SelectElements")!.Invoke(editor, new object[] { new Annotation[] { items.OfType<ImageAnnotation>().First() } });
         Call(editor, "StartSession", EditorOverlayMode.Mesh);
         Check(editor.Hint.Contains("交叉拆分") && editor.Hint.Contains("Enter 应用"), "status bar: the warp session");
         Call(editor, "CancelSession");
         typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, new object[] { AnnotationTool.None });
 
         // ---- 网格形变 in the editor, 色相 and 曲线
+        typeof(ImageEditorWindow).GetMethod("SelectElements")!.Invoke(editor, new object[] { new Annotation[] { items.OfType<ImageAnnotation>().First() } });
         Call(editor, "StartSession", EditorOverlayMode.Mesh);
         var mesh = (EditorOverlay)Field(editor, "_overlay");
         Check(!mesh.Ready, "warp: nothing to apply before a split or a drag");
@@ -379,7 +385,7 @@ static class ImageEditorTest
         Pump(30);
 
         // ---- 调节框 (double-click), crop size typed, 重置所有修改, angle range
-        Check(((Slider)Field(editor, "_angle")).Minimum == -180 && ((Slider)Field(editor, "_angle")).Maximum == 180, "angle slider covers 360°");
+        Check(!Shot2Text(editor).Contains("应用角度"), "旋转与镜像 has no angle setting any more");
         Call(editor, "StartSession", EditorOverlayMode.Transform);
         var box = (EditorOverlay)Field(editor, "_overlay");
         Check(box.TransformRect == new Rect(0, 0, 400, 300) && !box.Ready, "调节框 starts on the picture");
@@ -418,14 +424,12 @@ static class ImageEditorTest
         Check(Field(editor, "_overlay") == null && editor.PictureRect.Width == 200 && editor.ImageWidth == 400, $"a click outside the 调节框 applies it and leaves ({editor.PictureRect})");
         editor.UndoStep();
         Pump(30);
-        // a previewed angle is kept when a tool starts (applied first)
-        ((Slider)Field(editor, "_angle")).Value = 30;
+        // 梯形校正 / 网格形变 need a selection
+        typeof(PinWindow).GetMethod("ClearSelection", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(editor, null);
         Call(editor, "StartSession", EditorOverlayMode.Mesh);
-        Check(Math.Abs(editor.PictureAngle - 30) < 0.01 && ((Slider)Field(editor, "_angle")).Value == 0, $"网格变形 starts on the turned picture ({editor.PictureAngle})");
-        Call(editor, "CancelSession");
-        editor.UndoStep();
-        Pump(30);
-        Check(Same(editor.Composite, clean), "undo the angle");
+        Check(Field(editor, "_overlay") == null, "网格形变 without a selection: nothing starts (select first)");
+        Call(editor, "StartSession", EditorOverlayMode.Keystone);
+        Check(Field(editor, "_overlay") == null, "梯形校正 without a selection: nothing starts");
         // typed size: around the box's centre; shrinking + turning leaves see-through corners
         Call(editor, "StartSession", EditorOverlayMode.Transform);
         box = (EditorOverlay)Field(editor, "_overlay");
