@@ -141,6 +141,7 @@ public partial class AnnotationToolbar : UserControl
         MouseDown += (_, e) => e.Handled = true;
         SliderDragBehavior.Enable(WidthSlider);
         SliderDragBehavior.Enable(CornerSlider);
+        SliderDragBehavior.Enable(SoftnessSlider);
         SliderDragBehavior.Enable(StrokeSlider);
         SliderDragBehavior.Enable(LevelSlider);
         SliderDragBehavior.Enable(OpacitySlider);
@@ -160,6 +161,42 @@ public partial class AnnotationToolbar : UserControl
     public bool FillEnabled => _fill;
 
     public double CornerRadius => _corner;
+
+    /// <summary>软边 of new pen strokes: how much of the width is feathered (0…1).</summary>
+    public double Softness => _softness / 100;
+
+    private double _softness;
+
+    private void ShowSoftness(double percent)
+    {
+        _softness = Math.Clamp(percent, 0, 100);
+        var configuring = _configuring;
+        _configuring = true;
+        SoftnessSlider.Value = _softness;
+        _configuring = configuring;
+        SoftnessValue.Text = ((int)Math.Round(_softness)).ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>One wheel notch (Shift + wheel): 5 %, through the slider so a selected stroke follows.</summary>
+    public void NudgeSoftness(int delta) =>
+        SoftnessSlider.Value = Math.Clamp(Math.Round(_softness / 5) * 5 + Math.Sign(delta) * 5, 0, 100);
+
+    private void Softness_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_configuring || SoftnessValue == null)
+        {
+            return;
+        }
+
+        _softness = e.NewValue;
+        SoftnessValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
+        if (_selection == null && App.Config is { } config)
+        {
+            config.PenSoftness = (int)Math.Round(e.NewValue); // the next stroke, the next capture
+        }
+
+        SettingsChanged?.Invoke();
+    }
 
     public bool AutoTranslate => TranslateToggle.IsChecked == true;
 
@@ -556,6 +593,7 @@ public partial class AnnotationToolbar : UserControl
         AngleGroup.Visibility = Visibility.Collapsed;
         FillToggle.Visibility = Visibility.Collapsed;
         CornerGroup.Visibility = Visibility.Collapsed;
+        SoftnessGroup.Visibility = Visibility.Collapsed;
         WidthLabel.Text = "粗细";
         WidthSlider.Minimum = 1;
         WidthSlider.Maximum = 16;
@@ -597,6 +635,10 @@ public partial class AnnotationToolbar : UserControl
 
             case ToolFamily.Pen:
                 PenVariants.Visibility = Visibility.Visible;
+                SoftnessGroup.Visibility = Visibility.Visible;
+                ShowSoftness(tool is AnnotationTool.None or AnnotationTool.Select && annotation is PenAnnotation stroke
+                    ? stroke.Softness * 100
+                    : App.Config?.PenSoftness ?? 0);
                 break;
 
             case ToolFamily.Text:
@@ -816,6 +858,7 @@ public partial class AnnotationToolbar : UserControl
             case PenAnnotation pen:
                 VariantPen.IsChecked = !pen.Highlight;
                 VariantHighlighter.IsChecked = pen.Highlight;
+                ShowSoftness(pen.Softness * 100);
                 break;
             case MosaicAnnotation:
                 VariantMosaic.IsChecked = true;

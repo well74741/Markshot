@@ -488,16 +488,17 @@ public sealed class ImageEditorWindow : PinWindow
         foreach (var box in new[] { _widthBox, _heightBox })
         {
             box.Style = (Style)Application.Current.FindResource("InputBox");
+            InputMethod.SetIsInputMethodEnabled(box, false); // numbers only
             box.Width = 66;
             box.Padding = new Thickness(6, 4, 6, 4);
             box.PreviewKeyDown += (_, e) =>
             {
-                if (e.Key == Key.Enter)
+                if (AnnotationOps.RealKey(e) == Key.Enter)
                 {
                     ApplyTypedSize();
                     e.Handled = true;
                 }
-                else if (e.Key == Key.Escape)
+                else if (AnnotationOps.RealKey(e) == Key.Escape)
                 {
                     RefreshPanel();
                     ReclaimKeyboard();
@@ -866,7 +867,7 @@ public sealed class ImageEditorWindow : PinWindow
                 AnnotationTool.Rectangle or AnnotationTool.Ellipse => "拖动绘制 · Shift 正方形 / 圆 · Ctrl 圆角 · 按住空格移动 · Alt+滚轮 线宽 · Tab 换样式",
                 AnnotationTool.Arrow or AnnotationTool.Line => "拖动绘制 · Shift 45° · E 旋转 · 按住空格移动 · Alt+滚轮 粗细 · Tab 箭头 / 直线",
                 AnnotationTool.Polyline => "单击放第一个点 · 也可拖出一段 · Alt+滚轮 粗细",
-                AnnotationTool.Pen or AnnotationTool.Highlighter => "拖动书写 · 按住 Alt 单击吸色 · Shift 直线 · Alt+滚轮 笔刷大小 · Ctrl+滚轮 透明度 · Tab 画笔 / 荧光笔",
+                AnnotationTool.Pen or AnnotationTool.Highlighter => "拖动书写 · 按住 Alt 单击吸色 · Shift 直线 · Alt+滚轮 笔刷大小 · Shift+滚轮 软边 · Ctrl+滚轮 透明度 · Tab 画笔 / 荧光笔",
                 AnnotationTool.Mosaic => "拖出打码区域 · Alt+滚轮 程度 · Tab 画笔马赛克",
                 AnnotationTool.MosaicBrush => "涂抹打码 · Shift 直线 · Alt+滚轮 笔刷大小 · Tab 区域马赛克",
                 AnnotationTool.Text => "单击输入文字 · 单击已有文字编辑 · 拖动移动 · Alt+滚轮 字号",
@@ -896,6 +897,12 @@ public sealed class ImageEditorWindow : PinWindow
         if (drawing && (modifiers & (ModifierKeys.Alt | ModifierKeys.Control)) != 0)
         {
             OnMouseWheel(this, e);
+            e.Handled = true;
+            return;
+        }
+
+        if (_overlay == null && SoftnessWheel(e.Delta))
+        {
             e.Handled = true;
             return;
         }
@@ -2799,13 +2806,13 @@ public sealed class ImageEditorWindow : PinWindow
             box.ToolTip = ReferenceEquals(box, _cropWidth) ? "宽（像素），可直接修改，Enter 应用" : "高（像素），可直接修改，Enter 应用";
             box.PreviewKeyDown += (_, e) =>
             {
-                if (e.Key == Key.Enter)
+                if (AnnotationOps.RealKey(e) == Key.Enter)
                 {
                     ApplyCropSize();
                     Keyboard.Focus(this); // the next Enter applies the crop / 调节框
                     e.Handled = true;
                 }
-                else if (e.Key == Key.Escape)
+                else if (AnnotationOps.RealKey(e) == Key.Escape)
                 {
                     PlaceCropSize(force: true);
                     ReclaimKeyboard();

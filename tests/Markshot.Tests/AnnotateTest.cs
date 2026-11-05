@@ -61,6 +61,10 @@ static class AnnotateTest
     static object Get(object o, string name) =>
         typeof(PinWindow).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(o)!;
 
+    /// <summary>The pin's own press handler (Window has a method of the same name).</summary>
+    static void PinDown(PinWindow pin, MouseButtonEventArgs press) =>
+        typeof(PinWindow).GetMethod("OnMouseLeftButtonDown", BindingFlags.NonPublic | BindingFlags.Instance, new[] { typeof(object), typeof(MouseButtonEventArgs) })!.Invoke(pin, new object[] { pin, press });
+
     static void CallEd(object o, string name, params object[] args) =>
         typeof(ImageEditorWindow).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(o, args);
 
@@ -434,6 +438,198 @@ static class AnnotateTest
             we.CloseWithoutAsking();
         }
 
+        // ---- the pin: IME, 应用 and the bar again, double-click copies and closes, zoom label, 软边, text card
+        {
+            BitmapSource copied = null;
+            ClipboardService.CopyOverride = image => { copied = image; return true; };
+            var quickBefore = Markshot.App.Config.QuickDoubleClickCopy;
+            PinWindow NewPin()
+            {
+                var made = new PinWindow(Blank(120, 80), -4000, -4000, Blank(120, 80), null) { Left = -4000, Top = -4000, ShowActivated = false };
+                made.Show();
+                Pump(150);
+                return made;
+            }
+
+            MouseButtonEventArgs ClickArgs(int clicks, RoutedEvent routed)
+            {
+                var press = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = routed };
+                typeof(MouseButtonEventArgs).GetProperty("ClickCount")!.SetValue(press, clicks, BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public, null, null, null);
+                return press;
+            }
+
+            var keysPin = NewPin();
+            var layer = (FrameworkElement)Get(keysPin, "InputLayer");
+            Check(!InputMethod.GetIsInputMethodEnabled(layer) && !InputMethod.GetIsInputMethodEnabled(keysPin), "输入法: the canvas layer that holds the keys while annotating takes no IME (letters and Space stay shortcuts)");
+            Check(InputMethod.GetIsInputMethodEnabled((UIElement)Get(keysPin, "TextEditor")), "… typing a text still does");
+
+            // 应用 on the bar, the keys come back; a Space whose release was missed does not block the next one
+            var keysBar = (AnnotationToolbar)Get(keysPin, "Toolbar");
+            Call(keysPin, "ToggleEditing");
+            Pump(150);
+            var applyButton = ((Panel)keysBar.FindName("PinActions")).Children.OfType<Button>().First(b => (string)b.Tag == "Apply");
+            Check(applyButton.ReadLocalValue(Control.ForegroundProperty) == DependencyProperty.UnsetValue, "应用 has no colour of its own");
+            ((Action)typeof(AnnotationToolbar).GetField("ApplyRequested", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(keysBar)!)();
+            Pump(300);
+            Check(!(bool)Get(keysPin, "_editMode") && !keysBar.IsVisible, "应用: the bar goes");
+            if (keysPin.IsActive)
+            {
+                Check(keysPin.IsKeyboardFocusWithin, "… and the pin has the keys");
+            }
+
+            // another window took the activation while the bar was open: 应用 brings the keys back to the pin
+            Call(keysPin, "ToggleEditing");
+            Pump(150);
+            keysPin.Activate();
+            var elsewhere = new Window { Width = 80, Height = 40, Left = -3000, Top = -3000, ShowInTaskbar = false };
+            elsewhere.Show();
+            elsewhere.Activate();
+            Pump(200);
+            var activationMoved = !keysPin.IsActive;
+            ((Action)typeof(AnnotationToolbar).GetField("ApplyRequested", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(keysBar)!)();
+            Pump(300);
+            Console.WriteLine($"   activation had moved: {activationMoved}, pin active after 应用: {keysPin.IsActive}, focus within: {keysPin.IsKeyboardFocusWithin}");
+            Check(keysPin.IsActive && keysPin.IsKeyboardFocusWithin, "应用 with another window active: the pin is active again and has the keys");
+            elsewhere.Close();
+            Pump(100);
+
+            typeof(PinWindow).GetField("_spaceExitGuard", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(keysPin, true);
+            keysPin.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(keysPin)!, 0, Key.Space) { RoutedEvent = UIElement.PreviewKeyDownEvent });
+            Pump(300);
+            Check((bool)Get(keysPin, "_editMode") && keysBar.IsVisible, "Space brings the bar back, also when the release of the Space before was missed");
+            keysPin.CloseImmediately();
+
+            // zoom label
+            var zoomPin = NewPin();
+            typeof(PinWindow).GetMethod("ZoomBy", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(zoomPin, new object[] { 1.5 });
+            Pump(60);
+            var zoomLabel = (FrameworkElement)Get(zoomPin, "PinZoomLabel");
+            Check(zoomLabel.Visibility == Visibility.Visible && ((TextBlock)Get(zoomPin, "PinZoomText")).Text == "150%" && zoomLabel.VerticalAlignment == VerticalAlignment.Bottom && zoomLabel.HorizontalAlignment == HorizontalAlignment.Left,
+                "zooming: the scale in the lower left corner");
+            Pump(1300);
+            Check(zoomLabel.Visibility != Visibility.Visible, "… gone when the zooming stops");
+            zoomPin.CloseImmediately();
+
+            // double-click on the empty part: view mode, and annotating without a tool
+            var viewPin = NewPin();
+            PinDown(viewPin, ClickArgs(2, Mouse.MouseDownEvent));
+            Pump(400);
+            Check(copied != null && !viewPin.IsVisible, "double-click with the bar closed: copied and closed");
+            viewPin.CloseImmediately();
+            copied = null;
+            var selectPin = NewPin();
+            Call(selectPin, "ToggleEditing");
+            Pump(150);
+            PinDown(selectPin, ClickArgs(2, Mouse.MouseDownEvent));
+            Pump(400);
+            Check(copied != null && !selectPin.IsVisible, "double-click annotating without a tool: copied and closed");
+            selectPin.CloseImmediately();
+            copied = null;
+
+            // with a tool in hand: only with 快速双击, and what the first click drew does not stay
+            var toolPin = NewPin();
+            Call(toolPin, "ToggleEditing");
+            Pump(150);
+            typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(toolPin, new object[] { AnnotationTool.Number });
+            var toolItems = ((AnnotationEditor)Get(toolPin, "Editor")).Items;
+            typeof(PinWindow).GetField("PointerOver", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, new Func<UIElement, bool>(_ => true));
+            Markshot.App.Config.QuickDoubleClickCopy = false;
+            Call(toolPin, "OnQuickDoubleClick", toolPin, ClickArgs(1, Mouse.PreviewMouseDownEvent));
+            Call(toolPin, "OnQuickDoubleClick", toolPin, ClickArgs(2, Mouse.PreviewMouseDownEvent));
+            Check(copied == null && toolPin.IsVisible, "a tool in hand, 快速双击 off: the double-click stays with the tool");
+            Markshot.App.Config.QuickDoubleClickCopy = true;
+            Call(toolPin, "OnQuickDoubleClick", toolPin, ClickArgs(1, Mouse.PreviewMouseDownEvent));
+            var toolHistory = (AnnotationHistory)Get(toolPin, "_history");
+            toolHistory.Checkpoint(toolItems);
+            toolItems.Add(new RectAnnotation { Rect = new Rect(5, 5, 60, 40), Color = Colors.Red, Fill = true }); // what the first click drew
+            var press2 = ClickArgs(2, Mouse.PreviewMouseDownEvent);
+            Call(toolPin, "OnQuickDoubleClick", toolPin, press2);
+            Pump(400);
+            var (quickPixels, quickWidth, _) = ImageOps.ReadPixels(copied ?? Blank(120, 80));
+            var quickPixel = (20 * quickWidth + 20) * 4;
+            Check(copied != null && press2.Handled && !toolPin.IsVisible && quickPixels[quickPixel + 2] == 255 && quickPixels[quickPixel + 1] == 255,
+                "快速双击 on: copied and closed at once, without what the first click drew");
+            toolPin.CloseImmediately();
+            typeof(PinWindow).GetField("PointerOver", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, new Func<UIElement, bool>(element => element.IsMouseOver));
+            Markshot.App.Config.QuickDoubleClickCopy = quickBefore;
+            ClipboardService.CopyOverride = null;
+
+            // 软边: the edge fades, the middle stays solid; a selected stroke follows the slider
+            var softStroke = new PenAnnotation { Thickness = 24, Color = Colors.Black, Softness = 0.8 };
+            softStroke.Points.AddRange(new[] { new Point(10, 30), new Point(110, 30) });
+            var hardStroke = (PenAnnotation)softStroke.Clone();
+            hardStroke.Softness = 0;
+            var softShot = Render(softStroke, 120, 60);
+            var hardShot = Render(hardStroke, 120, 60);
+            Check(PixelA(softShot, 60, 30) == 255 && PixelA(hardShot, 60, 20) == 255 && PixelA(softShot, 60, 20) is > 0 and < 200,
+                $"软边: solid in the middle, fading to the edge (hard {PixelA(hardShot, 60, 20)}, soft {PixelA(softShot, 60, 20)})");
+            Check(PixelA(softShot, 60, 24) > PixelA(softShot, 60, 20) && PixelA(softShot, 60, 20) > PixelA(softShot, 60, 18), "… a smooth ramp");
+            var softPin = NewPin();
+            var softBar = (AnnotationToolbar)Get(softPin, "Toolbar");
+            Call(softPin, "ToggleEditing");
+            Pump(150);
+            typeof(PinWindow).GetMethod("SetTool", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(softPin, new object[] { AnnotationTool.Pen });
+            Pump(150);
+            Check(((FrameworkElement)softBar.FindName("SoftnessGroup")).Visibility == Visibility.Visible, "the pen's settings row has 软边");
+            var softBefore = Markshot.App.Config.PenSoftness;
+            softBar.NudgeSoftness(120);
+            softBar.NudgeSoftness(120);
+            Check(Math.Abs(softBar.Softness - 0.1) < 0.001 + softBefore / 100.0 && Markshot.App.Config.PenSoftness == softBefore + 10, "Shift+滚轮: 5 % per notch, remembered for the next stroke");
+            var softItems = ((AnnotationEditor)Get(softPin, "Editor")).Items;
+            var chosen = new PenAnnotation { Thickness = 10, Color = Colors.Red };
+            chosen.Points.AddRange(new[] { new Point(5, 5), new Point(60, 40) });
+            softItems.Add(chosen);
+            Call(softPin, "SelectAnnotation", chosen);
+            Pump(50);
+            softBar.NudgeSoftness(120);
+            Pump(50);
+            Check(Math.Abs(chosen.Softness - 0.05) < 0.001, $"… and a selected stroke follows ({chosen.Softness})");
+            softBar.UpdateLayout();
+            var barShot = new RenderTargetBitmap((int)softBar.ActualWidth, (int)softBar.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            barShot.Render(softBar);
+            var barEnc = new PngBitmapEncoder();
+            barEnc.Frames.Add(BitmapFrame.Create(barShot));
+            using (var barFile = System.IO.File.Create("toolbar_pen_softness.png")) barEnc.Save(barFile);
+            softPin.CloseImmediately();
+            Markshot.App.Config.PenSoftness = softBefore;
+
+            // the text card in the theme's colours
+            Theme.Apply(ThemeMode.Light);
+            var lightCard = Markshot.Services.TextCardRenderer.Render("标题", "正文");
+            Theme.Apply(ThemeMode.Dark);
+            var darkCard = Markshot.Services.TextCardRenderer.Render("标题", "正文");
+            byte CardRed(BitmapSource card)
+            {
+                var (px, w, h) = ImageOps.ReadPixels(card);
+                return px[((h - 8) * w + w / 2) * 4 + 2];
+            }
+
+            var softSample = new PenAnnotation { Thickness = 28, Color = Colors.DeepSkyBlue, Softness = 0.9 };
+            softSample.Points.AddRange(new[] { new Point(20, 30), new Point(120, 50), new Point(220, 26) });
+            var hardSample = (PenAnnotation)softSample.Clone();
+            hardSample.Softness = 0;
+            hardSample.Translate(0, 60);
+            var sampleVisual = new DrawingVisual();
+            using (var dc = sampleVisual.RenderOpen())
+            {
+                dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 240, 140));
+                softSample.Draw(dc);
+                hardSample.Draw(dc);
+            }
+
+            var sampleShot = new RenderTargetBitmap(240, 140, 96, 96, PixelFormats.Pbgra32);
+            sampleShot.Render(sampleVisual);
+            foreach (var (file, bitmap) in new (string, BitmapSource)[] { ("pen_softness.png", sampleShot), ("text_card_dark.png", darkCard), ("text_card_light.png", lightCard) })
+            {
+                var cardEnc = new PngBitmapEncoder();
+                cardEnc.Frames.Add(BitmapFrame.Create(bitmap));
+                using var cardFile = System.IO.File.Create(file);
+                cardEnc.Save(cardFile);
+            }
+
+            Check(CardRed(lightCard) > 200 && CardRed(darkCard) < 60, $"文字贴图 follows the theme (light {CardRed(lightCard)}, dark {CardRed(darkCard)})");
+        }
+
         // ---- editor: 选择 by default, 框选 / Shift 加选 / Ctrl 减选, 裁切与变形 on the selection, a paste is placed
         {
             var se = new ImageEditorWindow(Blank(300, 200)) { Left = 40, Top = 40, ShowActivated = false };
@@ -551,9 +747,10 @@ static class AnnotateTest
         var captureKeys = (string[])catalog.GetField("CaptureActions")!.GetValue(null)!;
         var pinKeys = (string[])catalog.GetField("PinActions")!.GetValue(null)!;
         Check(Array.IndexOf(captureKeys, "Clear") == Array.IndexOf(captureKeys, "Close") + 1, "capture bar: 清空批注 right of 关闭");
-        Check(string.Join(",", pinKeys) == "Close,Save,Clear,Apply,Edit", "pin bar: 关闭 before 保存, 清空批注 before 应用");
+        Check(string.Join(",", pinKeys) == "Close,Save,Clear,Apply,Copy,Edit", "pin bar: 关闭 before 保存, 清空批注 before 应用, 复制 right of 应用");
         var order = (List<string>)catalog.GetMethod("Order")!.Invoke(null, new object[] { "Save,Apply,Edit", pinKeys })!;
         Check(order.Contains("Clear") && order.Contains("Close"), "an old saved order gets the new buttons");
+        Check(order.IndexOf("Copy") == order.IndexOf("Apply") + 1, $"… 复制 right of 应用 ({string.Join(",", order)})");
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
     }

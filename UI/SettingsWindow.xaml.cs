@@ -64,6 +64,7 @@ public partial class SettingsWindow : Window
         FillToolbarRow(EditorActionsRow, ToolbarCatalog.EditorActions, config.EditorActionOrder, config.EditorActionHidden);
         AskOpenFolderCheck.IsChecked = config.AskOpenFolderAfterSave;
         EscExitsCheck.IsChecked = config.EscExitsCapture;
+        QuickDoubleClickCheck.IsChecked = config.QuickDoubleClickCopy;
         SaveDirBox.Text = config.SaveDirectory;
         UpdatePathBox.Text = UpdateService.EffectivePath(config);
         Loaded += (_, _) => RefreshUpdate(quiet: true);
@@ -254,7 +255,7 @@ public partial class SettingsWindow : Window
         }
 
         // Alt combinations arrive as Key.System; the real key is in SystemKey.
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var key = AnnotationOps.RealKey(e); // an IME reports the keys as ImeProcessed
         e.Handled = HandleHotkeyKey(box, key, Keyboard.Modifiers);
     }
 
@@ -294,7 +295,7 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var key = AnnotationOps.RealKey(e); // an IME reports the keys as ImeProcessed
         e.Handled = HandleHotkeyKey(box, key, Keyboard.Modifiers);
     }
 
@@ -305,7 +306,7 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var key = AnnotationOps.RealKey(e); // an IME reports the keys as ImeProcessed
         box.Text = key switch
         {
             Key.LeftAlt or Key.RightAlt => "Alt",
@@ -525,6 +526,7 @@ public partial class SettingsWindow : Window
         (_config.EditorActionOrder, _config.EditorActionHidden) = ReadToolbarRow(EditorActionsRow);
         _config.AskOpenFolderAfterSave = AskOpenFolderCheck.IsChecked == true;
         _config.EscExitsCapture = EscExitsCheck.IsChecked == true;
+        _config.QuickDoubleClickCopy = QuickDoubleClickCheck.IsChecked == true;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
         // Keep following the installer's folder unless another one was entered.

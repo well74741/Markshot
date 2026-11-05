@@ -29,7 +29,7 @@ public partial class ColorPickerWindow : Window
         // Esc: stop picking a colour on screen, or close the panel (same as 取消); Enter confirms.
         PreviewKeyDown += (_, e) =>
         {
-            if (e.Key == Key.Escape)
+            if (AnnotationOps.RealKey(e) == Key.Escape)
             {
                 if (_shield != null)
                 {
@@ -42,7 +42,7 @@ public partial class ColorPickerWindow : Window
 
                 e.Handled = true;
             }
-            else if (e.Key == Key.Enter && _shield != null)
+            else if (AnnotationOps.RealKey(e) == Key.Enter && _shield != null)
             {
                 _shield.End(true, true);
                 e.Handled = true;
@@ -219,7 +219,7 @@ public partial class ColorPickerWindow : Window
 
     private void HexBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter)
+        if (AnnotationOps.RealKey(e) == Key.Enter)
         {
             ParseHex();
             e.Handled = true;
@@ -230,7 +230,7 @@ public partial class ColorPickerWindow : Window
 
     private void AlphaBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter)
+        if (AnnotationOps.RealKey(e) == Key.Enter)
         {
             ParseAlphaPercent();
             e.Handled = true;

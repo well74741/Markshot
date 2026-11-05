@@ -61,6 +61,12 @@ internal static class AnnotationStyler
                 annotation.Fill = toolbar.FillEnabled;
                 break;
 
+            case PenAnnotation pen when AnnotationOps.HasSoftEdge(pen):
+                pen.Color = toolbar.Color;
+                pen.Thickness = toolbar.Thickness;
+                pen.Softness = toolbar.Softness;
+                break;
+
             case ArrowAnnotation arrow:
                 arrow.Color = toolbar.Color;
                 arrow.Thickness = toolbar.Thickness;

@@ -42,20 +42,20 @@
                             <ItemsPresenter />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <!-- Pop-in: opacity, 6 DIP drop and 0.97 scale, 160 ms. -->
+                            <!-- Pop-in: opacity, 6 DIP drop and 0.97 scale, 70 ms. -->
                             <EventTrigger RoutedEvent="ContextMenu.Opened">
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.16">
+                                        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.07">
                                             <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                         </DoubleAnimation>
-                                        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.Children[1].Y" From="-6" To="0" Duration="0:0:0.16">
+                                        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.Children[1].Y" From="-6" To="0" Duration="0:0:0.07">
                                             <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                         </DoubleAnimation>
-                                        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.Children[0].ScaleX" From="0.97" To="1" Duration="0:0:0.16">
+                                        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.Children[0].ScaleX" From="0.97" To="1" Duration="0:0:0.07">
                                             <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                         </DoubleAnimation>
-                                        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.Children[0].ScaleY" From="0.97" To="1" Duration="0:0:0.16">
+                                        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.Children[0].ScaleY" From="0.97" To="1" Duration="0:0:0.07">
                                             <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                         </DoubleAnimation>
                                     </Storyboard>
@@ -988,6 +988,7 @@
 
         <!-- A number in the capture size label: looks like text, edits in place. -->
         <Style x:Key="SizeLabelField" TargetType="TextBox">
+            <Setter Property="InputMethod.IsInputMethodEnabled" Value="False" />
             <Setter Property="Foreground" Value="{DynamicResource T_FFFFFFFF}" />
             <Setter Property="CaretBrush" Value="{DynamicResource T_FFFFFFFF}" />
             <Setter Property="SelectionBrush" Value="{StaticResource Accent}" />

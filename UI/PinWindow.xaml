@@ -46,6 +46,12 @@
             <!-- Picked together with other pins (Shift+click). -->
             <Rectangle x:Name="GroupMark" Stroke="#4C8DFF" StrokeThickness="2" StrokeDashArray="3 2"
                        Visibility="Collapsed" IsHitTestVisible="False" />
+            <Border x:Name="PinZoomLabel" Visibility="Collapsed" IsHitTestVisible="False"
+                    HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="6"
+                    Background="{DynamicResource T_E61C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"
+                    CornerRadius="6" Padding="7,2">
+                <TextBlock x:Name="PinZoomText" Foreground="{DynamicResource T_FFEDEDED}" FontSize="12" />
+            </Border>
             <Border x:Name="PinStatus" Visibility="Collapsed" IsHitTestVisible="False"
                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
                     Background="{DynamicResource T_E61C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"

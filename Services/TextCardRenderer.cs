@@ -1,6 +1,6 @@
 namespace Markshot.Services;
 
-/// <summary>Renders plain text into a white card bitmap, used for text pins and translation pins.</summary>
+/// <summary>Renders plain text into a card bitmap in the current theme's colours, used for text pins and translation pins.</summary>
 public static class TextCardRenderer
 {
     private static readonly Typeface BodyTypeface =
@@ -9,16 +9,17 @@ public static class TextCardRenderer
     private static readonly Typeface TitleTypeface =
         new(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
-    private static readonly Brush TextBrush = new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1A));
-    private static readonly Brush AccentBrush = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE0));
-    private static readonly Brush CardBrush = Brushes.White;
-    private static readonly Brush BorderBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xE0));
-    private static readonly Brush DividerBrush = new SolidColorBrush(Color.FromRgb(0xEE, 0xEE, 0xEE));
-
     public static BitmapSource Render(string? title, string text, double width = 560)
     {
         width = Math.Clamp(width, 240, 1200);
         text ??= string.Empty;
+
+        var light = Theme.IsLight;
+        Brush TextBrush = new SolidColorBrush(light ? Color.FromRgb(0x1A, 0x1A, 0x1A) : Color.FromRgb(0xF0, 0xF0, 0xF0));
+        Brush AccentBrush = new SolidColorBrush(light ? Color.FromRgb(0x2F, 0x6F, 0xE0) : Color.FromRgb(0x6A, 0xA1, 0xFF));
+        Brush CardBrush = new SolidColorBrush(light ? Colors.White : Color.FromRgb(0x1E, 0x1E, 0x1E));
+        Brush BorderBrush = new SolidColorBrush(light ? Color.FromRgb(0xE0, 0xE0, 0xE0) : Color.FromRgb(0x3A, 0x3A, 0x3A));
+        Brush DividerBrush = new SolidColorBrush(light ? Color.FromRgb(0xEE, 0xEE, 0xEE) : Color.FromRgb(0x33, 0x33, 0x33));
 
         var body = new FormattedText(
             text,

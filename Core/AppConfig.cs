@@ -35,7 +35,7 @@ public sealed class AppConfig
 
     public string CaptureActionHidden { get; set; } = "";
 
-    public string PinActionOrder { get; set; } = "Close,Save,Clear,Apply,Edit";
+    public string PinActionOrder { get; set; } = "Close,Save,Clear,Apply,Copy,Edit";
 
     public string PinActionHidden { get; set; } = "";
 
@@ -124,6 +124,15 @@ public sealed class AppConfig
 
     /// <summary>After saving an image, ask whether to open its folder.</summary>
     public bool AskOpenFolderAfterSave { get; set; } = true;
+
+    /// <summary>快速双击: a double-click on a capture or pin copies and closes it, whatever tool is in hand.</summary>
+    public bool QuickDoubleClickCopy { get; set; }
+
+    /// <summary>The capture area's rounded corners (pixels) as last adjusted; the next capture starts with them.</summary>
+    public double CaptureCornerRadius { get; set; }
+
+    /// <summary>The pen's 软边 as last set (0…100 % of the brush width is feathered).</summary>
+    public int PenSoftness { get; set; }
 
     /// <summary>截图里按一次 Esc 直接退出；关掉时逐步退出（先放下工具 / 取消选中，再取消选区，最后退出）。</summary>
     public bool EscExitsCapture { get; set; } = true;

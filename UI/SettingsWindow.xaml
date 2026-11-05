@@ -87,12 +87,14 @@
         </Style>
 
         <Style x:Key="HotkeyField" TargetType="TextBox" BasedOn="{StaticResource Field}">
+            <Setter Property="InputMethod.IsInputMethodEnabled" Value="False" />
             <Setter Property="IsReadOnly" Value="True" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="ToolTip" Value="点击后直接按下组合键；Backspace 清除，Esc 还原" />
         </Style>
 
         <Style x:Key="KeyField" TargetType="TextBox" BasedOn="{StaticResource Field}">
+            <Setter Property="InputMethod.IsInputMethodEnabled" Value="False" />
             <Setter Property="Width" Value="40" />
             <Setter Property="MaxLength" Value="1" />
             <Setter Property="CharacterCasing" Value="Upper" />
@@ -767,6 +769,8 @@
                                       Content="复制图片文件：复制截图或贴图时同时复制 PNG 文件，可直接在文件管理器里粘贴" />
                             <CheckBox x:Name="AskOpenFolderCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="保存图片后询问是否打开所在文件夹" />
+                            <CheckBox x:Name="QuickDoubleClickCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                      Content="快速双击复制并关闭：无论是否拿着批注工具，双击截图或贴图立刻复制并关闭" />
                             <CheckBox x:Name="AutoStartCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="开机自动启动 Markshot" />
                         </StackPanel>

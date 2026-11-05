@@ -412,6 +412,46 @@ public class PenAnnotation : Annotation
 
     public bool Highlight { get; set; }
 
+    /// <summary>软边: how much of the width fades out towards the edge (0 hard … 1 from the very middle).</summary>
+    public double Softness { get; set; }
+
+    /// <summary>
+    /// Draws the stroke as nested layers, widest first, each adding a little coverage so that the sum is
+    /// a smooth ramp from the edge to the solid middle. Hard strokes are the one plain layer.
+    /// </summary>
+    private void DrawLayers(DrawingContext dc, Color color, double width, Action<double, Brush> draw)
+    {
+        if (Softness < 0.01)
+        {
+            draw(1, new SolidColorBrush(color));
+            return;
+        }
+
+        var soft = Math.Clamp(Softness, 0, 1);
+        var layers = Math.Clamp((int)Math.Ceiling(width * soft / 1.5), 2, Pressures != null ? 6 : 12);
+        var see = color.A < 255;
+        if (see)
+        {
+            dc.PushOpacity(color.A / 255.0); // the layers add up first, then the colour's own transparency
+        }
+
+        var covered = 0.0;
+        for (var k = 1; k <= layers; k++)
+        {
+            var t = k / (double)layers;
+            var target = t * t * (3 - 2 * t);
+            var alpha = k == layers ? 1 : 1 - (1 - target) / (1 - covered);
+            covered = target;
+            var scale = Math.Max(0.04, 1 - soft * (k - 1) / (layers - 1));
+            draw(scale, new SolidColorBrush(Color.FromArgb((byte)Math.Round(alpha * 255), color.R, color.G, color.B)));
+        }
+
+        if (see)
+        {
+            dc.Pop();
+        }
+    }
+
     /// <summary>Tablet pen pressure (0…1) of each point; null for a stroke drawn with the mouse.</summary>
     public List<float>? Pressures { get; set; }
 
@@ -419,7 +459,7 @@ public class PenAnnotation : Annotation
     public double WidthAt(float pressure) => (Highlight ? Thickness * 4 : Thickness) * Math.Clamp(0.2 + 1.6 * pressure, 0.2, 1.8);
 
     /// <summary>The stroke with a width per point: one filled shape, so it overlaps itself cleanly.</summary>
-    private Geometry PressureShape()
+    private Geometry PressureShape(double scale = 1)
     {
         var shape = new StreamGeometry { FillRule = FillRule.Nonzero };
         using (var context = shape.Open())
@@ -434,7 +474,7 @@ public class PenAnnotation : Annotation
 
             for (var i = 0; i < Points.Count; i++)
             {
-                var radius = WidthAt(Pressures![i]) / 2;
+                var radius = WidthAt(Pressures![i]) * scale / 2;
                 Dot(Points[i], radius);
                 if (i == 0)
                 {
@@ -450,7 +490,7 @@ public class PenAnnotation : Annotation
 
                 along.Normalize();
                 var side = new Vector(-along.Y, along.X);
-                var before = WidthAt(Pressures[i - 1]) / 2;
+                var before = WidthAt(Pressures[i - 1]) * scale / 2;
                 // Same winding as the dots: with Nonzero an opposite one would punch holes.
                 context.BeginFigure(from + side * before, true, true);
                 context.LineTo(from - side * before, true, false);
@@ -476,13 +516,13 @@ public class PenAnnotation : Annotation
 
         if (Pressures != null && Pressures.Count == Points.Count)
         {
-            dc.DrawGeometry(new SolidColorBrush(baseColor), null, PressureShape());
+            DrawLayers(dc, baseColor, Pressures.Max(WidthAt), (scale, brush) => dc.DrawGeometry(brush, null, PressureShape(scale)));
             return;
         }
 
         if (Points.Count == 1)
         {
-            dc.DrawEllipse(new SolidColorBrush(baseColor), null, Points[0], Thickness / 2, Thickness / 2);
+            DrawLayers(dc, baseColor, Thickness, (scale, brush) => dc.DrawEllipse(brush, null, Points[0], Thickness * scale / 2, Thickness * scale / 2));
             return;
         }
 
@@ -528,14 +568,13 @@ public class PenAnnotation : Annotation
 
         geometry.Freeze();
 
-        var pen = new Pen(new SolidColorBrush(baseColor), Highlight ? Thickness * 4 : Thickness)
+        var strokeWidth = Highlight ? Thickness * 4 : Thickness;
+        DrawLayers(dc, baseColor, strokeWidth, (scale, brush) => dc.DrawGeometry(null, new Pen(brush, strokeWidth * scale)
         {
             StartLineCap = PenLineCap.Round,
             EndLineCap = PenLineCap.Round,
             LineJoin = PenLineJoin.Round
-        };
-
-        dc.DrawGeometry(null, pen, geometry);
+        }, geometry));
     }
 
     public override Rect Bounds

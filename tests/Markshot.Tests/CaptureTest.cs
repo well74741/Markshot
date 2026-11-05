@@ -186,6 +186,45 @@ static class CaptureTest
         Check(AppConfig.HoverDelayFor(1) > AppConfig.HoverDelayFor(3) && AppConfig.HoverDelayFor(3) > AppConfig.HoverDelayFor(5), "the levels differ clearly in delay");
         hoverConfig.DetectSensitivity = sensitivityBefore;
 
+        // the rounded corners last adjusted come back on the next capture, as far as the area allows
+        var cornerConfig = Markshot.App.Config;
+        var cornerBefore = cornerConfig.CaptureCornerRadius;
+        var rounded = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        typeof(OverlayWindow).GetField("_cornerRadius", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(rounded, 24.0);
+        Call(rounded, "RememberCorner");
+        rounded.Close();
+        Check(cornerConfig.CaptureCornerRadius == 24, "the corners are remembered when the dot is let go");
+        var nextCapture = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        var nextField = typeof(OverlayWindow).GetField("_selection", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        typeof(OverlayWindow).GetField("_hasSelection", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(nextCapture, true);
+        nextField.SetValue(nextCapture, new Rect(10, 10, 200, 120));
+        Call(nextCapture, "ApplyRememberedCorner");
+        Check((double)Get(nextCapture, "_cornerRadius") == 24, "the next capture starts with them");
+        nextField.SetValue(nextCapture, new Rect(10, 10, 30, 20));
+        Call(nextCapture, "ApplyRememberedCorner");
+        Check((double)Get(nextCapture, "_cornerRadius") == 10, "… no more than half of a small area");
+        nextCapture.Close();
+        cornerConfig.CaptureCornerRadius = 0;
+        var plainCapture = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        typeof(OverlayWindow).GetField("_hasSelection", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(plainCapture, true);
+        typeof(OverlayWindow).GetField("_selection", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(plainCapture, new Rect(10, 10, 200, 120));
+        Call(plainCapture, "ApplyRememberedCorner");
+        Check((double)Get(plainCapture, "_cornerRadius") == 0, "dragged back to square: square from then on");
+
+        // 快速双击 in the capture: copies without what the first click drew, and closes
+        BitmapSource quickCopied = null;
+        ClipboardService.CopyOverride = image => { quickCopied = image; return true; };
+        var quickItems = ((Markshot.Annotations.AnnotationEditor)plainCapture.FindName("Editor")).Items;
+        var quickHistory = (Markshot.Annotations.AnnotationHistory)Get(plainCapture, "_history");
+        typeof(OverlayWindow).GetField("_quickDepth", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(plainCapture, quickHistory.Depth);
+        quickHistory.Checkpoint(quickItems);
+        quickItems.Add(new Markshot.Annotations.RectAnnotation { Rect = new Rect(20, 20, 100, 60), Color = Colors.Red, Fill = true });
+        Call(plainCapture, "QuickCopyAndClose");
+        Pump(300);
+        Check(quickCopied != null && quickItems.Count == 0 && ((bool)Get(plainCapture, "_finishing") || (bool)Get(plainCapture, "_closed")), "快速双击: copied without the first click's element, the capture closes");
+        ClipboardService.CopyOverride = null;
+        cornerConfig.CaptureCornerRadius = cornerBefore;
+
         // Esc: one press leaves the capture (default); with the setting off it steps back first
         void SetField(object o, string name, object value) => typeof(OverlayWindow).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(o, value);
         var config = Markshot.App.Config;

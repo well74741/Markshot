@@ -6,8 +6,16 @@ public static class ClipboardService
 {
     private const int MaxAttempts = 10;
 
+    /// <summary>For tests: takes the picture instead of the clipboard (which is the user's).</summary>
+    public static Func<BitmapSource, bool>? CopyOverride { get; set; }
+
     public static bool CopyImage(BitmapSource image)
     {
+        if (CopyOverride is { } copyOverride)
+        {
+            return copyOverride(image);
+        }
+
         var data = new DataObject();
         data.SetImage(image);
         if (App.Config?.CopyImageAsFile == true && SaveClipboardFile(image) is { } file)

@@ -68,6 +68,8 @@ public partial class App : Application
         }
 
         Config = AppConfig.Load();
+        _savedCorner = Config.CaptureCornerRadius;
+        _savedSoftness = Config.PenSoftness;
         Theme.Apply(Config.Theme);
         UiScale.Apply(Config.UiSize);
         UiScale.HookPopups();
@@ -220,6 +222,20 @@ public partial class App : Application
     }
 
     /// <param name="selection">Start with this area selected (screen pixels), e.g. coming back from 长截图.</param>
+    private double _savedCorner;
+    private int _savedSoftness;
+
+    /// <summary>What is remembered from use (the capture's rounded corners, the pen's 软边) goes to disk when it changed.</summary>
+    private void SaveRemembered()
+    {
+        if (Math.Abs(_savedCorner - Config.CaptureCornerRadius) > 0.01 || _savedSoftness != Config.PenSoftness)
+        {
+            _savedCorner = Config.CaptureCornerRadius;
+            _savedSoftness = Config.PenSoftness;
+            Config.Save();
+        }
+    }
+
     public void StartCapture(bool demo = false, Int32Rect? selection = null)
     {
         if (_capturing || _shuttingDown)
@@ -243,6 +259,7 @@ public partial class App : Application
                     source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow), source)
             };
             overlay.ShowDialog();
+            SaveRemembered();
 
             if (overlay.Result == CaptureAction.Edit && overlay.PinBaseImage != null)
             {
@@ -943,6 +960,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        SaveRemembered();
         _hotkeys?.Dispose();
         _hotkeys = null;
         _tray?.Dispose();

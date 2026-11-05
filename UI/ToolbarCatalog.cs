@@ -7,7 +7,7 @@ internal static class ToolbarCatalog
 {
     public static readonly string[] Tools = { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
     public static readonly string[] CaptureActions = { "Scroll", "Record", "Ocr", "Close", "Clear", "Pin", "Save", "Copy", "Translate", "Edit" };
-    public static readonly string[] PinActions = { "Close", "Save", "Clear", "Apply", "Edit" };
+    public static readonly string[] PinActions = { "Close", "Save", "Clear", "Apply", "Copy", "Edit" };
     public static readonly string[] EditorActions = { "Paste", "Open", "Save", "Clear", "Copy", "Pin" };
 
     public static string Label(string key) => key switch

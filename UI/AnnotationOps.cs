@@ -38,8 +38,8 @@ internal static class AnnotationOps
             AnnotationTool.Arrow => new ArrowAnnotation { Start = point, End = point, Color = color, Thickness = thickness, Style = toolbar.ArrowStyle },
             AnnotationTool.Polyline => new PolylineAnnotation { Color = color, Thickness = thickness },
             AnnotationTool.Line => new LineAnnotation { Start = point, End = point, Color = color, Thickness = thickness },
-            AnnotationTool.Pen => new PenAnnotation { Color = color, Thickness = thickness },
-            AnnotationTool.Highlighter => new PenAnnotation { Color = color, Thickness = thickness, Highlight = true },
+            AnnotationTool.Pen => new PenAnnotation { Color = color, Thickness = thickness, Softness = toolbar.Softness },
+            AnnotationTool.Highlighter => new PenAnnotation { Color = color, Thickness = thickness, Highlight = true, Softness = toolbar.Softness },
             AnnotationTool.Mosaic => new MosaicAnnotation { Rect = new Rect(point, point), BlockSize = toolbar.MosaicLevel },
             AnnotationTool.MosaicBrush => new MosaicBrushAnnotation
             {
@@ -191,6 +191,9 @@ internal static class AnnotationOps
     };
 
     /// <summary>The tool an element was drawn with.</summary>
+    /// <summary>A pen / highlighter stroke (polylines and cut-outs are built on the pen but have no 软边).</summary>
+    public static bool HasSoftEdge(Annotation annotation) => annotation is PenAnnotation and not PolylineAnnotation and not CutoutAnnotation;
+
     public static AnnotationTool ToolOf(Annotation annotation) => annotation switch
     {
         RectAnnotation => AnnotationTool.Rectangle,

@@ -33,7 +33,17 @@ public partial class PinWindow
         Toolbar.CopyRequested += Copy;
         Toolbar.SaveRequested += Save;
         Toolbar.TranslateRequested += Translate;
-        Toolbar.ApplyRequested += () => ExitEditMode(true);
+        Toolbar.ApplyRequested += () =>
+        {
+            ExitEditMode(true);
+            // The bar never activates: the pin takes the keys back, or Space could not bring the bar up again.
+            if (!IsActive)
+            {
+                Activate();
+            }
+
+            Keyboard.Focus(this);
+        };
         Toolbar.RefreshUndo(false, false);
         Toolbar.SizeChanged += (_, _) =>
         {
@@ -445,6 +455,120 @@ public partial class PinWindow
         {
             RefreshTextLayer();
         }
+    }
+
+    /// <summary>The active pin always has somewhere for the keys to go (with nothing focused WPF drops them).</summary>
+    private void EnsureKeyboard()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!IsActive || IsKeyboardFocusWithin || KeysBelongToUi)
+            {
+                return;
+            }
+
+            if (!_editMode || !InputLayer.Focus())
+            {
+                Keyboard.Focus(this);
+            }
+        }), DispatcherPriority.Input);
+    }
+
+    /// <summary>Copies what the pin shows (annotations included) and closes it; it stays when the clipboard is busy.</summary>
+    private void CopyAndClosePin()
+    {
+        if (!ClipboardService.CopyImage(CurrentImage))
+        {
+            ShowPinStatus("复制失败：剪贴板被其他程序占用，请重试", TimeSpan.FromSeconds(3));
+            return;
+        }
+
+        if (IsMouseCaptured)
+        {
+            ReleaseMouseCapture();
+        }
+
+        Close();
+    }
+
+    private int _quickDepth;
+
+    /// <summary>Is the pointer on it (replaceable in tests: their windows lie off screen).</summary>
+    private static Func<UIElement, bool> PointerOver = element => element.IsMouseOver;
+
+    /// <summary>快速双击 (setting): whatever tool is in hand, a double-click on the pin copies and closes it.</summary>
+    private void OnQuickDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (IsEditor)
+        {
+            return;
+        }
+
+        if (e.ClickCount == 1)
+        {
+            _quickDepth = _history.Depth;
+            return;
+        }
+
+        if (e.ClickCount != 2 || App.Config?.QuickDoubleClickCopy != true || _locked || _clickThrough ||
+            PenEyedropper.AltDown || !PointerOver(ImageHost))
+        {
+            return;
+        }
+
+        // A text being typed stays in charge of its clicks; the empty box the first click just opened does not.
+        if (e.OriginalSource is DependencyObject source && (IsInsideElement(source, WatermarkEditor) || (IsInsideElement(source, TextEditor) && TextEditor.Text.Length > 0)))
+        {
+            return;
+        }
+
+        QuickCopyAndClose();
+        e.Handled = true;
+    }
+
+    /// <summary>Drops what the double-click's first click drew, copies, closes.</summary>
+    private void QuickCopyAndClose()
+    {
+        _textEditor.Commit();
+        DropPolyline();
+        while (_history.Depth > _quickDepth && _history.CanUndo)
+        {
+            _history.Undo(Editor.Items);
+        }
+
+        CopyAndClosePin();
+    }
+
+    private static bool IsInsideElement(DependencyObject? element, DependencyObject container)
+    {
+        while (element != null)
+        {
+            if (ReferenceEquals(element, container))
+            {
+                return true;
+            }
+
+            element = element is Visual ? VisualTreeHelper.GetParent(element) : LogicalTreeHelper.GetParent(element);
+        }
+
+        return false;
+    }
+
+    /// <summary>Shift + wheel with the pen (or a selected pen stroke): its 软边.</summary>
+    private protected bool SoftnessWheel(int delta)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) == 0 || !_editMode || _active != null)
+        {
+            return false;
+        }
+
+        var pen = _selected != null ? AnnotationOps.HasSoftEdge(_selected) : PenEyedropper.IsPen(_tool);
+        if (pen)
+        {
+            Toolbar.NudgeSoftness(delta);
+        }
+
+        return pen;
     }
 
     private protected virtual BitmapSource ComposeEditedImage()

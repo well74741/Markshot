@@ -101,6 +101,7 @@ static class Batch7Test
         Keyboard.ClearFocus();
         Pump(50);
         Check(recording.Count >= 2 && recording[0] && !recording[^1], $"hotkeys rest while a hotkey box has the keyboard, come back after ({string.Join(",", recording)})");
+        Check(settings.FindName("QuickDoubleClickCheck") is CheckBox { IsChecked: false }, "setting: 快速双击复制并关闭, off by default");
         var escCheck = (CheckBox)settings.FindName("EscExitsCheck");
         escCheck.ApplyTemplate();
         Check(escCheck.Template.FindName("Track", escCheck) is Border { Width: 28 }, "settings check boxes are small pill switches");

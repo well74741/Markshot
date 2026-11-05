@@ -424,13 +424,13 @@ public partial class RecordBarWindow : Window
 
     private void SizeBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter)
+        if (AnnotationOps.RealKey(e) == Key.Enter)
         {
             ApplyTypedSize();
             Keyboard.ClearFocus();
             e.Handled = true;
         }
-        else if (e.Key == Key.Escape)
+        else if (AnnotationOps.RealKey(e) == Key.Escape)
         {
             Keyboard.ClearFocus();
             Refresh();
@@ -747,12 +747,12 @@ public partial class RecordBarWindow : Window
             return;
         }
 
-        if (e.Key == Key.Space && _controller.Phase == RecordPhase.Preview)
+        if (AnnotationOps.RealKey(e) == Key.Space && _controller.Phase == RecordPhase.Preview)
         {
             _preview?.TogglePlay();
             e.Handled = true;
         }
-        else if (e.Key == Key.Escape && _popup is { IsOpen: true })
+        else if (AnnotationOps.RealKey(e) == Key.Escape && _popup is { IsOpen: true })
         {
             _popup.IsOpen = false;
             e.Handled = true;

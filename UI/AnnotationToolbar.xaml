@@ -134,8 +134,11 @@
                     <Button x:Name="ClearPinButton" Style="{StaticResource IconToolButton}" Click="Clear_Click" Tag="Clear" ToolTip="清空批注（可撤销）" IsEnabled="False">
                         <Border Style="{StaticResource IconTrashMask}" />
                     </Button>
-                    <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" Tag="Apply" ToolTip="应用 (Ctrl+S)" Foreground="{StaticResource Accent}">
+                    <Button Style="{StaticResource IconToolButton}" Click="Apply_Click" Tag="Apply" ToolTip="应用 (Ctrl+S)">
                         <Border Style="{StaticResource IconConfirmMask}" />
+                    </Button>
+                    <Button Style="{StaticResource IconToolButton}" Click="Copy_Click" Tag="Copy" ToolTip="复制 (Ctrl+C)">
+                        <Border Style="{StaticResource IconCopyMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Edit_Click" Tag="Edit" ToolTip="在图片编辑器里打开">
                         <Border Style="{StaticResource IconEditMask}" />
@@ -270,6 +273,15 @@
                         <Slider x:Name="CornerSlider" Focusable="False" IsMoveToPointEnabled="True" Width="64" Minimum="0" Maximum="40" Value="0"
                                 ValueChanged="Corner_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
                         <TextBlock x:Name="CornerValue" Text="0" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="20"
+                                   TextAlignment="Center" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="SoftnessGroup" Orientation="Horizontal" Visibility="Collapsed" ToolTip="笔刷边缘的羽化程度（Shift+滚轮）">
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="5,0" />
+                        <TextBlock Text="软边" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />
+                        <Slider x:Name="SoftnessSlider" Focusable="False" IsMoveToPointEnabled="True" Width="64" Minimum="0" Maximum="100" Value="0"
+                                ValueChanged="Softness_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
+                        <TextBlock x:Name="SoftnessValue" Text="0" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="24"
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 

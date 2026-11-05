@@ -321,6 +321,7 @@ public partial class OverlayWindow : Window
                         $"{KeyLabel(App.Config.CaptureCursorKey)} 显示鼠标　·　R 上次区域　·　双击复制　·　Esc 取消";
         PreviewMouseMove += (_, e) => UpdateCrosshair(e.GetPosition(Root));
         PreviewMouseDown += (_, _) => _tapKey = null; // Alt+drag and the like is no tap
+        PreviewMouseLeftButtonDown += OnQuickDoubleClick;
         _demo = demo;
 
         ScreenImage.Source = screen;
@@ -364,6 +365,7 @@ public partial class OverlayWindow : Window
         // Shortcuts (letters, Space) must not be eaten by a Chinese IME; only the
         // text boxes take IME input.
         InputMethod.SetIsInputMethodEnabled(this, false);
+        InputMethod.SetIsInputMethodEnabled(InputLayer, false); // not inherited
         InputMethod.SetIsInputMethodEnabled(TextEditor, true);
         InputMethod.SetIsInputMethodEnabled(WatermarkEditor, true);
 

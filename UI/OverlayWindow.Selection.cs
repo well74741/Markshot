@@ -188,12 +188,12 @@ public partial class OverlayWindow
 
     private void SizeBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter)
+        if (AnnotationOps.RealKey(e) == Key.Enter)
         {
             ApplyTypedSize();
             e.Handled = true;
         }
-        else if (e.Key == Key.Escape)
+        else if (AnnotationOps.RealKey(e) == Key.Escape)
         {
             FocusWindow();
             ShowSizeBox(); // the current numbers back
@@ -534,6 +534,7 @@ public partial class OverlayWindow
 
         _selection = local;
         _hasSelection = true;
+        ApplyRememberedCorner();
         _pendingWindow = Rect.Empty;
         _mode = DragMode.None;
         ClearHover();

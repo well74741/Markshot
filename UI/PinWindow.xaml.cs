@@ -136,6 +136,7 @@ public partial class PinWindow : Window
 
         // Shortcuts must not be eaten by a Chinese IME; only the text boxes take IME input.
         InputMethod.SetIsInputMethodEnabled(this, false);
+        InputMethod.SetIsInputMethodEnabled(InputLayer, false); // not inherited: this layer holds the keyboard while annotating
         InputMethod.SetIsInputMethodEnabled(TextEditor, true);
         InputMethod.SetIsInputMethodEnabled(WatermarkEditor, true);
 
@@ -191,7 +192,11 @@ public partial class PinWindow : Window
                 });
         };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(new Action(ApplyBounds));
-        Activated += (_, _) => UpdateFrame();
+        Activated += (_, _) =>
+        {
+            UpdateFrame();
+            EnsureKeyboard();
+        };
         Deactivated += (_, _) =>
         {
             UpdateFrame();
@@ -229,6 +234,7 @@ public partial class PinWindow : Window
             }
         };
 
+        PreviewMouseLeftButtonDown += OnQuickDoubleClick;
         MouseLeftButtonDown += OnMouseLeftButtonDown;
         MouseMove += OnMouseMove;
         MouseLeftButtonUp += OnMouseLeftButtonUp;
@@ -549,9 +555,10 @@ public partial class PinWindow : Window
             }
 
             TextLayer.ClearSelection();
-            if (e.ClickCount == 2)
+            if (e.ClickCount == 2 && !IsEditor)
             {
-                Close();
+                CopyAndClosePin();
+                e.Handled = true;
                 return;
             }
         }
@@ -613,6 +620,13 @@ public partial class PinWindow : Window
                     _annotationScaleStartPoint = point;
                     _history.Arm(Editor.Items);
                     CaptureMouse();
+                    e.Handled = true;
+                    return;
+                }
+
+                if (e.ClickCount == 2 && !IsEditor)
+                {
+                    CopyAndClosePin(); // no tool in hand, on the empty part
                     e.Handled = true;
                     return;
                 }
@@ -875,6 +889,12 @@ public partial class PinWindow : Window
             return;
         }
 
+        if (SoftnessWheel(e.Delta))
+        {
+            e.Handled = true;
+            return;
+        }
+
         // A selected element takes the wheel (size; Ctrl = its opacity), then an active drawing
         // tool (presets for the next element); otherwise the wheel zooms the pin and Ctrl+wheel
         // sets the pin's opacity.
@@ -938,14 +958,46 @@ public partial class PinWindow : Window
         _left = (int)Math.Round(centerX - _pixelWidth * _zoom / 2);
         _top = (int)Math.Round(centerY - _pixelHeight * _zoom / 2);
         ApplyBounds();
+        ShowZoomLabel();
+    }
+
+    private DispatcherTimer? _zoomLabelTimer;
+
+    /// <summary>The scale in the lower left corner while the pin is being zoomed; goes when the zooming stops.</summary>
+    private void ShowZoomLabel()
+    {
+        if (IsEditor)
+        {
+            return; // the editor's status bar shows it
+        }
+
+        PinZoomText.Text = $"{Math.Round(_zoom * 100):0}%";
+        Motion.SetShown(PinZoomLabel, true, Motion.Fast);
+        if (_zoomLabelTimer == null)
+        {
+            _zoomLabelTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            _zoomLabelTimer.Tick += (_, _) =>
+            {
+                _zoomLabelTimer.Stop();
+                Motion.SetShown(PinZoomLabel, false, Motion.Fast);
+            };
+        }
+
+        _zoomLabelTimer.Stop();
+        _zoomLabelTimer.Start();
     }
 
     private void ResetView()
     {
+        var zoomed = Math.Abs(_zoom - 1) > 0.0001;
         _zoom = 1.0;
         _opacity = 1.0;
         Img.Opacity = 1.0;
         ApplyBounds();
+        if (zoomed)
+        {
+            ShowZoomLabel();
+        }
     }
 
     private BitmapSource CurrentImage => _editMode ? ComposeEditedImage() : SourceImage;
@@ -1071,12 +1123,13 @@ public partial class PinWindow : Window
                 e.Handled = true;
                 break;
             case Key.Space:
-                if (_spaceExitGuard)
+                if (_spaceExitGuard && e.IsRepeat)
                 {
                     e.Handled = true;
                     return;
                 }
 
+                _spaceExitGuard = false;
                 EnterEditMode();
                 e.Handled = true;
                 break;

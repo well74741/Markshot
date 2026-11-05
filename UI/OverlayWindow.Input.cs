@@ -547,6 +547,7 @@ public partial class OverlayWindow
                 _pendingWindow = Rect.Empty;
                 _selection = ClampToScreen(NormalizeRect(_dragStart, point));
                 _hasSelection = _selection.Width >= 2 && _selection.Height >= 2;
+                ApplyRememberedCorner();
                 UpdateSelectionVisuals();
             }
 
@@ -565,6 +566,7 @@ public partial class OverlayWindow
 
                 _selection = ClampToScreen(rect);
                 _hasSelection = _selection.Width >= 2 && _selection.Height >= 2;
+                ApplyRememberedCorner();
                 UpdateSelectionVisuals();
                 break;
             }
@@ -762,6 +764,7 @@ public partial class OverlayWindow
         if (_mode == DragMode.Rounding)
         {
             _mode = DragMode.None;
+            RememberCorner();
             UpdateSelectionVisuals();
             UpdateCursor(ToPixels(e.GetPosition(InputLayer)));
             return;
@@ -854,6 +857,7 @@ public partial class OverlayWindow
             _selection = _pendingWindow;
             _hasSelection = true;
             _pendingWindow = Rect.Empty;
+            ApplyRememberedCorner();
             _mode = DragMode.None;
             _handle = -1;
             ClearHover();
@@ -896,7 +900,13 @@ public partial class OverlayWindow
             // Selected element first: wheel = thickness / size, Ctrl+wheel = its opacity.
             // Otherwise with a tool active: the same for the tool's next element.
             var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
-            if (_selectedAnnotation != null)
+            if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 && _active == null &&
+                (_selectedAnnotation != null ? AnnotationOps.HasSoftEdge(_selectedAnnotation) : PenEyedropper.IsPen(_tool)))
+            {
+                Toolbar.NudgeSoftness(e.Delta); // Shift + wheel: the pen's 软边
+                e.Handled = true;
+            }
+            else if (_selectedAnnotation != null)
             {
                 AdjustSelectedByWheel(e.Delta, ctrl);
                 e.Handled = true;
@@ -937,6 +947,63 @@ public partial class OverlayWindow
         Magnifier.Visibility = Visibility.Collapsed;
         ClearHover();
         ClearAnnotationHover();
+    }
+
+    /// <summary>The corners last adjusted, as far as this area allows (a lasso has none).</summary>
+    private void ApplyRememberedCorner()
+    {
+        if (_lasso == null && _hasSelection)
+        {
+            _cornerRadius = Math.Min(Math.Max(0, App.Config.CaptureCornerRadius), Math.Min(_selection.Width, _selection.Height) / 2);
+        }
+    }
+
+    /// <summary>A corner dot was let go: the next capture starts with this.</summary>
+    private void RememberCorner() => App.Config.CaptureCornerRadius = _cornerRadius;
+
+    private int _quickDepth;
+
+    /// <summary>快速双击 (setting): whatever tool is in hand, a double-click inside the area copies and closes.</summary>
+    private void OnQuickDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 1)
+        {
+            _quickDepth = _history.Depth;
+            return;
+        }
+
+        if (e.ClickCount != 2 || !App.Config.QuickDoubleClickCopy || !_hasSelection || _closed || _finishing ||
+            e.OriginalSource is not DependencyObject source || PenEyedropper.AltDown ||
+            !_selection.Contains(ToPixels(e.GetPosition(InputLayer))))
+        {
+            return;
+        }
+
+        // On the canvas only (not the bar, not the size label); the empty box the first click just opened counts as canvas.
+        if (!ReferenceEquals(source, InputLayer) && !(IsInside(source, TextEditor) && TextEditor.Text.Length == 0))
+        {
+            return;
+        }
+
+        QuickCopyAndClose();
+        e.Handled = true;
+    }
+
+    /// <summary>Drops what the double-click's first click drew, copies, closes.</summary>
+    private void QuickCopyAndClose()
+    {
+        _textEditor.Commit();
+        DropPolyline();
+        while (_history.Depth > _quickDepth && _history.CanUndo)
+        {
+            _history.Undo(Editor.Items);
+        }
+
+        _dragging = false;
+        _mode = DragMode.None;
+        InputLayer.ReleaseMouseCapture();
+        ClearAnnotationSelection();
+        CopyAndClose();
     }
 
     /// <summary>Esc in the capture: out at once (默认), or step back first (先放下工具 / 取消选中、再取消选区，再退出).</summary>
@@ -1283,6 +1350,7 @@ public partial class OverlayWindow
         {
             _selection = new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight);
             _hasSelection = true;
+            ApplyRememberedCorner();
             UpdateSelectionVisuals();
             e.Handled = true;
             return;

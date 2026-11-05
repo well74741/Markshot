@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.34`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.35`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,24 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.35 0.8.35 变更
+
+- 中文输入法：`InputMethod.IsInputMethodEnabled` 不继承，批注时拿键盘的 `InputLayer` 之前开着输入法（字母 / 空格被输入法吃掉）；现在贴图、截图的 `InputLayer`，
+  设置里的快捷键框 / 单键框（`HotkeyField` / `KeyField` 样式）、尺寸数字框（`SizeLabelField`、编辑器的宽高框）都关掉输入法。
+  其余直接看 `e.Key` 的 Enter / Esc / Space 判断（取色器、录屏条、截图尺寸框、编辑器）改用 `AnnotationOps.RealKey`。
+- 贴图「应用」后工具栏呼不出：工具栏窗口不激活，点应用时贴图若不是活动窗口（中间切过别的窗口 / 弹过对话框），键盘没有去处，Space 等快捷键全部失效。
+  现在应用后 `Activate()` + 键盘回到贴图；贴图每次激活都确保有焦点（`EnsureKeyboard`）；`_spaceExitGuard` 只挡退出那次 Space 的自动重复（松开事件丢了也不会卡住）。
+- 双击贴图空白处（未批注、或批注时没拿工具）= 复制并关闭（`CopyAndClosePin`，剪贴板被占用时提示不关）。设置「快速双击复制并关闭」（`QuickDoubleClickCopy`，默认关）：
+  截图 / 贴图在 PreviewMouseLeftButtonDown 里处理双击，撤回第一下画出的东西（记下单击时的 `_history.Depth`），立即复制关闭。
+- 贴图缩放时左下角 `PinZoomLabel` 显示百分比，停止 0.8 s 后淡出（含 F 复位）。
+- 文字贴图（剪贴板文本 / 识别结果卡片）`TextCardRenderer` 按当前主题配色。
+- 截图圆角记忆：松开圆角点时写 `CaptureCornerRadius`，之后的选区（拖出、点选窗口 / 元素、Ctrl+A、R 上次区域）都套用（不超过短边一半，套索除外）；截图结束和退出时有变化才写盘。
+- 右键菜单弹出动画 160 → 70 ms。
+- 贴图批注栏：应用按钮去掉强调色；应用右边加「复制」（`PinActions` 多了 Copy，旧配置自动补在应用后面）。
+- 画笔软边：`PenAnnotation.Softness`（0…1），多层同心描边叠出平滑的透明过渡（宽的先画，每层补一点覆盖度，带透明度的颜色整体再乘）；笔压笔迹同样适用。
+  画笔设置栏「软边」滑条 0～100，Shift+滚轮每格 5%（截图、贴图、编辑器；选中笔迹时改它）；新笔迹用上次的值（`PenSoftness`）。
+- 测试：剪贴板可由 `ClipboardService.CopyOverride` 接管（测试不碰用户剪贴板）；录屏暂停检查改为直接看暂停期间计时不走（以前和墙钟比，慢机器上偶尔失败）。
 
 ## 8.1.34 0.8.34 变更
 
