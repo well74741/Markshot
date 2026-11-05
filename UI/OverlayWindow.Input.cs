@@ -119,6 +119,17 @@ public partial class OverlayWindow
             }
         }
 
+        // The capture's edges and corners resize it with any tool in hand (a pen, a shape, the eraser…).
+        if (_hasSelection && DrawingTool && HitHandle(point) is var edge and >= 0)
+        {
+            _mode = DragMode.Resizing;
+            _handle = edge;
+            _recentRegionIndex = -1;
+            InputLayer.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
         if (_tool == AnnotationTool.Text && _hasSelection)
         {
             if (HitAnnotation(point) is TextAnnotation pressed)

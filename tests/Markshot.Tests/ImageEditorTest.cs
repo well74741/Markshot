@@ -127,6 +127,27 @@ static class ImageEditorTest
         Check(((AnnotationToolbar)Field(editor, "Toolbar")).IsEditorMode, "the toolbar shows the editor's buttons");
         var clean = editor.Composite;
         Check(At(clean, 100, 60).G > 200 && At(clean, 100, 60).R > 200, "composite has the annotation drawn");
+        {
+            // the right panel scrolls with the slim themed bar, not the system's white one
+            var panel = (FrameworkElement)Field(editor, "_panel");
+            var bars = new List<System.Windows.Controls.Primitives.ScrollBar>();
+            void Walk(DependencyObject node)
+            {
+                for (var i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
+                {
+                    var child = VisualTreeHelper.GetChild(node, i);
+                    if (child is System.Windows.Controls.Primitives.ScrollBar bar) bars.Add(bar);
+                    Walk(child);
+                }
+            }
+
+            Walk(panel);
+            var slim = (ControlTemplate)Application.Current.FindResource("SlimThumb");
+            var shown = bars.Where(b => b.Template?.FindName("PART_Track", b) is Track).ToList();
+            Check(bars.Count > 0 && bars.All(b => b.Orientation == Orientation.Vertical ? b.Width == 8 : b.Height == 8) &&
+                  shown.Count > 0 && shown.All(b => ((Track)b.Template.FindName("PART_Track", b)).Thumb.Template == slim),
+                $"the editor's panel has the slim themed scrollbar ({bars.Count} bars, {shown.Count} shown)");
+        }
 
         // ---- colour: from the original every time; one undo step per change
         editor.SetAdjust(new ImageAdjust(Saturation: -100));

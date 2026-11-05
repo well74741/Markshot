@@ -386,6 +386,18 @@ public partial class OverlayWindow
 
         var tolerance = 12 / _scale;
         var selection = _selection;
+        if (DrawingTool)
+        {
+            // With a pen / shape in hand the frame is still adjustable, from a narrow band on its inner side
+            // (the full band outside): drawing close to the edge keeps working.
+            var inner = 5 / _scale;
+            var core = new Rect(selection.X + inner, selection.Y + inner,
+                Math.Max(0, selection.Width - inner * 2), Math.Max(0, selection.Height - inner * 2));
+            if (core.Contains(point))
+            {
+                return -1;
+            }
+        }
 
         var nearLeft = Math.Abs(point.X - selection.Left) <= tolerance;
         var nearRight = Math.Abs(point.X - selection.Right) <= tolerance;
@@ -404,6 +416,9 @@ public partial class OverlayWindow
 
         return -1;
     }
+
+    /// <summary>A tool that draws in the capture (the frame handles still come first at its edge).</summary>
+    private bool DrawingTool => _tool is not (AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Watermark);
 
     private static Rect NormalizeRect(Point a, Point b)
     {

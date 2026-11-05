@@ -20,6 +20,58 @@
         <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFFFF" />
         <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1E1E1E" />
 
+        <!-- Slim themed scrollbar everywhere (the system one is white): the image editor's panel, the history, menus. -->
+        <ControlTemplate x:Key="SlimThumb" TargetType="Thumb">
+            <Border x:Name="Bar" CornerRadius="3" Background="{DynamicResource T_44FFFFFF}" />
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Bar" Property="Background" Value="{DynamicResource T_66FFFFFF}" />
+                </Trigger>
+                <Trigger Property="IsDragging" Value="True">
+                    <Setter TargetName="Bar" Property="Background" Value="{DynamicResource T_66FFFFFF}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="MinWidth" Value="8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Border Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.Thumb>
+                                    <Thumb Template="{StaticResource SlimThumb}" Margin="1,2" />
+                                </Track.Thumb>
+                            </Track>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto" />
+                    <Setter Property="MinWidth" Value="0" />
+                    <Setter Property="Height" Value="8" />
+                    <Setter Property="MinHeight" Value="8" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ScrollBar">
+                                <Border Background="Transparent">
+                                    <Track x:Name="PART_Track" IsDirectionReversed="False">
+                                        <Track.Thumb>
+                                            <Thumb Template="{StaticResource SlimThumb}" Margin="2,1" />
+                                        </Track.Thumb>
+                                    </Track>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style TargetType="ContextMenu">
             <Setter Property="Background" Value="{DynamicResource T_FF1E1E1E}" />
             <Setter Property="Foreground" Value="{DynamicResource T_FFF0F0F0}" />

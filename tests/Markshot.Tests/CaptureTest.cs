@@ -422,6 +422,20 @@ static class CaptureTest
         RightClick(rightStepper);
         Check(!(bool)Get(rightStepper, "_hasSelection") && !(bool)Get(rightStepper, "_finishing"), "right click with 逐步退出: steps back like Esc (the area goes, the capture stays)");
         rightStepper.Close();
+
+        // a pen in hand: the capture's edges still resize it (a narrow band inside, the full band outside)
+        var penFrame = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        SetField(penFrame, "_hasSelection", true);
+        SetField(penFrame, "_selection", new Rect(50, 50, 150, 100));
+        var frameScale = (double)Get(penFrame, "_scale");
+        Call(penFrame, "SetTool", Markshot.Annotations.AnnotationTool.Pen);
+        int EdgeAt(double x, double y) => (int)Call(penFrame, "HitHandle", new Point(x, y))!;
+        Check(EdgeAt(50 + 2 / frameScale, 100) == 7 && EdgeAt(50 - 8 / frameScale, 100) == 7 && EdgeAt(200, 150 + 2 / frameScale) == 4,
+            "pen: the edge and the corner of the capture are still grabbed");
+        Check(EdgeAt(50 + 9 / frameScale, 100) == -1 && EdgeAt(120, 100) == -1, "… a little inside, the pen draws (close to the edge too)");
+        Call(penFrame, "SetTool", Markshot.Annotations.AnnotationTool.Select);
+        Check(EdgeAt(50 + 9 / frameScale, 100) == 7, "… without a tool the band inside is as wide as before");
+        penFrame.Close();
         config.EscExitsCapture = escBefore;
 
         // the hover asks the screenshot when UI Automation has nothing (no window behind here: handle 0)
