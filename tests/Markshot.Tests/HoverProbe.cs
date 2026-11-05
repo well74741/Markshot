@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Windows.Input;
 using System;
 using System.Diagnostics;
@@ -108,6 +109,51 @@ static class HoverProbe
         Check(!buttonAt3.IsEmpty && buttonAt3.Width * buttonAt3.Height > onButton.Width * onButton.Height && buttonAt3.Width >= rects[0].Width - 4,
             $"常规元素, over a button: not its tiny label, at least the button ({buttonAt3}; 细小元素 took {onButton})");
         Check(Near(Hover(rects[2]), rects[2]), "常规元素, over a picture: the picture is framed");
+        // How long the frame takes to reach a new element (range 3, 4); printed, a slow machine must not fail it.
+        var clock = Stopwatch.StartNew();
+        double Reach(Rect target)
+        {
+            var c = new Point(target.X + target.Width / 2 - vx, target.Y + target.Height / 2 - vy);
+            clock.Restart();
+            hover.Invoke(overlay, new object[] { c });
+            while (clock.ElapsedMilliseconds < 1500)
+            {
+                var b = editor.HoverBounds;
+                if (editor.ShowHover && Near(new Rect(b.X + vx, b.Y + vy, b.Width, b.Height), target))
+                {
+                    return clock.Elapsed.TotalMilliseconds;
+                }
+
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+                Thread.Sleep(1);
+            }
+
+            return double.NaN;
+        }
+
+        foreach (var (range, from, to) in new[] { (4, rects[2], rects[1]), (3, rects[2], rects[0]) })
+        {
+            Markshot.App.Config.DetectRange = range;
+            var times = new List<double>();
+            for (var i = 0; i < 6; i++)
+            {
+                times.Add(Reach(from));
+                Pump(60);
+                times.Add(Reach(to));
+                Pump(60);
+            }
+
+            Console.WriteLine($"   frame reaches the element, range {range}: " + string.Join(" ", times.Select(t => t.ToString("0"))) + " ms");
+        }
+
+        // What one mouse move costs the UI thread.
+        var moves = Stopwatch.StartNew();
+        for (var i = 0; i < 50; i++)
+        {
+            hover.Invoke(overlay, new object[] { new Point(rects[2].X - vx + i % 20, rects[2].Y - vy + 10) });
+        }
+
+        Console.WriteLine($"   one mouse move on the UI thread: {moves.Elapsed.TotalMilliseconds / 50:0.0} ms");
         Markshot.App.Config.DetectRange = rangeBefore;
         cover.Close();
         File.Delete(file);

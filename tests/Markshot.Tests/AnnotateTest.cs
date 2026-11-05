@@ -542,6 +542,58 @@ static class AnnotateTest
             Pump(30);
             Check(photo.Radius == 0 || items2.OfType<ImageAnnotation>().First().Radius == 0, "… each change undoable");
 
+            // a free shape: no 圆角 row, the outline and shadow follow it (no rectangle around it)
+            var discPixels = new byte[100 * 100 * 4];
+            for (var dy = 0; dy < 100; dy++)
+            for (var dx = 0; dx < 100; dx++)
+            {
+                var o = (dy * 100 + dx) * 4;
+                discPixels[o] = 200;
+                discPixels[o + 3] = (byte)(Math.Sqrt((dx - 49.5) * (dx - 49.5) + (dy - 49.5) * (dy - 49.5)) <= 45 ? 255 : 0);
+            }
+
+            var cutShape = new ImageAnnotation { Image = ImageOps.FromPixels(discPixels, 100, 100), Rect = new Rect(20, 10, 100, 100) };
+            var radiusRow = (FrameworkElement)typeof(ImageEditorWindow).GetField("_radiusRow", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;
+            Check(radiusRow.Visibility == Visibility.Visible, "a rectangular picture has 圆角");
+            items2.Add(cutShape);
+            se2.SelectElements(new Annotation[] { cutShape });
+            Check(cutShape.IsShaped && radiusRow.Visibility != Visibility.Visible && styleSection.Visibility == Visibility.Visible, "a free shape: no 圆角 row, 阴影 and 描边 stay");
+            cutShape.Radius = 30; // set earlier, before it was cut
+            cutShape.BorderWidth = 6;
+            cutShape.BorderColor = Colors.Lime;
+            var shapeShot = Render(cutShape, 160, 130);
+            var (shapePixels, shapeWidth, _) = ImageOps.ReadPixels(shapeShot);
+            byte ShapeG(int x, int y) => shapePixels[(y * shapeWidth + x) * 4 + 1];
+            byte ShapeA(int x, int y) => shapePixels[(y * shapeWidth + x) * 4 + 3];
+            Check(ShapeA(70, 60) == 255 && ShapeG(70, 60) < 40, "… the picture itself is uncut by the old corners");
+            Check(ShapeA(20 + 49 + 48, 60) > 200 && ShapeG(20 + 49 + 48, 60) > 200, "描边 runs around the shape");
+            Check(ShapeA(22, 12) == 0 && ShapeA(118, 108) == 0, "… nothing in the square's corners (it used to be a rectangle)");
+            cutShape.BorderWidth = 0;
+            cutShape.ShadowSize = 16;
+            var shadowShot = Render(cutShape, 160, 140);
+            Check(PixelA(shadowShot, 22, 14) < PixelA(shadowShot, 70, 112) && PixelA(shadowShot, 70, 112) > 0, $"阴影 follows the shape ({PixelA(shadowShot, 22, 14)} in the corner, {PixelA(shadowShot, 70, 112)} below it)");
+            Check(cutShape.StyleReach > 16, "… and counts for 适应内容");
+            cutShape.BorderWidth = 40;
+            cutShape.ShadowSize = 0;
+            Check(cutShape.StyleReach == 40, "… as does the outline outside a shape");
+            cutShape.BorderWidth = 6;
+            cutShape.ShadowSize = 14;
+            var sampleCanvas = new DrawingVisual();
+            using (var sampleDc = sampleCanvas.RenderOpen())
+            {
+                sampleDc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 170, 150));
+                cutShape.Draw(sampleDc);
+            }
+
+            var sampleBitmap = new RenderTargetBitmap(170, 150, 96, 96, PixelFormats.Pbgra32);
+            sampleBitmap.Render(sampleCanvas);
+            var sampleEncoder = new PngBitmapEncoder();
+            sampleEncoder.Frames.Add(BitmapFrame.Create(sampleBitmap));
+            using (var sampleFile = System.IO.File.Create("element_style_shape.png")) sampleEncoder.Save(sampleFile);
+            items2.Remove(cutShape);
+            se2.SelectElements(new Annotation[] { items2.OfType<ImageAnnotation>().First() });
+            Check(radiusRow.Visibility == Visibility.Visible, "back on a rectangle: 圆角 again");
+
             // the shadow reaches past a smaller picture
             var small = new ImageAnnotation { Image = Blank(60, 40), Rect = new Rect(70, 40, 60, 40) };
             items2.Add(small);

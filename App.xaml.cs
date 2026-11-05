@@ -253,7 +253,7 @@ public partial class App : Application
             var cursor = CursorCapture.Grab(bounds.X, bounds.Y);
             var overlay = new OverlayWindow(image, bounds, demo)
             {
-                ActiveWindow = Native.GetForegroundWindow(), // the program in use: its elements are offered first
+                ActiveWindow = WindowDetector.ActiveProgram(), // the program in use: its elements are offered first
                 // The pin is created while the capture is still on screen (no gap, no flicker).
                 InitialSelection = selection,
                 CursorShot = cursor,

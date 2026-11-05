@@ -43,6 +43,7 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly TextBox _widthBox = new();
     private readonly TextBox _heightBox = new();
     private Border? _styleSection;
+    private FrameworkElement? _radiusRow;
     private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _styleSliders = new();
     private readonly Border _borderSwatch = new() { Width = 22, Height = 14, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1) };
     private readonly Dictionary<string, RadioButton> _backgroundButtons = new();
@@ -594,7 +595,8 @@ public sealed class ImageEditorWindow : PinWindow
         fitRow.Children.Add(_fitMargin);
         fitRow.Children.Add(Label(" px"));
         stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio, fitRow, BackgroundRow()));
-        _styleSection = Section("元素样式", null, StyleSlider("圆角", "Radius", 0, 120), StyleSlider("阴影", "Shadow", 0, 60), StyleSlider("描边", "Border", 0, 24), BorderColorRow());
+        _radiusRow = StyleSlider("圆角", "Radius", 0, 120);
+        _styleSection = Section("元素样式", null, _radiusRow, StyleSlider("阴影", "Shadow", 0, 60), StyleSlider("描边", "Border", 0, 24), BorderColorRow());
         _styleSection.Visibility = Visibility.Collapsed;
         stack.Children.Add(_styleSection);
         stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow));
@@ -826,6 +828,9 @@ public sealed class ImageEditorWindow : PinWindow
         {
             return;
         }
+
+        // A free shape has no corners to round; its shadow and outline follow the shape.
+        _radiusRow!.Visibility = StyledPictures.All(picture => picture.IsShaped) ? Visibility.Collapsed : Visibility.Visible;
 
         var syncing = _syncingControls;
         _syncingControls = true;

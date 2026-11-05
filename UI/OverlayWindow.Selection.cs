@@ -577,11 +577,12 @@ public partial class OverlayWindow
         if (_hoverTarget?.Handle != target.Handle)
         {
             _uiaElements = new List<DetectedElement>(); // another window: what was found belongs to the old one
+            _detailFresh = false;
         }
 
         _hoverTarget = target;
         // Inside the window only of the program in use when the capture started; any other window is framed whole.
-        if (!config.DetectElements || config.DetectRange <= 1 || !IsActiveProgram(target.Handle))
+        if (!config.DetectElements || (_detailWindow != target.Handle && (config.DetectRange <= 1 || !IsActiveProgram(target.Handle))))
         {
             SetHoverChain(new List<HoverCandidate> { new(window, target.Label) });
             return;
@@ -612,29 +613,17 @@ public partial class OverlayWindow
         var region = new Int32Rect((int)window.X, (int)window.Y, (int)window.Width, (int)window.Height);
         var (sx, sy) = _hoverScreenPoint;
         var pieces = new List<Int32Rect>();
-        var segmenter = Segmenter;
-        if (segmenter.IsReady(region))
+        // While the picture is being worked out the UI thread does not touch it (asking would wait for the lock).
+        if (!_preparing && !_segmenterFailed)
         {
-            pieces = segmenter.At(region, sx - _bounds.X, sy - _bounds.Y);
-        }
-        else if (!_preparing)
-        {
-            _preparing = true;
-            Task.Run(() =>
+            if (_segmenter is { } segmenter && segmenter.IsReady(region))
             {
-                try
-                {
-                    segmenter.Prepare(region);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error("画面识别失败", ex);
-                }
-            }).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
+                pieces = segmenter.At(region, sx - _bounds.X, sy - _bounds.Y);
+            }
+            else
             {
-                _preparing = false;
-                RefreshHoverChain();
-            }), TaskScheduler.Default);
+                PrepareRegion(region);
+            }
         }
 
         var mouse = new Point(sx, sy);
@@ -701,20 +690,166 @@ public partial class OverlayWindow
     }
 
     private ScreenSegmenter? _segmenter;
+    private readonly object _segmenterGate = new();
+    private bool _segmenterFailed;
 
     /// <summary>Picks pieces out of the screenshot (without the pointer drawn on it).</summary>
     private ScreenSegmenter Segmenter
     {
         get
         {
-            if (_segmenter == null)
+            lock (_segmenterGate)
             {
-                var (pixels, width, height) = ImageOps.ReadPixels(_screenPlain);
-                _segmenter = new ScreenSegmenter(pixels, width, height, _scale, App.Config.DetectRange);
-            }
+                if (_segmenter == null)
+                {
+                    var (pixels, width, height) = ImageOps.ReadPixels(_screenPlain);
+                    _segmenter = new ScreenSegmenter(pixels, width, height, _scale, App.Config.DetectRange);
+                }
 
-            return _segmenter;
+                return _segmenter;
+            }
         }
+    }
+
+    /// <summary>Works out a window's pieces on a worker thread, then looks again.</summary>
+    private void PrepareRegion(Int32Rect region)
+    {
+        if (!_screenPlain.IsFrozen)
+        {
+            _ = Segmenter; // only this thread can read it
+        }
+
+        _preparing = true;
+        Task.Run(() =>
+        {
+            try
+            {
+                Segmenter.Prepare(region);
+            }
+            catch (Exception ex)
+            {
+                _segmenterFailed = true; // not again on every move
+                Log.Error("画面识别失败", ex);
+            }
+        }).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
+        {
+            _preparing = false;
+            RefreshHoverChain();
+        }), TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// When the capture opens: the program in use is looked at ahead of the first move, so the first frame is
+    /// there at once (the screenshot's pieces, and the first contact with UI Automation, which can take a while).
+    /// </summary>
+    private void WarmUpDetection()
+    {
+        var config = App.Config;
+        if (_demo || _hasSelection || !config.DetectAuto || !config.DetectElements || config.DetectRange <= 1 || ActiveWindow == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var window = ToLocal(WindowDetector.BoundsOf(ActiveWindow));
+        if (window.IsEmpty)
+        {
+            return;
+        }
+
+        ElementDetector.MinSide = AppConfig.MinSideFor(config.DetectRange);
+        PrepareRegion(new Int32Rect((int)window.X, (int)window.Y, (int)window.Width, (int)window.Height));
+        var handle = ActiveWindow;
+        var cursor = Native.CursorPosition();
+        Task.Run(() =>
+        {
+            try
+            {
+                ElementDetector.Detect(handle, cursor.X, cursor.Y);
+            }
+            catch (Exception ex)
+            {
+                Log.Info("元素识别预热失败：" + ex.Message);
+            }
+        });
+    }
+
+    // ---- the wheel: what the frame takes, said in a small tip
+
+    private DispatcherTimer? _wheelTipTimer;
+
+    /// <summary>The tip above the pointer (the magnifier sits below it); it goes by itself.</summary>
+    private void ShowWheelTip(string text)
+    {
+        WheelTipText.Text = text;
+        Motion.SetShown(WheelTip, true, Motion.Fast);
+        WheelTip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var (sx, sy) = _hoverScreenPoint;
+        var x = (sx - _bounds.X) / Math.Max(0.01, _scale);
+        var y = (sy - _bounds.Y) / Math.Max(0.01, _scale);
+        var size = WheelTip.DesiredSize;
+        var top = y - size.Height - 18;
+        Canvas.SetLeft(WheelTip, Math.Max(4, Math.Min(x - size.Width / 2, Math.Max(4, ActualWidth - size.Width - 4))));
+        Canvas.SetTop(WheelTip, top >= 4 ? top : y + 26);
+        if (_wheelTipTimer == null)
+        {
+            _wheelTipTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+            _wheelTipTimer.Tick += (_, _) => HideWheelTip();
+        }
+
+        _wheelTipTimer.Stop();
+        _wheelTipTimer.Start();
+    }
+
+    private void HideWheelTip()
+    {
+        _wheelTipTimer?.Stop();
+        if (WheelTip.Visibility == Visibility.Visible)
+        {
+            Motion.SetShown(WheelTip, false, Motion.Fast);
+        }
+    }
+
+    private static string ShortLabel(string label)
+    {
+        var at = label.IndexOf(" · ", StringComparison.Ordinal);
+        return at > 0 ? label[..at] : label;
+    }
+
+    private IntPtr _detailWindow; // a window the wheel went into (its elements are offered although it is not the program in use)
+    private bool _detailFresh;
+
+    /// <summary>
+    /// The wheel over a frame with nothing else to step to (the 窗口 range, another program's window):
+    /// down goes into the window, up says it is the largest already. False: no window under the pointer.
+    /// </summary>
+    private bool WheelInWindow(int delta)
+    {
+        if (_hoverTarget is not { } target)
+        {
+            return false;
+        }
+
+        var name = _hoverChain.Count > 0 ? ShortLabel(_hoverChain[^1].Label) : "窗口";
+        if (delta > 0)
+        {
+            ShowWheelTip($"已是最大范围：{name}");
+            return true;
+        }
+
+        var opened = _detailWindow == target.Handle || (App.Config.DetectRange > 1 && IsActiveProgram(target.Handle));
+        if (opened || !App.Config.DetectElements)
+        {
+            ShowWheelTip("这里没有更小的元素");
+            return true;
+        }
+
+        _detailWindow = target.Handle;
+        _detailFresh = true;
+        ShowWheelTip("正在识别窗口里的元素…");
+        var (x, y) = _hoverScreenPoint;
+        RefreshHoverChain();
+        RequestElements(target.Handle, x, y);
+        return true;
     }
 
     /// <summary>Everything found under the mouse, smallest first, each size once; the window last.</summary>
@@ -784,6 +919,15 @@ public partial class OverlayWindow
     {
         var window = _hoverTarget == null ? Rect.Empty : ToLocal(_hoverTarget.Bounds);
         var range = App.Config.DetectRange;
+        if (_detailFresh && chain.Count >= 2)
+        {
+            // The wheel went into the window: one step in from it.
+            _detailFresh = false;
+            _startLevel = -1;
+            ShowWheelTip($"识别范围 {chain.Count - 1} / {chain.Count}：{ShortLabel(chain[^2].Label)}（滚轮：上 变大，下 变小）");
+            return chain.Count - 2;
+        }
+
         for (var i = 0; i < chain.Count; i++)
         {
             if (window.IsEmpty || Close(chain[i].Local, window) || AppConfig.StartsAt(range, chain[i].Local, window, _scale))
@@ -798,47 +942,8 @@ public partial class OverlayWindow
     }
 
     /// <summary>New frames under the mouse. The level the wheel chose stays when its frame is still offered.</summary>
-    private DispatcherTimer? _hoverDwell;
-    private List<HoverCandidate>? _pendingHover;
-
-    /// <summary>
-    /// A new element under the pointer: the frame moves there once the pointer has rested on it a moment
-    /// (a short fixed pause), so sweeping over a page does not make it jump about. The first frame and
-    /// staying on the framed element answer at once.
-    /// </summary>
-    private void SetHoverChain(List<HoverCandidate> chain)
-    {
-        var delay = AppConfig.HoverDelay;
-        var shown = _hoverLevel < _hoverChain.Count ? _hoverChain[_hoverLevel].Local : Rect.Empty;
-        var stays = chain.Any(candidate => ElementDetector.Same(candidate.Local, shown));
-        if (delay <= 0 || !Editor.ShowHover || _hoverChain.Count == 0 || stays)
-        {
-            _hoverDwell?.Stop();
-            _pendingHover = null;
-            ApplyHoverChain(chain);
-            return;
-        }
-
-        _pendingHover = chain;
-        if (_hoverDwell == null)
-        {
-            _hoverDwell = new DispatcherTimer(DispatcherPriority.Input);
-            _hoverDwell.Tick += (_, _) =>
-            {
-                _hoverDwell.Stop();
-                var pending = _pendingHover;
-                _pendingHover = null;
-                if (pending != null && !_hasSelection && !_closed)
-                {
-                    ApplyHoverChain(pending);
-                }
-            };
-        }
-
-        _hoverDwell.Interval = TimeSpan.FromMilliseconds(delay);
-        _hoverDwell.Stop();
-        _hoverDwell.Start(); // every move onto something else starts the wait again
-    }
+    /// <summary>A new element under the pointer: the frame goes there at once.</summary>
+    private void SetHoverChain(List<HoverCandidate> chain) => ApplyHoverChain(chain);
 
     private void ApplyHoverChain(List<HoverCandidate> chain)
     {
@@ -851,7 +956,7 @@ public partial class OverlayWindow
         }
 
         var keep = chain.FindIndex(candidate => ElementDetector.Same(candidate.Local, shown));
-        _hoverLevel = keep >= 0 && _hoverLevel > _startLevel ? keep : StartLevel(chain);
+        _hoverLevel = !_detailFresh && keep >= 0 && _hoverLevel > _startLevel ? keep : StartLevel(chain);
         if (Editor.ShowHover && ElementDetector.Same(chain[_hoverLevel].Local, shown))
         {
             return; // the same frame: nothing to redraw
@@ -868,8 +973,13 @@ public partial class OverlayWindow
             return false;
         }
 
+        var before = _hoverLevel;
         _hoverLevel = Math.Clamp(_hoverLevel + (delta > 0 ? 1 : -1), 0, _hoverChain.Count - 1);
         _startLevel = -1; // the wheel's choice is kept while the pointer stays
+        var name = ShortLabel(_hoverChain[_hoverLevel].Label);
+        ShowWheelTip(before == _hoverLevel
+            ? (delta > 0 ? $"已是最大范围：{name}" : $"已是最小范围：{name}")
+            : $"识别范围 {_hoverLevel + 1} / {_hoverChain.Count}：{name}（滚轮：上 变大，下 变小）");
         ShowHoverLevel();
         return true;
     }
@@ -969,8 +1079,11 @@ public partial class OverlayWindow
 
     private void ClearHover()
     {
-        _hoverDwell?.Stop();
-        _pendingHover = null;
+        if (_hasSelection)
+        {
+            HideWheelTip(); // an area was chosen
+        }
+
         _elementWanted = null;
         if (_hoverTarget == null && !Editor.ShowHover)
         {
@@ -980,6 +1093,8 @@ public partial class OverlayWindow
         _hoverTarget = null;
         _hoverChain = new List<HoverCandidate>();
         _hoverLevel = 0;
+        _startLevel = 0; // the wheel's choice ends with the frame
+        _detailFresh = false;
         _uiaElements = new List<DetectedElement>();
         HideHoverFrame();
     }

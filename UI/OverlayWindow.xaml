@@ -51,6 +51,12 @@
                            Foreground="{DynamicResource T_FFEDEDED}" FontSize="13" />
             </Border>
 
+            <!-- What the wheel just did to the automatic frame. -->
+            <Border x:Name="WheelTip" Visibility="Collapsed" IsHitTestVisible="False" Background="{DynamicResource T_E61C1C1C}"
+                    BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" CornerRadius="6" Padding="10,5">
+                <TextBlock x:Name="WheelTipText" Foreground="{DynamicResource T_FFEDEDED}" FontSize="12" />
+            </Border>
+
             <!-- 辅助线: a crosshair through the mouse across the whole screen. -->
             <Rectangle x:Name="CrossH" Fill="#B34C8DFF" Height="1" Visibility="Collapsed" IsHitTestVisible="False" />
             <Rectangle x:Name="CrossV" Fill="#B34C8DFF" Width="1" Visibility="Collapsed" IsHitTestVisible="False" />

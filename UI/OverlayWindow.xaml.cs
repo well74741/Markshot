@@ -317,7 +317,8 @@ public partial class OverlayWindow : Window
         _screen = screen;
         _screenPlain = screen;
         _bounds = bounds;
-        HintText.Text = $"拖拽选择区域　·　右键拖动手绘截图（Shift 直线）　·　点击窗口 / 元素直接选中　·　{KeyLabel(App.Config.CrosshairKey)} 辅助线　·　" +
+        var wheelHint = App.Config.DetectAuto && (App.Config.DetectElements || App.Config.DetectWindows) ? "滚轮 调整识别范围　·　" : "";
+        HintText.Text = $"拖拽选择区域　·　右键拖动手绘截图（Shift 直线）　·　点击窗口 / 元素直接选中　·　{wheelHint}{KeyLabel(App.Config.CrosshairKey)} 辅助线　·　" +
                         $"{KeyLabel(App.Config.CaptureCursorKey)} 显示鼠标　·　R 上次区域　·　双击复制　·　Esc 取消";
         PreviewMouseMove += (_, e) => UpdateCrosshair(e.GetPosition(Root));
         PreviewMouseDown += (_, _) => _tapKey = null; // Alt+drag and the like is no tap
@@ -483,6 +484,7 @@ public partial class OverlayWindow : Window
             }
 
             UpdateSelectionVisuals();
+            WarmUpDetection();
         }), DispatcherPriority.Loaded);
     }
 

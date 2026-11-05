@@ -90,6 +90,24 @@ public static class WindowDetector
         return new WindowTarget { Handle = handle2, Bounds = bounds, Label = label };
     }
 
+    /// <summary>The window of the program in use, or none when that is the desktop, the taskbar or Markshot itself.</summary>
+    public static IntPtr ActiveProgram()
+    {
+        var handle = Native.GetForegroundWindow();
+        if (handle == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        Native.GetWindowThreadProcessId(handle, out var pid);
+        return pid == (uint)Environment.ProcessId || GetClassName(handle) is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Windows.UI.Core.CoreWindow"
+            ? IntPtr.Zero
+            : handle;
+    }
+
+    /// <summary>A top-level window's frame as <see cref="Detect"/> reports it (screen pixels).</summary>
+    public static Rect BoundsOf(IntPtr handle) => GetBounds(handle);
+
     private static Rect GetBounds(IntPtr handle, bool useDwm = true)
     {
         if (useDwm &&

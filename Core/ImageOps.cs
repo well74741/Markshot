@@ -381,6 +381,198 @@ public static class ImageOps
         return high - low >= 235 || high <= low ? null : new double[] { low, 0, high, 255 };
     }
 
+    /// <summary>Has see-through parts of its own (a free cut-out, rounded corners …), not just a rectangle.</summary>
+    public static bool HasShape(BitmapSource source)
+    {
+        var (pixels, _, _) = ReadPixels(source);
+        var clear = 0;
+        for (var i = 3; i < pixels.Length; i += 4)
+        {
+            if (pixels[i] < 16 && ++clear >= 8)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// An outline around a picture's shape, <paramref name="width"/> source pixels wide (outside the shape, under the
+    /// picture). The result covers the picture plus <c>Margin</c> source pixels on every side. Worked out on a copy
+    /// of at most <see cref="EffectSide"/> pixels, so a slider stays quick on big pictures.
+    /// </summary>
+    public static (BitmapSource Image, double Margin) ShapeOutline(BitmapSource source, double width, Color color)
+    {
+        var scale = EffectScale(source);
+        var reach = width * scale;
+        var pad = (int)Math.Ceiling(reach) + 2;
+        var (alpha, w, h) = PaddedAlpha(source, scale, pad);
+        var distance = new float[w * h];
+        for (var i = 0; i < distance.Length; i++)
+        {
+            distance[i] = alpha[i] >= 0.5f ? 0 : 1e12f;
+        }
+
+        Parallel.For(0, h, y =>
+        {
+            var line = new float[w];
+            Array.Copy(distance, y * w, line, 0, w);
+            var done = DistanceLine(line);
+            Array.Copy(done, 0, distance, y * w, w);
+        });
+        Parallel.For(0, w, x =>
+        {
+            var line = new float[h];
+            for (var y = 0; y < h; y++)
+            {
+                line[y] = distance[y * w + x];
+            }
+
+            var done = DistanceLine(line);
+            for (var y = 0; y < h; y++)
+            {
+                distance[y * w + x] = done[y];
+            }
+        });
+        var pixels = new byte[w * h * 4];
+        Parallel.For(0, h, y =>
+        {
+            for (var x = 0; x < w; x++)
+            {
+                var i = y * w + x;
+                // A smooth outer edge; nothing under the solid inside (a see-through picture must not show it).
+                var cover = alpha[i] >= 0.98f ? 0 : Math.Clamp(reach - Math.Sqrt(distance[i]) + 0.5, 0, 1);
+                var o = i * 4;
+                pixels[o] = color.B;
+                pixels[o + 1] = color.G;
+                pixels[o + 2] = color.R;
+                pixels[o + 3] = (byte)Math.Round(cover * 255);
+            }
+        });
+        return (FromPixels(pixels, w, h), pad / scale);
+    }
+
+    /// <summary>A soft black shadow of a picture's shape, reaching about <paramref name="size"/> source pixels past it.</summary>
+    public static (BitmapSource Image, double Margin) ShapeShadow(BitmapSource source, double size)
+    {
+        var scale = EffectScale(source);
+        var pad = (int)Math.Ceiling(size * scale * 1.4) + 2;
+        var (alpha, w, h) = PaddedAlpha(source, scale, pad);
+        var radius = Math.Max(1, (int)Math.Round(size * scale / 2.2));
+        for (var pass = 0; pass < 3; pass++)
+        {
+            BlurLines(alpha, w, h, radius);
+        }
+
+        var pixels = new byte[w * h * 4];
+        for (var i = 0; i < alpha.Length; i++)
+        {
+            pixels[i * 4 + 3] = (byte)Math.Round(Math.Clamp(alpha[i], 0, 1) * 115);
+        }
+
+        return (FromPixels(pixels, w, h), pad / scale);
+    }
+
+    private const int EffectSide = 1200;
+
+    private static double EffectScale(BitmapSource source) => Math.Min(1, EffectSide / (double)Math.Max(source.PixelWidth, source.PixelHeight));
+
+    private static (float[] Alpha, int Width, int Height) PaddedAlpha(BitmapSource source, double scale, int pad)
+    {
+        var small = scale < 1
+            ? Resize(source, Math.Max(1, (int)Math.Round(source.PixelWidth * scale)), Math.Max(1, (int)Math.Round(source.PixelHeight * scale)))
+            : source;
+        var (pixels, sw, sh) = ReadPixels(small);
+        int w = sw + pad * 2, h = sh + pad * 2;
+        var alpha = new float[w * h];
+        for (var y = 0; y < sh; y++)
+        {
+            for (var x = 0; x < sw; x++)
+            {
+                alpha[(y + pad) * w + x + pad] = pixels[(y * sw + x) * 4 + 3] / 255f;
+            }
+        }
+
+        return (alpha, w, h);
+    }
+
+    /// <summary>One line of the squared distance transform (Felzenszwalb and Huttenlocher).</summary>
+    private static float[] DistanceLine(float[] f)
+    {
+        var n = f.Length;
+        var result = new float[n];
+        var v = new int[n];
+        var z = new float[n + 1];
+        var k = 0;
+        z[0] = float.NegativeInfinity;
+        z[1] = float.PositiveInfinity;
+        for (var q = 1; q < n; q++)
+        {
+            var s = (f[q] + q * (float)q - (f[v[k]] + v[k] * (float)v[k])) / (2f * q - 2f * v[k]);
+            while (s <= z[k])
+            {
+                k--;
+                s = (f[q] + q * (float)q - (f[v[k]] + v[k] * (float)v[k])) / (2f * q - 2f * v[k]);
+            }
+
+            k++;
+            v[k] = q;
+            z[k] = s;
+            z[k + 1] = float.PositiveInfinity;
+        }
+
+        k = 0;
+        for (var q = 0; q < n; q++)
+        {
+            while (z[k + 1] < q)
+            {
+                k++;
+            }
+
+            var d = q - v[k];
+            result[q] = d * (float)d + f[v[k]];
+        }
+
+        return result;
+    }
+
+    /// <summary>One box blur pass (across, then down) over a single channel.</summary>
+    private static void BlurLines(float[] data, int width, int height, int r)
+    {
+        var window = 2 * r + 1;
+        var temp = new float[data.Length];
+        Parallel.For(0, height, y =>
+        {
+            var row = y * width;
+            float sum = 0;
+            for (var k = -r; k <= r; k++)
+            {
+                sum += data[row + Math.Clamp(k, 0, width - 1)];
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                temp[row + x] = sum / window;
+                sum += data[row + Math.Min(x + r + 1, width - 1)] - data[row + Math.Max(x - r, 0)];
+            }
+        });
+        Parallel.For(0, width, x =>
+        {
+            float sum = 0;
+            for (var k = -r; k <= r; k++)
+            {
+                sum += temp[Math.Clamp(k, 0, height - 1) * width + x];
+            }
+
+            for (var y = 0; y < height; y++)
+            {
+                data[y * width + x] = sum / window;
+                sum += temp[Math.Min(y + r + 1, height - 1) * width + x] - temp[Math.Max(y - r, 0) * width + x];
+            }
+        });
+    }
+
     /// <summary>A canvas of one colour.</summary>
     public static BitmapSource Solid(int width, int height, Color color)
     {

@@ -935,10 +935,21 @@ public partial class OverlayWindow
             return;
         }
 
+        if (App.Config.DetectElements && WheelInWindow(e.Delta))
+        {
+            e.Handled = true;
+            return;
+        }
+
         // Without element detection: the window or its child control.
         _preferChild = !_preferChild;
         ClearHover();
         UpdateHover(ToPixels(e.GetPosition(InputLayer)));
+        if (_hoverTarget != null)
+        {
+            ShowWheelTip(_preferChild ? "识别范围：窗口里的控件" : "识别范围：整个窗口");
+        }
+
         e.Handled = true;
     }
 

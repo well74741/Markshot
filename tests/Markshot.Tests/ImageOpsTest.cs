@@ -66,6 +66,38 @@ static class ImageOpsTest
         Check(green.G > green.R + 80 && green.G > green.B, $"hue +120: red becomes green ({green.R},{green.G},{green.B})");
         var greyHue = At(ImageOps.Adjust(Solid(2, 2, 120, 120, 120), new ImageAdjust(Hue: 77)), 0, 0);
 
+        // 元素样式 on a free shape: the outline and the shadow follow it
+        var disc = new byte[100 * 100 * 4];
+        for (var y = 0; y < 100; y++)
+        for (var x = 0; x < 100; x++)
+        {
+            var i = (y * 100 + x) * 4;
+            disc[i + 2] = 255;
+            disc[i + 3] = (byte)(Math.Sqrt((x - 49.5) * (x - 49.5) + (y - 49.5) * (y - 49.5)) <= 45 ? 255 : 0);
+        }
+
+        var discImage = ImageOps.FromPixels(disc, 100, 100);
+        Check(ImageOps.HasShape(discImage) && !ImageOps.HasShape(Solid(20, 20, 9, 9, 9)), "a picture with see-through parts counts as a shape, a plain one does not");
+        var (ring, ringMargin) = ImageOps.ShapeOutline(discImage, 6, Colors.Lime);
+        int M(double v) => (int)Math.Round(v + ringMargin);
+        Check(At(ring, M(49.5 + 48), M(49.5)).A > 200 && At(ring, M(49.5 + 48), M(49.5)).G == 255, "outline: right outside the shape");
+        Check(At(ring, M(49.5 + 55), M(49.5)).A == 0 && At(ring, M(3), M(3)).A == 0, "… nothing further out, nor in the square's corner (it is no rectangle)");
+        Check(At(ring, M(49.5), M(49.5)).A == 0, "… and nothing under the solid inside (a see-through picture must not show it)");
+        var bigShape = new byte[4000 * 3000 * 4];
+        for (var i = 3; i < 4000 * 40 * 4; i += 4) bigShape[i] = 0;
+        for (var i = 4000 * 40 * 4 + 3; i < bigShape.Length; i += 4) bigShape[i] = 255;
+        var bigImage = ImageOps.FromPixels(bigShape, 4000, 3000);
+        var effectClock = System.Diagnostics.Stopwatch.StartNew();
+        ImageOps.ShapeOutline(bigImage, 12, Colors.White);
+        var outlineMs = effectClock.ElapsedMilliseconds;
+        effectClock.Restart();
+        ImageOps.ShapeShadow(bigImage, 40);
+        Console.WriteLine($"   style on a 4000x3000 shape: outline {outlineMs} ms, shadow {effectClock.ElapsedMilliseconds} ms");
+        var (shade, shadeMargin) = ImageOps.ShapeShadow(discImage, 16);
+        int N(double v) => (int)Math.Round(v + shadeMargin);
+        Check(At(shade, N(49.5), N(49.5)).A > 90 && At(shade, N(49.5 + 50), N(49.5)).A is > 0 and < 90 && At(shade, N(2), N(2)).A < At(shade, N(49.5 + 50), N(49.5)).A,
+            $"shadow: strongest inside, fading past the edge, weaker in the square's corner ({At(shade, N(49.5), N(49.5)).A}, {At(shade, N(49.5 + 50), N(49.5)).A}, {At(shade, N(2), N(2)).A})");
+
         // 色温, 模糊, 锐化, 一键增强
         var mid = Solid(4, 4, 128, 128, 128);
         var warmer = At(ImageOps.Adjust(mid, new ImageAdjust(Temperature: 80)), 1, 1);

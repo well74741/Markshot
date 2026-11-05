@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.38`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.39`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,18 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.39 0.8.39 变更
+
+- 识别更快：去掉换框前的等待（`_hoverDwell`），框立即出发，滑动 150 → 80 ms（`AppConfig.HoverSlide`）；探针实测从鼠标移到新元素到框到位约 190 → 110 ms，一次鼠标移动占 UI 线程约 0.1 ms。
+  截图窗口打开时预热（`WarmUpDetection`）：提前算好前台软件窗口的画面分块、预先接触一次 UI Automation。分块在后台线程构建，构建期间 UI 线程不碰它（`_preparing`，否则会等锁）。
+- 滚轮提示：截图提示条加「滚轮 调整识别范围」；滚动时鼠标旁 `WheelTip` 显示「识别范围 2 / 4：卡片（滚轮：上 变大，下 变小）」，到头时说「已是最大 / 最小范围」，1.5 秒后消失。
+  只框整个窗口时（第 1 档或其他软件的窗口）滚轮向下进入窗口内部（`WheelInWindow`，`_detailWindow`），向上提示已最大。
+  `WindowDetector.ActiveProgram`：前台是桌面、任务栏或 Markshot 自己时不算（此时所有窗口都识别元素）。
+- 元素样式跟随形状：`ImageAnnotation.IsShaped`（`ImageOps.HasShape`：有透明部分，路径裁切、网格形变的结果、透明 PNG 都算；按 `Origin ?? Image` 缓存）。
+  有形状时隐藏圆角（已设的圆角不再生效），描边用距离变换（`ShapeOutline`，画在形状外），阴影把透明度模糊（`ShapeShadow`），按参数缓存；大图在最长边 1200 的副本上算（4000×3000 描边约 275 ms）。
+  `StyleReach` 把形状外的描边也算进「适应内容」。
+- 测试：更新链接检查容忍 GitHub 的 5xx（实际遇到过 504），404 才算坏链接。
 
 ## 8.1.38 0.8.38 变更
 

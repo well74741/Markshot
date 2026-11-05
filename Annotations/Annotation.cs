@@ -633,8 +633,68 @@ public sealed class ImageAnnotation : Annotation
 
     public Color BorderColor { get; set; } = Colors.White;
 
-    /// <summary>How far the style reaches past the picture (the shadow).</summary>
-    public double StyleReach => ShadowSize > 0.5 ? ShadowSize * 1.4 : 0;
+    /// <summary>How far the style reaches past the picture (the shadow; a shape's outline lies outside it too).</summary>
+    public double StyleReach => Math.Max(ShadowSize > 0.5 ? ShadowSize * 1.4 : 0, BorderWidth > 0.25 && IsShaped ? BorderWidth : 0);
+
+    private BitmapSource? _shapeOf;
+    private bool _shaped;
+    private (BitmapSource Source, double Width, Color Color, BitmapSource Image, double Margin)? _outline;
+    private (BitmapSource Source, double Size, BitmapSource Image, double Margin)? _shadow;
+
+    /// <summary>The pixels that decide the shape (colours and a slider's small copy do not change it).</summary>
+    private BitmapSource? ShapeSource => Origin ?? Image;
+
+    /// <summary>A free shape (cut along a path, warped, a picture with see-through parts): no 圆角, the style follows the shape.</summary>
+    public bool IsShaped
+    {
+        get
+        {
+            if (ShapeSource is not { } source)
+            {
+                return false;
+            }
+
+            if (!ReferenceEquals(_shapeOf, source))
+            {
+                _shapeOf = source;
+                _shaped = ImageOps.HasShape(source);
+            }
+
+            return _shaped;
+        }
+    }
+
+    private void DrawShapeStyle(DrawingContext dc, bool outline)
+    {
+        var source = ShapeSource!;
+        double sx = Rect.Width / source.PixelWidth, sy = Rect.Height / source.PixelHeight;
+        if (!outline)
+        {
+            var size = Math.Round(ShadowSize / Math.Max(0.001, (sx + sy) / 2) * 2) / 2;
+            if (_shadow is not { } shadow || !ReferenceEquals(shadow.Source, source) || shadow.Size != size)
+            {
+                var (image, margin) = ImageOps.ShapeShadow(source, size);
+                shadow = (source, size, image, margin);
+                _shadow = shadow;
+            }
+
+            var drop = ShadowSize * 0.35;
+            dc.DrawImage(shadow.Image, new Rect(Rect.X - shadow.Margin * sx, Rect.Y - shadow.Margin * sy + drop,
+                Rect.Width + shadow.Margin * sx * 2, Rect.Height + shadow.Margin * sy * 2));
+            return;
+        }
+
+        var width = Math.Round(BorderWidth / Math.Max(0.001, (sx + sy) / 2) * 4) / 4;
+        if (_outline is not { } ring || !ReferenceEquals(ring.Source, source) || ring.Width != width || ring.Color != BorderColor)
+        {
+            var (image, margin) = ImageOps.ShapeOutline(source, width, BorderColor);
+            ring = (source, width, BorderColor, image, margin);
+            _outline = ring;
+        }
+
+        dc.DrawImage(ring.Image, new Rect(Rect.X - ring.Margin * sx, Rect.Y - ring.Margin * sy,
+            Rect.Width + ring.Margin * sx * 2, Rect.Height + ring.Margin * sy * 2));
+    }
 
     /// <summary>How pictures are scaled in the render going on (the editor: crisp pixels when zoomed far in).</summary>
     public static BitmapScalingMode Scaling { get; set; } = BitmapScalingMode.HighQuality;
@@ -648,8 +708,22 @@ public sealed class ImageAnnotation : Annotation
             return;
         }
 
-        var radius = Math.Clamp(Radius, 0, Math.Min(Rect.Width, Rect.Height) / 2);
-        if (ShadowSize > 0.5)
+        var styled = Radius > 0.25 || ShadowSize > 0.5 || BorderWidth > 0.25;
+        var shaped = styled && IsShaped;
+        var radius = shaped ? 0 : Math.Clamp(Radius, 0, Math.Min(Rect.Width, Rect.Height) / 2);
+        if (shaped)
+        {
+            if (ShadowSize > 0.5)
+            {
+                DrawShapeStyle(dc, outline: false);
+            }
+
+            if (BorderWidth > 0.25)
+            {
+                DrawShapeStyle(dc, outline: true); // under the picture, so its soft edge stays clean
+            }
+        }
+        else if (ShadowSize > 0.5)
         {
             // A soft shadow: rings that grow and fade, a little below the picture.
             var layers = Math.Clamp((int)Math.Ceiling(ShadowSize / 2), 3, 14);
@@ -681,7 +755,7 @@ public sealed class ImageAnnotation : Annotation
         }
 
         dc.DrawDrawing(group);
-        if (BorderWidth > 0.25)
+        if (BorderWidth > 0.25 && !shaped)
         {
             var inset = BorderWidth / 2;
             var inner = new Rect(Rect.X + inset, Rect.Y + inset, Math.Max(0, Rect.Width - BorderWidth), Math.Max(0, Rect.Height - BorderWidth));

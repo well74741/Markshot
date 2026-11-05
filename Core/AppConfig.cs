@@ -143,11 +143,8 @@ public sealed class AppConfig
         }
     }
 
-    /// <summary>The pause before the frame moves on to another element (ms): the same for every range.</summary>
-    public const int HoverDelay = 100;
-
-    /// <summary>The frame's slide to the new element (ms).</summary>
-    public const int HoverSlide = 150;
+    /// <summary>The frame's slide to the new element (ms); it starts at once, nothing waits for the pointer to rest.</summary>
+    public const int HoverSlide = 80;
 
     /// <summary>Edge contrast the picture-based detection needs.</summary>
     public static int EdgeThresholdFor(int range) => Math.Clamp(range, 1, 4) >= 4 ? 14 : 28;

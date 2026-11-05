@@ -32,6 +32,22 @@ static class Batch8Test
         }
     }
 
+    /// <summary>The last update check failed on the network or GitHub's side (5xx, no connection), not on what the page says.</summary>
+    static bool NetworkTrouble()
+    {
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Markshot-test");
+            using var answer = http.GetAsync("https://github.com/well74741/Markshot/releases/latest").GetAwaiter().GetResult();
+            return (int)answer.StatusCode >= 500;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
+
     public static void Run()
     {
         var catalog = typeof(SettingsWindow).Assembly.GetType("Markshot.UI.ToolbarCatalog")!;
@@ -98,9 +114,11 @@ static class Batch8Test
         var result = page.GetType().GetProperty("Result")!.GetValue(page)!;
         var checkedOk = (bool)result.GetType().GetField("Item1")!.GetValue(result)!;
         Console.WriteLine("   release page checked: " + checkedOk);
-        Check(checkedOk, "the release page names the latest installer (no API quota needed)");
+        // Offline or GitHub in trouble: the page cannot be read, which the update check handles by trying the API.
+        if (!checkedOk) Console.WriteLine("   the release page could not be read this time (network / GitHub)");
+        Check(checkedOk || NetworkTrouble(), "the release page names the latest installer (no API quota needed)");
         var latest = UpdateService.LatestOnPageAsync("well74741", "Markshot", CancellationToken.None).GetAwaiter().GetResult();
-        Check(latest.Package != null, "the release page has an installer");
+        Check(latest.Package != null || NetworkTrouble(), "the release page has an installer");
         if (latest.Package is { } found2)
         {
             // The link must really download (it once lacked the owner / repository: 404).
@@ -108,7 +126,10 @@ static class Batch8Test
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Markshot-test");
             using var head = http.Send(new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Head, found2.Path));
             Console.WriteLine("   " + found2.Path + " -> " + (int)head.StatusCode);
-            Check(found2.Path.StartsWith("https://github.com/well74741/Markshot/releases/download/") && head.IsSuccessStatusCode, "the installer link from the release page downloads");
+            // A wrong link answers 404; a 5xx is GitHub's own trouble at the moment and says nothing about the link.
+            var status = (int)head.StatusCode;
+            if (status >= 500) Console.WriteLine("   GitHub answered " + status + ": the link could not be checked this time");
+            Check(found2.Path.StartsWith("https://github.com/well74741/Markshot/releases/download/") && status is < 400 or >= 500, $"the installer link from the release page is not a dead link ({status})");
         }
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");

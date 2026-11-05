@@ -123,6 +123,32 @@ static class CaptureTest
             "over a paragraph line: the line, then the paragraph");
         Check(segmenter.At(whole, 600, 300).Count == 0, "over empty background: nothing");
 
+        var hintOverlay = new OverlayWindow(Solid(300, 200, 40, 40, 40), new Int32Rect(-4000, -4000, 300, 200));
+        Check(((TextBlock)hintOverlay.FindName("HintText")).Text.Contains("滚轮 调整识别范围"), "the capture's hint tells what the wheel does");
+        var hintBorder = (FrameworkElement)hintOverlay.FindName("Hint");
+        var tipBorder = (FrameworkElement)hintOverlay.FindName("WheelTip");
+        ((TextBlock)hintOverlay.FindName("WheelTipText")).Text = "识别范围 2 / 4：卡片（滚轮：上 变大，下 变小）";
+        tipBorder.Visibility = Visibility.Visible;
+        var uiParts = new StackPanel { Background = new SolidColorBrush(Color.FromRgb(70, 70, 70)) };
+        foreach (var part in new[] { hintBorder, tipBorder })
+        {
+            ((Panel)LogicalTreeHelper.GetParent(part)).Children.Remove(part);
+            part.HorizontalAlignment = HorizontalAlignment.Center;
+            part.Margin = new Thickness(8);
+            uiParts.Children.Add(part);
+        }
+
+        uiParts.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        uiParts.Arrange(new Rect(uiParts.DesiredSize));
+        uiParts.UpdateLayout();
+        Console.WriteLine($"   hint width: {hintBorder.ActualWidth:0} DIP");
+        var hintShot = new RenderTargetBitmap((int)uiParts.ActualWidth, (int)uiParts.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+        hintShot.Render(uiParts);
+        var hintEncoder = new PngBitmapEncoder();
+        hintEncoder.Frames.Add(BitmapFrame.Create(hintShot));
+        using (var hintFile = System.IO.File.Create("capture_hint_wheel.png")) hintEncoder.Save(hintFile);
+        hintOverlay.Close();
+
         // 识别范围 4 (细小元素) also counts a faint box (contrast 20) that the other ranges leave alone
         var faint = new byte[300 * 200 * 4];
         for (var y = 0; y < 200; y++)
@@ -174,6 +200,7 @@ static class CaptureTest
         var target = Activator.CreateInstance(windowTargetType)!;
         windowTargetType.GetProperty("Bounds")!.SetValue(target, new Rect(-4000, -4000, 300, 200));
         windowTargetType.GetProperty("Label")!.SetValue(target, "窗口");
+        windowTargetType.GetProperty("Handle")!.SetValue(target, new IntPtr(0x12340));
         typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, target);
         var rangedEditor = (Markshot.Annotations.AnnotationEditor)ranged.FindName("Editor");
         var rangeChain = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
@@ -195,10 +222,42 @@ static class CaptureTest
         Check(FirstAt(2) == new Rect(20, 20, 200, 150), "2 大区块: the panel");
         Check(FirstAt(1) == new Rect(0, 0, 300, 200), "1 窗口: the window");
         FirstAt(3);
-        Pump(AppConfig.HoverDelay + 300);
+        var movedFrom = rangedEditor.HoverBounds;
+        var nextChain = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
+        nextChain.Add(Activator.CreateInstance(candidateType, new Rect(200, 120, 90, 70), "图片"));
+        nextChain.Add(Activator.CreateInstance(candidateType, new Rect(0, 0, 300, 200), "窗口"));
+        Call(ranged, "SetHoverChain", nextChain);
+        Check((Rect)Get(ranged, "_hoverLocal") == new Rect(200, 120, 90, 70), "another element: the frame heads there at once, nothing waits for the pointer to rest");
+        Pump(AppConfig.HoverSlide + 80);
+        Check(rangedEditor.HoverBounds == new Rect(200, 120, 90, 70) && rangedEditor.HoverBounds != movedFrom, $"… and is there after the short slide of {AppConfig.HoverSlide} ms");
+        Call(ranged, "ClearHover");
+        FirstAt(3);
         Check((bool)Call(ranged, "StepHoverLevel", -120) && (Rect)Get(ranged, "_hoverLocal") == new Rect(50, 50, 24, 20), "the wheel still goes in to the button");
         Call(ranged, "SetHoverChain", rangeChain);
         Check((Rect)Get(ranged, "_hoverLocal") == new Rect(50, 50, 24, 20), "… and that choice stays while the pointer stays");
+
+        // the wheel says what it did
+        var tip = (FrameworkElement)ranged.FindName("WheelTip");
+        var tipText = (TextBlock)ranged.FindName("WheelTipText");
+        Check(tip.Visibility == Visibility.Visible && tipText.Text.Contains("1 / 4") && tipText.Text.Contains("按钮"), $"滚轮: a tip with the level and what is framed ({tipText.Text})");
+        Call(ranged, "StepHoverLevel", -120);
+        Check(tipText.Text.Contains("已是最小"), $"… at the end: it says so ({tipText.Text})");
+        Call(ranged, "StepHoverLevel", 120);
+        Check(tipText.Text.Contains("2 / 4") && tipText.Text.Contains("卡片"), $"… going out ({tipText.Text})");
+        Pump(1900);
+        Check(tip.Visibility != Visibility.Visible, "… and goes by itself");
+
+        // 窗口 range (or another program's window): the wheel still goes in
+        rangeConfig.DetectRange = 1;
+        Call(ranged, "ClearHover");
+        typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, target);
+        var onlyWindow = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
+        onlyWindow.Add(Activator.CreateInstance(candidateType, new Rect(0, 0, 300, 200), "窗口"));
+        Call(ranged, "SetHoverChain", onlyWindow);
+        Check((bool)Call(ranged, "WheelInWindow", 120) && tipText.Text.Contains("已是最大"), $"窗口 range, wheel up: already the largest ({tipText.Text})");
+        Check((bool)Call(ranged, "WheelInWindow", -120) && tipText.Text.Contains("正在识别"), "… wheel down: it looks inside");
+        Call(ranged, "SetHoverChain", rangeChain);
+        Check((Rect)Get(ranged, "_hoverLocal") == new Rect(20, 20, 200, 150), "… and takes one step in from the window");
         ranged.Close();
         rangeConfig.DetectRange = rangeBefore;
 
