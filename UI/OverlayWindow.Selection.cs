@@ -871,11 +871,15 @@ public partial class OverlayWindow
     {
         if (_hasSelection || _scale <= 0)
         {
+            Editor.HoverCornerRadius = 0; // from here on the hover frame marks annotations
             return;
         }
 
         var hover = Editor.ShowHover ? Editor.HoverBounds : Rect.Empty;
-        BrightClip.RadiusX = BrightClip.RadiusY = 0;
+        // Previewed with the rounded corners the area will get when clicked.
+        var corner = hover.IsEmpty ? 0 : Math.Min(Math.Max(0, App.Config.CaptureCornerRadius), Math.Min(hover.Width, hover.Height) / 2);
+        Editor.HoverCornerRadius = corner;
+        BrightClip.RadiusX = BrightClip.RadiusY = corner / _scale;
         BrightClip.Rect = hover.IsEmpty || hover.Width <= 0
             ? new Rect(0, 0, 0, 0)
             : new Rect(hover.X / _scale, hover.Y / _scale, hover.Width / _scale, hover.Height / _scale);

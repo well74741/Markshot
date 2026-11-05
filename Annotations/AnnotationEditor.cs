@@ -28,6 +28,9 @@ public sealed class AnnotationEditor : FrameworkElement
     /// <summary>Elements selected together (the image editor's 多选); each gets a dashed frame.</summary>
     public IReadOnlyList<Annotation>? Group { get; set; }
 
+    /// <summary>Rounded corners of the hover frame (canvas pixels): the capture's remembered ones.</summary>
+    public double HoverCornerRadius { get; set; }
+
     /// <summary>吸附 lines while an element is moved (canvas pixels).</summary>
     public IReadOnlyList<Snapping.Guide>? Guides { get; set; }
 
@@ -498,7 +501,16 @@ public sealed class AnnotationEditor : FrameworkElement
             inner = bounds;
         }
 
-        dc.DrawRectangle(null, new Pen(Accent, thickness) { LineJoin = PenLineJoin.Miter }, inner);
+        // The frame's middle line runs half its width inside the area: its outer edge follows the area's corners.
+        var corner = Math.Max(0, Math.Min(HoverCornerRadius, Math.Min(bounds.Width, bounds.Height) / 2) - thickness / 2);
+        if (corner > 0.25)
+        {
+            dc.DrawRoundedRectangle(null, new Pen(Accent, thickness), inner, corner, corner);
+        }
+        else
+        {
+            dc.DrawRectangle(null, new Pen(Accent, thickness) { LineJoin = PenLineJoin.Miter }, inner);
+        }
 
         if (string.IsNullOrWhiteSpace(label))
         {

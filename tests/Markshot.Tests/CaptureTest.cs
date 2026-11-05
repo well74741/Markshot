@@ -211,6 +211,42 @@ static class CaptureTest
         Call(plainCapture, "ApplyRememberedCorner");
         Check((double)Get(plainCapture, "_cornerRadius") == 0, "dragged back to square: square from then on");
 
+        // the automatically framed area shows the remembered corners, and a click on it keeps them
+        cornerConfig.CaptureCornerRadius = 24;
+        var hoverRound = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        var hoverEditor = (Markshot.Annotations.AnnotationEditor)hoverRound.FindName("Editor");
+        var hoverClip = (RectangleGeometry)hoverRound.FindName("BrightClip");
+        var hoverScale = (double)Get(hoverRound, "_scale");
+        Call(hoverRound, "SetHoverChain", list);
+        Check(hoverEditor.HoverCornerRadius == 10 && Math.Abs(hoverClip.RadiusX - 10 / hoverScale) < 0.01, $"识别框 and its bright area are rounded, no more than half of a small element ({hoverEditor.HoverCornerRadius})");
+        var hoverArea = new Rect(20, 20, 200, 120);
+        typeof(OverlayWindow).GetField("_pendingWindow", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(hoverRound, hoverArea);
+        typeof(OverlayWindow).GetField("_dragging", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(hoverRound, true);
+        Call(hoverRound, "Input_MouseLeftButtonUp", hoverRound, new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
+        Check((bool)Get(hoverRound, "_hasSelection") && (Rect)Get(hoverRound, "_selection") == hoverArea && (double)Get(hoverRound, "_cornerRadius") == 24, "a click on the framed area: the capture has those corners");
+        Check(hoverEditor.HoverCornerRadius == 0, "the hover frame is square again for annotations once an area is chosen");
+        hoverRound.Close();
+        cornerConfig.CaptureCornerRadius = 0;
+        var squareHover = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        Call(squareHover, "SetHoverChain", list);
+        Check(((Markshot.Annotations.AnnotationEditor)squareHover.FindName("Editor")).HoverCornerRadius == 0 && ((RectangleGeometry)squareHover.FindName("BrightClip")).RadiusX == 0, "no corners remembered: a square frame");
+        squareHover.Close();
+
+        // what the rounded frame looks like
+        var frameEditor = new Markshot.Annotations.AnnotationEditor { Width = 220, Height = 140, Scale = 1, ShowHover = true, HoverBounds = new Rect(20, 20, 180, 100), HoverCornerRadius = 30 };
+        frameEditor.Measure(new Size(220, 140));
+        frameEditor.Arrange(new Rect(0, 0, 220, 140));
+        var frameShot = new RenderTargetBitmap(220, 140, 96, 96, PixelFormats.Pbgra32);
+        frameShot.Render(frameEditor);
+        var framePixels = new byte[4];
+        frameShot.CopyPixels(new Int32Rect(21, 21, 1, 1), framePixels, 4, 0);
+        var cornerEmpty = framePixels[3] == 0;
+        frameShot.CopyPixels(new Int32Rect(110, 21, 1, 1), framePixels, 4, 0);
+        Check(cornerEmpty && framePixels[3] > 200, "drawn with rounded corners: the square corner stays empty, the edge is solid");
+        var frameEncoder = new PngBitmapEncoder();
+        frameEncoder.Frames.Add(BitmapFrame.Create(frameShot));
+        using (var frameFile = System.IO.File.Create("hover_frame_rounded.png")) frameEncoder.Save(frameFile);
+
         // 快速双击 in the capture: copies without what the first click drew, and closes
         BitmapSource quickCopied = null;
         ClipboardService.CopyOverride = image => { quickCopied = image; return true; };
