@@ -181,6 +181,7 @@ static class CaptureTest
         var scale = (double)Get(overlay, "_scale");
         Check(bright.Rect.Width > 0 && Math.Abs(bright.Rect.X - 50 / scale) < 0.5 && Math.Abs(bright.Rect.Width - 40 / scale) < 0.5,
             $"the framed element is shown bright, the rest dim ({bright.Rect})");
+        var rangeAtStart = Markshot.App.Config.DetectRange;
         Check((bool)Call(overlay, "StepHoverLevel", 120) && (Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "wheel up: the element around it");
         Pump(400);
         Check(editor.HoverBounds == new Rect(20, 20, 200, 120), "the frame slides there (animated)");
@@ -191,6 +192,7 @@ static class CaptureTest
         Check((Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "wheel down: back in");
         Call(overlay, "SetHoverChain", list);
         Check((Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "the chosen level stays while the mouse stays on the element");
+        Check(Markshot.App.Config.DetectRange == rangeAtStart && !(bool)typeof(OverlayWindow).GetProperty("RangeChanged")!.GetValue(overlay)!, "no window under the pointer: the wheel keeps no range");
 
         // 识别范围: what is framed first (the wheel still goes out and in)
         var rangeConfig = Markshot.App.Config;
@@ -236,14 +238,20 @@ static class CaptureTest
         Call(ranged, "SetHoverChain", rangeChain);
         Check((Rect)Get(ranged, "_hoverLocal") == new Rect(50, 50, 24, 20), "… and that choice stays while the pointer stays");
 
-        // the wheel says what it did
+        // the wheel says what it did, and the range it went to is kept
         var tip = (FrameworkElement)ranged.FindName("WheelTip");
         var tipText = (TextBlock)ranged.FindName("WheelTipText");
-        Check(tip.Visibility == Visibility.Visible && tipText.Text.Contains("1 / 4") && tipText.Text.Contains("按钮"), $"滚轮: a tip with the level and what is framed ({tipText.Text})");
+        Check(tip.Visibility == Visibility.Visible && tipText.Text.Contains("细小元素") && tipText.Text.Contains("已记住") && tipText.Text.Contains("按钮"),
+            $"滚轮: a tip with the range and what is framed ({tipText.Text})");
+        Check(rangeConfig.DetectRange == 4 && (bool)typeof(OverlayWindow).GetProperty("RangeChanged")!.GetValue(ranged)!, "… the range the wheel went to is kept (细小元素)");
+        Call(ranged, "ClearHover");
+        typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, target);
+        Call(ranged, "SetHoverChain", rangeChain);
+        Check((Rect)Get(ranged, "_hoverLocal") == new Rect(50, 50, 24, 20), "… the next element starts at that range (no going back)");
         Call(ranged, "StepHoverLevel", -120);
         Check(tipText.Text.Contains("已是最小"), $"… at the end: it says so ({tipText.Text})");
         Call(ranged, "StepHoverLevel", 120);
-        Check(tipText.Text.Contains("2 / 4") && tipText.Text.Contains("卡片"), $"… going out ({tipText.Text})");
+        Check(tipText.Text.Contains("常规元素") && tipText.Text.Contains("卡片") && rangeConfig.DetectRange == 3, $"… going out: 常规元素, kept ({tipText.Text})");
         Pump(1900);
         Check(tip.Visibility != Visibility.Visible, "… and goes by itself");
 

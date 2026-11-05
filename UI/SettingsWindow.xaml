@@ -6,7 +6,6 @@
         Width="760" Height="560" MinWidth="680" MinHeight="480"
         Background="{DynamicResource T_FF1A1A1A}"
         WindowStartupLocation="CenterScreen"
-        Topmost="True"
         FontFamily="Microsoft YaHei UI"
         UseLayoutRounding="True">
 

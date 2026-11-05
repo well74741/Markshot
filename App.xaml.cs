@@ -261,6 +261,11 @@ public partial class App : Application
                     source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow), source)
             };
             overlay.ShowDialog();
+            if (overlay.RangeChanged)
+            {
+                Config.Save(); // the 识别范围 the wheel chose
+            }
+
             SaveRemembered();
 
             if (overlay.Result == CaptureAction.Edit && overlay.PinBaseImage != null)
@@ -650,7 +655,10 @@ public partial class App : Application
             }
         };
         _settings.Show();
+        // In front once when opened (from the tray); after that like any window, other programs can cover it.
+        _settings.Topmost = true;
         _settings.Activate();
+        _settings.Topmost = false;
     }
 
     /// <summary>Tray 导出诊断信息: logs + config (no API key) + system report, zipped on the desktop.</summary>

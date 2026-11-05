@@ -106,6 +106,42 @@ static class Batch2Test
         Check(ImmersiveTranslator.DetectLanguage("The quick brown fox jumps") == "English", "detects English");
         Check(ImmersiveTranslator.DetectLanguage("これは日本語のテキストです") == "日本語", "detects Japanese");
 
+        // ---- 原位翻译: a translation that needs more lines than the original keeps the original's size
+        {
+            var white = BitmapSource.Create(420, 260, 96, 96, PixelFormats.Bgra32, null,
+                Enumerable.Repeat((byte)255, 420 * 260 * 4).ToArray(), 420 * 4);
+            const double em = 16;
+            var lines = new List<ImmersiveTranslator.Line>();
+            for (var i = 0; i < 3; i++)
+            {
+                var top = 20 + i * 22;
+                lines.Add(new ImmersiveTranslator.Line("English text line", new Int32Rect(20, top - 3, 300, 22), Colors.White, true,
+                    Colors.Black, top, top + 14, em, false));
+            }
+
+            var paragraph = new ImmersiveTranslator.Paragraph("English text line ...", lines, new Int32Rect(20, 17, 300, 66));
+            var chinese = string.Concat(Enumerable.Repeat("这是一段比原文多出几行的中文译文，", 5));
+            var flags = BindingFlags.NonPublic | BindingFlags.Static;
+            var pixels = typeof(ImmersiveTranslator).GetMethod("ReadPixels", flags)!.Invoke(null, new object[] { white });
+            var drawn = (BitmapSource)typeof(ImmersiveTranslator).GetMethod("Render", flags)!
+                .Invoke(null, new object?[] { white, pixels, new[] { paragraph }, new string?[] { chinese } })!;
+            var data = new byte[420 * 260 * 4];
+            new FormatConvertedBitmap(drawn, PixelFormats.Bgra32, null, 0).CopyPixels(data, 420 * 4, 0);
+            bool Dark(int y) => Enumerable.Range(0, 420).Any(x => data[(y * 420 + x) * 4 + 1] < 128);
+            var bands = new List<(int Top, int Bottom)>();
+            for (var y = 0; y < 260; y++)
+            {
+                if (!Dark(y)) continue;
+                var bandTop = y;
+                while (y < 260 && Dark(y)) y++;
+                bands.Add((bandTop, y));
+            }
+
+            var first = bands.Count > 0 ? bands[0].Bottom - bands[0].Top : 0;
+            Check(bands.Count >= 4 && first >= 12, $"原位翻译: longer Chinese keeps about the original size and flows on below (rows {bands.Count}, glyph height {first} px for em {em})");
+            Check(Math.Abs(ImmersiveTranslator.OutputSize(16, false, true) - 16) < 2 && ImmersiveTranslator.OutputSize(16, true, true) == 16, "原位翻译: the output size is the original's em (script-corrected)");
+        }
+
         Shots();
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
     }

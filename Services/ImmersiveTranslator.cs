@@ -521,8 +521,9 @@ public static class ImmersiveTranslator
             ? cover.Width
             : Math.Max(cover.Width, Math.Min(cover.Width * 1.3, px.Width - cover.X - 2));
 
-        var size = em;
-        var minSize = Math.Max(7, em * 0.6);
+        // The size of the original: a CJK em looks about as big as a Latin em with the same ink height.
+        var size = OutputSize(em, paragraph.Lines.All(l => l.Cjk), HasCjk(text));
+        var minSize = multiLine ? size : Math.Max(7, size * 0.85);
         FormattedText formatted;
         while (true)
         {
@@ -533,14 +534,33 @@ public static class ImmersiveTranslator
                 LineHeight = size * Math.Clamp(lineGap, 1.1, 2.2)
             };
 
-            var fits = formatted.Height <= areaHeight + 0.5 &&
-                       (multiLine || formatted.Width <= maxWidth + 0.5);
+            var fits = multiLine || (formatted.Height <= areaHeight + 0.5 && formatted.Width <= maxWidth + 0.5);
             if (fits || size <= minSize)
             {
                 break;
             }
 
             size = Math.Max(minSize, size - Math.Max(0.5, size * 0.05));
+        }
+
+        if (multiLine && formatted.Height > cover.Height)
+        {
+            // More lines than the original: the text flows on below; cover what it runs over.
+            var below = new Int32Rect(cover.X, cover.Y + cover.Height, cover.Width,
+                Math.Min(px.Height - cover.Y - cover.Height, (int)Math.Ceiling(formatted.Height - cover.Height) + pad));
+            if (below.Height > 0)
+            {
+                if (flat)
+                {
+                    var brush = new SolidColorBrush(background);
+                    brush.Freeze();
+                    dc.DrawRectangle(brush, null, ToRect(below));
+                }
+                else
+                {
+                    PaintInterpolated(dc, px, below);
+                }
+            }
         }
 
         if (!multiLine && formatted.Width > cover.Width && cover.X + formatted.Width > cover.X + cover.Width)
@@ -572,6 +592,13 @@ public static class ImmersiveTranslator
             : (first.InkTop + first.InkBottom) / 2 - formatted.Height / 2;
         dc.DrawText(formatted, new Point(paragraph.Lines.Min(l => l.Box.X) + pad * 0.5, y));
     }
+
+    /// <summary>
+    /// The size to write the translation in: the original's em, corrected between scripts (a CJK line's ink
+    /// fills more of its em than Latin ink does, so the same em looks bigger in Chinese than in English).
+    /// </summary>
+    public static double OutputSize(double em, bool sourceCjk, bool targetCjk) =>
+        sourceCjk == targetCjk ? em : targetCjk ? em * 0.92 : em * 1.08;
 
     private static Int32Rect InkArea(Paragraph paragraph, int pad, Pixels px)
     {

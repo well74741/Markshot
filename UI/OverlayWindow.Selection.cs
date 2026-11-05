@@ -809,6 +809,30 @@ public partial class OverlayWindow
         }
     }
 
+    /// <summary>The 识别范围 a frame belongs to: the smallest range that would take it first.</summary>
+    private int RangeOf(Rect frame, Rect window)
+    {
+        if (window.IsEmpty || Close(frame, window))
+        {
+            return 1;
+        }
+
+        for (var range = 2; range <= 3; range++)
+        {
+            if (AppConfig.StartsAt(range, frame, window, _scale))
+            {
+                return range;
+            }
+        }
+
+        return 4;
+    }
+
+    private static string RangeName(int range) => range switch { 1 => "识别范围：窗口", 2 => "识别范围：大区块", 4 => "识别范围：细小元素", _ => "识别范围：常规元素" };
+
+    /// <summary>The wheel changed the 识别范围 (saved when the capture closes).</summary>
+    public bool RangeChanged { get; private set; }
+
     private static string ShortLabel(string label)
     {
         var at = label.IndexOf(" · ", StringComparison.Ordinal);
@@ -845,6 +869,12 @@ public partial class OverlayWindow
 
         _detailWindow = target.Handle;
         _detailFresh = true;
+        if (App.Config.DetectRange <= 1)
+        {
+            App.Config.DetectRange = 2; // into the window: the range is kept from here on
+            RangeChanged = true;
+        }
+
         ShowWheelTip("正在识别窗口里的元素…");
         var (x, y) = _hoverScreenPoint;
         RefreshHoverChain();
@@ -924,8 +954,19 @@ public partial class OverlayWindow
             // The wheel went into the window: one step in from it.
             _detailFresh = false;
             _startLevel = -1;
-            ShowWheelTip($"识别范围 {chain.Count - 1} / {chain.Count}：{ShortLabel(chain[^2].Label)}（滚轮：上 变大，下 变小）");
-            return chain.Count - 2;
+            var window2 = _hoverTarget == null ? Rect.Empty : ToLocal(_hoverTarget.Bounds);
+            var inner = chain.Count - 2;
+            for (var i = 0; i < chain.Count - 1; i++)
+            {
+                if (AppConfig.StartsAt(App.Config.DetectRange, chain[i].Local, window2, _scale))
+                {
+                    inner = i; // the kept range, as far as this window has it
+                    break;
+                }
+            }
+
+            ShowWheelTip($"{RangeName(App.Config.DetectRange)} · {ShortLabel(chain[inner].Label)} · 滚轮：上 变大，下 变小");
+            return inner;
         }
 
         for (var i = 0; i < chain.Count; i++)
@@ -976,10 +1017,33 @@ public partial class OverlayWindow
         var before = _hoverLevel;
         _hoverLevel = Math.Clamp(_hoverLevel + (delta > 0 ? 1 : -1), 0, _hoverChain.Count - 1);
         _startLevel = -1; // the wheel's choice is kept while the pointer stays
-        var name = ShortLabel(_hoverChain[_hoverLevel].Label);
-        ShowWheelTip(before == _hoverLevel
-            ? (delta > 0 ? $"已是最大范围：{name}" : $"已是最小范围：{name}")
-            : $"识别范围 {_hoverLevel + 1} / {_hoverChain.Count}：{name}（滚轮：上 变大，下 变小）");
+        var frame = _hoverChain[_hoverLevel];
+        var name = ShortLabel(frame.Label);
+        if (before == _hoverLevel)
+        {
+            ShowWheelTip(delta > 0 ? $"已是最大范围：{name}" : $"已是最小范围：{name}");
+        }
+        else
+        {
+            // The range of what is framed now is kept: the next element, the next capture start from it.
+            // No window under the pointer: nothing to measure the range against, so nothing is kept.
+            if (_hoverTarget == null)
+            {
+                ShowWheelTip($"{name} · 滚轮：上 变大，下 变小");
+            }
+            else
+            {
+                var range = RangeOf(frame.Local, ToLocal(_hoverTarget.Bounds));
+                if (range != App.Config.DetectRange)
+                {
+                    App.Config.DetectRange = range;
+                    RangeChanged = true;
+                }
+
+                ShowWheelTip($"{RangeName(range)}（已记住）· {name} · 滚轮：上 变大，下 变小");
+            }
+        }
+
         ShowHoverLevel();
         return true;
     }

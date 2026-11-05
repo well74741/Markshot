@@ -26,8 +26,7 @@ public sealed class UpdateWindow : Window
         ResizeMode = ResizeMode.NoResize;
         SizeToContent = SizeToContent.WidthAndHeight;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        ShowInTaskbar = false;
-        Topmost = true;
+        ShowInTaskbar = false; // with the settings as owner it stays in front of them, not of every other program
         FontFamily = new FontFamily("Microsoft YaHei UI");
 
         var heading = new TextBlock { Text = $"Markshot {package.Version} 可以更新", FontSize = 15, FontWeight = FontWeights.SemiBold };
