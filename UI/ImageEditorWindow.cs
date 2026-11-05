@@ -42,6 +42,11 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly TextBlock _statusZoom = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Width = 48, TextAlignment = TextAlignment.Center };
     private readonly TextBox _widthBox = new();
     private readonly TextBox _heightBox = new();
+    private Border? _styleSection;
+    private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _styleSliders = new();
+    private readonly Border _borderSwatch = new() { Width = 22, Height = 14, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1) };
+    private readonly Dictionary<string, RadioButton> _backgroundButtons = new();
+    private readonly TextBox _fitMargin = new();
     private readonly CheckBox _keepRatio = new() { Content = "锁定比例", IsChecked = true, FontSize = 12, Margin = new Thickness(0, 6, 0, 0) };
     private readonly Slider _angle = new() { Minimum = -180, Maximum = 180, IsMoveToPointEnabled = true };
     private readonly TextBlock _angleValue = new() { FontSize = 12, Width = 40, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
@@ -492,7 +497,7 @@ public sealed class ImageEditorWindow : PinWindow
         {
             box.Style = (Style)Application.Current.FindResource("InputBox");
             InputMethod.SetIsInputMethodEnabled(box, false); // numbers only
-            box.Width = 66;
+            box.Width = 60;
             box.Padding = new Thickness(6, 4, 6, 4);
             box.PreviewKeyDown += (_, e) =>
             {
@@ -552,6 +557,9 @@ public sealed class ImageEditorWindow : PinWindow
         colour.Children.Add(AdjustSlider("对比度", "Contrast", -100, 100, 0));
         colour.Children.Add(AdjustSlider("饱和度", "Saturation", -100, 100, 0));
         colour.Children.Add(AdjustSlider("色相", "Hue", -180, 180, 0));
+        colour.Children.Add(AdjustSlider("色温", "Temperature", -100, 100, 0));
+        colour.Children.Add(AdjustSlider("锐化", "Sharpen", 0, 100, 0));
+        colour.Children.Add(AdjustSlider("模糊", "Blur", 0, 20, 0));
         colour.Children.Add(AdjustSlider("透明度", "Opacity", 0, 100, 100));
         var toggles = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         _invert.Click += (_, _) => AdjustChanged();
@@ -559,6 +567,7 @@ public sealed class ImageEditorWindow : PinWindow
         var curves = TextButton("曲线…", "打开曲线表调整明暗", OpenCurves);
         curves.Margin = new Thickness(0, 0, 6, 0);
         toggles.Children.Add(curves);
+        toggles.Children.Add(TextButton("一键增强", "自动拉开明暗、稍加饱和度（调色的曲线里可以再改；Ctrl+Z 撤销）", AutoEnhance));
         colour.Children.Add(toggles);
 
         Button Reset(EditGroup group, string tip)
@@ -569,10 +578,25 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         var stack = new StackPanel { Margin = new Thickness(10) };
-        var fitContent = TextButton("适应内容", "画布正好包住所有图片和批注（拖出画布的部分也收进来）", () => FitCanvasToContent());
-        fitContent.Margin = new Thickness(0, 6, 0, 0);
-        fitContent.HorizontalAlignment = HorizontalAlignment.Left;
-        stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio, fitContent));
+        var fitContent = TextButton("适应内容", "画布正好包住所有图片和批注（拖出画布的部分也收进来），四周留出边距", () => FitCanvasToContent(FitMargin));
+        fitContent.Margin = new Thickness(0, 0, 8, 0);
+        _fitMargin.Style = (Style)Application.Current.FindResource("InputBox");
+        InputMethod.SetIsInputMethodEnabled(_fitMargin, false);
+        _fitMargin.Width = 44;
+        _fitMargin.Padding = new Thickness(4, 3, 4, 3);
+        _fitMargin.Text = Math.Clamp(App.Config.EditorFitMargin, 0, 500).ToString(CultureInfo.InvariantCulture);
+        _fitMargin.ToolTip = "适应内容时四周留出的边距（像素）";
+        var fitRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        fitRow.Children.Add(fitContent);
+        var marginLabel = Label("边距");
+        marginLabel.Margin = new Thickness(0, 0, 6, 0);
+        fitRow.Children.Add(marginLabel);
+        fitRow.Children.Add(_fitMargin);
+        fitRow.Children.Add(Label(" px"));
+        stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio, fitRow, BackgroundRow()));
+        _styleSection = Section("元素样式", null, StyleSlider("圆角", "Radius", 0, 120), StyleSlider("阴影", "Shadow", 0, 60), StyleSlider("描边", "Border", 0, 24), BorderColorRow());
+        _styleSection.Visibility = Visibility.Collapsed;
+        stack.Children.Add(_styleSection);
         stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow));
         stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
         stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
@@ -589,6 +613,248 @@ public sealed class ImageEditorWindow : PinWindow
         UiScale.Changed += () => frame.Width = 262 * UiScale.Factor;
         frame.Width = 262 * UiScale.Factor;
         return frame;
+    }
+
+    private int FitMargin => int.TryParse(_fitMargin.Text.Trim(), out var margin) ? Math.Clamp(margin, 0, 500) : 0;
+
+    /// <summary>画布背景: 透明 / 白 / 黑 / 自选 (it is the canvas bitmap's colour: undo, sizes and saving follow by themselves).</summary>
+    private FrameworkElement BackgroundRow()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var (key, label) in new[] { ("Transparent", "透明"), ("White", "白"), ("Black", "黑"), ("Custom", "自选") })
+        {
+            var button = new RadioButton { Content = label, GroupName = "CanvasBackground" + GetHashCode(), Style = (Style)Application.Current.FindResource("SegmentRadio") };
+            button.Click += (_, _) => BackgroundClicked(key);
+            _backgroundButtons[key] = button;
+            row.Children.Add(button);
+        }
+
+        var plate = new Border { CornerRadius = new CornerRadius(5), Padding = new Thickness(2), Child = row, HorizontalAlignment = HorizontalAlignment.Left };
+        plate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF2A2A2A));
+        var line = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var label2 = Label("背景");
+        label2.Width = 32;
+        label2.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(label2, Dock.Left);
+        line.Children.Add(label2);
+        line.Children.Add(plate);
+        line.ToolTip = "画布的底色。存 JPG 时用它垫底（透明时垫白色）";
+        return line;
+    }
+
+    private void BackgroundClicked(string key)
+    {
+        if (_syncingControls)
+        {
+            return;
+        }
+
+        Color? color = key switch
+        {
+            "Transparent" => Colors.Transparent,
+            "White" => Colors.White,
+            "Black" => Colors.Black,
+            _ => null
+        };
+        if (color == null)
+        {
+            var current = CanvasColor;
+            var picker = new ColorPickerWindow(current.A == 0 ? Colors.White : current) { Owner = this };
+            picker.ShowDialog();
+            if (!picker.Accepted)
+            {
+                RefreshPanel(); // back to the colour it has
+                return;
+            }
+
+            color = Color.FromRgb(picker.SelectedColor.R, picker.SelectedColor.G, picker.SelectedColor.B);
+        }
+
+        SetBackground(color.Value);
+    }
+
+    /// <summary>The canvas' background colour (transparent when it has none).</summary>
+    public Color CanvasColor
+    {
+        get
+        {
+            var pixel = new byte[4];
+            new FormatConvertedBitmap(_baseImage, PixelFormats.Bgra32, null, 0).CopyPixels(new Int32Rect(0, 0, 1, 1), pixel, 4, 0);
+            return pixel[3] == 0 ? Colors.Transparent : Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]);
+        }
+    }
+
+    private BitmapSource CanvasFill(int width, int height)
+    {
+        var color = CanvasColor;
+        return color.A == 0 ? ImageOps.Blank(width, height) : ImageOps.Solid(width, height, color);
+    }
+
+    /// <summary>画布背景 (one undo step).</summary>
+    public void SetBackground(Color color)
+    {
+        if (!_hasImage || CanvasColor == color || (color.A == 0 && CanvasColor.A == 0))
+        {
+            RefreshPanel();
+            return;
+        }
+
+        _textEditor.Commit();
+        BakeAdjust();
+        _history.Checkpoint(Editor.Items);
+        SetBitmap(color.A == 0 ? ImageOps.Blank(_baseImage.PixelWidth, _baseImage.PixelHeight) : ImageOps.Solid(_baseImage.PixelWidth, _baseImage.PixelHeight, color));
+        UpdateUndoButtons();
+        RefreshPanel();
+    }
+
+    /// <summary>The selected pictures (a 多选 of pictures counts): what 元素样式 changes.</summary>
+    private List<ImageAnnotation> StyledPictures => SelectedElements.OfType<ImageAnnotation>().ToList();
+
+    private FrameworkElement StyleSlider(string title, string key, double max, double maximum)
+    {
+        var slider = new Slider { Minimum = 0, Maximum = maximum, IsMoveToPointEnabled = true };
+        var value = new TextBlock { FontSize = 12, Width = 34, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Text = "0" };
+        value.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFC8C8C8));
+        _styleSliders[key] = (slider, value);
+        slider.ValueChanged += (_, _) =>
+        {
+            value.Text = Math.Round(slider.Value).ToString("0", CultureInfo.InvariantCulture);
+            if (!_syncingControls)
+            {
+                SetPictureStyle(key, Math.Round(slider.Value));
+            }
+        };
+        var row = new DockPanel { Margin = new Thickness(0, 0, 0, 2) };
+        var label = Label(title);
+        label.Width = 48;
+        DockPanel.SetDock(label, Dock.Left);
+        DockPanel.SetDock(value, Dock.Right);
+        row.Children.Add(label);
+        row.Children.Add(value);
+        row.Children.Add(slider);
+        return row;
+    }
+
+    private FrameworkElement BorderColorRow()
+    {
+        _borderSwatch.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x55FFFFFF));
+        var button = new Button { Style = (Style)Application.Current.FindResource("FooterButton"), MinWidth = 0, Width = 44, Height = 26, Padding = new Thickness(0), Content = _borderSwatch, ToolTip = "描边颜色" };
+        button.Click += (_, _) =>
+        {
+            if (StyledPictures.FirstOrDefault() is not { } first)
+            {
+                return;
+            }
+
+            var picker = new ColorPickerWindow(first.BorderColor) { Owner = this };
+            picker.ShowDialog();
+            if (picker.Accepted)
+            {
+                SetBorderColor(Color.FromRgb(picker.SelectedColor.R, picker.SelectedColor.G, picker.SelectedColor.B));
+            }
+        };
+        var row = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
+        var label = Label("描边色");
+        label.Width = 48;
+        label.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(label, Dock.Left);
+        row.Children.Add(label);
+        button.HorizontalAlignment = HorizontalAlignment.Left;
+        row.Children.Add(button);
+        return row;
+    }
+
+    /// <summary>元素样式 of the selected pictures (a slider drag is one undo step).</summary>
+    public void SetPictureStyle(string key, double value)
+    {
+        var pictures = StyledPictures;
+        if (pictures.Count == 0)
+        {
+            return;
+        }
+
+        _history.CheckpointCoalesced(Editor.Items, (pictures[0], "style", key));
+        foreach (var picture in pictures)
+        {
+            switch (key)
+            {
+                case "Radius": picture.Radius = value; break;
+                case "Shadow": picture.ShadowSize = value; break;
+                default: picture.BorderWidth = value; break;
+            }
+        }
+
+        UpdateUndoButtons();
+        RebuildMosaics();
+        Editor.InvalidateVisual();
+    }
+
+    public void SetBorderColor(Color color)
+    {
+        var pictures = StyledPictures;
+        if (pictures.Count == 0)
+        {
+            return;
+        }
+
+        _history.Checkpoint(Editor.Items);
+        foreach (var picture in pictures)
+        {
+            picture.BorderColor = color;
+            if (picture.BorderWidth < 0.5)
+            {
+                picture.BorderWidth = 4; // a colour chosen: the outline shows
+            }
+        }
+
+        UpdateUndoButtons();
+        UpdateStylePanel();
+        Editor.InvalidateVisual();
+    }
+
+    /// <summary>元素样式 shows while pictures are selected, with the first one's values.</summary>
+    private void UpdateStylePanel()
+    {
+        if (_styleSection == null)
+        {
+            return;
+        }
+
+        var first = StyledPictures.FirstOrDefault();
+        _styleSection.Visibility = first == null ? Visibility.Collapsed : Visibility.Visible;
+        if (first == null)
+        {
+            return;
+        }
+
+        var syncing = _syncingControls;
+        _syncingControls = true;
+        _styleSliders["Radius"].Slider.Value = first.Radius;
+        _styleSliders["Shadow"].Slider.Value = first.ShadowSize;
+        _styleSliders["Border"].Slider.Value = first.BorderWidth;
+        _borderSwatch.Background = new SolidColorBrush(first.BorderColor);
+        _syncingControls = syncing;
+    }
+
+    /// <summary>一键增强: the brightness stretched over the full range (through the curve), a touch more colour.</summary>
+    public void AutoEnhance()
+    {
+        if (Target is not { Image: not null } picture)
+        {
+            return;
+        }
+
+        BakeAdjust();
+        var levels = ImageOps.AutoLevels(picture.Origin ?? picture.Image!);
+        if (levels == null)
+        {
+            Notice("这张图的明暗已经很充分，不需要增强");
+            return;
+        }
+
+        var current = picture.Adjust ?? new ImageAdjust();
+        SetAdjustAndControls(current with { Curve = levels, Saturation = current.Saturation == 0 ? 10 : current.Saturation });
+        Notice("已自动增强（可在曲线里微调，Ctrl+Z 撤销）");
     }
 
     private FrameworkElement AdjustSlider(string title, string key, double min, double max, double start)
@@ -683,7 +949,18 @@ public sealed class ImageEditorWindow : PinWindow
         _sliders["Saturation"].Slider.Value = _adjust.Saturation;
         _sliders["Opacity"].Slider.Value = _adjust.Opacity;
         _sliders["Hue"].Slider.Value = _adjust.Hue;
+        _sliders["Temperature"].Slider.Value = _adjust.Temperature;
+        _sliders["Sharpen"].Slider.Value = _adjust.Sharpen;
+        _sliders["Blur"].Slider.Value = _adjust.Blur;
         _invert.IsChecked = _adjust.Invert;
+        var background = CanvasColor;
+        var named = background.A == 0 ? "Transparent" : background == Colors.White ? "White" : background == Colors.Black ? "Black" : "Custom";
+        foreach (var (key, button) in _backgroundButtons)
+        {
+            button.IsChecked = key == named;
+        }
+
+        UpdateStylePanel();
         _syncingControls = false;
         _emptyHint.Visibility = _hasImage ? Visibility.Collapsed : Visibility.Visible;
         _checker.Visibility = _hasImage ? Visibility.Visible : Visibility.Collapsed;
@@ -1049,7 +1326,7 @@ public sealed class ImageEditorWindow : PinWindow
     private string? _mosaicKey;
 
     private string PictureKey() => string.Join(";", Editor.Items.OfType<ImageAnnotation>().Select(p =>
-        $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(p.Image)},{p.Rect},{p.Rotation},{p.Opacity},{p.Hidden}")) + $"|{_baseImage.PixelWidth}x{_baseImage.PixelHeight}";
+        $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(p.Image)},{p.Rect},{p.Rotation},{p.Opacity},{p.Hidden},{p.Radius},{p.ShadowSize},{p.BorderWidth}")) + $"|{_baseImage.PixelWidth}x{_baseImage.PixelHeight}";
 
     private protected override BitmapSource EyedropSource => MosaicSource;
 
@@ -1086,6 +1363,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>After a click or a key: the panel follows the selection, mosaics what moved under them.</summary>
     private void AfterInput()
     {
+        UpdateStylePanel();
         if (Editor.Guides != null && Mouse.LeftButton != MouseButtonState.Pressed)
         {
             Editor.Guides = null;
@@ -1167,11 +1445,20 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>画布适应内容: the canvas becomes the box around every element (plus a margin); one undo step.</summary>
     public void FitCanvasToContent(int margin = 0)
     {
+        if (App.Config.EditorFitMargin != margin)
+        {
+            App.Config.EditorFitMargin = margin; // remembered for the next time (written with the other settings)
+        }
+
         var all = Editor.Items.Where(item => item is not (WatermarkAnnotation or CutoutAnnotation) && !item.Hidden)
             .Aggregate(Rect.Empty, (union, item) =>
             {
                 var b = AnnotationEditor.RotatedBounds(item);
-                if (item is not ImageAnnotation)
+                if (item is ImageAnnotation picture)
+                {
+                    b.Inflate(picture.StyleReach, picture.StyleReach); // its shadow
+                }
+                else
                 {
                     b.Inflate(item.Thickness / 2 + 1, item.Thickness / 2 + 1);
                 }
@@ -1223,6 +1510,7 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         Editor.InvalidateVisual();
+        UpdateStylePanel();
         UpdateHint();
     }
 
@@ -1752,7 +2040,7 @@ public sealed class ImageEditorWindow : PinWindow
                 }
             }
 
-            SetBitmap(ImageOps.Blank(width, height)); // the mosaics are rebuilt on it
+            SetBitmap(CanvasFill(width, height)); // the background colour stays; the mosaics are rebuilt on it
         });
         Fit();
     }
@@ -2014,7 +2302,10 @@ public sealed class ImageEditorWindow : PinWindow
         false,
         _invert.IsChecked == true,
         Math.Round(_sliders["Hue"].Slider.Value),
-        _adjust.Curve);
+        _adjust.Curve,
+        Math.Round(_sliders["Temperature"].Slider.Value),
+        Math.Round(_sliders["Sharpen"].Slider.Value),
+        Math.Round(_sliders["Blur"].Slider.Value));
 
     private void AdjustChanged()
     {
@@ -2827,6 +3118,7 @@ public sealed class ImageEditorWindow : PinWindow
         var lastPicture = Editor.Items.FindLastIndex(item => item is ImageAnnotation);
         var flat = ImageOps.Render(_baseImage.PixelWidth, _baseImage.PixelHeight, dc =>
         {
+            dc.DrawImage(_baseImage, new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight)); // the background colour
             foreach (var item in Editor.Items.Take(lastPicture + 1))
             {
                 AnnotationEditor.DrawItem(dc, item);

@@ -370,6 +370,14 @@ static class ImageEditorTest
         var turnedHue = At(editor.Composite, 100, 200);
         Check(turnedHue.G > turnedHue.R, "色相 slider value turns the colours");
         editor.SetAdjust(new ImageAdjust());
+        editor.SetAdjust(new ImageAdjust(Temperature: 60, Sharpen: 30, Blur: 2));
+        Pump(30);
+        Check(editor.Composite is var tinted && !Same(tinted, clean) && At(tinted, 300, 200).R > At(clean, 300, 200).R,
+            "色温 / 锐化 / 模糊 are part of the picture's colour settings (warmer: more red)");
+        editor.UndoStep(); // the warm / sharp / blurred step
+        editor.UndoStep(); // back to before the 色相 (its preview was finished by the check above: a step of its own)
+        Pump(30);
+        Check(Same(editor.Composite, clean), "… undoable");
         var curves = new CurvesWindow(null, editor.Composite) { Left = -3000, Top = -3000, ShowActivated = false };
         double[]? lastCurve = null;
         curves.CurveChanged += curve => lastCurve = curve;

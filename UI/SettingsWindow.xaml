@@ -720,13 +720,13 @@
                             <CheckBox x:Name="DetectWindowsCheck" Margin="104,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="识别窗口" />
                             <DockPanel x:Name="DetectSensitivityRow" Margin="104,10,0,0" HorizontalAlignment="Left">
-                                <TextBlock Text="识别灵敏度" DockPanel.Dock="Left" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                <TextBlock Text="识别范围" DockPanel.Dock="Left" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                            VerticalAlignment="Center" Margin="0,0,10,0" />
-                                <TextBlock x:Name="DetectSensitivityValue" DockPanel.Dock="Right" Width="64" TextAlignment="Right"
+                                <TextBlock x:Name="DetectSensitivityValue" DockPanel.Dock="Right" Width="96" TextAlignment="Right"
                                            Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
-                                <Slider x:Name="DetectSensitivitySlider" Minimum="1" Maximum="5" TickFrequency="1" IsSnapToTickEnabled="True"
-                                        IsMoveToPointEnabled="True" Width="180" VerticalAlignment="Center" ValueChanged="DetectSensitivity_Changed"
-                                        ToolTip="低：鼠标停稳一会儿才换框，只框明显、较大的内容；高：跟手快，淡的边框、很小的元素也框住" />
+                                <Slider x:Name="DetectSensitivitySlider" Minimum="1" Maximum="4" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        IsMoveToPointEnabled="True" Width="150" VerticalAlignment="Center" ValueChanged="DetectSensitivity_Changed"
+                                        ToolTip="鼠标经过时先框住多大的东西；滚轮可以往外框到窗口、往里框到更小的元素。只在截图前正在用的软件里识别元素，其他窗口整个框住" />
                             </DockPanel>
                             <CheckBox x:Name="CaptureCursorCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="截图包含鼠标指针（截图中也可用快捷键切换）" />

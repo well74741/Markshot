@@ -553,7 +553,7 @@ public partial class OverlayWindow
     private void UpdateHover(Point point)
     {
         var config = App.Config;
-        ElementDetector.MinSide = AppConfig.MinSideFor(config.DetectSensitivity);
+        ElementDetector.MinSide = AppConfig.MinSideFor(config.DetectRange);
         if (_hasSelection || _dragging || !config.DetectAuto || (!config.DetectWindows && !config.DetectElements) ||
             (_tool != AnnotationTool.None && _tool != AnnotationTool.Select))
         {
@@ -580,7 +580,8 @@ public partial class OverlayWindow
         }
 
         _hoverTarget = target;
-        if (!config.DetectElements)
+        // Inside the window only of the program in use when the capture started; any other window is framed whole.
+        if (!config.DetectElements || config.DetectRange <= 1 || !IsActiveProgram(target.Handle))
         {
             SetHoverChain(new List<HoverCandidate> { new(window, target.Label) });
             return;
@@ -709,7 +710,7 @@ public partial class OverlayWindow
             if (_segmenter == null)
             {
                 var (pixels, width, height) = ImageOps.ReadPixels(_screenPlain);
-                _segmenter = new ScreenSegmenter(pixels, width, height, _scale, App.Config.DetectSensitivity);
+                _segmenter = new ScreenSegmenter(pixels, width, height, _scale, App.Config.DetectRange);
             }
 
             return _segmenter;
@@ -757,9 +758,44 @@ public partial class OverlayWindow
         return chain;
     }
 
+    /// <summary>The window of the program that was in front when the capture started (its elements are offered).</summary>
+    private bool IsActiveProgram(IntPtr window)
+    {
+        if (ActiveWindow == IntPtr.Zero)
+        {
+            return true; // not known (tests, the desktop): as before
+        }
+
+        var root = Native.GetAncestor(window, 2 /* GA_ROOT */);
+        return root == ActiveWindow || window == ActiveWindow;
+    }
+
+    /// <summary>The window in front before the capture opened (set by the app; the capture itself is not it).</summary>
+    public IntPtr ActiveWindow { get; init; }
+
     /// <summary>Two frames the user could not tell apart.</summary>
     private static bool Close(Rect a, Rect b) =>
         Math.Abs(a.X - b.X) <= 3 && Math.Abs(a.Y - b.Y) <= 3 && Math.Abs(a.Right - b.Right) <= 3 && Math.Abs(a.Bottom - b.Bottom) <= 3;
+
+    private int _startLevel;
+
+    /// <summary>The first frame at the 识别范围: the smallest that is big enough (the window when none is).</summary>
+    private int StartLevel(List<HoverCandidate> chain)
+    {
+        var window = _hoverTarget == null ? Rect.Empty : ToLocal(_hoverTarget.Bounds);
+        var range = App.Config.DetectRange;
+        for (var i = 0; i < chain.Count; i++)
+        {
+            if (window.IsEmpty || Close(chain[i].Local, window) || AppConfig.StartsAt(range, chain[i].Local, window, _scale))
+            {
+                _startLevel = i;
+                return i;
+            }
+        }
+
+        _startLevel = chain.Count - 1;
+        return _startLevel;
+    }
 
     /// <summary>New frames under the mouse. The level the wheel chose stays when its frame is still offered.</summary>
     private DispatcherTimer? _hoverDwell;
@@ -767,12 +803,12 @@ public partial class OverlayWindow
 
     /// <summary>
     /// A new element under the pointer: the frame moves there once the pointer has rested on it a moment
-    /// (识别灵敏度 sets how long), so sweeping over a page does not make it jump about. The first frame and
+    /// (a short fixed pause), so sweeping over a page does not make it jump about. The first frame and
     /// staying on the framed element answer at once.
     /// </summary>
     private void SetHoverChain(List<HoverCandidate> chain)
     {
-        var delay = AppConfig.HoverDelayFor(App.Config.DetectSensitivity);
+        var delay = AppConfig.HoverDelay;
         var shown = _hoverLevel < _hoverChain.Count ? _hoverChain[_hoverLevel].Local : Rect.Empty;
         var stays = chain.Any(candidate => ElementDetector.Same(candidate.Local, shown));
         if (delay <= 0 || !Editor.ShowHover || _hoverChain.Count == 0 || stays)
@@ -815,7 +851,7 @@ public partial class OverlayWindow
         }
 
         var keep = chain.FindIndex(candidate => ElementDetector.Same(candidate.Local, shown));
-        _hoverLevel = keep >= 0 && _hoverLevel > 0 ? keep : 0;
+        _hoverLevel = keep >= 0 && _hoverLevel > _startLevel ? keep : StartLevel(chain);
         if (Editor.ShowHover && ElementDetector.Same(chain[_hoverLevel].Local, shown))
         {
             return; // the same frame: nothing to redraw
@@ -833,6 +869,7 @@ public partial class OverlayWindow
         }
 
         _hoverLevel = Math.Clamp(_hoverLevel + (delta > 0 ? 1 : -1), 0, _hoverChain.Count - 1);
+        _startLevel = -1; // the wheel's choice is kept while the pointer stays
         ShowHoverLevel();
         return true;
     }
@@ -891,7 +928,7 @@ public partial class OverlayWindow
 
     private void OnHoverFrame(object? sender, EventArgs e)
     {
-        var t = Motion.Bezier(Math.Min(1, _hoverClock.Elapsed.TotalMilliseconds / AppConfig.HoverSlideFor(App.Config.DetectSensitivity)));
+        var t = Motion.Bezier(Math.Min(1, _hoverClock.Elapsed.TotalMilliseconds / AppConfig.HoverSlide));
         Editor.HoverBounds = new Rect(
             _hoverFrom.X + (_hoverTo.X - _hoverFrom.X) * t,
             _hoverFrom.Y + (_hoverTo.Y - _hoverFrom.Y) * t,

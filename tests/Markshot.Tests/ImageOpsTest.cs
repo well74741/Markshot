@@ -65,6 +65,56 @@ static class ImageOpsTest
         var green = At(ImageOps.Adjust(red, new ImageAdjust(Hue: 120)), 0, 0);
         Check(green.G > green.R + 80 && green.G > green.B, $"hue +120: red becomes green ({green.R},{green.G},{green.B})");
         var greyHue = At(ImageOps.Adjust(Solid(2, 2, 120, 120, 120), new ImageAdjust(Hue: 77)), 0, 0);
+
+        // 色温, 模糊, 锐化, 一键增强
+        var mid = Solid(4, 4, 128, 128, 128);
+        var warmer = At(ImageOps.Adjust(mid, new ImageAdjust(Temperature: 80)), 1, 1);
+        var cooler = At(ImageOps.Adjust(mid, new ImageAdjust(Temperature: -80)), 1, 1);
+        Check(warmer.R > 128 && warmer.B < 128 && cooler.B > 128 && cooler.R < 128, $"色温: warm = more red, cool = more blue ({warmer.R}/{warmer.B}, {cooler.R}/{cooler.B})");
+        var edge = new byte[40 * 20 * 4];
+        for (var y = 0; y < 20; y++)
+        for (var x = 0; x < 40; x++)
+        {
+            var v = (byte)(x < 20 ? 40 : 220);
+            var i = (y * 40 + x) * 4;
+            edge[i] = edge[i + 1] = edge[i + 2] = v;
+            edge[i + 3] = 255;
+        }
+
+        var step = ImageOps.FromPixels(edge, 40, 20);
+        var blurred = ImageOps.Adjust(step, new ImageAdjust(Blur: 20));
+        Check(At(blurred, 19, 10).R > 60 && At(blurred, 20, 10).R < 200, $"模糊 softens an edge ({At(blurred, 19, 10).R}, {At(blurred, 20, 10).R})");
+        var sharp = ImageOps.Adjust(step, new ImageAdjust(Sharpen: 100));
+        Check(At(sharp, 19, 10).R < 40 && At(sharp, 20, 10).R > 220, $"锐化 makes the edge crisper ({At(sharp, 19, 10).R}, {At(sharp, 20, 10).R})");
+        Check(At(sharp, 2, 10).R == 40 && At(sharp, 37, 10).R == 220, "… flat areas stay as they are");
+        var holey = new byte[20 * 20 * 4];
+        for (var i = 0; i < holey.Length; i += 4)
+        {
+            var inside = (i / 4 % 20) < 10;
+            holey[i] = 0; holey[i + 1] = 0; holey[i + 2] = 255; holey[i + 3] = (byte)(inside ? 255 : 0);
+        }
+
+        var softHole = ImageOps.Adjust(ImageOps.FromPixels(holey, 20, 20), new ImageAdjust(Blur: 20));
+        var rim = At(softHole, 10, 10);
+        Check(rim.A > 0 && rim.A < 255 && rim.R > 240 && rim.G < 15, $"模糊 at a see-through edge keeps the colour clean (no dark fringe: {rim.R},{rim.G},{rim.B},{rim.A})");
+        var dull = new byte[30 * 10 * 4];
+        for (var i = 0; i < dull.Length; i += 4)
+        {
+            var v = (byte)(90 + (i / 4 % 30) * 2);
+            dull[i] = dull[i + 1] = dull[i + 2] = v;
+            dull[i + 3] = 255;
+        }
+
+        var levels = ImageOps.AutoLevels(ImageOps.FromPixels(dull, 30, 10));
+        Check(levels != null && levels[0] >= 85 && levels[2] <= 155 && levels[1] == 0 && levels[3] == 255, $"一键增强 stretches a dull picture over the whole range ({string.Join(",", levels ?? Array.Empty<double>())})");
+        var span = new byte[256 * 4 * 4];
+        for (var i = 0; i < span.Length; i += 4)
+        {
+            span[i] = span[i + 1] = span[i + 2] = (byte)(i / 4 % 256);
+            span[i + 3] = 255;
+        }
+
+        Check(ImageOps.AutoLevels(ImageOps.FromPixels(span, 256, 4)) == null, "… and leaves one that already spans it");
         Check(Near(greyHue.R, 120) && Near(greyHue.G, 120) && Near(greyHue.B, 120), "hue leaves grey alone");
         var full = At(ImageOps.Adjust(c, new ImageAdjust(Hue: 360)), 1, 1);
         Check(Near(full.R, 200) && Near(full.G, 100) && Near(full.B, 50), "hue 360 = as before");

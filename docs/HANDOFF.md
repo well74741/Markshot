@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.37`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.38`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,16 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.38 0.8.38 变更
+
+- 截图识别：「识别灵敏度」改为「识别范围」4 档（`DetectRange`，默认 3）：1 窗口 / 2 大区块（≥ 窗口面积 1/12 且短边 ≥ 120 DIP）/ 3 常规元素（短边 ≥ 40 DIP 或宽行文字）/ 4 细小元素。
+  档位决定识别链里第一个框（`StartLevel` + `AppConfig.StartsAt`），滚轮照样往外 / 往里；滚轮选过的层在鼠标不离开时保持。延迟统一 100 ms、滑动 150 ms（`HoverDelay` / `HoverSlide`）。
+  只识别截图前在前台的软件窗口内部元素（`OverlayWindow.ActiveWindow` = 截图前的 `GetForegroundWindow`，按 `GA_ROOT` 比较），其他窗口整个框住。
+  旧配置的 `DetectSensitivity` 读入时映射一次（1→2、2～4→3、5→4），之后只写 `DetectRange`。第 4 档还降低画面识别的边缘门槛。
+- 编辑器「元素样式」分区（选中图片时出现，可多选）：圆角、阴影（多层渐隐，略向下）、描边宽度和颜色（`ImageAnnotation.Radius / ShadowSize / BorderWidth / BorderColor`），拖动滑条算一步撤销。
+- 画布尺寸分区：背景 透明 / 白 / 黑 / 自选（就是画布位图的颜色：改尺寸、撤销、保存、贴到屏幕都跟着；存 JPG 时用它垫底），「适应内容」加边距（记住，`EditorFitMargin`，阴影也算进内容）。
+- 调色：色温（红蓝通道）、锐化（反锐化掩模）、模糊（三次盒式模糊≈高斯，半径按图片尺寸，预乘透明度避免黑边），都在 `ImageAdjust` 里随图片走；「一键增强」= 按直方图（去两端 0.5%）拉伸的曲线 + 饱和度 10。
 
 ## 8.1.37 0.8.37 变更
 

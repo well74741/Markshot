@@ -97,10 +97,18 @@ static class HoverProbe
         }
 
         bool Near(Rect a, Rect b) => !a.IsEmpty && Math.Abs(a.X - b.X) <= 3 && Math.Abs(a.Y - b.Y) <= 3 && Math.Abs(a.Width - b.Width) <= 4 && Math.Abs(a.Height - b.Height) <= 4;
+        var rangeBefore = Markshot.App.Config.DetectRange;
+        Markshot.App.Config.DetectRange = 4; // 细小元素: everything is offered first
         var onButton = Hover(rects[0]);
-        Check(!onButton.IsEmpty && onButton.Width <= rects[0].Width + 4, "over a button: the button (or its text) is framed");
-        Check(Near(Hover(rects[1]), rects[1]) , "over a line of text: the text is framed");
+        Check(!onButton.IsEmpty && onButton.Width <= rects[0].Width + 4, "细小元素, over a button: the button (or its text) is framed");
+        Check(Near(Hover(rects[1]), rects[1]), "细小元素, over a line of text: the text is framed");
         Check(Near(Hover(rects[2]), rects[2]), "over a picture: the picture is framed");
+        Markshot.App.Config.DetectRange = 3; // 常规元素 (default): the lone button is not taken first, the picture still is
+        var buttonAt3 = Hover(rects[0]);
+        Check(!buttonAt3.IsEmpty && buttonAt3.Width * buttonAt3.Height > onButton.Width * onButton.Height && buttonAt3.Width >= rects[0].Width - 4,
+            $"常规元素, over a button: not its tiny label, at least the button ({buttonAt3}; 细小元素 took {onButton})");
+        Check(Near(Hover(rects[2]), rects[2]), "常规元素, over a picture: the picture is framed");
+        Markshot.App.Config.DetectRange = rangeBefore;
         cover.Close();
         File.Delete(file);
         host?.WaitForExit(5000);

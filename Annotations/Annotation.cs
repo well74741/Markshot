@@ -624,6 +624,18 @@ public sealed class ImageAnnotation : Annotation
 
     public ImageAdjust? Adjust { get; set; }
 
+    /// <summary>元素样式 (canvas pixels): rounded corners, a soft drop shadow below, an outline drawn inside the edge.</summary>
+    public double Radius { get; set; }
+
+    public double ShadowSize { get; set; }
+
+    public double BorderWidth { get; set; }
+
+    public Color BorderColor { get; set; } = Colors.White;
+
+    /// <summary>How far the style reaches past the picture (the shadow).</summary>
+    public double StyleReach => ShadowSize > 0.5 ? ShadowSize * 1.4 : 0;
+
     /// <summary>How pictures are scaled in the render going on (the editor: crisp pixels when zoomed far in).</summary>
     public static BitmapScalingMode Scaling { get; set; } = BitmapScalingMode.HighQuality;
 
@@ -636,15 +648,45 @@ public sealed class ImageAnnotation : Annotation
             return;
         }
 
+        var radius = Math.Clamp(Radius, 0, Math.Min(Rect.Width, Rect.Height) / 2);
+        if (ShadowSize > 0.5)
+        {
+            // A soft shadow: rings that grow and fade, a little below the picture.
+            var layers = Math.Clamp((int)Math.Ceiling(ShadowSize / 2), 3, 14);
+            var drop = ShadowSize * 0.35;
+            var alpha = (byte)Math.Max(4, 110 / layers);
+            for (var k = layers; k >= 1; k--)
+            {
+                var grow = ShadowSize * k / layers;
+                var ring = new Rect(Rect.X - grow, Rect.Y - grow + drop, Rect.Width + grow * 2, Rect.Height + grow * 2);
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(alpha, 0, 0, 0)), null, ring, radius + grow, radius + grow);
+            }
+        }
+
         // Its own scaling: the canvas around it is nearest-neighbour (for the mosaic blocks).
         var group = new DrawingGroup();
         RenderOptions.SetBitmapScalingMode(group, Scaling);
         using (var context = group.Open())
         {
+            if (radius > 0.25)
+            {
+                context.PushClip(new RectangleGeometry(Rect, radius, radius));
+            }
+
             context.DrawImage(Image, Rect);
+            if (radius > 0.25)
+            {
+                context.Pop();
+            }
         }
 
         dc.DrawDrawing(group);
+        if (BorderWidth > 0.25)
+        {
+            var inset = BorderWidth / 2;
+            var inner = new Rect(Rect.X + inset, Rect.Y + inset, Math.Max(0, Rect.Width - BorderWidth), Math.Max(0, Rect.Height - BorderWidth));
+            dc.DrawRoundedRectangle(null, new Pen(new SolidColorBrush(BorderColor), BorderWidth), inner, Math.Max(0, radius - inset), Math.Max(0, radius - inset));
+        }
     }
 
     public override Rect Bounds => Rect;

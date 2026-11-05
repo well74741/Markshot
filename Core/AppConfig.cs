@@ -107,23 +107,76 @@ public sealed class AppConfig
     /// <summary>自动识别截图区域 as a whole (元素 / 窗口 are its two parts).</summary>
     public bool DetectAuto { get; set; } = true;
 
-    /// <summary>识别灵敏度 1 (low: only clear, larger things) … 5 (high: faint edges, small things); 3 as before.</summary>
-    public int DetectSensitivity { get; set; } = 3;
+    /// <summary>
+    /// 识别范围 1…4: what the frame takes first. 1 窗口 (the window only), 2 大区块 (large blocks), 3 常规元素
+    /// (pictures, cards, paragraphs, tables; no lone buttons or icons), 4 细小元素 (everything). The wheel still
+    /// steps out to the window and back in from there.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int DetectRange { get; set; } = 3;
 
-    /// <summary>Edge contrast the picture-based detection needs at a sensitivity.</summary>
-    public static int EdgeThresholdFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 44, 2 => 36, 4 => 20, 5 => 14, _ => 28 };
+    /// <summary>The 0.8.33–0.8.37 识别灵敏度 (1…5), read once to set <see cref="DetectRange"/>; not written any more.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("DetectSensitivity")]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? LegacySensitivity
+    {
+        get => null;
+        set
+        {
+            if (value is { } old && !_rangeRead)
+            {
+                DetectRange = old switch { <= 1 => 2, >= 5 => 4, _ => 3 };
+            }
+        }
+    }
 
-    /// <summary>How long (ms) the pointer rests on another element before the frame moves there: low sensitivity = calm.</summary>
-    public static int HoverDelayFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 520, 2 => 340, 4 => 90, 5 => 0, _ => 200 };
+    private bool _rangeRead;
+
+    [System.Text.Json.Serialization.JsonPropertyName("DetectRange")]
+    public int DetectRangeStored
+    {
+        get => DetectRange;
+        set
+        {
+            DetectRange = value;
+            _rangeRead = true;
+        }
+    }
+
+    /// <summary>The pause before the frame moves on to another element (ms): the same for every range.</summary>
+    public const int HoverDelay = 100;
 
     /// <summary>The frame's slide to the new element (ms).</summary>
-    public static int HoverSlideFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 260, 2 => 210, 4 => 130, 5 => 100, _ => 170 };
+    public const int HoverSlide = 150;
 
-    /// <summary>Smallest element (pixels, either side) the detection offers at a sensitivity.</summary>
-    public static int MinSideFor(int sensitivity) => Math.Clamp(sensitivity, 1, 5) switch { 1 => 16, 2 => 10, 5 => 3, _ => 4 };
+    /// <summary>Edge contrast the picture-based detection needs.</summary>
+    public static int EdgeThresholdFor(int range) => Math.Clamp(range, 1, 4) >= 4 ? 14 : 28;
+
+    /// <summary>Smallest element (pixels, either side) the detection offers.</summary>
+    public static int MinSideFor(int range) => Math.Clamp(range, 1, 4) >= 4 ? 3 : 4;
+
+    /// <summary>
+    /// The smallest frame taken first at a range (physical pixels and the share of the window's area): 2 大区块 takes
+    /// blocks of at least 1/12 of the window, 3 常规元素 things at least ~40 DIP on their short side or a wide line of text.
+    /// </summary>
+    public static bool StartsAt(int range, Rect frame, Rect window, double scale)
+    {
+        var area = frame.Width * frame.Height;
+        var windowArea = Math.Max(1, window.Width * window.Height);
+        return Math.Clamp(range, 1, 4) switch
+        {
+            1 => false,
+            2 => area >= windowArea / 12 && Math.Min(frame.Width, frame.Height) >= 120 * scale,
+            3 => Math.Min(frame.Width, frame.Height) >= 40 * scale || (frame.Width >= 240 * scale && frame.Height >= 16 * scale),
+            _ => true
+        };
+    }
 
     /// <summary>After saving an image, ask whether to open its folder.</summary>
     public bool AskOpenFolderAfterSave { get; set; } = true;
+
+    /// <summary>The editor's 适应内容 margin (pixels).</summary>
+    public int EditorFitMargin { get; set; }
 
     /// <summary>JPEG / WebP quality last chosen in the save window.</summary>
     public int SaveQuality { get; set; } = 92;

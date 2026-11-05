@@ -20,11 +20,11 @@ public sealed class ScreenSegmenter
     private Int32Rect _region = Int32Rect.Empty;
     private Level[]? _levels;
 
-    /// <param name="sensitivity">识别灵敏度 1…5 (3: as before): fainter edges and smaller pieces count when higher.</param>
-    public ScreenSegmenter(byte[] pixels, int width, int height, double scale, int sensitivity = 3)
+    /// <param name="range">识别范围 1…4: 细小元素 (4) also counts fainter edges and smaller pieces.</param>
+    public ScreenSegmenter(byte[] pixels, int width, int height, double scale, int range = 3)
     {
-        EdgeThreshold = AppConfig.EdgeThresholdFor(sensitivity);
-        _minSide = AppConfig.MinSideFor(sensitivity);
+        EdgeThreshold = AppConfig.EdgeThresholdFor(range);
+        _minSide = AppConfig.MinSideFor(range);
         _pixels = pixels;
         _width = width;
         _height = height;

@@ -47,7 +47,7 @@ public partial class SettingsWindow : Window
         ShapeKeyBox.Text = config.ToolShapeHotkey;
         CopyFileCheck.IsChecked = config.CopyImageAsFile;
         DetectAutoCheck.IsChecked = config.DetectAuto;
-        DetectSensitivitySlider.Value = Math.Clamp(config.DetectSensitivity, 1, 5);
+        DetectSensitivitySlider.Value = Math.Clamp(config.DetectRange, 1, 4);
         DetectElementsCheck.IsChecked = config.DetectElements;
         DetectWindowsCheck.IsChecked = config.DetectWindows;
         DetectAuto_Click(this, new RoutedEventArgs());
@@ -216,8 +216,14 @@ public partial class SettingsWindow : Window
         if (DetectSensitivityValue != null)
         {
             var level = (int)Math.Round(e.NewValue);
-            DetectSensitivityValue.Text = level switch { 1 => "1 · 低", 2 => "2", 3 => "3 · 默认", 4 => "4", _ => "5 · 高" };
-            DetectSensitivityValue.ToolTip = $"换框前停留 {AppConfig.HoverDelayFor(level)} ms";
+            DetectSensitivityValue.Text = level switch { 1 => "1 · 窗口", 2 => "2 · 大区块", 4 => "4 · 细小元素", _ => "3 · 常规元素" };
+            DetectSensitivityValue.ToolTip = level switch
+            {
+                1 => "只框软件窗口",
+                2 => "窗口里的大块区域：侧栏、主内容、大图",
+                4 => "按钮、单行文字、小图标也框",
+                _ => "图片、卡片、段落、表格（默认）"
+            };
         }
     }
 
@@ -502,7 +508,7 @@ public partial class SettingsWindow : Window
         _config.UiSize = _uiSize;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
         _config.DetectAuto = DetectAutoCheck.IsChecked == true;
-        _config.DetectSensitivity = (int)Math.Round(DetectSensitivitySlider.Value);
+        _config.DetectRange = (int)Math.Round(DetectSensitivitySlider.Value);
         _config.DetectElements = DetectElementsCheck.IsChecked == true;
         _config.DetectWindows = DetectWindowsCheck.IsChecked == true;
         _config.CaptureShowCursor = CaptureCursorCheck.IsChecked == true;

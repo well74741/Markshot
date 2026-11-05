@@ -123,7 +123,7 @@ static class CaptureTest
             "over a paragraph line: the line, then the paragraph");
         Check(segmenter.At(whole, 600, 300).Count == 0, "over empty background: nothing");
 
-        // 识别灵敏度: a faint box (contrast 20) is found only when the detection is sensitive
+        // 识别范围 4 (细小元素) also counts a faint box (contrast 20) that the other ranges leave alone
         var faint = new byte[300 * 200 * 4];
         for (var y = 0; y < 200; y++)
         for (var x = 0; x < 300; x++)
@@ -137,9 +137,8 @@ static class CaptureTest
 
         var faintRegion = new Int32Rect(0, 0, 300, 200);
         Check(new ScreenSegmenter(faint, 300, 200, 1, 3).At(faintRegion, 140, 60).Count == 0 &&
-              new ScreenSegmenter(faint, 300, 200, 1, 5).At(faintRegion, 140, 60).Count > 0,
-            "识别灵敏度 高 finds a faint box that 默认 leaves alone");
-        Check(AppConfig.MinSideFor(1) > AppConfig.MinSideFor(3) && AppConfig.EdgeThresholdFor(1) > AppConfig.EdgeThresholdFor(5), "低 asks for larger, clearer things");
+              new ScreenSegmenter(faint, 300, 200, 1, 4).At(faintRegion, 140, 60).Count > 0,
+            "识别范围 细小元素 finds a faint box that 常规元素 leaves alone");
 
         // ---- the capture window, not shown: hover frames, 显示鼠标, 辅助线
         var screen = Solid(300, 200, 40, 40, 40);
@@ -167,24 +166,47 @@ static class CaptureTest
         Call(overlay, "SetHoverChain", list);
         Check((Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "the chosen level stays while the mouse stays on the element");
 
-        // 识别灵敏度 sets how long the pointer rests before the frame moves to another element
-        var hoverConfig = Markshot.App.Config;
-        var sensitivityBefore = hoverConfig.DetectSensitivity;
-        hoverConfig.DetectSensitivity = 1;
-        var restChain = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
-        restChain.Add(Activator.CreateInstance(candidateType, new Rect(200, 120, 60, 40), "图片"));
-        var framedBefore = editor.HoverBounds;
-        Call(overlay, "SetHoverChain", restChain);
-        Pump(120);
-        Check(editor.HoverBounds == framedBefore, "低灵敏度: the frame waits while the pointer has not rested");
-        Pump(AppConfig.HoverDelayFor(1) + 450);
-        Check(editor.HoverBounds == new Rect(200, 120, 60, 40), "… and moves there once it has");
-        hoverConfig.DetectSensitivity = 5;
-        Call(overlay, "SetHoverChain", list);
-        Pump(250);
-        Check(editor.HoverBounds == new Rect(50, 50, 40, 20), $"高灵敏度: the frame moves at once ({editor.HoverBounds})");
-        Check(AppConfig.HoverDelayFor(1) > AppConfig.HoverDelayFor(3) && AppConfig.HoverDelayFor(3) > AppConfig.HoverDelayFor(5), "the levels differ clearly in delay");
-        hoverConfig.DetectSensitivity = sensitivityBefore;
+        // 识别范围: what is framed first (the wheel still goes out and in)
+        var rangeConfig = Markshot.App.Config;
+        var rangeBefore = rangeConfig.DetectRange;
+        var ranged = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        var windowTargetType = typeof(OverlayWindow).Assembly.GetType("Markshot.Core.WindowTarget")!;
+        var target = Activator.CreateInstance(windowTargetType)!;
+        windowTargetType.GetProperty("Bounds")!.SetValue(target, new Rect(-4000, -4000, 300, 200));
+        windowTargetType.GetProperty("Label")!.SetValue(target, "窗口");
+        typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, target);
+        var rangedEditor = (Markshot.Annotations.AnnotationEditor)ranged.FindName("Editor");
+        var rangeChain = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
+        rangeChain.Add(Activator.CreateInstance(candidateType, new Rect(50, 50, 24, 20), "按钮"));
+        rangeChain.Add(Activator.CreateInstance(candidateType, new Rect(40, 40, 120, 60), "卡片"));
+        rangeChain.Add(Activator.CreateInstance(candidateType, new Rect(20, 20, 200, 150), "面板"));
+        rangeChain.Add(Activator.CreateInstance(candidateType, new Rect(0, 0, 300, 200), "窗口"));
+        Rect FirstAt(int range)
+        {
+            rangeConfig.DetectRange = range;
+            Call(ranged, "ClearHover");
+            typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, target); // the pointer is over the window
+            Call(ranged, "SetHoverChain", rangeChain);
+            return rangedEditor.HoverBounds;
+        }
+
+        Check(FirstAt(4) == new Rect(50, 50, 24, 20), "4 细小元素: the button first");
+        Check(FirstAt(3) == new Rect(40, 40, 120, 60), "3 常规元素: the card, not the lone button");
+        Check(FirstAt(2) == new Rect(20, 20, 200, 150), "2 大区块: the panel");
+        Check(FirstAt(1) == new Rect(0, 0, 300, 200), "1 窗口: the window");
+        FirstAt(3);
+        Pump(AppConfig.HoverDelay + 300);
+        Check((bool)Call(ranged, "StepHoverLevel", -120) && (Rect)Get(ranged, "_hoverLocal") == new Rect(50, 50, 24, 20), "the wheel still goes in to the button");
+        Call(ranged, "SetHoverChain", rangeChain);
+        Check((Rect)Get(ranged, "_hoverLocal") == new Rect(50, 50, 24, 20), "… and that choice stays while the pointer stays");
+        ranged.Close();
+        rangeConfig.DetectRange = rangeBefore;
+
+        // the old 灵敏度 setting carries over once, then the 识别范围 is what is kept
+        var migrated = System.Text.Json.JsonSerializer.Deserialize<AppConfig>("{\"DetectSensitivity\":5}")!;
+        var kept = System.Text.Json.JsonSerializer.Deserialize<AppConfig>("{\"DetectSensitivity\":1,\"DetectRange\":4}")!;
+        Check(migrated.DetectRange == 4 && kept.DetectRange == 4 && System.Text.Json.JsonSerializer.Deserialize<AppConfig>("{}")!.DetectRange == 3 &&
+              !System.Text.Json.JsonSerializer.Serialize(migrated).Contains("DetectSensitivity"), "设置: the old 灵敏度 maps to a range once, the default is 常规元素");
 
         // the rounded corners last adjusted come back on the next capture, as far as the area allows
         var cornerConfig = Markshot.App.Config;
@@ -288,12 +310,23 @@ static class CaptureTest
         typeof(OverlayWindow).GetField("_hoverScreenPoint", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(pageOverlay, (60, 50));
         typeof(OverlayWindow).GetField("_elementWanted", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(pageOverlay, ((IntPtr, int, int)?)(IntPtr.Zero, 60, 50));
+        var pageRangeBefore = Markshot.App.Config.DetectRange;
+        Markshot.App.Config.DetectRange = 4;
         Call(pageOverlay, "RunElementDetection");
         Pump(800);
         var pageEditor = (Markshot.Annotations.AnnotationEditor)pageOverlay.FindName("Editor");
         var framed = pageEditor.HoverBounds;
         Check(pageEditor.ShowHover && Around(new Int32Rect((int)framed.X, (int)framed.Y, (int)framed.Width, (int)framed.Height), Box(run), 4) && pageEditor.HoverLabel!.StartsWith("文字"),
-            "the capture frames the run of text under the mouse");
+            "细小元素: the capture frames the run of text under the mouse");
+        Markshot.App.Config.DetectRange = 3;
+        Call(pageOverlay, "ClearHover");
+        typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(pageOverlay, new WindowTarget { Handle = IntPtr.Zero, Bounds = new Rect(0, 0, 640, 320), Label = "窗口" });
+        Call(pageOverlay, "RefreshHoverChain");
+        Pump(300);
+        var framed3 = pageEditor.HoverBounds;
+        Check(pageEditor.ShowHover && framed3.Width * framed3.Height > Box(run).Width * Box(run).Height, $"常规元素: something bigger than the lone run of text ({framed3})");
+        Markshot.App.Config.DetectRange = pageRangeBefore;
         pageOverlay.Close();
 
         // a picture wall (Pinterest-like): picture -> gap -> picture -> back; the frame follows every time

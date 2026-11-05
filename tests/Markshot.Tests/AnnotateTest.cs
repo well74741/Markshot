@@ -505,6 +505,70 @@ static class AnnotateTest
             System.IO.Directory.Delete(dropDir, true);
         }
 
+        // ---- editor: 元素样式 (圆角 / 阴影 / 描边), 画布背景, 适应内容 with a margin
+        {
+            var se2 = new ImageEditorWindow(Blank(200, 120)) { Left = 40, Top = 40, ShowActivated = false };
+            se2.Show();
+            Pump(300);
+            var items2 = ((AnnotationEditor)Get(se2, "Editor")).Items;
+            var photo = items2.OfType<ImageAnnotation>().First();
+            var styleSection = (FrameworkElement)typeof(ImageEditorWindow).GetField("_styleSection", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;
+            Check(styleSection.Visibility != Visibility.Visible, "元素样式 hidden while no picture is selected");
+            se2.SelectElements(new Annotation[] { photo });
+            Check(styleSection.Visibility == Visibility.Visible, "… shows for a selected picture");
+            se2.SetPictureStyle("Radius", 30);
+            se2.SetPictureStyle("Border", 6);
+            se2.SetBorderColor(Colors.Red);
+            se2.SetPictureStyle("Shadow", 16);
+            se2.SetBackground(Colors.White);
+            se2.CanvasTo(260, 180);
+            se2.SelectElements(new Annotation[] { items2.OfType<ImageAnnotation>().First() });
+            Pump(100);
+            var panelShot = new RenderTargetBitmap((int)((FrameworkElement)se2.Content).ActualWidth, (int)((FrameworkElement)se2.Content).ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            panelShot.Render((FrameworkElement)se2.Content);
+            var panelEnc = new PngBitmapEncoder();
+            panelEnc.Frames.Add(BitmapFrame.Create(panelShot));
+            using (var panelFile = System.IO.File.Create("editor_style_panel.png")) panelEnc.Save(panelFile);
+            se2.UndoStep(); se2.UndoStep(); se2.UndoStep();
+            Pump(30);
+            photo = items2.OfType<ImageAnnotation>().First();
+            se2.SelectElements(new Annotation[] { photo });
+            var styled = se2.Composite;
+            Check(PixelA(styled, 1, 1) == 0 && PixelA(styled, 100, 60) == 255, "圆角: the corner is cut, the middle stays");
+            var (sp, sw, _) = ImageOps.ReadPixels(styled);
+            var edgePixel = (60 * sw + 2) * 4;
+            Check(sp[edgePixel + 2] > 200 && sp[edgePixel + 1] < 60, "描边: a red outline along the edge");
+            se2.UndoStep(); se2.UndoStep(); se2.UndoStep();
+            Pump(30);
+            Check(photo.Radius == 0 || items2.OfType<ImageAnnotation>().First().Radius == 0, "… each change undoable");
+
+            // the shadow reaches past a smaller picture
+            var small = new ImageAnnotation { Image = Blank(60, 40), Rect = new Rect(70, 40, 60, 40) };
+            items2.Add(small);
+            se2.SelectElements(new Annotation[] { small });
+            se2.SetPictureStyle("Shadow", 20);
+            Check(small.ShadowSize == 20 && small.StyleReach > 20, "阴影 set on the selected picture");
+
+            // 画布背景: the canvas' colour, kept through size changes and undoable
+            se2.SetBackground(Colors.Black);
+            Check(se2.CanvasColor == Colors.Black, "背景: black");
+            se2.CanvasTo(260, 160);
+            Pump(30);
+            Check(se2.CanvasColor == Colors.Black && PixelA(se2.Composite, 2, 2) == 255, "… stays black when the canvas grows");
+            se2.UndoStep(); se2.UndoStep();
+            Pump(30);
+            Check(se2.CanvasColor.A == 0, "… and undoable back to transparent");
+
+            // 适应内容 with a margin (after the undos the elements are new copies)
+            small = items2.OfType<ImageAnnotation>().Last();
+            small.Translate(200, 0); // out of the canvas
+            se2.FitCanvasToContent(20);
+            Pump(30);
+            var reach = small.StyleReach;
+            Check(se2.ImageWidth >= 330 + reach + 20 - 2 && items2.All(i => AnnotationEditor.RotatedBounds(i).Left >= 20 - reach - 2), $"适应内容 with a 20 px margin ({se2.ImageWidth}×{se2.ImageHeight})");
+            se2.CloseWithoutAsking();
+        }
+
         // ---- the pin: IME, 应用 and the bar again, double-click copies and closes, zoom label, 软边, text card
         {
             BitmapSource copied = null;

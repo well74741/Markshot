@@ -8,9 +8,10 @@ namespace Markshot.Core;
 /// colours (degrees); <see cref="Curve"/> is the tone curve's points as x, y pairs (0–255), null = straight.
 /// </summary>
 public sealed record ImageAdjust(double Brightness = 0, double Contrast = 0, double Saturation = 0, double Opacity = 100, bool Gray = false, bool Invert = false,
-    double Hue = 0, double[]? Curve = null)
+    double Hue = 0, double[]? Curve = null, double Temperature = 0, double Sharpen = 0, double Blur = 0)
 {
-    public bool IsNeutral => Brightness == 0 && Contrast == 0 && Saturation == 0 && Opacity >= 100 && !Gray && !Invert && Hue == 0 && ToneCurve.IsStraight(Curve);
+    public bool IsNeutral => Brightness == 0 && Contrast == 0 && Saturation == 0 && Opacity >= 100 && !Gray && !Invert && Hue == 0 && ToneCurve.IsStraight(Curve) &&
+                             Temperature == 0 && Sharpen == 0 && Blur == 0;
 
     /// <summary>Same values (the curve compared point by point).</summary>
     public bool SameAs(ImageAdjust? other) => other is not null && this with { Curve = null } == other with { Curve = null } &&
@@ -148,6 +149,12 @@ public static class ImageOps
     public static BitmapSource Adjust(BitmapSource source, ImageAdjust adjust)
     {
         var (pixels, width, height) = ReadPixels(source);
+        // 模糊 / 锐化 first (on the picture as it is), then the colours.
+        if (adjust.Blur > 0.01 || adjust.Sharpen > 0.01)
+        {
+            Spatial(pixels, width, height, adjust.Blur / 20 * Math.Max(width, height) * 0.02, adjust.Sharpen / 100 * 1.5);
+        }
+
         // A lookup table per channel value: brightness, contrast, invert, then the tone curve.
         var table = new byte[256];
         var curve = ToneCurve.Table(adjust.Curve);
@@ -172,7 +179,9 @@ public static class ImageOps
             0.213 - cos * 0.213 - sin * 0.787, 0.715 - cos * 0.715 + sin * 0.715, 0.072 + cos * 0.928 + sin * 0.072
         };
         var turn = Math.Abs(adjust.Hue) > 1e-6;
-        var changeColor = Math.Abs(saturation - 1) > 1e-6 || turn;
+        // 色温: warmer = more red, less blue (cooler the other way).
+        var warm = Math.Clamp(adjust.Temperature, -100, 100) / 100 * 0.2;
+        var changeColor = Math.Abs(saturation - 1) > 1e-6 || turn || Math.Abs(warm) > 1e-6;
         Parallel.For(0, height, y =>
         {
             var row = y * width * 4;
@@ -182,6 +191,12 @@ public static class ImageOps
                 double b = pixels[i], g = pixels[i + 1], r = pixels[i + 2];
                 if (changeColor)
                 {
+                    if (Math.Abs(warm) > 1e-6)
+                    {
+                        r = Math.Clamp(r * (1 + warm) + 255 * Math.Max(0, warm) * 0.08, 0, 255);
+                        b = Math.Clamp(b * (1 - warm) + 255 * Math.Max(0, -warm) * 0.08, 0, 255);
+                    }
+
                     if (turn)
                     {
                         var r2 = m[0] * r + m[1] * g + m[2] * b;
@@ -227,6 +242,160 @@ public static class ImageOps
     }
 
     /// <summary>Scaled to a new size (high-quality resampling).</summary>
+    /// <summary>
+    /// 模糊 (box blur three times ≈ Gaussian, <paramref name="radius"/> pixels) and 锐化 (unsharp mask of the
+    /// picture's fine detail by <paramref name="sharpen"/>), on premultiplied values so see-through edges stay clean.
+    /// </summary>
+    private static void Spatial(byte[] pixels, int width, int height, double radius, double sharpen)
+    {
+        var count = width * height * 4;
+        var buffer = new float[count];
+        for (var i = 0; i < count; i += 4)
+        {
+            // Premultiplied with the alpha as 0…255: colour = value × alpha, so value = colour / alpha later.
+            var a = pixels[i + 3];
+            buffer[i] = pixels[i] * a;
+            buffer[i + 1] = pixels[i + 1] * a;
+            buffer[i + 2] = pixels[i + 2] * a;
+            buffer[i + 3] = a;
+        }
+
+        // Any blur at all moves at least a pixel (a small picture's radius would round to nothing).
+        var r = radius > 0.001 ? Math.Max(1, (int)Math.Round(radius)) : 0;
+        if (r >= 1)
+        {
+            for (var pass = 0; pass < 3; pass++)
+            {
+                BoxBlur(buffer, width, height, r);
+            }
+        }
+
+        if (sharpen > 0.001)
+        {
+            var soft = (float[])buffer.Clone();
+            BoxBlur(soft, width, height, 1);
+            BoxBlur(soft, width, height, 1);
+            var amount = (float)sharpen;
+            Parallel.For(0, height, y =>
+            {
+                for (var i = y * width * 4; i < (y + 1) * width * 4; i++)
+                {
+                    buffer[i] += amount * (buffer[i] - soft[i]);
+                }
+            });
+        }
+
+        Parallel.For(0, height, y =>
+        {
+            for (var i = y * width * 4; i < (y + 1) * width * 4; i += 4)
+            {
+                var a = Math.Clamp(buffer[i + 3], 0, 255);
+                pixels[i + 3] = (byte)Math.Round(a);
+                if (a < 0.5)
+                {
+                    pixels[i] = pixels[i + 1] = pixels[i + 2] = 0;
+                    continue;
+                }
+
+                pixels[i] = (byte)Math.Round(Math.Clamp(buffer[i] / a, 0, 255));
+                pixels[i + 1] = (byte)Math.Round(Math.Clamp(buffer[i + 1] / a, 0, 255));
+                pixels[i + 2] = (byte)Math.Round(Math.Clamp(buffer[i + 2] / a, 0, 255));
+            }
+        });
+    }
+
+    /// <summary>One box blur pass (horizontal then vertical) of radius <paramref name="r"/> over 4-channel floats.</summary>
+    private static void BoxBlur(float[] data, int width, int height, int r)
+    {
+        var window = 2 * r + 1;
+        var temp = new float[data.Length];
+        Parallel.For(0, height, y =>
+        {
+            var row = y * width * 4;
+            for (var c = 0; c < 4; c++)
+            {
+                float sum = 0;
+                for (var k = -r; k <= r; k++)
+                {
+                    sum += data[row + Math.Clamp(k, 0, width - 1) * 4 + c];
+                }
+
+                for (var x = 0; x < width; x++)
+                {
+                    temp[row + x * 4 + c] = sum / window;
+                    sum += data[row + Math.Min(x + r + 1, width - 1) * 4 + c] - data[row + Math.Max(x - r, 0) * 4 + c];
+                }
+            }
+        });
+        Parallel.For(0, width, x =>
+        {
+            for (var c = 0; c < 4; c++)
+            {
+                float sum = 0;
+                for (var k = -r; k <= r; k++)
+                {
+                    sum += temp[(Math.Clamp(k, 0, height - 1) * width + x) * 4 + c];
+                }
+
+                for (var y = 0; y < height; y++)
+                {
+                    data[(y * width + x) * 4 + c] = sum / window;
+                    sum += temp[(Math.Min(y + r + 1, height - 1) * width + x) * 4 + c] - temp[(Math.Max(y - r, 0) * width + x) * 4 + c];
+                }
+            }
+        });
+    }
+
+    /// <summary>一键增强: the tone curve that stretches the picture's brightness over the full range (null: nothing to gain).</summary>
+    public static double[]? AutoLevels(BitmapSource source)
+    {
+        var (pixels, _, _) = ReadPixels(source);
+        var histogram = new long[256];
+        long total = 0;
+        for (var i = 0; i < pixels.Length; i += 8)
+        {
+            if (pixels[i + 3] < 16)
+            {
+                continue;
+            }
+
+            histogram[(int)Math.Round(0.114 * pixels[i] + 0.587 * pixels[i + 1] + 0.299 * pixels[i + 2])]++;
+            total++;
+        }
+
+        if (total == 0)
+        {
+            return null;
+        }
+
+        var clip = total * 0.005;
+        int low = 0, high = 255;
+        for (long seen = 0; low < 255 && (seen += histogram[low]) <= clip; low++)
+        {
+        }
+
+        for (long seen = 0; high > 0 && (seen += histogram[high]) <= clip; high--)
+        {
+        }
+
+        return high - low >= 235 || high <= low ? null : new double[] { low, 0, high, 255 };
+    }
+
+    /// <summary>A canvas of one colour.</summary>
+    public static BitmapSource Solid(int width, int height, Color color)
+    {
+        var pixels = new byte[width * height * 4];
+        for (var i = 0; i < pixels.Length; i += 4)
+        {
+            pixels[i] = color.B;
+            pixels[i + 1] = color.G;
+            pixels[i + 2] = color.R;
+            pixels[i + 3] = color.A;
+        }
+
+        return FromPixels(pixels, width, height);
+    }
+
     public static BitmapSource Resize(BitmapSource source, int width, int height) =>
         Draw(width, height, dc => dc.DrawImage(source, new Rect(0, 0, width, height)));
 
