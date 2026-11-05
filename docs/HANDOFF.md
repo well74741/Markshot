@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.43`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.44`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,26 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.44 0.8.44 变更
+
+- 贴图：`PinWindow.Sweep`（`CreatePin(sweep: true)`）——恢复贴图（托盘 / 快捷键 / 贴图历史）和编辑器「贴到屏幕」淡入后约 90 ms 播放 `PlayLightSweep`；
+  关闭时 `RootGrid` 以中心缩到 0.6（160 ms，加速），与淡出同时。
+- 贴图上按住 Alt：`PinCrosshair` 取代 `PinMagnifier`（已删除）——鼠标所在显示器上一个全屏、点击穿透、不激活的透明窗口画两条线（与截图 `CrossH/CrossV` 同色）；
+  窗口用 `SetWindowPos` 按物理像素铺满显示器，线位置按该窗口 DPI 换算。
+- 截图提示：`FillHint` 生成带 `InlineUIContainer` 鼠标图标的提示（`Assets/Icons/mouse_left|right|middle|wheel.png`，来自 ui-icons 的 鼠标左键 / 右键 / 中键 / 滚轮，裁边后 64 px），
+  多显示器副本同样生成；`Motion.PopOnShow(Hint)` 弹出。滚轮提示 `WheelTip` 固定在鼠标所在显示器底部居中（离底 72 DIP），不再跟随鼠标。
+- 亮区渐暗：`BrightFade`（XAML，`BrightImage` 之上）——悬停亮区从有到无时（按下开始截图、离开元素）复制原区域并 240 ms 淡出，`_brightShown` 记录上一帧亮区。
+- 拖动选区：Creating / Moving / Resizing 的移动里改为 `RequestSelectionVisuals`（`CompositionTarget.Rendering` 前合并为一次，松开时取消排队由松开自己刷新）；
+  截图期间 `GCSettings.LatencyMode = SustainedLowLatency`（关闭时恢复）；画面分块的后台线程降为 BelowNormal 优先级。这些针对「偶尔不流畅」：后台识别分配大量内存触发的阻塞 GC、高回报率鼠标的重复刷新。
+- 剪贴板：`ClipboardService.CopyImage` 在独立 STA 线程写入，UI 最多等 2.5 秒。原因：WPF 的 `SetDataObject` 本身对 `OleSetClipboard` / 刷新各重试约 1 秒，
+  外层再重试 10 次时剪贴板被占用可让窗口卡十几秒（日志里有「剪贴板被其他程序占用」）；现在外层 3 次，且不卡 UI。图片先冻结（`Frozen`）以便跨线程。
+- 图片编辑器：元素样式分区 `SlideSection` 高度 / 外边距 / 透明度 240 ms 动画（展开时先测量目标高度，结束后恢复 `Height = NaN`）；「重置所有修改」移出滚动区固定在面板底部（`_resetAllFooter`）；
+  反色改为 `FooterToggle` 样式（App.xaml，选中时蓝底蓝边），与曲线、一键增强同一 `WrapPanel`、同尺寸边距。
+- 工具栏默认顺序「复制」在最右：截图 `…Save,Translate,Edit,Copy`、贴图 `Close,Save,Clear,Edit,Apply,Copy`、编辑器 `…Clear,Pin,Copy`；`EnsureDefaults` 把仍是旧默认值（没调整过）的顺序换成新默认。
+- 橡皮擦软边：`EraseStroke.Softness`（有软边或不满强度的笔画走 `PartialMasks`），`PushErase` 用 5 层由宽到窄的环做不透明度蒙版（smoothstep 坡度）；
+  `AppConfig.EraserSoftness`，工具栏「软边」滑条在擦除模式下显示并写这个值（抠除没有），`Shift + 滚轮` 同样可调；实时擦除 `LiveEraserSoftness`。
+- 去掉设置里的「更新路径」：只从线上 Release 检查（`AppConfig.UpdatePath`、`UpdateService.EffectivePath` 删除，`FindNewestAsync(null)`）。
 
 ## 8.1.43 0.8.43 变更
 

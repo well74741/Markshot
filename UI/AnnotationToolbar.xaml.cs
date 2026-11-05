@@ -190,7 +190,11 @@ public partial class AnnotationToolbar : UserControl
 
         _softness = e.NewValue;
         SoftnessValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
-        if (_selection == null && App.Config is { } config)
+        if (_softnessIsEraser && App.Config is { } eraserConfig)
+        {
+            eraserConfig.EraserSoftness = (int)Math.Round(e.NewValue);
+        }
+        else if (_selection == null && App.Config is { } config)
         {
             config.PenSoftness = (int)Math.Round(e.NewValue); // the next stroke, the next capture
         }
@@ -219,6 +223,11 @@ public partial class AnnotationToolbar : UserControl
 
     /// <summary>How strongly the eraser erases (its opacity), 0.05–1.</summary>
     public double EraserOpacity => _eraserOpacity;
+
+    /// <summary>软边 of the eraser (0…1), kept apart from the pen's.</summary>
+    public double EraserSoftness => Math.Clamp((App.Config?.EraserSoftness ?? 0) / 100.0, 0, 1);
+
+    private bool _softnessIsEraser; // the 软边 slider shows the eraser's value
 
     /// <summary>Opacity of new / selected elements (0.05–1).</summary>
     public double ElementOpacity => _opacity;
@@ -594,6 +603,7 @@ public partial class AnnotationToolbar : UserControl
         FillToggle.Visibility = Visibility.Collapsed;
         CornerGroup.Visibility = Visibility.Collapsed;
         SoftnessGroup.Visibility = Visibility.Collapsed;
+        _softnessIsEraser = false;
         WidthLabel.Text = "粗细";
         WidthSlider.Minimum = 1;
         WidthSlider.Maximum = 16;
@@ -612,6 +622,14 @@ public partial class AnnotationToolbar : UserControl
                 WidthSlider.Maximum = 80;
                 OpacityGroup.Visibility = Visibility.Visible;
                 ColorSection.Visibility = Visibility.Collapsed;
+                if (tool != AnnotationTool.Cutout)
+                {
+                    // 擦除 has a 软边 too (抠除 cuts a clean hole).
+                    _softnessIsEraser = true;
+                    SoftnessGroup.Visibility = Visibility.Visible;
+                    ShowSoftness(App.Config?.EraserSoftness ?? 0);
+                }
+
                 break;
 
             case ToolFamily.Shape:

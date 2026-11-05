@@ -66,7 +66,6 @@ public partial class SettingsWindow : Window
         EscExitsCheck.IsChecked = config.EscExitsCapture;
         QuickDoubleClickCheck.IsChecked = config.QuickDoubleClickCopy;
         SaveDirBox.Text = config.SaveDirectory;
-        UpdatePathBox.Text = UpdateService.EffectivePath(config);
         Loaded += (_, _) => RefreshUpdate(quiet: true);
         OcrLanguageBox.Text = config.OcrLanguage;
         BaseUrlBox.Text = config.Translation.BaseUrl;
@@ -536,8 +535,6 @@ public partial class SettingsWindow : Window
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
         // Keep following the installer's folder unless another one was entered.
-        var updatePath = UpdatePathBox.Text.Trim();
-        _config.UpdatePath = updatePath; // optional; the built-in GitHub source is always used as well
         _config.OcrLanguage = OcrLanguageBox.Text.Trim();
 
         _config.Translation.BaseUrl = BaseUrlBox.Text.Trim();
@@ -919,16 +916,15 @@ public partial class SettingsWindow : Window
 
     private UpdateService.Package? _update;
 
-    /// <summary>Looks for a newer installer at the update source shown in the box (GitHub or a folder).</summary>
+    /// <summary>Looks for a newer version in the online releases.</summary>
     private async void RefreshUpdate(bool quiet)
     {
-        var folder = Environment.ExpandEnvironmentVariables(UpdatePathBox.Text.Trim());
         if (!quiet)
         {
             StatusText.Text = "正在检查更新…";
         }
 
-        _update = await UpdateService.FindNewestAsync(folder);
+        _update = await UpdateService.FindNewestAsync(null);
         if (!IsLoaded)
         {
             return;
@@ -948,8 +944,6 @@ public partial class SettingsWindow : Window
         {
             StatusText.Text = UpdateService.LastFailure is { } failure
                 ? $"检查更新失败（{failure}），请稍后再试；也可以到 {UpdateService.DefaultRepository}/releases 手动下载"
-                : !string.IsNullOrWhiteSpace(folder) && !UpdateService.IsGitHub(folder) && !Directory.Exists(folder)
-                ? $"已是最新版本（{AppVersion.Display}）。自定义更新路径不存在：{folder}"
                 : $"已是最新版本（{AppVersion.Display}）";
         }
     }
@@ -965,21 +959,6 @@ public partial class SettingsWindow : Window
 
         await Task.Yield();
         new UpdateWindow(_update) { Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner }.ShowDialog();
-    }
-
-    private void BrowseUpdate_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "选择放安装包的文件夹",
-            InitialDirectory = UpdatePathBox.Text.Trim()
-        };
-
-        if (dialog.ShowDialog(this) == true)
-        {
-            UpdatePathBox.Text = dialog.FolderName;
-            RefreshUpdate(quiet: false);
-        }
     }
 
     private void Browse_Click(object sender, RoutedEventArgs e)

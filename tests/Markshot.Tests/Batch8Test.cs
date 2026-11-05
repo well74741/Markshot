@@ -100,7 +100,7 @@ static class Batch8Test
         settings.Close();
 
         // ---- update: the GitHub source is built in; the custom folder is optional
-        Check(UpdateService.EffectivePath(new AppConfig()) == "", "no update path to fill in by default");
+        Check(typeof(AppConfig).GetProperty("UpdatePath") == null, "no update path: updates come from the online releases only");
         var dir = Path.Combine(Path.GetTempPath(), "markshot-update-test2");
         Directory.CreateDirectory(dir);
         foreach (var f in Directory.GetFiles(dir)) File.Delete(f);

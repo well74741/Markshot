@@ -46,12 +46,6 @@ public static class UpdateService
         return dist != null && Directory.Exists(dist) ? dist : "";
     }
 
-    /// <summary>The user's own update folder (optional; the GitHub repository is always checked too).</summary>
-    public static string EffectivePath(AppConfig config) =>
-        string.IsNullOrWhiteSpace(config.UpdatePath)
-            ? ""
-            : Environment.ExpandEnvironmentVariables(config.UpdatePath.Trim());
-
     /// <summary>
     /// Newest package from the built-in GitHub repository and, when set, the custom folder /
     /// repository URL; null when nothing is newer than this build.

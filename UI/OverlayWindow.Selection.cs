@@ -315,11 +315,11 @@ public partial class OverlayWindow
                 LayoutTransform = UiScale.Transform,
                 Child = new TextBlock
                 {
-                    Text = ((TextBlock)Hint.Child).Text,
                     Foreground = ((TextBlock)Hint.Child).Foreground,
                     FontSize = ((TextBlock)Hint.Child).FontSize
                 }
             };
+            FillHint((TextBlock)copy.Child);
             copy.SetBinding(VisibilityProperty, new System.Windows.Data.Binding(nameof(Visibility)) { Source = Hint });
             copy.SetBinding(OpacityProperty, new System.Windows.Data.Binding(nameof(Opacity)) { Source = Hint });
             UiLayer.Children.Insert(UiLayer.Children.IndexOf(Hint) + 1, copy);
@@ -805,14 +805,21 @@ public partial class OverlayWindow
         _preparing = true;
         Task.Run(() =>
         {
+            var thread = Thread.CurrentThread;
+            var priority = thread.Priority;
             try
             {
+                thread.Priority = ThreadPriority.BelowNormal; // never in the way of dragging the area
                 Segmenter.Prepare(region);
             }
             catch (Exception ex)
             {
                 _segmenterFailed = true; // not again on every move
                 Log.Error("画面识别失败", ex);
+            }
+            finally
+            {
+                thread.Priority = priority;
             }
         }).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
         {
@@ -860,19 +867,34 @@ public partial class OverlayWindow
 
     private DispatcherTimer? _wheelTipTimer;
 
-    /// <summary>The tip above the pointer (the magnifier sits below it); it goes by itself.</summary>
+    /// <summary>The tip at the bottom middle of the screen the pointer is on (it does not follow the pointer); it goes by itself.</summary>
     private void ShowWheelTip(string text)
     {
         WheelTipText.Text = text;
         Motion.SetShown(WheelTip, true, Motion.Fast);
         WheelTip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var (sx, sy) = _hoverScreenPoint;
-        var x = (sx - _bounds.X) / Math.Max(0.01, _scale);
-        var y = (sy - _bounds.Y) / Math.Max(0.01, _scale);
         var size = WheelTip.DesiredSize;
-        var top = y - size.Height - 18;
-        Canvas.SetLeft(WheelTip, Math.Max(4, Math.Min(x - size.Width / 2, Math.Max(4, ActualWidth - size.Width - 4))));
-        Canvas.SetTop(WheelTip, top >= 4 ? top : y + 26);
+        var scale = Math.Max(0.01, _scale);
+        var screen = new Rect(0, 0, ActualWidth, ActualHeight);
+        try
+        {
+            var (sx, sy) = _hoverScreenPoint;
+            var b = Core.Recording.Monitors.At(sx, sy).Bounds;
+            var local = Rect.Intersect(new Rect((b.X - _bounds.X) / scale, (b.Y - _bounds.Y) / scale, b.Width / scale, b.Height / scale), screen);
+            if (!local.IsEmpty && local.Width > size.Width)
+            {
+                screen = local;
+            }
+        }
+        catch (Exception)
+        {
+            // no monitor list: the bottom of the capture
+        }
+
+        var left = screen.X + (screen.Width - size.Width) / 2;
+        var top = screen.Bottom - size.Height - 72;
+        Canvas.SetLeft(WheelTip, Math.Max(4, Math.Min(left, Math.Max(4, ActualWidth - size.Width - 4))));
+        Canvas.SetTop(WheelTip, Math.Max(4, Math.Min(top, Math.Max(4, ActualHeight - size.Height - 4))));
         if (_wheelTipTimer == null)
         {
             _wheelTipTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
@@ -1195,13 +1217,57 @@ public partial class OverlayWindow
         // Previewed with the rounded corners the area will get when clicked.
         var corner = hover.IsEmpty ? 0 : Math.Min(Math.Max(0, App.Config.CaptureCornerRadius), Math.Min(hover.Width, hover.Height) / 2);
         Editor.HoverCornerRadius = corner;
-        BrightClip.RadiusX = BrightClip.RadiusY = corner / _scale;
-        BrightClip.Rect = hover.IsEmpty || hover.Width <= 0
-            ? new Rect(0, 0, 0, 0)
+        var bright = hover.IsEmpty || hover.Width <= 0
+            ? Rect.Empty
             : new Rect(hover.X / _scale, hover.Y / _scale, hover.Width / _scale, hover.Height / _scale);
+        if (bright.IsEmpty && !_brightShown.IsEmpty)
+        {
+            FadeBright(_brightShown, BrightClip.RadiusX); // pressed / left the element: it dims gradually
+        }
+        else if (!bright.IsEmpty)
+        {
+            StopBrightFade();
+        }
+
+        _brightShown = bright;
+        BrightClip.RadiusX = BrightClip.RadiusY = corner / _scale;
+        BrightClip.Rect = bright.IsEmpty ? new Rect(0, 0, 0, 0) : bright;
         if (!ReferenceEquals(BrightImage.Clip, BrightClip))
         {
             BrightImage.Clip = BrightClip;
+        }
+    }
+
+    private Rect _brightShown = Rect.Empty;
+    private object? _brightFadeToken;
+
+    /// <summary>What was bright fades to the dim of the rest (240 ms).</summary>
+    private void FadeBright(Rect area, double radius)
+    {
+        var token = new object();
+        _brightFadeToken = token;
+        BrightFadeClip.Rect = area;
+        BrightFadeClip.RadiusX = BrightFadeClip.RadiusY = radius;
+        BrightFade.Source = BrightImage.Source;
+        BrightFade.Visibility = Visibility.Visible;
+        var fade = new System.Windows.Media.Animation.DoubleAnimation(1, 0, Motion.Base) { EasingFunction = Motion.Ease };
+        fade.Completed += (_, _) =>
+        {
+            if (ReferenceEquals(_brightFadeToken, token))
+            {
+                StopBrightFade();
+            }
+        };
+        BrightFade.BeginAnimation(OpacityProperty, fade);
+    }
+
+    private void StopBrightFade()
+    {
+        _brightFadeToken = null;
+        if (BrightFade.Visibility == Visibility.Visible)
+        {
+            BrightFade.BeginAnimation(OpacityProperty, null);
+            BrightFade.Visibility = Visibility.Collapsed;
         }
     }
 

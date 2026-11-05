@@ -140,7 +140,7 @@ static class Batch1Test
     {
         var type = typeof(AnnotationEditor).Assembly.GetType("Markshot.UI.AnnotationOps")!;
         var method = type.GetMethod("BindEraser", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public)!;
-        return (bool)method.Invoke(null, new object[] { items, points, width, 1.0 })!;
+        return (bool)method.Invoke(null, new object[] { items, points, width, 1.0, 0.0 })!;
     }
 
     static Point StartCorner(RectAnnotation r)

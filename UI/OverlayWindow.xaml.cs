@@ -312,9 +312,8 @@ public partial class OverlayWindow : Window
         _screen = screen;
         _screenPlain = screen;
         _bounds = bounds;
-        var wheelHint = App.Config.DetectAuto && (App.Config.DetectElements || App.Config.DetectWindows) ? "滚轮 调整识别范围　·　" : "";
-        HintText.Text = $"拖拽选择区域　·　右键拖动手绘截图（Shift 直线）　·　点击窗口 / 元素直接选中　·　{wheelHint}{KeyLabel(App.Config.CrosshairKey)} 辅助线　·　" +
-                        $"{KeyLabel(App.Config.CaptureCursorKey)} 显示鼠标　·　R 上次区域　·　双击复制　·　Esc 取消";
+        FillHint(HintText);
+        Motion.PopOnShow(Hint, fromAbove: true); // the hint drops in when the capture opens (and when it comes back)
         PreviewMouseMove += (_, e) => UpdateCrosshair(e.GetPosition(Root));
         PreviewMouseDown += (_, _) => _tapKey = null; // Alt+drag and the like is no tap
         PreviewMouseLeftButtonDown += OnQuickDoubleClick;
@@ -352,6 +351,13 @@ public partial class OverlayWindow : Window
         };
 
         Loaded += OnLoaded;
+        Loaded += (_, _) =>
+        {
+            // While capturing: no long blocking garbage collections (a background picture analysis allocates a lot),
+            // so dragging the area never stutters. Back to normal when the capture closes.
+            _latencyBefore ??= System.Runtime.GCSettings.LatencyMode;
+            System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+        };
         SourceInitialized += OnSourceInitialized;
         SizeChanged += (_, _) =>
         {
@@ -751,11 +757,78 @@ public partial class OverlayWindow : Window
         return used;
     }
 
+    private System.Runtime.GCLatencyMode? _latencyBefore;
+
+    private static readonly Dictionary<string, ImageBrush> MouseIcons = new();
+
+    /// <summary>The capture hint: each mouse action with its mouse icon (left / right button, wheel).</summary>
+    private static void FillHint(TextBlock target)
+    {
+        var config = App.Config;
+        var parts = new List<(string? Icon, string Text)>
+        {
+            ("mouse_left", "拖拽选择区域"),
+            ("mouse_right", "右键拖动手绘截图（Shift 直线）"),
+            ("mouse_left", "点击窗口 / 元素直接选中")
+        };
+        if (config.DetectAuto && (config.DetectElements || config.DetectWindows))
+        {
+            parts.Add(("mouse_wheel", "滚轮 调整识别范围"));
+        }
+
+        parts.Add((null, $"{KeyLabel(config.CrosshairKey)} 辅助线"));
+        parts.Add((null, $"{KeyLabel(config.CaptureCursorKey)} 显示鼠标"));
+        parts.Add((null, "R 上次区域"));
+        parts.Add(("mouse_left", "双击复制"));
+        parts.Add((null, "Esc 取消"));
+        target.Inlines.Clear();
+        for (var i = 0; i < parts.Count; i++)
+        {
+            if (i > 0)
+            {
+                target.Inlines.Add(new System.Windows.Documents.Run("　·　"));
+            }
+
+            if (parts[i].Icon is { } name)
+            {
+                target.Inlines.Add(new System.Windows.Documents.InlineUIContainer(MouseIcon(name, target)) { BaselineAlignment = BaselineAlignment.Center });
+            }
+
+            target.Inlines.Add(new System.Windows.Documents.Run(parts[i].Text));
+        }
+    }
+
+    /// <summary>A mouse icon in the text's colour (follows the theme).</summary>
+    private static FrameworkElement MouseIcon(string name, TextBlock owner)
+    {
+        if (!MouseIcons.TryGetValue(name, out var mask))
+        {
+            mask = new ImageBrush(new BitmapImage(new Uri($"pack://application:,,,/Markshot;component/Assets/Icons/{name}.png")))
+            {
+                Stretch = Stretch.Uniform
+            };
+            mask.Freeze();
+            MouseIcons[name] = mask;
+        }
+
+        var icon = new Border { Width = 15, Height = 15, Margin = new Thickness(0, 0, 4, 1), OpacityMask = mask };
+        icon.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding(nameof(TextBlock.Foreground)) { Source = owner });
+        RenderOptions.SetBitmapScalingMode(icon, BitmapScalingMode.HighQuality);
+        return icon;
+    }
+
     private static string KeyLabel(string? configured) => string.IsNullOrWhiteSpace(configured) ? "（未设置）" : configured.Trim();
 
     protected override void OnClosed(EventArgs e)
     {
         _closed = true;
+        CancelQueuedVisuals();
+        if (_latencyBefore is { } latency)
+        {
+            System.Runtime.GCSettings.LatencyMode = latency;
+            _latencyBefore = null;
+        }
+
         StopHoverAnimation();
         _noticeTimer.Stop();
         CancelTranslation();

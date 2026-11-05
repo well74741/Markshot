@@ -6,9 +6,9 @@ namespace Markshot.UI;
 internal static class ToolbarCatalog
 {
     public static readonly string[] Tools = { "Shape", "Pen", "Arrow", "Text", "Number", "Mosaic", "Eraser" };
-    public static readonly string[] CaptureActions = { "Scroll", "Record", "Ocr", "Close", "Clear", "Pin", "Save", "Copy", "Translate", "Edit" };
-    public static readonly string[] PinActions = { "Close", "Save", "Clear", "Apply", "Copy", "Edit" };
-    public static readonly string[] EditorActions = { "Paste", "Open", "Save", "Clear", "Copy", "Pin" };
+    public static readonly string[] CaptureActions = { "Scroll", "Record", "Ocr", "Close", "Clear", "Pin", "Save", "Translate", "Edit", "Copy" };
+    public static readonly string[] PinActions = { "Close", "Save", "Clear", "Edit", "Apply", "Copy" };
+    public static readonly string[] EditorActions = { "Paste", "Open", "Save", "Clear", "Pin", "Copy" };
 
     public static string Label(string key) => key switch
     {

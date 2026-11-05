@@ -27,6 +27,12 @@
                 <RectangleGeometry x:Name="BrightClip" Rect="0,0,0,0" />
             </Image.Clip>
         </Image>
+        <!-- The element that was bright, fading to the dim (pressing on it, or leaving it). -->
+        <Image x:Name="BrightFade" Stretch="Fill" IsHitTestVisible="False" Visibility="Collapsed">
+            <Image.Clip>
+                <RectangleGeometry x:Name="BrightFadeClip" Rect="0,0,0,0" />
+            </Image.Clip>
+        </Image>
 
         <!-- In-place translation of the selection, between the screenshot and the annotations. -->
         <Canvas x:Name="TranslateLayer" IsHitTestVisible="False">

@@ -242,7 +242,7 @@ internal static class AnnotationOps
     /// Binds a finished eraser stroke to every element it touches (SketchPlayer
     /// notes §4.2). Returns false when it touched nothing, so no undo step is needed.
     /// </summary>
-    public static bool BindEraser(IReadOnlyList<Annotation> items, IReadOnlyList<Point> points, double width, double strength = 1)
+    public static bool BindEraser(IReadOnlyList<Annotation> items, IReadOnlyList<Point> points, double width, double strength = 1, double softness = 0)
     {
         if (points.Count == 0)
         {
@@ -266,7 +266,7 @@ internal static class AnnotationOps
                 continue;
             }
 
-            item.AddEraseStroke(points, width, strength);
+            item.AddEraseStroke(points, width, strength, softness);
             touched = true;
         }
 

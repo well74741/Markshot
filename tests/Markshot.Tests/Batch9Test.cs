@@ -103,6 +103,61 @@ static class Batch9Test
         win.Close();
         leftDown.SetValue(null, new Func<bool>(() => Mouse.LeftButton == MouseButtonState.Pressed));
 
+        // ---- pins: restored / from the editor the light sweeps across; closing shrinks it towards its middle
+        {
+            var picture = BitmapSource.Create(160, 100, 96, 96, PixelFormats.Bgra32, null, Enumerable.Repeat((byte)200, 160 * 100 * 4).ToArray(), 160 * 4);
+            picture.Freeze();
+            var swept = new PinWindow(picture, -4000, -4000) { Sweep = true, Left = -4000, Top = -4000, ShowActivated = false };
+            var host = (Grid)swept.FindName("ImageHost");
+            var before = host.Children.Count;
+            swept.Show();
+            Pump(200);
+            Check(host.Children.Count == before + 1 && host.Children[^1] is Canvas { Children.Count: 1 }, "a restored pin: the light sweeps across it");
+            Pump(400);
+            Check(host.Children.Count == before, "… once");
+            swept.Close();
+            Pump(80);
+            var pinRoot = (FrameworkElement)swept.FindName("RootGrid");
+            var shrink = pinRoot.RenderTransform as ScaleTransform;
+            Check(shrink != null && shrink.ScaleX < 0.98 && shrink.ScaleX > 0.55 && pinRoot.RenderTransformOrigin == new Point(0.5, 0.5),
+                $"closing a pin: it shrinks towards its middle while it fades ({shrink?.ScaleX:0.00})");
+            Pump(250);
+            Check(!swept.IsVisible, "… and is gone");
+            var plain = new PinWindow(picture, -4000, -4000) { Left = -4000, Top = -4000, ShowActivated = false };
+            var plainHost = (Grid)plain.FindName("ImageHost");
+            var plainBefore = plainHost.Children.Count;
+            plain.Show();
+            Pump(200);
+            Check(plainHost.Children.Count == plainBefore, "a new pin from the clipboard: no sweep");
+            Check(typeof(PinWindow).GetField("_crosshair", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(plain)?.GetType().Name == "PinCrosshair" &&
+                  typeof(PinWindow).Assembly.GetType("Markshot.UI.PinMagnifier") == null, "Alt over a pin: 辅助线 (no magnifier card any more)");
+            plain.Close();
+            Pump(250);
+        }
+
+        // ---- the eraser's 软边: full in the middle of the stroke, fading towards its edge
+        {
+            var block = new Markshot.Annotations.RectAnnotation { Rect = new Rect(10, 10, 100, 100), Fill = true, Color = Colors.Black, Thickness = 2 };
+            block.AddEraseStroke(new[] { new Point(0, 60), new Point(120, 60) }, 40, 1, 1);
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+            {
+                Markshot.Annotations.AnnotationEditor.DrawItem(dc, block);
+            }
+
+            var softShot = new RenderTargetBitmap(120, 120, 96, 96, PixelFormats.Pbgra32);
+            softShot.Render(visual);
+            byte Alpha(int x, int y) { var px = new byte[4]; softShot.CopyPixels(new Int32Rect(x, y, 1, 1), px, 4, 0); return px[3]; }
+            var middle = Alpha(60, 60);
+            var halfway = Alpha(60, 72);
+            var outside = Alpha(60, 30);
+            Check(middle < 30 && halfway > middle + 40 && halfway < outside - 40 && outside > 240,
+                $"soft eraser: erased in the middle, partly towards the edge, untouched outside (alpha {middle} / {halfway} / {outside})");
+            var eraserBar = new AnnotationToolbar();
+            eraserBar.SetTool(Markshot.Annotations.AnnotationTool.Eraser);
+            Check(((FrameworkElement)eraserBar.FindName("SoftnessGroup")).Visibility == Visibility.Visible, "the eraser has a 软边 slider");
+        }
+
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
     }
 

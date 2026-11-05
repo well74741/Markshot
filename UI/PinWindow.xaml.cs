@@ -16,7 +16,7 @@ public partial class PinWindow : Window
     // The annotation toolbar and the small window that carries it below the pin.
     private protected readonly AnnotationToolbar Toolbar = new() { Visibility = Visibility.Collapsed };
     private ToolbarHostWindow? _toolbarWindow;
-    private PinMagnifier? _magnifier;
+    private PinCrosshair? _crosshair;
     private Point? _toolbarOffset;   // pixels from the image's top-left once the user dragged it
     private bool _placingToolbar;
     private Annotation? _freshSelection;
@@ -163,10 +163,10 @@ public partial class PinWindow : Window
         Loaded += OnLoaded;
         Closed += (_, _) => LeaveGroup();
         LocationChanged += (_, _) => PlaceToolbar(); // the toolbar window follows the pin
-        // Alt over the pin: the capture magnifier at the pointer.
+        // Alt over the pin: 辅助线 through the pointer across the screen (as in the capture).
         if (!IsEditor)
         {
-            _magnifier = new PinMagnifier(ImageHost, () => CurrentImage, ToPixels) // the editor uses Alt for Alt + wheel
+            _crosshair = new PinCrosshair(ImageHost) // the editor uses Alt for Alt + wheel
             {
                 Paused = () => _editMode && PenEyedropper.IsPen(_tool)
             };
@@ -213,6 +213,13 @@ public partial class PinWindow : Window
                     _fadingOut = true;
                     IsHitTestVisible = false;
                     BeginAnimation(OpacityProperty, new DoubleAnimation(0, Motion.Fast) { EasingFunction = Motion.Ease });
+                    // …and shrinks quickly towards its middle while it fades.
+                    var shrink = new ScaleTransform(1, 1);
+                    RootGrid.RenderTransformOrigin = new Point(0.5, 0.5);
+                    RootGrid.RenderTransform = shrink;
+                    var away = new DoubleAnimation(1, 0.6, Motion.Fast) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
+                    shrink.BeginAnimation(ScaleTransform.ScaleXProperty, away);
+                    shrink.BeginAnimation(ScaleTransform.ScaleYProperty, away);
                     var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(170) };
                     timer.Tick += (_, _) =>
                     {
@@ -227,7 +234,7 @@ public partial class PinWindow : Window
             }
 
             _translateCts?.Cancel();
-            _magnifier?.Hide();
+            _crosshair?.Hide();
             if (_editMode)
             {
                 ExitEditMode(true);
@@ -297,6 +304,9 @@ public partial class PinWindow : Window
     /// <summary>Made from a capture: appears at once (no fade, the capture shows the same pixels) with a light sweep.</summary>
     public bool FromCapture { get; init; }
 
+    /// <summary>Fades in with the light sweeping across it (restored from the history, pinned from the editor).</summary>
+    public bool Sweep { get; init; }
+
     // Shadow settings being previewed from the settings window (null = the saved ones).
     private (double Size, string Color, double Opacity)? _shadowPreview;
 
@@ -365,6 +375,20 @@ public partial class PinWindow : Window
         else
         {
             BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Motion.Fast) { EasingFunction = Motion.Ease });
+            if (Sweep)
+            {
+                // Once it is placed and sized (a restored pin gets its zoom right after showing): the light crosses it.
+                var later = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(90) };
+                later.Tick += (_, _) =>
+                {
+                    later.Stop();
+                    if (!_fadingOut)
+                    {
+                        PlayLightSweep();
+                    }
+                };
+                later.Start();
+            }
         }
         RefreshTextLayer();
     }

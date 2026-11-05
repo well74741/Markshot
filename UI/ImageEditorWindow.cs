@@ -1,3 +1,4 @@
+using System.Windows.Media.Animation;
 using System.Windows.Controls.Primitives;
 using Markshot.Annotations;
 using Markshot.Core.Recording;
@@ -43,6 +44,9 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly TextBox _widthBox = new();
     private readonly TextBox _heightBox = new();
     private Border? _styleSection;
+    private Border? _resetAllFooter;
+    private bool _styleShown;
+    private static readonly Thickness SectionMargin = new(0, 0, 0, 8);
     private FrameworkElement? _radiusRow;
     private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _styleSliders = new();
     private readonly Border _borderSwatch = new() { Width = 22, Height = 14, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1) };
@@ -439,13 +443,16 @@ public sealed class ImageEditorWindow : PinWindow
         return label;
     }
 
+    /// <summary>A switch that looks like the panel's buttons (blue while on).</summary>
     private static ToggleButton TextToggle(string text, string tip) => new()
     {
         Content = text,
         ToolTip = tip,
-        Style = (Style)Application.Current.FindResource("ToolToggle"),
+        Style = (Style)Application.Current.FindResource("FooterToggle"),
+        MinWidth = 0,
         Height = 30,
-        Margin = new Thickness(0, 0, 6, 0)
+        Padding = new Thickness(8, 0, 8, 0),
+        Margin = new Thickness(0, 0, 6, 6)
     };
 
     private static Button TextButton(string text, string tip, Action click)
@@ -562,12 +569,10 @@ public sealed class ImageEditorWindow : PinWindow
         colour.Children.Add(AdjustSlider("锐化", "Sharpen", 0, 100, 0));
         colour.Children.Add(AdjustSlider("模糊", "Blur", 0, 20, 0));
         colour.Children.Add(AdjustSlider("透明度", "Opacity", 0, 100, 100));
-        var toggles = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+        var toggles = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) }; // the same size and spacing as the other button rows
         _invert.Click += (_, _) => AdjustChanged();
         toggles.Children.Add(_invert);
-        var curves = TextButton("曲线…", "打开曲线表调整明暗", OpenCurves);
-        curves.Margin = new Thickness(0, 0, 6, 0);
-        toggles.Children.Add(curves);
+        toggles.Children.Add(TextButton("曲线…", "打开曲线表调整明暗", OpenCurves));
         toggles.Children.Add(TextButton("一键增强", "自动拉开明暗、稍加饱和度（调色的曲线里可以再改；Ctrl+Z 撤销）", AutoEnhance));
         colour.Children.Add(toggles);
 
@@ -604,11 +609,19 @@ public sealed class ImageEditorWindow : PinWindow
         stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
         var resetAll = TextButton("重置所有修改", "回到打开时的样子（图片和批注；可用 Ctrl+Z 撤销）", ResetAll);
         resetAll.HorizontalAlignment = HorizontalAlignment.Stretch;
-        resetAll.Margin = new Thickness(0, 4, 0, 4);
-        stack.Children.Add(resetAll);
+        resetAll.Margin = new Thickness(0);
         UiScale.Attach(stack);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = stack };
-        var frame = new Border { Width = 262, BorderThickness = new Thickness(1, 0, 0, 0), Child = scroll };
+        // 重置所有修改 stays at the bottom of the panel, never scrolled out of sight.
+        var footer = new Border { Padding = new Thickness(10, 8, 10, 10), BorderThickness = new Thickness(0, 1, 0, 0), Child = resetAll };
+        footer.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
+        UiScale.Attach(footer);
+        _resetAllFooter = footer;
+        var column = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(footer, Dock.Bottom);
+        column.Children.Add(footer);
+        column.Children.Add(scroll);
+        var frame = new Border { Width = 262, BorderThickness = new Thickness(1, 0, 0, 0), Child = column };
         _panel = frame;
         frame.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF151515));
         frame.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
@@ -823,14 +836,15 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         var first = StyledPictures.FirstOrDefault();
-        _styleSection.Visibility = first == null ? Visibility.Collapsed : Visibility.Visible;
         if (first == null)
         {
+            SlideSection(_styleSection, false);
             return;
         }
 
         // A free shape has no corners to round; its shadow and outline follow the shape.
         _radiusRow!.Visibility = StyledPictures.All(picture => picture.IsShaped) ? Visibility.Collapsed : Visibility.Visible;
+        SlideSection(_styleSection, true);
 
         var syncing = _syncingControls;
         _syncingControls = true;
@@ -839,6 +853,71 @@ public sealed class ImageEditorWindow : PinWindow
         _styleSliders["Border"].Slider.Value = first.BorderWidth;
         _borderSwatch.Background = new SolidColorBrush(first.BorderColor);
         _syncingControls = syncing;
+    }
+
+    /// <summary>
+    /// 元素样式 opens and closes with a slide: its height grows from nothing (pushing the sections below down) and
+    /// shrinks back, fading at the same time.
+    /// </summary>
+    private void SlideSection(FrameworkElement section, bool show)
+    {
+        if (show == _styleShown)
+        {
+            return;
+        }
+
+        _styleShown = show;
+        var animate = IsLoaded && section.Parent is FrameworkElement { ActualWidth: > 0 };
+        if (!animate)
+        {
+            section.BeginAnimation(HeightProperty, null);
+            section.BeginAnimation(MarginProperty, null);
+            section.BeginAnimation(OpacityProperty, null);
+            section.Height = double.NaN;
+            section.Margin = SectionMargin;
+            section.Opacity = 1;
+            section.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            return;
+        }
+
+        var from = section.Visibility == Visibility.Visible ? section.ActualHeight : 0;
+        var fromOpacity = section.Visibility == Visibility.Visible ? section.Opacity : 0;
+        var fromMargin = section.Visibility == Visibility.Visible ? section.Margin : new Thickness(0);
+        double to = 0;
+        if (show)
+        {
+            section.Visibility = Visibility.Visible;
+            section.BeginAnimation(HeightProperty, null);
+            section.Height = double.NaN;
+            section.Measure(new Size(((FrameworkElement)section.Parent).ActualWidth, double.PositiveInfinity));
+            to = Math.Max(0, section.DesiredSize.Height - section.Margin.Top - section.Margin.Bottom);
+        }
+
+        section.ClipToBounds = true;
+        var duration = Motion.Base;
+        var height = new DoubleAnimation(from, to, duration) { EasingFunction = Motion.Ease };
+        height.Completed += (_, _) =>
+        {
+            if (_styleShown != show)
+            {
+                return; // turned around meanwhile
+            }
+
+            section.BeginAnimation(HeightProperty, null);
+            section.BeginAnimation(MarginProperty, null);
+            section.BeginAnimation(OpacityProperty, null);
+            section.Height = double.NaN;
+            section.Margin = SectionMargin;
+            section.Opacity = 1;
+            section.ClipToBounds = false;
+            if (!show)
+            {
+                section.Visibility = Visibility.Collapsed;
+            }
+        };
+        section.BeginAnimation(HeightProperty, height);
+        section.BeginAnimation(MarginProperty, new ThicknessAnimation(fromMargin, show ? SectionMargin : new Thickness(0), duration) { EasingFunction = Motion.Ease });
+        section.BeginAnimation(OpacityProperty, new DoubleAnimation(fromOpacity, show ? 1 : 0, duration) { EasingFunction = Motion.Ease });
     }
 
     /// <summary>一键增强: the brightness stretched over the full range (through the curve), a touch more colour.</summary>

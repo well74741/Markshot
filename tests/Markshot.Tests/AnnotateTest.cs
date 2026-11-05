@@ -514,8 +514,31 @@ static class AnnotateTest
             var photo = items2.OfType<ImageAnnotation>().First();
             var styleSection = (FrameworkElement)typeof(ImageEditorWindow).GetField("_styleSection", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;
             Check(styleSection.Visibility != Visibility.Visible, "元素样式 hidden while no picture is selected");
+            var heightBefore = styleSection.ActualHeight;
             se2.SelectElements(new Annotation[] { photo });
             Check(styleSection.Visibility == Visibility.Visible, "… shows for a selected picture");
+            Pump(60);
+            var midway = styleSection.ActualHeight;
+            Pump(400);
+            Check(heightBefore == 0 && midway < styleSection.ActualHeight - 4 && double.IsNaN(styleSection.Height),
+                $"… sliding open (height {midway:0} on the way to {styleSection.ActualHeight:0}), the sections below pushed down");
+            se2.SelectElements(Array.Empty<Annotation>());
+            Pump(60);
+            Check(styleSection.Visibility == Visibility.Visible && styleSection.ActualHeight > 0, "… and sliding shut when nothing is selected");
+            Pump(400);
+            Check(styleSection.Visibility != Visibility.Visible, "… then gone");
+            se2.SelectElements(new Annotation[] { photo });
+            Pump(400);
+            var footer = (FrameworkElement)typeof(ImageEditorWindow).GetField("_resetAllFooter", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;
+            var insideScroll = false;
+            for (DependencyObject? up = footer; up != null; up = VisualTreeHelper.GetParent(up))
+            {
+                insideScroll |= up is ScrollViewer;
+            }
+
+            Check(footer.IsVisible && !insideScroll, "重置所有修改 is fixed at the bottom of the panel (not in the scrolled part)");
+            var invert = (System.Windows.Controls.Primitives.ToggleButton)typeof(ImageEditorWindow).GetField("_invert", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;
+            Check(invert.Style == (Style)Application.Current.FindResource("FooterToggle") && invert.ActualHeight == 30, "反色 is a button like 曲线 / 一键增强");
             se2.SetPictureStyle("Radius", 30);
             se2.SetPictureStyle("Border", 6);
             se2.SetBorderColor(Colors.Red);
@@ -523,12 +546,33 @@ static class AnnotateTest
             se2.SetBackground(Colors.White);
             se2.CanvasTo(260, 180);
             se2.SelectElements(new Annotation[] { items2.OfType<ImageAnnotation>().First() });
-            Pump(100);
+            Pump(500);
             var panelShot = new RenderTargetBitmap((int)((FrameworkElement)se2.Content).ActualWidth, (int)((FrameworkElement)se2.Content).ActualHeight, 96, 96, PixelFormats.Pbgra32);
             panelShot.Render((FrameworkElement)se2.Content);
             var panelEnc = new PngBitmapEncoder();
             panelEnc.Frames.Add(BitmapFrame.Create(panelShot));
             using (var panelFile = System.IO.File.Create("editor_style_panel.png")) panelEnc.Save(panelFile);
+            {
+                ScrollViewer? panelScroll = null;
+                void FindScroll(DependencyObject node)
+                {
+                    for (var i = 0; i < VisualTreeHelper.GetChildrenCount(node) && panelScroll == null; i++)
+                    {
+                        var child = VisualTreeHelper.GetChild(node, i);
+                        if (child is ScrollViewer sv && sv.Content is StackPanel) panelScroll = sv; else FindScroll(child);
+                    }
+                }
+
+                FindScroll((DependencyObject)se2.Content);
+                panelScroll?.ScrollToEnd();
+                Pump(200);
+                var bottomShot = new RenderTargetBitmap((int)((FrameworkElement)se2.Content).ActualWidth, (int)((FrameworkElement)se2.Content).ActualHeight, 96, 96, PixelFormats.Pbgra32);
+                bottomShot.Render((FrameworkElement)se2.Content);
+                var bottomEnc = new PngBitmapEncoder();
+                bottomEnc.Frames.Add(BitmapFrame.Create(bottomShot));
+                using (var bottomFile = System.IO.File.Create("editor_panel_bottom.png")) bottomEnc.Save(bottomFile);
+                panelScroll?.ScrollToHome();
+            }
             se2.UndoStep(); se2.UndoStep(); se2.UndoStep();
             Pump(30);
             photo = items2.OfType<ImageAnnotation>().First();
@@ -930,7 +974,20 @@ static class AnnotateTest
         var captureKeys = (string[])catalog.GetField("CaptureActions")!.GetValue(null)!;
         var pinKeys = (string[])catalog.GetField("PinActions")!.GetValue(null)!;
         Check(Array.IndexOf(captureKeys, "Clear") == Array.IndexOf(captureKeys, "Close") + 1, "capture bar: 清空批注 right of 关闭");
-        Check(string.Join(",", pinKeys) == "Close,Save,Clear,Apply,Copy,Edit", "pin bar: 关闭 before 保存, 清空批注 before 应用, 复制 right of 应用");
+        Check(string.Join(",", pinKeys) == "Close,Save,Clear,Edit,Apply,Copy", "pin bar: 关闭 before 保存, 清空批注 before 应用, 复制 right of 应用");
+        var editorKeys = (string[])catalog.GetField("EditorActions")!.GetValue(null)!;
+        Check(captureKeys[^1] == "Copy" && pinKeys[^1] == "Copy" && editorKeys[^1] == "Copy", "复制 is the rightmost button of every bar by default");
+        var oldConfig = new AppConfig
+        {
+            CaptureActionOrder = "Scroll,Record,Ocr,Close,Clear,Pin,Save,Copy,Translate,Edit",
+            PinActionOrder = "Close,Save,Clear,Apply,Edit",
+            EditorActionOrder = "Paste,Open,Save,Clear,Copy,Pin"
+        };
+        oldConfig.EnsureDefaults();
+        var arranged = new AppConfig { CaptureActionOrder = "Copy,Scroll,Record,Ocr,Close,Clear,Pin,Save,Translate,Edit" };
+        arranged.EnsureDefaults();
+        Check(oldConfig.CaptureActionOrder.EndsWith(",Copy") && oldConfig.PinActionOrder.EndsWith(",Copy") && oldConfig.EditorActionOrder.EndsWith(",Copy") &&
+              arranged.CaptureActionOrder.StartsWith("Copy,"), "an untouched old default order moves 复制 to the right; a rearranged one stays");
         var order = (List<string>)catalog.GetMethod("Order")!.Invoke(null, new object[] { "Save,Apply,Edit", pinKeys })!;
         Check(order.Contains("Clear") && order.Contains("Close"), "an old saved order gets the new buttons");
         Check(order.IndexOf("Copy") == order.IndexOf("Apply") + 1, $"… 复制 right of 应用 ({string.Join(",", order)})");

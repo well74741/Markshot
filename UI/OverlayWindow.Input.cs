@@ -246,6 +246,7 @@ public partial class OverlayWindow
             Editor.LiveEraser = _eraserPath.Points;
             Editor.LiveEraserWidth = _eraserPath.Thickness;
             Editor.LiveEraserStrength = Toolbar.EraserOpacity;
+            Editor.LiveEraserSoftness = Toolbar.EraserSoftness;
             Editor.InvalidateVisual();
             InputLayer.CaptureMouse();
             e.Handled = true;
@@ -579,7 +580,7 @@ public partial class OverlayWindow
                 _selection = ClampToScreen(rect);
                 _hasSelection = _selection.Width >= 2 && _selection.Height >= 2;
                 ApplyRememberedCorner();
-                UpdateSelectionVisuals();
+                RequestSelectionVisuals(); // drawn once per frame, however fast the mouse reports
                 break;
             }
 
@@ -594,7 +595,7 @@ public partial class OverlayWindow
                 moved.X = Math.Clamp(moved.X, 0, Math.Max(0, _screen.PixelWidth - moved.Width));
                 moved.Y = Math.Clamp(moved.Y, 0, Math.Max(0, _screen.PixelHeight - moved.Height));
                 _selection = moved;
-                UpdateSelectionVisuals();
+                RequestSelectionVisuals(); // drawn once per frame, however fast the mouse reports
                 break;
             }
 
@@ -602,7 +603,7 @@ public partial class OverlayWindow
             {
                 _selection = ClampToScreen(ResizeRect(_dragOrigin, _handle, point));
                 _cornerRadius = Math.Min(_cornerRadius, Math.Min(_selection.Width, _selection.Height) / 2);
-                UpdateSelectionVisuals();
+                RequestSelectionVisuals(); // drawn once per frame, however fast the mouse reports
                 break;
             }
 
@@ -720,6 +721,41 @@ public partial class OverlayWindow
         return false;
     }
 
+    private bool _visualsQueued;
+
+    /// <summary>
+    /// While the area is dragged: its visuals are brought up to date right before the next frame is drawn, once,
+    /// instead of on every mouse report (a fast mouse reports far more often than the screen refreshes).
+    /// </summary>
+    private void RequestSelectionVisuals()
+    {
+        if (_visualsQueued)
+        {
+            return;
+        }
+
+        _visualsQueued = true;
+        CompositionTarget.Rendering += FlushSelectionVisuals;
+    }
+
+    private void FlushSelectionVisuals(object? sender, EventArgs e)
+    {
+        CancelQueuedVisuals();
+        if (!_closed)
+        {
+            UpdateSelectionVisuals();
+        }
+    }
+
+    private void CancelQueuedVisuals()
+    {
+        if (_visualsQueued)
+        {
+            _visualsQueued = false;
+            CompositionTarget.Rendering -= FlushSelectionVisuals;
+        }
+    }
+
     private void Input_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (_active == null && !_erasing)
@@ -749,6 +785,8 @@ public partial class OverlayWindow
         {
             return;
         }
+
+        CancelQueuedVisuals(); // the release draws the final state itself
 
         InputLayer.ReleaseMouseCapture();
         _dragging = false;
@@ -822,7 +860,7 @@ public partial class OverlayWindow
             {
                 // The state before the stroke becomes the undo step, but only if it erased something.
                 var before = Editor.Items.Select(item => item.Clone()).ToList();
-                if (AnnotationOps.BindEraser(Editor.Items, _eraserPath.Points, _eraserPath.Thickness, Toolbar.EraserOpacity))
+                if (AnnotationOps.BindEraser(Editor.Items, _eraserPath.Points, _eraserPath.Thickness, Toolbar.EraserOpacity, Toolbar.EraserSoftness))
                 {
                     _history.Checkpoint(before);
                     UpdateUndoButtons();
@@ -913,9 +951,9 @@ public partial class OverlayWindow
             // Otherwise with a tool active: the same for the tool's next element.
             var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
             if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 && _active == null &&
-                (_selectedAnnotation != null ? AnnotationOps.HasSoftEdge(_selectedAnnotation) : PenEyedropper.IsPen(_tool)))
+                (_selectedAnnotation != null ? AnnotationOps.HasSoftEdge(_selectedAnnotation) : PenEyedropper.IsPen(_tool) || _tool == AnnotationTool.Eraser))
             {
-                Toolbar.NudgeSoftness(e.Delta); // Shift + wheel: the pen's 软边
+                Toolbar.NudgeSoftness(e.Delta); // Shift + wheel: the pen's / the eraser's 软边
                 e.Handled = true;
             }
             else if (_selectedAnnotation != null)

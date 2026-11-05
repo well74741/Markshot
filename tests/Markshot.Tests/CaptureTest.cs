@@ -124,7 +124,12 @@ static class CaptureTest
         Check(segmenter.At(whole, 600, 300).Count == 0, "over empty background: nothing");
 
         var hintOverlay = new OverlayWindow(Solid(300, 200, 40, 40, 40), new Int32Rect(-4000, -4000, 300, 200));
-        Check(((TextBlock)hintOverlay.FindName("HintText")).Text.Contains("滚轮 调整识别范围"), "the capture's hint tells what the wheel does");
+        var hintBlock = (TextBlock)hintOverlay.FindName("HintText");
+        var hintWords = string.Concat(hintBlock.Inlines.OfType<System.Windows.Documents.Run>().Select(r => r.Text));
+        Check(hintWords.Contains("滚轮 调整识别范围"), "the capture's hint tells what the wheel does");
+        Check(hintBlock.Inlines.OfType<System.Windows.Documents.InlineUIContainer>().Count() >= 4, "… with a mouse icon next to the mouse actions (left, right, wheel)");
+        var hintPop = false;
+        ((FrameworkElement)hintOverlay.FindName("Hint")).IsVisibleChanged += (_, _) => hintPop = true;
         var hintBorder = (FrameworkElement)hintOverlay.FindName("Hint");
         var tipBorder = (FrameworkElement)hintOverlay.FindName("WheelTip");
         ((TextBlock)hintOverlay.FindName("WheelTipText")).Text = "识别范围 2 / 4：卡片（滚轮：上 变大，下 变小）";
@@ -181,6 +186,20 @@ static class CaptureTest
         var scale = (double)Get(overlay, "_scale");
         Check(bright.Rect.Width > 0 && Math.Abs(bright.Rect.X - 50 / scale) < 0.5 && Math.Abs(bright.Rect.Width - 40 / scale) < 0.5,
             $"the framed element is shown bright, the rest dim ({bright.Rect})");
+        {
+            var fader = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+            var fadeList = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
+            fadeList.Add(Activator.CreateInstance(candidateType, new Rect(50, 50, 40, 20), "按钮"));
+            Call(fader, "SetHoverChain", fadeList);
+            Call(fader, "ClearHover"); // pressed on it: the frame goes
+            var fade = (Image)fader.FindName("BrightFade");
+            var fadeClip = (RectangleGeometry)fader.FindName("BrightFadeClip");
+            Check(fade.Visibility == Visibility.Visible && fadeClip.Rect.Width > 0 && ((RectangleGeometry)fader.FindName("BrightClip")).Rect.Width == 0,
+                "pressing in the bright element: it fades to the dim instead of going dark in one frame");
+            Pump(400);
+            Check(fade.Visibility != Visibility.Visible, "… and the fade is gone after it played");
+            fader.Close();
+        }
         var rangeAtStart = Markshot.App.Config.DetectRange;
         Check((bool)Call(overlay, "StepHoverLevel", 120) && (Rect)Get(overlay, "_hoverLocal") == new Rect(20, 20, 200, 120), "wheel up: the element around it");
         Pump(400);
@@ -254,6 +273,14 @@ static class CaptureTest
         Check(tipText.Text.Contains("常规元素") && tipText.Text.Contains("卡片") && rangeConfig.DetectRange == 3, $"… going out: 常规元素, kept ({tipText.Text})");
         Pump(1900);
         Check(tip.Visibility != Visibility.Visible, "… and goes by itself");
+
+        // the wheel tip sits at the bottom of the screen, wherever the pointer is
+        typeof(OverlayWindow).GetField("_hoverScreenPoint", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, (-3990, -3990));
+        Call(ranged, "ShowWheelTip", "识别范围：常规元素");
+        var tipAt = (Canvas.GetLeft(tip), Canvas.GetTop(tip));
+        typeof(OverlayWindow).GetField("_hoverScreenPoint", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, (-3760, -3820));
+        Call(ranged, "ShowWheelTip", "识别范围：常规元素");
+        Check((Canvas.GetLeft(tip), Canvas.GetTop(tip)) == tipAt, $"the wheel tip stays put at the bottom, it does not follow the pointer ({tipAt})");
 
         // windows everywhere: the wheel goes on past the window to the whole screen, for this capture only
         var smallWindow = Activator.CreateInstance(windowTargetType)!;

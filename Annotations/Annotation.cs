@@ -90,6 +90,7 @@ public abstract class Annotation
             return null;
         }
 
+
         var key = $"{bounds.X:F2},{bounds.Y:F2},{bounds.Width:F2},{bounds.Height:F2},{EraseMasks.Count}";
         if (MaskCache != null && MaskCacheKey == key)
         {
@@ -108,8 +109,8 @@ public abstract class Annotation
         return group;
     }
 
-    /// <summary>Partly erasing strokes (eraser opacity below 100 %), each with its strength.</summary>
-    public IEnumerable<(Geometry Geometry, double Strength)> PartialMasks()
+    /// <summary>Partly erasing strokes (eraser opacity below 100 % or a soft edge), each with how it erases.</summary>
+    public IEnumerable<(Geometry Geometry, double Strength, double Softness, IReadOnlyList<Point> Points, double Width)> PartialMasks()
     {
         if (EraseMasks is not { Count: > 0 })
         {
@@ -124,20 +125,27 @@ public abstract class Annotation
 
         foreach (var stroke in EraseMasks.Where(stroke => !stroke.Full))
         {
-            yield return (StrokeGeometry(stroke, bounds), stroke.Strength);
+            var (points, width) = StrokeOn(stroke, bounds);
+            yield return (EraseStroke.Widen(points, width), stroke.Strength, stroke.Softness, points, width);
         }
     }
 
-    private static Geometry StrokeGeometry(EraseStroke stroke, Rect bounds)
+    private static (List<Point> Points, double Width) StrokeOn(EraseStroke stroke, Rect bounds)
     {
         var sx = Math.Max(1, bounds.Width) / Math.Max(1, stroke.RecordedSize.Width);
         var sy = Math.Max(1, bounds.Height) / Math.Max(1, stroke.RecordedSize.Height);
         var points = stroke.Points.Select(p => new Point(bounds.X + p.X * sx, bounds.Y + p.Y * sy)).ToList();
-        return EraseStroke.Widen(points, stroke.Width * Math.Sqrt(sx * sy));
+        return (points, stroke.Width * Math.Sqrt(sx * sy));
+    }
+
+    private static Geometry StrokeGeometry(EraseStroke stroke, Rect bounds)
+    {
+        var (points, width) = StrokeOn(stroke, bounds);
+        return EraseStroke.Widen(points, width);
     }
 
     /// <summary>Binds a canvas-space eraser stroke to this element.</summary>
-    public void AddEraseStroke(IReadOnlyList<Point> canvasPoints, double width, double strength = 1)
+    public void AddEraseStroke(IReadOnlyList<Point> canvasPoints, double width, double strength = 1, double softness = 0)
     {
         var bounds = Bounds;
         if (bounds.IsEmpty || canvasPoints.Count == 0)
@@ -151,7 +159,7 @@ public abstract class Annotation
             .Select(p => new Point(p.X - bounds.X, p.Y - bounds.Y))
             .ToList();
         EraseMasks ??= new List<EraseStroke>();
-        EraseMasks.Add(new EraseStroke(local, width, new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height)), strength));
+        EraseMasks.Add(new EraseStroke(local, width, new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height)), strength, softness));
         MaskCache = null;
     }
 
@@ -1300,18 +1308,22 @@ public sealed class NumberAnnotation : Annotation
 /// <summary>One eraser stroke stored in an element's local frame.</summary>
 public sealed class EraseStroke
 {
-    public EraseStroke(List<Point> points, double width, Size recordedSize, double strength = 1)
+    public EraseStroke(List<Point> points, double width, Size recordedSize, double strength = 1, double softness = 0)
     {
         Points = points;
         Width = width;
         RecordedSize = recordedSize;
         Strength = Math.Clamp(strength, 0.05, 1);
+        Softness = Math.Clamp(softness, 0, 1);
     }
+
+    /// <summary>软边: how much of the width erases only partly, fading out towards the edge (0 = a hard edge).</summary>
+    public double Softness { get; }
 
     /// <summary>How much the stroke erases (the eraser's opacity): 1 = fully.</summary>
     public double Strength { get; }
 
-    public bool Full => Strength >= 0.999;
+    public bool Full => Strength >= 0.999 && Softness < 0.01;
 
     public List<Point> Points { get; }
 
@@ -1319,7 +1331,7 @@ public sealed class EraseStroke
 
     public Size RecordedSize { get; }
 
-    public EraseStroke Clone() => new(new List<Point>(Points), Width, RecordedSize, Strength);
+    public EraseStroke Clone() => new(new List<Point>(Points), Width, RecordedSize, Strength, Softness);
 
     /// <summary>The area a round brush of <paramref name="width"/> covers along the points.</summary>
     public static Geometry Widen(IReadOnlyList<Point> points, double width)

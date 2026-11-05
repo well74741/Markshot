@@ -66,6 +66,9 @@ public sealed class AnnotationEditor : FrameworkElement
     /// <summary>Opacity of the live eraser (1 = erases fully).</summary>
     public double LiveEraserStrength { get; set; } = 1;
 
+    /// <summary>软边 of the eraser stroke being drawn (0…1).</summary>
+    public double LiveEraserSoftness { get; set; }
+
     /// <summary>Freehand (lasso) capture being drawn: the path so far and the straight-segment preview end.</summary>
     public List<Point>? LassoDraft { get; set; }
 
@@ -183,7 +186,8 @@ public sealed class AnnotationEditor : FrameworkElement
         ImageAnnotation.Scaling = PictureScaling;
         foreach (var annotation in DrawOrder(Items))
         {
-            DrawItem(dc, annotation, live, ReferenceEquals(annotation, HoverWatermark) ? Accent : null, LiveEraserStrength);
+            DrawItem(dc, annotation, live, ReferenceEquals(annotation, HoverWatermark) ? Accent : null, LiveEraserStrength,
+                LiveEraser, LiveEraserWidth, LiveEraserSoftness);
         }
 
         ImageAnnotation.Scaling = BitmapScalingMode.HighQuality; // saved / copied pictures always are
@@ -297,7 +301,7 @@ public sealed class AnnotationEditor : FrameworkElement
     /// cut out. Used by the canvas, the capture output and the pin composition.
     /// </summary>
     public static void DrawItem(DrawingContext dc, Annotation annotation, Geometry? liveEraser = null, Brush? highlight = null,
-        double liveStrength = 1)
+        double liveStrength = 1, IReadOnlyList<Point>? livePoints = null, double liveWidth = 0, double liveSoftness = 0)
     {
         if (annotation.Hidden)
         {
@@ -312,7 +316,7 @@ public sealed class AnnotationEditor : FrameworkElement
             area.Inflate(annotation.Thickness * 2 + 4, annotation.Thickness * 2 + 4);
             if (area.IntersectsWith(liveEraser.Bounds))
             {
-                PushErase(dc, liveEraser, liveStrength, Room(area));
+                PushErase(dc, liveEraser, liveStrength, Room(area), livePoints, liveWidth, liveSoftness);
                 pops++;
             }
         }
@@ -332,9 +336,9 @@ public sealed class AnnotationEditor : FrameworkElement
         }
 
         // Strokes of a semi-transparent eraser only fade what they cover.
-        foreach (var (geometry, strength) in annotation.PartialMasks())
+        foreach (var (geometry, strength, softness, points, width) in annotation.PartialMasks())
         {
-            PushErase(dc, geometry, strength, Room(bounds));
+            PushErase(dc, geometry, strength, Room(bounds), points, width, softness);
             pops++;
         }
 
@@ -437,19 +441,46 @@ public sealed class AnnotationEditor : FrameworkElement
     }
 
     /// <summary>Erases <paramref name="area"/> fully (clip) or partly (opacity mask) for what is drawn next.</summary>
-    private static void PushErase(DrawingContext dc, Geometry area, double strength, Rect room)
+    private static void PushErase(DrawingContext dc, Geometry area, double strength, Rect room,
+        IReadOnlyList<Point>? points = null, double width = 0, double softness = 0)
     {
-        if (strength >= 0.999)
+        var soft = softness >= 0.01 && points is { Count: > 0 } && width > 0;
+        if (strength >= 0.999 && !soft)
         {
             dc.PushClip(Geometry.Combine(new RectangleGeometry(room), area, GeometryCombineMode.Exclude, null));
             return;
         }
 
         var keep = new DrawingGroup();
-        keep.Children.Add(new GeometryDrawing(Brushes.White, null,
-            Geometry.Combine(new RectangleGeometry(room), area, GeometryCombineMode.Exclude, null)));
-        keep.Children.Add(new GeometryDrawing(
-            new SolidColorBrush(Color.FromArgb((byte)Math.Round((1 - strength) * 255), 255, 255, 255)), null, area));
+        if (soft)
+        {
+            // 软边: nested widths of the stroke, widest first; each ring erases a little more than the one outside it,
+            // a smooth ramp from the edge to the full strength in the middle.
+            const int layers = 5;
+            var areas = new Geometry[layers];
+            for (var k = 0; k < layers; k++)
+            {
+                areas[k] = EraseStroke.Widen(points!, width * Math.Max(0.04, 1 - softness * k / (layers - 1)));
+            }
+
+            keep.Children.Add(new GeometryDrawing(Brushes.White, null,
+                Geometry.Combine(new RectangleGeometry(room), areas[0], GeometryCombineMode.Exclude, null)));
+            for (var k = 0; k < layers; k++)
+            {
+                var t = (k + 1) / (double)layers;
+                var erased = strength * t * t * (3 - 2 * t);
+                var ring = k == layers - 1 ? areas[k] : Geometry.Combine(areas[k], areas[k + 1], GeometryCombineMode.Exclude, null);
+                keep.Children.Add(new GeometryDrawing(
+                    new SolidColorBrush(Color.FromArgb((byte)Math.Round((1 - erased) * 255), 255, 255, 255)), null, ring));
+            }
+        }
+        else
+        {
+            keep.Children.Add(new GeometryDrawing(Brushes.White, null,
+                Geometry.Combine(new RectangleGeometry(room), area, GeometryCombineMode.Exclude, null)));
+            keep.Children.Add(new GeometryDrawing(
+                new SolidColorBrush(Color.FromArgb((byte)Math.Round((1 - strength) * 255), 255, 255, 255)), null, area));
+        }
         var brush = new DrawingBrush(keep)
         {
             Stretch = Stretch.Fill,

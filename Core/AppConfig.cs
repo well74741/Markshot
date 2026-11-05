@@ -31,11 +31,11 @@ public sealed class AppConfig
     public string PinToolHidden { get; set; } = "";
 
     /// <summary>Order / hidden of the action buttons on the right of the annotation bar.</summary>
-    public string CaptureActionOrder { get; set; } = "Scroll,Record,Ocr,Close,Clear,Pin,Save,Copy,Translate,Edit";
+    public string CaptureActionOrder { get; set; } = "Scroll,Record,Ocr,Close,Clear,Pin,Save,Translate,Edit,Copy";
 
     public string CaptureActionHidden { get; set; } = "";
 
-    public string PinActionOrder { get; set; } = "Close,Save,Clear,Apply,Copy,Edit";
+    public string PinActionOrder { get; set; } = "Close,Save,Clear,Edit,Apply,Copy";
 
     public string PinActionHidden { get; set; } = "";
 
@@ -44,7 +44,7 @@ public sealed class AppConfig
 
     public string EditorToolHidden { get; set; } = "";
 
-    public string EditorActionOrder { get; set; } = "Paste,Open,Save,Clear,Copy,Pin";
+    public string EditorActionOrder { get; set; } = "Paste,Open,Save,Clear,Pin,Copy";
 
     public string EditorActionHidden { get; set; } = "";
 
@@ -187,6 +187,9 @@ public sealed class AppConfig
     /// <summary>The pen's 软边 as last set (0…100 % of the brush width is feathered).</summary>
     public int PenSoftness { get; set; }
 
+    /// <summary>软边 of the eraser (0–100): how much of its width erases only partly, fading to the edge.</summary>
+    public int EraserSoftness { get; set; }
+
     /// <summary>截图里按一次 Esc 直接退出；关掉时逐步退出（先放下工具 / 取消选中，再取消选区，最后退出）。</summary>
     public bool EscExitsCapture { get; set; } = true;
 
@@ -197,7 +200,6 @@ public sealed class AppConfig
     public string SaveDirectory { get; set; } = "";
 
     /// <summary>Folder with installer packages for updates; empty = where the installer ran from.</summary>
-    public string UpdatePath { get; set; } = "";
 
     /// <summary>Empty means "use the system/user-profile OCR language".</summary>
     public string OcrLanguage { get; set; } = "";
@@ -210,6 +212,23 @@ public sealed class AppConfig
     {
         RecentRegions ??= new List<CaptureRegion>();
         Recorder ??= new RecorderConfig();
+
+        // An order that is still an old default (never rearranged) takes the new default: 复制 on the far right.
+        var fresh = new AppConfig();
+        if (CaptureActionOrder == "Scroll,Record,Ocr,Close,Clear,Pin,Save,Copy,Translate,Edit")
+        {
+            CaptureActionOrder = fresh.CaptureActionOrder;
+        }
+
+        if (PinActionOrder is "Close,Save,Clear,Apply,Copy,Edit" or "Close,Save,Clear,Apply,Edit")
+        {
+            PinActionOrder = fresh.PinActionOrder;
+        }
+
+        if (EditorActionOrder == "Paste,Open,Save,Clear,Copy,Pin")
+        {
+            EditorActionOrder = fresh.EditorActionOrder;
+        }
     }
 
     public void RememberRegion(Rect region)

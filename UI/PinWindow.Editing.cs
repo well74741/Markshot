@@ -585,7 +585,7 @@ public partial class PinWindow
             return false;
         }
 
-        var pen = _selected != null ? AnnotationOps.HasSoftEdge(_selected) : PenEyedropper.IsPen(_tool);
+        var pen = _selected != null ? AnnotationOps.HasSoftEdge(_selected) : PenEyedropper.IsPen(_tool) || _tool == AnnotationTool.Eraser;
         if (pen)
         {
             Toolbar.NudgeSoftness(delta);
@@ -1142,6 +1142,7 @@ public partial class PinWindow
             Editor.LiveEraser = _eraserPath.Points;
             Editor.LiveEraserWidth = _eraserPath.Thickness;
             Editor.LiveEraserStrength = Toolbar.EraserOpacity;
+            Editor.LiveEraserSoftness = Toolbar.EraserSoftness;
             Editor.InvalidateVisual();
             InputLayer.CaptureMouse();
             e.Handled = true;
@@ -1398,7 +1399,7 @@ public partial class PinWindow
             {
                 // The state before the stroke becomes the undo step, but only if it erased something.
                 var before = Editor.Items.Select(item => item.Clone()).ToList();
-                if (AnnotationOps.BindEraser(Editor.Items, _eraserPath.Points, _eraserPath.Thickness, Toolbar.EraserOpacity))
+                if (AnnotationOps.BindEraser(Editor.Items, _eraserPath.Points, _eraserPath.Thickness, Toolbar.EraserOpacity, Toolbar.EraserSoftness))
                 {
                     _history.Checkpoint(before);
                     UpdateUndoButtons();

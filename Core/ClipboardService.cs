@@ -16,15 +16,36 @@ public static class ClipboardService
             return copyOverride(image);
         }
 
-        var data = new DataObject();
-        data.SetImage(image);
-        if (App.Config?.CopyImageAsFile == true && SaveClipboardFile(image) is { } file)
+        var file = App.Config?.CopyImageAsFile == true ? SaveClipboardFile(image) : null; // Explorer pastes this as a .png file
+        var picture = Frozen(image);
+
+        // On a thread of its own: when another program holds the clipboard, WPF waits (about a second per try, and it
+        // flushes with retries too) — on the UI thread that froze the window for many seconds. Here the window waits
+        // at most a moment and stays responsive to painting.
+        var ok = false;
+        var worker = new Thread(() =>
         {
-            // Explorer pastes this as a .png file.
-            data.SetFileDropList(new System.Collections.Specialized.StringCollection { file });
+            var data = new DataObject();
+            data.SetImage(picture);
+            if (file != null)
+            {
+                data.SetFileDropList(new System.Collections.Specialized.StringCollection { file });
+            }
+
+            ok = Retry(() => Clipboard.SetDataObject(data, true), 3);
+        })
+        {
+            IsBackground = true,
+            Name = "Markshot clipboard"
+        };
+        worker.SetApartmentState(ApartmentState.STA);
+        worker.Start();
+        if (!worker.Join(TimeSpan.FromSeconds(2.5)))
+        {
+            Log.Error("写入剪贴板超时：剪贴板被其他程序占用。");
+            return false;
         }
 
-        var ok = Retry(() => Clipboard.SetDataObject(data, true));
         Log.Info($"复制图片 {image.PixelWidth}x{image.PixelHeight}：{(ok ? "成功" : "失败")}");
         return ok;
     }
@@ -130,9 +151,29 @@ public static class ClipboardService
         }
     }
 
-    private static bool Retry(Action action)
+    /// <summary>A copy any thread can read (the picture itself when it already is).</summary>
+    private static BitmapSource Frozen(BitmapSource image)
     {
-        for (var attempt = 0; attempt < MaxAttempts; attempt++)
+        if (image.IsFrozen)
+        {
+            return image;
+        }
+
+        var copy = image.CloneCurrentValue();
+        if (copy.CanFreeze)
+        {
+            copy.Freeze();
+            return copy;
+        }
+
+        var pixels = new WriteableBitmap(image);
+        pixels.Freeze();
+        return pixels;
+    }
+
+    private static bool Retry(Action action, int attempts = MaxAttempts)
+    {
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
             try
             {

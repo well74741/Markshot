@@ -347,7 +347,7 @@ public partial class App : Application
 
     public PinWindow CreatePin(BitmapSource image, int screenX, int screenY,
         BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null, double cornerRadius = 0,
-        bool fromCapture = false, bool shapedShadow = false)
+        bool fromCapture = false, bool shapedShadow = false, bool sweep = false)
     {
         while (_pins.Count >= MaxPins)
         {
@@ -361,7 +361,8 @@ public partial class App : Application
         {
             CornerRadius = cornerRadius,
             ShapedShadow = shapedShadow,
-            FromCapture = fromCapture
+            FromCapture = fromCapture,
+            Sweep = sweep
         };
 
         pin.Closed += (_, _) =>
@@ -408,10 +409,10 @@ public partial class App : Application
         }
     }
 
-    public void CreatePinAtCursor(BitmapSource image)
+    public void CreatePinAtCursor(BitmapSource image, bool sweep = false)
     {
         var cursor = Native.CursorPosition();
-        CreatePin(image, cursor.X + 16, cursor.Y + 16);
+        CreatePin(image, cursor.X + 16, cursor.Y + 16, sweep: sweep);
     }
 
     public void PinFromClipboard()
@@ -470,7 +471,7 @@ public partial class App : Application
             _closedPins.RemoveAt(_closedPins.Count - 1);
             History.Remove(entry);
             var restored = CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
-                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null);
+                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null, sweep: true);
             restored.RestoreView(snapshot.Zoom, snapshot.Opacity);
             return;
         }
@@ -484,7 +485,7 @@ public partial class App : Application
         }
 
         History.Remove(last);
-        CreatePinAtCursor(image);
+        CreatePinAtCursor(image, sweep: true);
     }
 
     private UI.PinHistoryWindow? _pinHistoryWindow;
@@ -516,14 +517,14 @@ public partial class App : Application
             var (snapshot, _) = _closedPins[index];
             _closedPins.RemoveAt(index);
             var restored = CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
-                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null);
+                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null, sweep: true);
             restored.RestoreView(snapshot.Zoom, snapshot.Opacity);
             return;
         }
 
         if (entry.LoadImage() is { } image)
         {
-            CreatePinAtCursor(image);
+            CreatePinAtCursor(image, sweep: true);
         }
     }
 
@@ -555,8 +556,7 @@ public partial class App : Application
         _updateTimer.Tick += async (_, _) =>
         {
             _updateTimer.Interval = TimeSpan.FromHours(2);
-            var folder = UpdateService.EffectivePath(Config);
-            var package = await UpdateService.FindNewestAsync(folder);
+            var package = await UpdateService.FindNewestAsync(null); // the online releases
             if (package != null && package.Version != _notifiedUpdate)
             {
                 _notifiedUpdate = package.Version;
@@ -800,7 +800,7 @@ public partial class App : Application
             replace.Close();
         }
 
-        var pin = CreatePin(composed, x, y, baseImage, annotations.Count > 0 ? annotations : null, shapedShadow: ImageOps.HasTransparentCorner(composed));
+        var pin = CreatePin(composed, x, y, baseImage, annotations.Count > 0 ? annotations : null, shapedShadow: ImageOps.HasTransparentCorner(composed), sweep: true);
         pin.RestoreView(fit, 1);
         return pin;
     }
