@@ -393,7 +393,7 @@
                             <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap"
                                        Text="只在截图窗口里生效（选区前后都可以）。可以是组合键，也可以单独一个 Alt / Ctrl / Shift（单按一下切换，按住拖动等操作不受影响）。" />
                             <CheckBox x:Name="EscExitsCheck" Margin="0,10,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="按一次 Esc 直接退出截图（关闭后逐步退出：先放下工具 / 取消选中，再取消选区，最后退出）" />
+                                      Content="按一次 Esc 或右键直接退出截图（关闭后逐步退出：先放下工具 / 取消选中，再取消选区，最后退出；Esc 和右键一样）" />
                         </StackPanel>
                     </Border>
 

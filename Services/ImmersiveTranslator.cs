@@ -458,18 +458,35 @@ public static class ImmersiveTranslator
     private static BitmapSource Render(
         BitmapSource image, Pixels pixels, IReadOnlyList<Paragraph> paragraphs, IReadOnlyList<string?> translations)
     {
+        // Every paragraph is laid out first, then all the old text is covered, then all the new text drawn:
+        // text that flows on is never painted over by the cover of the paragraph after it.
+        var shared = SharedEm(paragraphs);
+        var placed = new List<Placement>();
+        for (var i = 0; i < paragraphs.Count; i++)
+        {
+            if (translations[i] is { Length: > 0 } text &&
+                !string.Equals(text, paragraphs[i].Text, StringComparison.Ordinal))
+            {
+                placed.Add(Layout(pixels, paragraphs[i], text, shared[i]));
+            }
+        }
+
         var visual = new DrawingVisual();
         TextOptions.SetTextFormattingMode(visual, TextFormattingMode.Ideal);
         using (var dc = visual.RenderOpen())
         {
             dc.DrawImage(image, new Rect(0, 0, pixels.Width, pixels.Height));
-            for (var i = 0; i < paragraphs.Count; i++)
+            foreach (var place in placed)
             {
-                if (translations[i] is { Length: > 0 } text &&
-                    !string.Equals(text, paragraphs[i].Text, StringComparison.Ordinal))
+                foreach (var cover in place.Covers)
                 {
-                    DrawParagraph(dc, pixels, paragraphs[i], text);
+                    Cover(dc, pixels, cover, place.Flat, place.Background);
                 }
+            }
+
+            foreach (var place in placed)
+            {
+                dc.DrawText(place.Text, place.Origin);
             }
         }
 
@@ -479,29 +496,78 @@ public static class ImmersiveTranslator
         return bitmap;
     }
 
-    private static void DrawParagraph(DrawingContext dc, Pixels px, Paragraph paragraph, string text)
+    private sealed record Placement(FormattedText Text, Point Origin, List<Int32Rect> Covers, bool Flat, Color Background);
+
+    private static void Cover(DrawingContext dc, Pixels px, Int32Rect area, bool flat, Color background)
+    {
+        if (area.Width <= 0 || area.Height <= 0)
+        {
+            return;
+        }
+
+        if (flat)
+        {
+            var brush = new SolidColorBrush(background);
+            brush.Freeze();
+            dc.DrawRectangle(brush, null, ToRect(area));
+        }
+        else
+        {
+            PaintInterpolated(dc, px, area);
+        }
+    }
+
+    /// <summary>
+    /// One size for text that was one size: paragraphs whose measured em differ by at most 12 % share the
+    /// typical em of their group (OCR measures every paragraph a little differently; the page had one body size).
+    /// </summary>
+    public static double[] SharedEm(IReadOnlyList<Paragraph> paragraphs)
+    {
+        var result = new double[paragraphs.Count];
+        var order = Enumerable.Range(0, paragraphs.Count).OrderBy(i => paragraphs[i].EmSize).ToList();
+        var at = 0;
+        while (at < order.Count)
+        {
+            var first = paragraphs[order[at]].EmSize;
+            var end = at;
+            while (end + 1 < order.Count && paragraphs[order[end + 1]].EmSize <= first * 1.12)
+            {
+                end++;
+            }
+
+            var group = order.GetRange(at, end - at + 1);
+            var ems = group.SelectMany(i => Enumerable.Repeat(paragraphs[i].EmSize, paragraphs[i].Lines.Count))
+                .OrderBy(v => v).ToList();
+            var typical = ems[ems.Count / 2];
+            foreach (var i in group)
+            {
+                result[i] = typical;
+            }
+
+            at = end + 1;
+        }
+
+        return result;
+    }
+
+    private static Placement Layout(Pixels px, Paragraph paragraph, string text, double sharedEm)
     {
         var em = paragraph.EmSize;
         var pad = Math.Max(2, (int)Math.Round(em * 0.15));
         var flat = paragraph.Lines.All(l => l.FlatBackground);
         var background = paragraph.Lines[0].Background;
 
-        // Cover the original glyphs. A flat background is painted as one block;
-        // a gradient/photo is rebuilt row by row from the pixels left and right
-        // of each line so the patch blends in.
+        // Cover the original glyphs. A flat background is painted as one block; a gradient/photo is rebuilt
+        // row by row from the pixels left and right of each line so the patch blends in.
         var cover = InkArea(paragraph, pad, px);
+        var covers = new List<Int32Rect>();
         if (flat)
         {
-            var brush = new SolidColorBrush(background);
-            brush.Freeze();
-            dc.DrawRectangle(brush, null, ToRect(cover));
+            covers.Add(cover);
         }
         else
         {
-            foreach (var line in paragraph.Lines)
-            {
-                PaintInterpolated(dc, px, InkArea(line, pad, px));
-            }
+            covers.AddRange(paragraph.Lines.Select(line => InkArea(line, pad, px)));
         }
 
         var foreground = new SolidColorBrush(paragraph.Lines[0].Ink);
@@ -512,85 +578,158 @@ public static class ImmersiveTranslator
             LooksBold(px, paragraph) ? FontWeights.SemiBold : FontWeights.Normal,
             FontStretches.Normal);
 
-        var multiLine = paragraph.Lines.Count > 1;
-        var lineGap = multiLine ? paragraph.Pitch / em : 1.3;
-        var areaHeight = cover.Height + (multiLine ? 0 : em * 0.3);
-        // A single label may grow to the right while the background stays the
-        // same; a paragraph wraps inside its own column.
-        var maxWidth = multiLine
-            ? cover.Width
-            : Math.Max(cover.Width, Math.Min(cover.Width * 1.3, px.Width - cover.X - 2));
-
-        // The size of the original: a CJK em looks about as big as a Latin em with the same ink height.
-        var size = OutputSize(em, paragraph.Lines.All(l => l.Cjk), HasCjk(text));
-        var minSize = multiLine ? size : Math.Max(7, size * 0.85);
-        FormattedText formatted;
-        while (true)
+        FormattedText Make(double size, double spacing, double? wrap)
         {
-            formatted = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            var made = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                 typeface, size, foreground, 1.0)
             {
-                MaxTextWidth = Math.Max(4, maxWidth),
-                LineHeight = size * Math.Clamp(lineGap, 1.1, 2.2)
+                LineHeight = size * spacing
             };
-
-            var fits = multiLine || (formatted.Height <= areaHeight + 0.5 && formatted.Width <= maxWidth + 0.5);
-            if (fits || size <= minSize)
+            if (wrap is { } width)
             {
+                made.MaxTextWidth = Math.Max(4, width);
+            }
+
+            return made;
+        }
+
+        // The size of the original (the one its page used), corrected between scripts.
+        var size = OutputSize(sharedEm, paragraph.Lines.All(l => l.Cjk), HasCjk(text));
+        var multiLine = paragraph.Lines.Count > 1;
+        var first = paragraph.Lines[0];
+        var x = paragraph.Lines.Min(l => l.Box.X) + pad * 0.5;
+        var coverRight = cover.X + cover.Width;
+        var coverBottom = cover.Y + cover.Height;
+        var gap = Math.Max(pad, (int)Math.Round(em * 0.35)); // kept free before whatever comes next
+        var spacing = multiLine ? Math.Clamp(paragraph.Pitch / em, 1.1, 2.2) : 1.3;
+
+        // How far the new text may reach: over blank background only, so it stops short of the next paragraph,
+        // a border or a picture. A photo background is blank nowhere: there the text keeps to its old place.
+        double bottomLimit = flat ? coverBottom + FreeBelow(px, cover.X, coverRight, coverBottom, background) - gap : coverBottom;
+        double rightFree = flat
+            ? coverRight + FreeRight(px, cover.Y, coverBottom, coverRight, background) - gap
+            : cover.X + Math.Min(cover.Width * 1.3, px.Width - cover.X - 2);
+        bottomLimit = Math.Max(bottomLimit, coverBottom);
+        rightFree = Math.Max(rightFree, coverRight);
+
+        double TopOf(FormattedText t, bool wrapped) => wrapped
+            ? (first.InkTop + first.InkBottom) / 2 - t.LineHeight / 2
+            : (first.InkTop + first.InkBottom) / 2 - t.Height / 2;
+
+        // Candidates, best first: the first that fits is taken, else the last one.
+        var tries = new List<(FormattedText Text, bool Wrapped)>();
+        if (multiLine)
+        {
+            // A paragraph wraps in its own column at its size; then the lines a little closer; then into blank
+            // space on the right; only then smaller.
+            var column = coverRight - x;
+            var wide = rightFree - x;
+            var tight = Math.Min(spacing, 1.3);
+            tries.Add((Make(size, spacing, column), true));
+            tries.Add((Make(size, tight, column), true));
+            if (wide > column + em)
+            {
+                tries.Add((Make(size, tight, wide), true));
+            }
+
+            // Running into the next paragraph is worse than smaller text: down to 65 % before giving up.
+            for (var scale = 0.95; scale >= 0.649; scale -= 0.05)
+            {
+                tries.Add((Make(size * scale, scale < 0.8 ? 1.15 : tight, Math.Max(column, wide)), true));
+            }
+        }
+        else
+        {
+            // A label stays one line, growing to the right over blank space; then a little smaller; then it wraps
+            // (a heading that cannot grow sideways becomes two lines at its own size rather than tiny text).
+            var width = rightFree - x;
+            tries.Add((Make(size, spacing, null), false));
+            tries.Add((Make(size * 0.92, spacing, null), false));
+            tries.Add((Make(size, 1.3, width), true));
+            tries.Add((Make(size * 0.9, 1.25, width), true));
+            tries.Add((Make(size * 0.8, 1.2, width), true));
+            tries.Add((Make(size * 0.7, 1.15, width), true));
+        }
+
+        var chosen = tries[^1];
+        foreach (var attempt in tries)
+        {
+            var top = TopOf(attempt.Text, attempt.Wrapped);
+            var right = x + attempt.Text.WidthIncludingTrailingWhitespace;
+            if (top + attempt.Text.Height <= bottomLimit + 0.5 && right <= rightFree + 0.5)
+            {
+                chosen = attempt;
                 break;
             }
-
-            size = Math.Max(minSize, size - Math.Max(0.5, size * 0.05));
         }
 
-        if (multiLine && formatted.Height > cover.Height)
+        var formatted = chosen.Text;
+        var y = TopOf(formatted, chosen.Wrapped);
+        var textRight = (int)Math.Ceiling(x + formatted.WidthIncludingTrailingWhitespace + pad * 0.5);
+        var textBottom = (int)Math.Ceiling(y + formatted.Height + pad * 0.5);
+        if (textRight > coverRight)
         {
-            // More lines than the original: the text flows on below; cover what it runs over.
-            var below = new Int32Rect(cover.X, cover.Y + cover.Height, cover.Width,
-                Math.Min(px.Height - cover.Y - cover.Height, (int)Math.Ceiling(formatted.Height - cover.Height) + pad));
-            if (below.Height > 0)
+            // Grew to the right: the background goes on under it.
+            covers.Add(Clip(new Int32Rect(coverRight, cover.Y, textRight - coverRight, cover.Height), px));
+        }
+
+        if (textBottom > coverBottom)
+        {
+            // More lines than before: cover what the text flows over.
+            var right = Math.Max(coverRight, textRight);
+            covers.Add(Clip(new Int32Rect(cover.X, coverBottom, right - cover.X, textBottom - coverBottom), px));
+        }
+
+        return new Placement(formatted, new Point(x, y), covers, flat, background);
+    }
+
+    private static Int32Rect Clip(Int32Rect r, Pixels px)
+    {
+        var x = Math.Clamp(r.X, 0, px.Width);
+        var y = Math.Clamp(r.Y, 0, px.Height);
+        var right = Math.Clamp(r.X + r.Width, x, px.Width);
+        var bottom = Math.Clamp(r.Y + r.Height, y, px.Height);
+        return new Int32Rect(x, y, right - x, bottom - y);
+    }
+
+    /// <summary>Rows of blank background below <paramref name="from"/> across [x0, x1).</summary>
+    private static int FreeBelow(Pixels px, int x0, int x1, int from, Color background)
+    {
+        var y = from;
+        while (y < px.Height && Blank(px, x0, x1, y, y + 1, background))
+        {
+            y++;
+        }
+
+        return y - from;
+    }
+
+    /// <summary>Columns of blank background right of <paramref name="from"/> across the rows [y0, y1).</summary>
+    private static int FreeRight(Pixels px, int y0, int y1, int from, Color background)
+    {
+        var x = from;
+        while (x < px.Width && Blank(px, x, x + 1, y0, y1, background))
+        {
+            x++;
+        }
+
+        return x - from;
+    }
+
+    private static bool Blank(Pixels px, int x0, int x1, int y0, int y1, Color background)
+    {
+        for (var y = Math.Max(0, y0); y < Math.Min(px.Height, y1); y++)
+        {
+            for (var x = Math.Max(0, x0); x < Math.Min(px.Width, x1); x++)
             {
-                if (flat)
+                if (Distance(At(px, x, y), background) > 28)
                 {
-                    var brush = new SolidColorBrush(background);
-                    brush.Freeze();
-                    dc.DrawRectangle(brush, null, ToRect(below));
-                }
-                else
-                {
-                    PaintInterpolated(dc, px, below);
+                    return false;
                 }
             }
         }
 
-        if (!multiLine && formatted.Width > cover.Width && cover.X + formatted.Width > cover.X + cover.Width)
-        {
-            // Grew past the original box: extend the cover under the longer text.
-            var extra = new Int32Rect(cover.X + cover.Width, cover.Y,
-                Math.Min(px.Width - cover.X - cover.Width, (int)Math.Ceiling(formatted.Width - cover.Width) + pad),
-                cover.Height);
-            if (extra.Width > 0)
-            {
-                if (flat)
-                {
-                    var brush = new SolidColorBrush(background);
-                    brush.Freeze();
-                    dc.DrawRectangle(brush, null, ToRect(extra));
-                }
-                else
-                {
-                    PaintInterpolated(dc, px, extra);
-                }
-            }
-        }
-
-        // Labels are centred on their original ink; paragraphs keep their first
-        // line where it was and flow downwards (like a browser reflow).
-        var first = paragraph.Lines[0];
-        var y = multiLine
-            ? (first.InkTop + first.InkBottom) / 2 - formatted.LineHeight / 2
-            : (first.InkTop + first.InkBottom) / 2 - formatted.Height / 2;
-        dc.DrawText(formatted, new Point(paragraph.Lines.Min(l => l.Box.X) + pad * 0.5, y));
+        return true;
     }
 
     /// <summary>

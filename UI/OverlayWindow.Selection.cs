@@ -632,7 +632,65 @@ public partial class OverlayWindow
     }
 
     /// <summary>A frame offered on hover: an element or the window, in this window's pixels.</summary>
-    private sealed record HoverCandidate(Rect Local, string Label);
+    private sealed record HoverCandidate(Rect Local, string Label)
+    {
+        /// <summary>The whole monitor / all monitors: reached with the wheel only, never kept as a 识别范围.</summary>
+        public bool Screen { get; init; }
+    }
+
+    private List<Rect>? _monitorRects;
+
+    /// <summary>
+    /// The chain with the screen above the window: the monitor under the pointer, then all monitors when there are
+    /// several (when windows cover everything, the wheel still reaches the whole screen).
+    /// </summary>
+    private List<HoverCandidate> WithScreens(List<HoverCandidate> chain)
+    {
+        if (chain.Count == 0 || chain[^1].Screen)
+        {
+            return chain;
+        }
+
+        var whole = new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight);
+        if (_monitorRects == null)
+        {
+            try
+            {
+                _monitorRects = Markshot.Core.Recording.Monitors.All()
+                    .Select(m => ToLocal(new Rect(m.Bounds.X, m.Bounds.Y, m.Bounds.Width, m.Bounds.Height)))
+                    .Where(r => !r.IsEmpty)
+                    .ToList();
+            }
+            catch (Exception)
+            {
+                _monitorRects = new List<Rect>();
+            }
+        }
+
+        var (sx, sy) = _hoverScreenPoint;
+        var pointer = new Point(sx - _bounds.X, sy - _bounds.Y);
+        var monitor = _monitorRects.FirstOrDefault(r => r.Contains(pointer));
+        var result = new List<HoverCandidate>(chain);
+        void Add(Rect rect, string label)
+        {
+            if (!rect.IsEmpty && rect.Width >= 4 && !result.Any(c => Close(c.Local, rect)))
+            {
+                result.Add(new HoverCandidate(rect, label) { Screen = true });
+            }
+        }
+
+        if (!monitor.IsEmpty && !Close(monitor, whole))
+        {
+            Add(monitor, "整个屏幕");
+            Add(whole, "全部屏幕");
+        }
+        else
+        {
+            Add(whole, "整个屏幕");
+        }
+
+        return result;
+    }
 
     /// <summary>A screen rectangle (physical pixels) in this window's pixels, cut to the screen; empty when too small.</summary>
     private Rect ToLocal(Rect screen)
@@ -949,14 +1007,22 @@ public partial class OverlayWindow
     {
         var window = _hoverTarget == null ? Rect.Empty : ToLocal(_hoverTarget.Bounds);
         var range = App.Config.DetectRange;
-        if (_detailFresh && chain.Count >= 2)
+        // The screen frames above the window are for the wheel only: never where a frame starts.
+        var count = chain.Count(c => !c.Screen);
+        if (count == 0)
+        {
+            _startLevel = 0;
+            return 0;
+        }
+
+        if (_detailFresh && count >= 2)
         {
             // The wheel went into the window: one step in from it.
             _detailFresh = false;
             _startLevel = -1;
             var window2 = _hoverTarget == null ? Rect.Empty : ToLocal(_hoverTarget.Bounds);
-            var inner = chain.Count - 2;
-            for (var i = 0; i < chain.Count - 1; i++)
+            var inner = count - 2;
+            for (var i = 0; i < count - 1; i++)
             {
                 if (AppConfig.StartsAt(App.Config.DetectRange, chain[i].Local, window2, _scale))
                 {
@@ -969,7 +1035,7 @@ public partial class OverlayWindow
             return inner;
         }
 
-        for (var i = 0; i < chain.Count; i++)
+        for (var i = 0; i < count; i++)
         {
             if (window.IsEmpty || Close(chain[i].Local, window) || AppConfig.StartsAt(range, chain[i].Local, window, _scale))
             {
@@ -978,7 +1044,7 @@ public partial class OverlayWindow
             }
         }
 
-        _startLevel = chain.Count - 1;
+        _startLevel = count - 1;
         return _startLevel;
     }
 
@@ -988,6 +1054,7 @@ public partial class OverlayWindow
 
     private void ApplyHoverChain(List<HoverCandidate> chain)
     {
+        chain = WithScreens(chain);
         var shown = _hoverLevel < _hoverChain.Count ? _hoverChain[_hoverLevel].Local : Rect.Empty;
         _hoverChain = chain;
         if (chain.Count == 0)
@@ -1014,7 +1081,15 @@ public partial class OverlayWindow
             return false;
         }
 
+        // Only the window below the screen: down goes into the window (WheelInWindow).
+        var windowLocal = _hoverTarget == null ? Rect.Empty : ToLocal(_hoverTarget.Bounds);
+        if (delta < 0 && _hoverLevel == 0 && !windowLocal.IsEmpty && Close(_hoverChain[0].Local, windowLocal))
+        {
+            return false;
+        }
+
         var before = _hoverLevel;
+        var fromScreen = _hoverChain[Math.Clamp(before, 0, _hoverChain.Count - 1)].Screen;
         _hoverLevel = Math.Clamp(_hoverLevel + (delta > 0 ? 1 : -1), 0, _hoverChain.Count - 1);
         _startLevel = -1; // the wheel's choice is kept while the pointer stays
         var frame = _hoverChain[_hoverLevel];
@@ -1023,11 +1098,16 @@ public partial class OverlayWindow
         {
             ShowWheelTip(delta > 0 ? $"已是最大范围：{name}" : $"已是最小范围：{name}");
         }
+        else if (frame.Screen)
+        {
+            ShowWheelTip($"{name}（临时，不记住档位）· 滚轮：下 回到窗口");
+        }
         else
         {
             // The range of what is framed now is kept: the next element, the next capture start from it.
-            // No window under the pointer: nothing to measure the range against, so nothing is kept.
-            if (_hoverTarget == null)
+            // No window under the pointer: nothing to measure the range against, so nothing is kept;
+            // coming back from the screen leaves the kept range as it was.
+            if (_hoverTarget == null || fromScreen)
             {
                 ShowWheelTip($"{name} · 滚轮：上 变大，下 变小");
             }

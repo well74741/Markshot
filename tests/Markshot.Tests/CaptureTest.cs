@@ -255,6 +255,38 @@ static class CaptureTest
         Pump(1900);
         Check(tip.Visibility != Visibility.Visible, "… and goes by itself");
 
+        // windows everywhere: the wheel goes on past the window to the whole screen, for this capture only
+        var smallWindow = Activator.CreateInstance(windowTargetType)!;
+        windowTargetType.GetProperty("Bounds")!.SetValue(smallWindow, new Rect(-3980, -3980, 200, 150));
+        windowTargetType.GetProperty("Label")!.SetValue(smallWindow, "窗口");
+        windowTargetType.GetProperty("Handle")!.SetValue(smallWindow, new IntPtr(0x12350));
+        rangeConfig.DetectRange = 3;
+        Call(ranged, "ClearHover");
+        typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, smallWindow);
+        typeof(OverlayWindow).GetField("_hoverScreenPoint", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, (-3900, -3900));
+        var inSmall = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
+        inSmall.Add(Activator.CreateInstance(candidateType, new Rect(40, 40, 120, 60), "卡片"));
+        inSmall.Add(Activator.CreateInstance(candidateType, new Rect(20, 20, 200, 150), "窗口"));
+        Call(ranged, "SetHoverChain", inSmall);
+        Check((Rect)Get(ranged, "_hoverLocal") == new Rect(40, 40, 120, 60), "the whole screen is never the first frame");
+        Call(ranged, "StepHoverLevel", 120);
+        Check((Rect)Get(ranged, "_hoverLocal") == new Rect(20, 20, 200, 150) && rangeConfig.DetectRange == 1, "wheel up: the window (窗口, kept)");
+        var savedRange = rangeConfig.DetectRange;
+        Check((bool)Call(ranged, "StepHoverLevel", 120) && (Rect)Get(ranged, "_hoverLocal") == new Rect(0, 0, 300, 200) && tipText.Text.Contains("屏幕") && tipText.Text.Contains("临时"),
+            $"wheel up past the window: the whole screen ({tipText.Text})");
+        Check(rangeConfig.DetectRange == savedRange, "… not kept as a 识别范围");
+        Call(ranged, "StepHoverLevel", 120);
+        Check(tipText.Text.Contains("已是最大"), "… and no further");
+        Call(ranged, "StepHoverLevel", -120);
+        Check((Rect)Get(ranged, "_hoverLocal") == new Rect(20, 20, 200, 150) && rangeConfig.DetectRange == savedRange, "wheel down: back to the window, the range as it was");
+        var onlySmall = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(candidateType))!;
+        onlySmall.Add(Activator.CreateInstance(candidateType, new Rect(20, 20, 200, 150), "窗口"));
+        Call(ranged, "ClearHover");
+        typeof(OverlayWindow).GetField("_hoverTarget", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ranged, smallWindow);
+        Call(ranged, "SetHoverChain", onlySmall);
+        Check((Rect)Get(ranged, "_hoverLocal") == new Rect(20, 20, 200, 150) && !(bool)Call(ranged, "StepHoverLevel", -120), "only the window framed: wheel down is left to going into the window");
+        Check((bool)Call(ranged, "StepHoverLevel", 120) && (Rect)Get(ranged, "_hoverLocal") == new Rect(0, 0, 300, 200), "… wheel up: the whole screen");
+
         // 窗口 range (or another program's window): the wheel still goes in
         rangeConfig.DetectRange = 1;
         Call(ranged, "ClearHover");
@@ -368,6 +400,28 @@ static class CaptureTest
         Call(leaver, "HandleEscape");
         Pump(300);
         Check((bool)Get(leaver, "_finishing") || (bool)Get(leaver, "_closed"), "Esc (default): one press leaves the capture with an area chosen");
+        void RightClick(OverlayWindow o)
+        {
+            var down = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Right) { RoutedEvent = UIElement.PreviewMouseRightButtonDownEvent };
+            o.RaiseEvent(down);
+            var up = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Right) { RoutedEvent = UIElement.PreviewMouseRightButtonUpEvent };
+            o.RaiseEvent(up);
+        }
+
+        var rightLeaver = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        SetField(rightLeaver, "_hasSelection", true);
+        SetField(rightLeaver, "_selection", new Rect(10, 10, 100, 80));
+        ((Markshot.Annotations.AnnotationEditor)rightLeaver.FindName("Editor")).Items.Add(new Markshot.Annotations.RectAnnotation { Rect = new Rect(20, 20, 30, 30) });
+        RightClick(rightLeaver);
+        Pump(300);
+        Check((bool)Get(rightLeaver, "_finishing") || (bool)Get(rightLeaver, "_closed"), "right click = Esc: one click leaves the capture (also with something drawn)");
+        config.EscExitsCapture = false;
+        var rightStepper = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+        SetField(rightStepper, "_hasSelection", true);
+        SetField(rightStepper, "_selection", new Rect(10, 10, 100, 80));
+        RightClick(rightStepper);
+        Check(!(bool)Get(rightStepper, "_hasSelection") && !(bool)Get(rightStepper, "_finishing"), "right click with 逐步退出: steps back like Esc (the area goes, the capture stays)");
+        rightStepper.Close();
         config.EscExitsCapture = escBefore;
 
         // the hover asks the screenshot when UI Automation has nothing (no window behind here: handle 0)

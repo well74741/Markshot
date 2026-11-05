@@ -1017,7 +1017,7 @@ public partial class OverlayWindow
         CopyAndClose();
     }
 
-    /// <summary>Esc in the capture: out at once (默认), or step back first (先放下工具 / 取消选中、再取消选区，再退出).</summary>
+    /// <summary>Esc or a right click in the capture: out at once (默认), or step back first (先放下工具 / 取消选中、再取消选区，再退出).</summary>
     private void HandleEscape()
     {
         if (App.Config.EscExitsCapture)
@@ -1034,10 +1034,7 @@ public partial class OverlayWindow
         }
         else if (_hasSelection)
         {
-            _hasSelection = false;
-            _selection = Rect.Empty;
-            ClearAnnotationSelection();
-            UpdateSelectionVisuals();
+            ResetCapture(); // the area and what was drawn in it: choose again
         }
         else
         {

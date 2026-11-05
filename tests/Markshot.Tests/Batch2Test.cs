@@ -140,6 +140,32 @@ static class Batch2Test
             var first = bands.Count > 0 ? bands[0].Bottom - bands[0].Top : 0;
             Check(bands.Count >= 4 && first >= 12, $"原位翻译: longer Chinese keeps about the original size and flows on below (rows {bands.Count}, glyph height {first} px for em {em})");
             Check(Math.Abs(ImmersiveTranslator.OutputSize(16, false, true) - 16) < 2 && ImmersiveTranslator.OutputSize(16, true, true) == 16, "原位翻译: the output size is the original's em (script-corrected)");
+
+            // a long translation stops before the next paragraph (smaller rather than over it)
+            var page = new byte[420 * 260 * 4];
+            for (var i = 0; i < page.Length; i++) page[i] = 255;
+            for (var y = 140; y < 154; y++)
+            for (var x = 20; x < 300; x++)
+            {
+                var o = (y * 420 + x) * 4;
+                page[o] = page[o + 1] = page[o + 2] = 0; // the next paragraph's ink
+            }
+
+            var pageImage = BitmapSource.Create(420, 260, 96, 96, PixelFormats.Bgra32, null, page, 420 * 4);
+            var pagePixels = typeof(ImmersiveTranslator).GetMethod("ReadPixels", flags)!.Invoke(null, new object[] { pageImage });
+            var longText = string.Concat(Enumerable.Repeat("这是一段比原文长很多的中文译文，", 9));
+            var placement = typeof(ImmersiveTranslator).GetMethod("Layout", flags)!.Invoke(null, new object[] { pagePixels!, paragraph, longText, em })!;
+            var placedText = (FormattedText)placement.GetType().GetProperty("Text")!.GetValue(placement)!;
+            var origin = (Point)placement.GetType().GetProperty("Origin")!.GetValue(placement)!;
+            Check(origin.Y + placedText.Height <= 140, $"原位翻译: a long translation ends before the next paragraph (ends at {origin.Y + placedText.Height:0}, next at 140, size {placedText.Text.Length > 0})");
+
+            // one body size: paragraphs measured 15 and 16.5 are written alike, a heading of 24 stays bigger
+            ImmersiveTranslator.Paragraph Para(double size, int top) => new("x", new List<ImmersiveTranslator.Line>
+            {
+                new("x", new Int32Rect(20, top, 200, 22), Colors.White, true, Colors.Black, top + 3, top + 17, size, false)
+            }, new Int32Rect(20, top, 200, 22));
+            var shared = ImmersiveTranslator.SharedEm(new[] { Para(15, 0), Para(16.5, 40), Para(24, 80) });
+            Check(shared[0] == shared[1] && shared[2] == 24, $"原位翻译: body text of about one size is written in one size ({string.Join(", ", shared)})");
         }
 
         Shots();

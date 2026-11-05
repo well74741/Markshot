@@ -244,13 +244,7 @@ public partial class OverlayWindow : Window
                 return;
             }
 
-            // While annotating (a tool in hand or something drawn) a right click must not throw the work away.
-            if (_tool is not (AnnotationTool.None or AnnotationTool.Select) || Editor.Items.Count > 0 || _selectedAnnotation != null)
-            {
-                return;
-            }
-
-            _rightReset = true; // released without dragging: start over
+            _rightReset = true; // released without dragging: the same as Esc
         };
         PreviewMouseMove += (_, e) =>
         {
@@ -290,8 +284,9 @@ public partial class OverlayWindow : Window
             }
             else if (_rightReset)
             {
+                // A right click is an Esc: out at once, or a step back (the same setting).
                 _rightReset = false;
-                ResetCapture();
+                HandleEscape();
                 e.Handled = true;
             }
         };
