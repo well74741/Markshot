@@ -86,7 +86,7 @@ public partial class OverlayWindow
 
         CommitPendingText();
         var image = Compose();
-        var path = SaveImageDialog.Ask(this, "保存截图", $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+        var path = SaveImageDialog.Ask(this, "保存截图", $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png", picture: image);
         if (path == null)
         {
             Focus();

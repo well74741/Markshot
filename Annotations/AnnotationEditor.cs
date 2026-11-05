@@ -28,6 +28,9 @@ public sealed class AnnotationEditor : FrameworkElement
     /// <summary>Elements selected together (the image editor's 多选); each gets a dashed frame.</summary>
     public IReadOnlyList<Annotation>? Group { get; set; }
 
+    /// <summary>吸附 lines while an element is moved (canvas pixels).</summary>
+    public IReadOnlyList<Snapping.Guide>? Guides { get; set; }
+
     /// <summary>框选: the rectangle being dragged (canvas pixels).</summary>
     public Rect? Marquee { get; set; }
 
@@ -225,6 +228,16 @@ public sealed class AnnotationEditor : FrameworkElement
             foreach (var member in group)
             {
                 DrawGroupFrame(dc, member);
+            }
+        }
+
+        if (Guides is { Count: > 0 } guides)
+        {
+            var guidePen = new Pen(new SolidColorBrush(Color.FromRgb(0xFF, 0x3B, 0x8E)), Scale);
+            foreach (var guide in guides)
+            {
+                dc.DrawLine(guidePen, guide.Vertical ? new Point(guide.At, guide.From) : new Point(guide.From, guide.At),
+                    guide.Vertical ? new Point(guide.At, guide.To) : new Point(guide.To, guide.At));
             }
         }
 

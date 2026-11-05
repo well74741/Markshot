@@ -116,6 +116,41 @@ static class FilesTest
         nameBox.Text = "结果";
         Check(dialog.Confirm() && dialog.ResultPath == Path.Combine(newFolder, "结果.png") && Directory.Exists(newFolder), "保存: the path, its folder created");
         Shot((FrameworkElement)dialog.Content, "save_dialog_dark.png");
+
+        // 质量 for JPEG / WebP with the size it gives; the notice when transparency would be lost
+        var qualityBefore = Markshot.App.Config.SaveQuality;
+        var noise = new byte[300 * 200 * 4];
+        new Random(7).NextBytes(noise);
+        for (var i = 3; i < noise.Length; i += 4) noise[i] = (byte)(i % 1000 < 500 ? 255 : 0); // half see-through
+        var picture2 = ImageOps.FromPixels(noise, 300, 200);
+        var withPicture = new SaveImageDialog("保存图片", "图.png", dir, picture2);
+        Check(!withPicture.QualityShown && withPicture.Notice == "", "PNG: no quality row, transparency is kept (no notice)");
+        withPicture.SetFormat(".jpg");
+        Check(withPicture.QualityShown && withPicture.Notice.Contains("不支持透明"), "JPEG: the quality row, and a notice that the see-through parts turn white");
+        withPicture.SetQuality(95);
+        withPicture.EstimateNow();
+        var high = withPicture.Estimate;
+        withPicture.SetQuality(30);
+        withPicture.EstimateNow();
+        var low = withPicture.Estimate;
+        int Kb(string text) => text.Contains("MB") ? (int)(double.Parse(text.Replace("约", "").Replace("MB", "").Trim(), System.Globalization.CultureInfo.InvariantCulture) * 1024) : int.Parse(text.Replace("约", "").Replace("KB", "").Trim());
+        Check(high.StartsWith("约") && low.StartsWith("约") && Kb(low) < Kb(high), $"the estimate follows the quality ({high} at 95, {low} at 30)");
+        Shot((FrameworkElement)withPicture.Content, "save_dialog_jpeg.png");
+        withPicture.SetFormat(".webp");
+        Check(withPicture.QualityShown && withPicture.Notice == "", "WebP: quality row, transparency kept");
+        withPicture.SetFormat(".bmp");
+        Check(!withPicture.QualityShown && withPicture.Notice.Contains("BMP"), "BMP: no quality, the transparency notice");
+        Shot((FrameworkElement)withPicture.Content, "save_dialog_quality.png");
+        withPicture.SetFormat(".jpg");
+        var lowFile = Path.Combine(dir, "low.jpg");
+        var highFile = Path.Combine(dir, "high.jpg");
+        ImageFile.Quality = 20;
+        ImageFile.Save(picture2, lowFile);
+        ImageFile.Quality = 95;
+        ImageFile.Save(picture2, highFile);
+        Check(new FileInfo(lowFile).Length < new FileInfo(highFile).Length, "the quality really goes into the file");
+        ImageFile.Quality = 92;
+        Markshot.App.Config.SaveQuality = qualityBefore;
         Theme.Apply(ThemeMode.Light);
         Pump(50);
         Shot((FrameworkElement)new SaveImageDialog("保存图片", "Markshot_2.png", dir).Content, "save_dialog_light.png");

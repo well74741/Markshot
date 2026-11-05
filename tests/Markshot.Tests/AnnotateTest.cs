@@ -438,6 +438,73 @@ static class AnnotateTest
             we.CloseWithoutAsking();
         }
 
+        // ---- editor: dropped pictures join the canvas, 画布适应内容, 吸附, 对齐
+        {
+            var dropDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "markshot-drop-test");
+            System.IO.Directory.CreateDirectory(dropDir);
+            var fileA = System.IO.Path.Combine(dropDir, "a.png");
+            var fileB = System.IO.Path.Combine(dropDir, "b.png");
+            ImageFile.Save(Blank(80, 60), fileA);
+            ImageFile.Save(Blank(40, 40), fileB);
+            var de = new ImageEditorWindow(Blank(300, 200)) { Left = 40, Top = 40, ShowActivated = false };
+            de.Show();
+            Pump(300);
+            var deItems = ((AnnotationEditor)Get(de, "Editor")).Items;
+            de.AddPictures(new[] { fileA, fileB }, new Point(150, 100));
+            Pump(50);
+            var pictures = deItems.OfType<ImageAnnotation>().ToList();
+            Check(pictures.Count == 3 && de.ImageWidth == 300 && de.SelectedElements.Count == 2, "拖入图片: two more picture elements, the canvas stays, both selected");
+            Check(pictures[1].Rect.Width == 80 && Math.Abs(pictures[1].Rect.X + 40 - 150) < 0.5, "… where they were dropped");
+            de.UndoStep();
+            Pump(30);
+            Check(deItems.OfType<ImageAnnotation>().Count() == 1, "one undo step takes them back");
+
+            // 吸附: a box near the canvas middle lines up with it, Alt-free otherwise
+            var (shift, guides) = Snapping.Snap(new Rect(147, 20, 10, 10), new Rect(0, 0, 300, 200), Array.Empty<Rect>(), 6);
+            Check(Math.Abs(shift.X - (-2)) < 0.01 && guides.Any(g => g.Vertical && g.At == 150), $"吸附: the middle lines up with the canvas middle (shift {shift.X})");
+            var (far, farGuides) = Snapping.Snap(new Rect(120, 70, 10, 10), new Rect(0, 0, 300, 200), Array.Empty<Rect>(), 6);
+            Check(far.Length < 0.01 && farGuides.Count == 0, "far from anything: no pull, no line");
+            var (toOther, _) = Snapping.Snap(new Rect(64, 120, 30, 20), new Rect(0, 0, 300, 200), new[] { new Rect(10, 10, 50, 40) }, 6);
+            Check(Math.Abs(toOther.X - (-4)) < 0.01, "… and lines up with another element's edge");
+            var dragged = new RectAnnotation { Rect = new Rect(60, 60, 40, 30), Color = Colors.Red, Thickness = 2 };
+            deItems.Add(dragged);
+            var snapPlace = (Point)typeof(ImageEditorWindow).GetMethod("SnapMove", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(de, new object[] { dragged, new Rect(128, 60, 40, 30) })!;
+            Check(Math.Abs(snapPlace.X - 130) < 0.01 && ((AnnotationEditor)Get(de, "Editor")).Guides is { Count: > 0 }, $"moving in the editor snaps to the canvas middle and shows the line ({snapPlace.X})");
+
+            // 对齐 / 分布
+            var a1 = new RectAnnotation { Rect = new Rect(10, 10, 20, 20), Color = Colors.Red, Thickness = 2 };
+            var a2 = new RectAnnotation { Rect = new Rect(60, 40, 30, 20), Color = Colors.Red, Thickness = 2 };
+            var a3 = new RectAnnotation { Rect = new Rect(200, 25, 10, 20), Color = Colors.Red, Thickness = 2 };
+            deItems.AddRange(new Annotation[] { a1, a2, a3 });
+            de.SelectElements(new Annotation[] { a1, a2, a3 });
+            de.AlignGroup("Left");
+            Check(a1.Rect.X == 10 && a2.Rect.X == 10 && a3.Rect.X == 10, "左对齐");
+            de.UndoStep();
+            Pump(30);
+            a1 = deItems.OfType<RectAnnotation>().First(r => r.Rect.Width == 20);
+            a2 = deItems.OfType<RectAnnotation>().First(r => r.Rect.Width == 30);
+            a3 = deItems.OfType<RectAnnotation>().First(r => r.Rect.Width == 10);
+            Check(a2.Rect.X == 60, "… undoable");
+            de.SelectElements(new Annotation[] { a1, a2, a3 });
+            de.AlignGroup("SpreadX");
+            var gap1 = a2.Rect.Left - a1.Rect.Right;
+            var gap2 = a3.Rect.Left - a2.Rect.Right;
+            Check(Math.Abs(gap1 - gap2) < 0.01 && a1.Rect.X == 10 && a3.Rect.X == 200, $"横向等距分布: equal gaps, the outer two stay ({gap1:0.#} / {gap2:0.#})");
+            de.AlignGroup("Middle");
+            Check(Math.Abs(a1.Rect.Y + 10 - (a2.Rect.Y + 10)) < 0.01, "垂直居中");
+
+            // 画布适应内容: everything, also what was dragged past the edge
+            a3.Translate(150, 0); // now 350…360: past the 300 wide canvas
+            de.FitCanvasToContent();
+            Pump(30);
+            Check(de.ImageWidth >= 350 && deItems.All(i => AnnotationEditor.RotatedBounds(i).Left >= -2), $"画布适应内容: the canvas holds everything ({de.ImageWidth}×{de.ImageHeight})");
+            de.UndoStep();
+            Pump(30);
+            Check(de.ImageWidth == 300, "… undoable");
+            de.CloseWithoutAsking();
+            System.IO.Directory.Delete(dropDir, true);
+        }
+
         // ---- the pin: IME, 应用 and the bar again, double-click copies and closes, zoom label, 软边, text card
         {
             BitmapSource copied = null;

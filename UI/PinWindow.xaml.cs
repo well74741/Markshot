@@ -697,9 +697,14 @@ public partial class PinWindow : Window
                     return;
                 }
 
+                if (!_dragMoved)
+                {
+                    BeginMoveSnap();
+                }
+
                 _dragMoved = true;
                 ClearAnnotationHover();
-                _selected.Translate(dx, dy);
+                MoveSelectedWithSnap(point);
                 _lastPoint = point;
                 Editor.InvalidateVisual();
             }

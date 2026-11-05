@@ -136,7 +136,8 @@ public partial class PinWindow
 
     private protected virtual void Save()
     {
-        var path = SaveImageDialog.Ask(this, "保存贴图", $"Markshot_pin_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+        var picture = CurrentImage;
+        var path = SaveImageDialog.Ask(this, "保存贴图", $"Markshot_pin_{DateTime.Now:yyyyMMdd_HHmmss}.png", picture: picture);
         if (path == null)
         {
             return;
@@ -144,7 +145,7 @@ public partial class PinWindow
 
         try
         {
-            ImageFile.Save(CurrentImage, path);
+            ImageFile.Save(picture, path);
             ((App)Application.Current).ShowSavedPrompt(path);
         }
         catch (Exception ex)

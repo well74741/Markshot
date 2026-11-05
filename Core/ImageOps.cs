@@ -598,6 +598,32 @@ public static class ImageFile
         return ImageOps.FromPixels(pixels, info.Width, info.Height);
     }
 
+    /// <summary>JPEG / WebP quality (1…100) used by <see cref="Save"/>; the save window sets it.</summary>
+    public static int Quality { get; set; } = 92;
+
+    public static bool Lossy(string extension) => extension.ToLowerInvariant() is ".jpg" or ".jpeg" or ".jfif" or ".webp";
+
+    /// <summary>Formats that cannot hold transparency (it goes on white there).</summary>
+    public static bool Opaque(string extension) => extension.ToLowerInvariant() is ".jpg" or ".jpeg" or ".jfif" or ".bmp";
+
+    /// <summary>The file as it would be written (for the size estimate).</summary>
+    public static byte[] Encode(BitmapSource image, string extension, int quality)
+    {
+        var temp = Path.Combine(Path.GetTempPath(), "markshot-estimate-" + Guid.NewGuid().ToString("N") + extension);
+        var before = Quality;
+        try
+        {
+            Quality = quality;
+            Save(image, temp);
+            return File.ReadAllBytes(temp);
+        }
+        finally
+        {
+            Quality = before;
+            try { File.Delete(temp); } catch (IOException) { }
+        }
+    }
+
     /// <summary>Writes by the file's extension; formats without transparency go on white.</summary>
     public static void Save(BitmapSource image, string path)
     {
@@ -613,14 +639,14 @@ public static class ImageFile
             var (pixels, width, height) = ImageOps.ReadPixels(image);
             using var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Unpremul));
             System.Runtime.InteropServices.Marshal.Copy(pixels, 0, bitmap.GetPixels(), pixels.Length);
-            using var data = bitmap.Encode(SKEncodedImageFormat.Webp, 92) ?? throw new InvalidOperationException("WebP 编码失败");
+            using var data = bitmap.Encode(SKEncodedImageFormat.Webp, Math.Clamp(Quality, 1, 100)) ?? throw new InvalidOperationException("WebP 编码失败");
             File.WriteAllBytes(path, data.ToArray());
             return;
         }
 
         BitmapEncoder encoder = extension switch
         {
-            ".jpg" or ".jpeg" or ".jfif" => new JpegBitmapEncoder { QualityLevel = 92 },
+            ".jpg" or ".jpeg" or ".jfif" => new JpegBitmapEncoder { QualityLevel = Math.Clamp(Quality, 1, 100) },
             ".bmp" => new BmpBitmapEncoder(),
             ".tif" or ".tiff" => new TiffBitmapEncoder(),
             _ => new PngBitmapEncoder()

@@ -125,6 +125,9 @@ public sealed class AppConfig
     /// <summary>After saving an image, ask whether to open its folder.</summary>
     public bool AskOpenFolderAfterSave { get; set; } = true;
 
+    /// <summary>JPEG / WebP quality last chosen in the save window.</summary>
+    public int SaveQuality { get; set; } = 92;
+
     /// <summary>快速双击: a double-click on a capture or pin copies and closes it, whatever tool is in hand.</summary>
     public bool QuickDoubleClickCopy { get; set; }
 

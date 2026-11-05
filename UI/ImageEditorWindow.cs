@@ -25,6 +25,7 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly Canvas _stage; // the picture sits on it anywhere: dragged with the middle button, zoomed at the mouse
     private Point _pan; // where the picture's top-left corner is on the stage (DIP)
     private readonly Border _dropHint;
+    private TextBlock _dropText = null!;
     private readonly Border _emptyHint;
     private readonly Border _sessionBar;
     private readonly TextBlock _sessionText = new() { FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center };
@@ -66,6 +67,8 @@ public sealed class ImageEditorWindow : PinWindow
     private bool _groupMoving;
     private bool _groupMoved;
     private Point _groupLast;
+    private Rect _groupStart;
+    private Point _groupPress;
     private List<Annotation>? _sessionItems; // what a session works on when it is not one picture (merged for it)
     private ImageAnnotation? _sessionMerged;
     private Annotation? _pendingPaste; // pasted, not placed yet: Esc takes it back, a click elsewhere keeps it
@@ -186,7 +189,7 @@ public sealed class ImageEditorWindow : PinWindow
             CornerRadius = new CornerRadius(8),
             BorderBrush = (Brush)Application.Current.FindResource("Accent"),
             Background = new SolidColorBrush(Color.FromArgb(0x30, 0x4C, 0x8D, 0xFF)),
-            Child = new TextBlock { Text = "松开以打开图片", Foreground = Brushes.White, FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+            Child = _dropText = new TextBlock { Text = "松开以打开图片", Foreground = Brushes.White, FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
         };
 
         _sessionApply = new Button { Content = "应用", Style = (Style)Application.Current.FindResource("PrimaryButton"), MinWidth = 64, Height = 28, Margin = new Thickness(14, 0, 0, 0) };
@@ -566,7 +569,10 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         var stack = new StackPanel { Margin = new Thickness(10) };
-        stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio));
+        var fitContent = TextButton("适应内容", "画布正好包住所有图片和批注（拖出画布的部分也收进来）", () => FitCanvasToContent());
+        fitContent.Margin = new Thickness(0, 6, 0, 0);
+        fitContent.HorizontalAlignment = HorizontalAlignment.Left;
+        stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio, fitContent));
         stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow));
         stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
         stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
@@ -825,7 +831,7 @@ public sealed class ImageEditorWindow : PinWindow
         string text;
         if (!_hasImage)
         {
-            text = "打开或拖入一张图片";
+            text = "打开或拖入一张图片（已有图片时，拖入的图片会作为元素加入）";
         }
         else if (_overlay != null)
         {
@@ -1080,6 +1086,12 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>After a click or a key: the panel follows the selection, mosaics what moved under them.</summary>
     private void AfterInput()
     {
+        if (Editor.Guides != null && Mouse.LeftButton != MouseButtonState.Pressed)
+        {
+            Editor.Guides = null;
+            Editor.InvalidateVisual();
+        }
+
         if (_pendingPaste != null && !ReferenceEquals(_selected, _pendingPaste))
         {
             _pendingPaste = null; // placed: a click elsewhere keeps it
@@ -1106,6 +1118,84 @@ public sealed class ImageEditorWindow : PinWindow
             RebuildMosaics();
             Editor.InvalidateVisual();
         }
+    }
+
+    /// <summary>吸附: the canvas' edges / middle and the other elements' edges / middles pull a moved element (Alt: free).</summary>
+    private protected override Point SnapMove(Annotation moving, Rect wanted) => Snap(new[] { moving }, wanted);
+
+    private Point Snap(IReadOnlyList<Annotation> moving, Rect wanted)
+    {
+        if (PenEyedropper.AltDown)
+        {
+            Editor.Guides = null;
+            return wanted.TopLeft;
+        }
+
+        var others = Editor.Items.Where(item => !moving.Contains(item) && Selectable(item)).Select(AnnotationEditor.RotatedBounds);
+        var (shift, guides) = Snapping.Snap(wanted, new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight), others, 6 / _zoom);
+        Editor.Guides = guides.Count > 0 ? guides : null;
+        return new Point(wanted.X + shift.X, wanted.Y + shift.Y);
+    }
+
+    private Rect GroupBounds() => _group.Aggregate(Rect.Empty, (union, member) => { union.Union(AnnotationEditor.RotatedBounds(member)); return union; });
+
+    /// <summary>对齐 / 分布 of a 多选 (one undo step).</summary>
+    public void AlignGroup(string how)
+    {
+        if (_group.Count < 2)
+        {
+            return;
+        }
+
+        var moves = Snapping.Align(_group.Select(AnnotationEditor.RotatedBounds).ToList(), how);
+        if (moves.All(move => move.Length < 0.01))
+        {
+            return;
+        }
+
+        _history.Checkpoint(Editor.Items);
+        for (var i = 0; i < _group.Count; i++)
+        {
+            _group[i].Translate(moves[i].X, moves[i].Y);
+        }
+
+        UpdateUndoButtons();
+        RebuildMosaics();
+        Editor.InvalidateVisual();
+    }
+
+    /// <summary>画布适应内容: the canvas becomes the box around every element (plus a margin); one undo step.</summary>
+    public void FitCanvasToContent(int margin = 0)
+    {
+        var all = Editor.Items.Where(item => item is not (WatermarkAnnotation or CutoutAnnotation) && !item.Hidden)
+            .Aggregate(Rect.Empty, (union, item) =>
+            {
+                var b = AnnotationEditor.RotatedBounds(item);
+                if (item is not ImageAnnotation)
+                {
+                    b.Inflate(item.Thickness / 2 + 1, item.Thickness / 2 + 1);
+                }
+
+                union.Union(b);
+                return union;
+            });
+        if (all.IsEmpty)
+        {
+            Notice("画布上没有内容");
+            return;
+        }
+
+        var left = (int)Math.Floor(all.Left) - margin;
+        var top = (int)Math.Floor(all.Top) - margin;
+        var width = Math.Clamp((int)Math.Ceiling(all.Right) + margin - left, 1, 30000);
+        var height = Math.Clamp((int)Math.Ceiling(all.Bottom) + margin - top, 1, 30000);
+        if (left == 0 && top == 0 && width == _baseImage.PixelWidth && height == _baseImage.PixelHeight)
+        {
+            Notice("画布已经正好包住内容");
+            return;
+        }
+
+        ChangeCanvas(EditGroup.Size, width, height, new Point(left, top));
     }
 
     /// <summary>What is selected now (a 多选, the one element, or nothing).</summary>
@@ -1278,11 +1368,15 @@ public sealed class ImageEditorWindow : PinWindow
                 _groupMoved = true;
                 _history.CommitArmed();
                 UpdateUndoButtons();
+                _groupStart = GroupBounds();
+                _groupPress = _groupLast;
             }
 
+            var box = GroupBounds();
+            var place = Snap(_group, new Rect(_groupStart.X + point.X - _groupPress.X, _groupStart.Y + point.Y - _groupPress.Y, _groupStart.Width, _groupStart.Height));
             foreach (var member in _group)
             {
-                member.Translate(delta.X, delta.Y);
+                member.Translate(place.X - box.X, place.Y - box.Y);
             }
 
             _groupLast = point;
@@ -1325,6 +1419,7 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         _groupMoving = false;
+        Editor.Guides = null;
     }
 
     private void DeleteGroup()
@@ -2422,6 +2517,25 @@ public sealed class ImageEditorWindow : PinWindow
         var pointer = Mouse.GetPosition(ImageHost);
         if (_hasImage && _overlay == null && _group.Count > 1)
         {
+            var align = new MenuItem { Header = "对齐与分布" };
+            void Align(string header, string how, bool enabled = true)
+            {
+                var item = new MenuItem { Header = header, IsEnabled = enabled };
+                item.Click += (_, _) => AlignGroup(how);
+                align.Items.Add(item);
+            }
+
+            Align("左对齐", "Left");
+            Align("水平居中", "Center");
+            Align("右对齐", "Right");
+            align.Items.Add(new Separator());
+            Align("顶对齐", "Top");
+            Align("垂直居中", "Middle");
+            Align("底对齐", "Bottom");
+            align.Items.Add(new Separator());
+            Align("横向等距分布", "SpreadX", _group.Count >= 3);
+            Align("纵向等距分布", "SpreadY", _group.Count >= 3);
+            menu.Items.Add(align);
             Add($"置于顶层（{_group.Count} 个）", () => MoveGroupLayer(true), "");
             Add($"置于底层（{_group.Count} 个）", () => MoveGroupLayer(false), "");
             Add("删除选中的元素", DeleteGroup, "Delete");
@@ -2499,6 +2613,71 @@ public sealed class ImageEditorWindow : PinWindow
         return true;
     }
 
+    /// <summary>
+    /// Dropped files: into an empty editor the first opens as the picture; on a canvas they come in as picture
+    /// elements (where they were dropped, the next ones a little offset), selected together. One undo step.
+    /// </summary>
+    public void AddPictures(IReadOnlyList<string> files, Point? at = null)
+    {
+        var list = files.ToList();
+        if (!_hasImage)
+        {
+            if (!OpenFile(list[0]))
+            {
+                return;
+            }
+
+            list.RemoveAt(0);
+            if (list.Count == 0)
+            {
+                return;
+            }
+        }
+
+        var loaded = new List<BitmapSource>();
+        foreach (var file in list)
+        {
+            try
+            {
+                loaded.Add(ImageOps.Normalize(ImageFile.Load(file)));
+            }
+            catch (Exception ex)
+            {
+                Log.Info("拖入的图片打不开：" + file + "，" + ex.Message);
+            }
+        }
+
+        if (loaded.Count == 0)
+        {
+            Notice("拖入的图片打不开");
+            return;
+        }
+
+        CancelSession();
+        _textEditor.Commit();
+        _history.Checkpoint(Editor.Items);
+        double cw = _baseImage.PixelWidth, ch = _baseImage.PixelHeight;
+        var added = new List<Annotation>();
+        for (var i = 0; i < loaded.Count; i++)
+        {
+            var image = loaded[i];
+            var fit = Math.Min(1, Math.Min(cw * 0.8 / image.PixelWidth, ch * 0.8 / image.PixelHeight));
+            var size = new Size(Math.Max(1, image.PixelWidth * fit), Math.Max(1, image.PixelHeight * fit));
+            var centre = at ?? new Point(cw / 2, ch / 2);
+            var offset = 24 * i;
+            var element = new ImageAnnotation { Image = image, Rect = new Rect(centre.X - size.Width / 2 + offset, centre.Y - size.Height / 2 + offset, size.Width, size.Height) };
+            Editor.Items.Add(element);
+            added.Add(element);
+        }
+
+        UpdateUndoButtons();
+        SetTool(AnnotationTool.None);
+        SelectElements(added);
+        RebuildMosaics();
+        Editor.InvalidateVisual();
+        Notice(added.Count == 1 ? "已加入 1 张图片（Ctrl+Z 撤销）" : $"已加入 {added.Count} 张图片（Ctrl+Z 撤销）");
+    }
+
     /// <summary>A capture's undo steps know nothing of the picture element: each gets it (at the bottom).</summary>
     public override void AdoptHistory(AnnotationHistory history)
     {
@@ -2553,14 +2732,17 @@ public sealed class ImageEditorWindow : PinWindow
         }
     }
 
-    private static string? DroppedImage(IDataObject data) =>
+    private static string? DroppedImage(IDataObject data) => DroppedImages(data).FirstOrDefault();
+
+    private static List<string> DroppedImages(IDataObject data) =>
         data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] files
-            ? files.FirstOrDefault(ImageFile.IsImage)
-            : null;
+            ? files.Where(ImageFile.IsImage).ToList()
+            : new List<string>();
 
     private void OnDrag(object sender, DragEventArgs e)
     {
         var ok = DroppedImage(e.Data) != null;
+        _dropText.Text = _hasImage ? "松开以加入图片（作为元素）" : "松开以打开图片";
         e.Effects = ok ? DragDropEffects.Copy : DragDropEffects.None;
         _dropHint.Visibility = ok ? Visibility.Visible : Visibility.Collapsed;
         e.Handled = true;
@@ -2569,9 +2751,13 @@ public sealed class ImageEditorWindow : PinWindow
     private void OnDrop(object sender, DragEventArgs e)
     {
         _dropHint.Visibility = Visibility.Collapsed;
-        if (DroppedImage(e.Data) is { } file)
+        var files = DroppedImages(e.Data);
+        if (files.Count > 0)
         {
-            OpenFile(file);
+            var at = e.GetPosition(ImageHost);
+            AddPictures(files, ImageHost.IsMouseOver || new Rect(0, 0, ImageHost.ActualWidth, ImageHost.ActualHeight).Contains(at)
+                ? new Point(at.X / _zoom, at.Y / _zoom)
+                : null);
         }
 
         e.Handled = true;
@@ -2601,7 +2787,8 @@ public sealed class ImageEditorWindow : PinWindow
         var name = _path != null && Path.GetExtension(_path).ToLowerInvariant() is not (".gif" or ".ico")
             ? Path.GetFileName(_path)
             : $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-        var path = SaveImageDialog.Ask(this, "保存图片", name, _path != null ? Path.GetDirectoryName(_path) : null);
+        var picture = ComposeEditedImage();
+        var path = SaveImageDialog.Ask(this, "保存图片", name, _path != null ? Path.GetDirectoryName(_path) : null, picture);
         if (path == null)
         {
             return;
@@ -2609,7 +2796,7 @@ public sealed class ImageEditorWindow : PinWindow
 
         try
         {
-            ImageFile.Save(ComposeEditedImage(), path);
+            ImageFile.Save(picture, path);
             _path = path;
             MarkKept();
             UpdateTitle();

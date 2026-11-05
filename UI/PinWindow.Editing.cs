@@ -219,6 +219,29 @@ public partial class PinWindow
 
     private protected virtual bool AcceptPastedPicture(BitmapSource picture) => false;
 
+    private Rect _moveOrigin;
+    private Point _movePress;
+
+    private protected void BeginMoveSnap()
+    {
+        _moveOrigin = _selected!.Bounds;
+        _movePress = _pressPoint;
+    }
+
+    private protected void MoveSelectedWithSnap(Point point) => MoveSelectedTo(point);
+
+    /// <summary>The selected element follows the pointer from where the drag began (the editor snaps it).</summary>
+    private void MoveSelectedTo(Point point)
+    {
+        var wanted = new Rect(_moveOrigin.X + point.X - _movePress.X, _moveOrigin.Y + point.Y - _movePress.Y, _moveOrigin.Width, _moveOrigin.Height);
+        var place = SnapMove(_selected!, wanted);
+        var now = _selected!.Bounds;
+        _selected.Translate(place.X - now.X, place.Y - now.Y);
+    }
+
+    /// <summary>Where a moved element goes (the editor's 吸附); the pin leaves it where the pointer puts it.</summary>
+    private protected virtual Point SnapMove(Annotation moving, Rect wanted) => wanted.TopLeft;
+
     /// <summary>Something was pasted (<paramref name="depth"/>: the undo depth before it).</summary>
     private protected virtual void OnPasted(Annotation element, int depth)
     {
@@ -1207,11 +1230,17 @@ public partial class PinWindow
                     return;
                 }
 
+                if (!_dragMoved)
+                {
+                    _moveOrigin = _selected.Bounds;
+                    _movePress = _pressPoint;
+                }
+
                 _dragMoved = true;
                 ClearAnnotationHover();
                 _history.CommitArmed();
                 UpdateUndoButtons();
-                _selected.Translate(dx, dy);
+                MoveSelectedTo(point);
                 _lastPoint = point;
                 Editor.InvalidateVisual();
             }

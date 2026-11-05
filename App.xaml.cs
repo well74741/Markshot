@@ -68,6 +68,7 @@ public partial class App : Application
         }
 
         Config = AppConfig.Load();
+        ImageFile.Quality = Math.Clamp(Config.SaveQuality, 10, 100);
         _savedCorner = Config.CaptureCornerRadius;
         _savedSoftness = Config.PenSoftness;
         Theme.Apply(Config.Theme);
@@ -798,7 +799,7 @@ public partial class App : Application
     /// <summary>A save dialog for an image, then the usual "saved" prompt.</summary>
     public void SaveImageAs(BitmapSource image)
     {
-        var path = UI.SaveImageDialog.Ask(null, "保存图片", $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+        var path = UI.SaveImageDialog.Ask(null, "保存图片", $"Markshot_{DateTime.Now:yyyyMMdd_HHmmss}.png", picture: image);
         if (path == null)
         {
             return;

@@ -22,9 +22,21 @@ public sealed class SaveImageDialog : Window
     private readonly TextBlock _warning;
     private readonly Dictionary<string, RadioButton> _formatButtons = new();
     private bool _syncing;
+    private readonly BitmapSource? _picture;
+    private readonly Slider _quality = new() { Minimum = 10, Maximum = 100, Width = 170, IsSnapToTickEnabled = true, TickFrequency = 1, IsMoveToPointEnabled = true, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _qualityValue = new() { FontSize = 12, Width = 34, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _estimate = new() { FontSize = 12, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    private readonly FrameworkElement _qualityRow;
+    private readonly TextBlock _qualityLabel = new() { Text = "质量", FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _notice = new() { FontSize = 12, Margin = new Thickness(52, 8, 0, 0), Visibility = Visibility.Collapsed, TextWrapping = TextWrapping.Wrap, MaxWidth = 340 };
+    private readonly DispatcherTimer _estimateTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private readonly bool _transparent;
 
-    public SaveImageDialog(string title, string fileName, string? directory)
+    /// <param name="picture">What will be saved: the size estimate and the transparency notice use it.</param>
+    public SaveImageDialog(string title, string fileName, string? directory, BitmapSource? picture = null)
     {
+        _picture = picture;
+        _transparent = picture != null && HasTransparency(picture);
         Title = title;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
@@ -92,6 +104,25 @@ public sealed class SaveImageDialog : Window
         Row("格式", formatPlate, 10);
         Row("位置", folderRow, 10);
 
+        // 质量 (JPEG / WebP): a slider with the file size it gives.
+        _quality.Value = Math.Clamp(App.Config.SaveQuality, 10, 100);
+        _quality.ValueChanged += (_, _) => QualityChanged();
+        _qualityValue.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFC8C8C8));
+        _estimate.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFF8A8A8A));
+        _qualityLabel.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFA8A8A8));
+        var qualityPanel = new StackPanel { Orientation = Orientation.Horizontal };
+        qualityPanel.Children.Add(_quality);
+        qualityPanel.Children.Add(_qualityValue);
+        qualityPanel.Children.Add(_estimate);
+        _qualityRow = qualityPanel;
+        Row("质量", qualityPanel, 10);
+        _estimateTimer.Tick += (_, _) =>
+        {
+            _estimateTimer.Stop();
+            UpdateEstimate();
+        };
+        _notice.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFF9A9A9A));
+
         _warning = new TextBlock { FontSize = 12, Margin = new Thickness(52, 8, 0, 0), Visibility = Visibility.Collapsed, Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B)) };
 
         var save = new Button { Content = "保存", Style = (Style)Application.Current.FindResource("PrimaryButton"), IsDefault = true, MinWidth = 72 };
@@ -105,6 +136,7 @@ public sealed class SaveImageDialog : Window
         var body = new StackPanel();
         body.Children.Add(heading);
         body.Children.Add(grid);
+        body.Children.Add(_notice);
         body.Children.Add(_warning);
         body.Children.Add(buttons);
         var card = new Border
@@ -128,6 +160,7 @@ public sealed class SaveImageDialog : Window
                 DragMove();
             }
         };
+        UpdateFormatRows();
         Loaded += (_, _) =>
         {
             card.Opacity = 0;
@@ -145,9 +178,9 @@ public sealed class SaveImageDialog : Window
     public string? ResultPath { get; private set; }
 
     /// <summary>Asks where to save; null when cancelled. A topmost owner (the capture) keeps the dialog above it.</summary>
-    public static string? Ask(Window? owner, string title, string fileName, string? directory = null)
+    public static string? Ask(Window? owner, string title, string fileName, string? directory = null, BitmapSource? picture = null)
     {
-        var dialog = new SaveImageDialog(title, fileName, directory);
+        var dialog = new SaveImageDialog(title, fileName, directory, picture);
         if (owner is { IsVisible: true })
         {
             dialog.Owner = owner;
@@ -195,6 +228,90 @@ public sealed class SaveImageDialog : Window
 
     public bool WarningShown => _warning.Visibility == Visibility.Visible;
 
+    /// <summary>Tests: the quality row, the size estimate and the transparency notice.</summary>
+    public bool QualityShown => _qualityRow.Visibility == Visibility.Visible;
+
+    public string Estimate => _estimate.Text;
+
+    public string Notice => _notice.Visibility == Visibility.Visible ? _notice.Text : "";
+
+    public void SetQuality(int quality) => _quality.Value = quality;
+
+    public void EstimateNow() => UpdateEstimate();
+
+    private static bool HasTransparency(BitmapSource picture)
+    {
+        var (pixels, _, _) = ImageOps.ReadPixels(picture);
+        for (var i = 3; i < pixels.Length; i += 4 * 7) // every 7th pixel is enough to tell
+        {
+            if (pixels[i] < 250)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void QualityChanged()
+    {
+        _qualityValue.Text = ((int)Math.Round(_quality.Value)).ToString(CultureInfo.InvariantCulture);
+        ImageFile.Quality = (int)Math.Round(_quality.Value);
+        _estimate.Text = _picture == null ? "" : "…";
+        _estimateTimer.Stop();
+        _estimateTimer.Start();
+    }
+
+    /// <summary>The format's own rows: 质量 for JPEG / WebP, the notice when the picture's transparency would be lost.</summary>
+    private void UpdateFormatRows()
+    {
+        if (_qualityRow == null)
+        {
+            return;
+        }
+
+        var extension = SelectedExtension;
+        var lossy = ImageFile.Lossy(extension);
+        _qualityRow.Visibility = lossy ? Visibility.Visible : Visibility.Collapsed;
+        _qualityLabel.Visibility = _qualityRow.Visibility;
+        foreach (var child in ((Grid)((FrameworkElement)_qualityRow).Parent).Children.OfType<TextBlock>())
+        {
+            if (child.Text == "质量")
+            {
+                child.Visibility = _qualityRow.Visibility;
+            }
+        }
+
+        _notice.Text = _transparent && ImageFile.Opaque(extension)
+            ? "这张图有透明部分，" + (extension == ".bmp" ? "BMP" : "JPEG") + " 不支持透明，透明处会变成白色；要保留透明请选 PNG 或 WebP。"
+            : "";
+        _notice.Visibility = _notice.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (lossy)
+        {
+            QualityChanged();
+        }
+    }
+
+    private void UpdateEstimate()
+    {
+        if (_picture == null || !ImageFile.Lossy(SelectedExtension))
+        {
+            _estimate.Text = "";
+            return;
+        }
+
+        try
+        {
+            var bytes = ImageFile.Encode(_picture, SelectedExtension, (int)Math.Round(_quality.Value)).Length;
+            _estimate.Text = "约 " + (bytes >= 1024 * 1024 ? $"{bytes / 1048576.0:0.0} MB" : $"{Math.Max(1, bytes / 1024)} KB");
+        }
+        catch (Exception ex)
+        {
+            Log.Info("估算文件大小失败：" + ex.Message);
+            _estimate.Text = "";
+        }
+    }
+
     private static string Normalize(string extension) => extension.ToLowerInvariant() switch
     {
         ".jpeg" or ".jfif" => ".jpg",
@@ -223,6 +340,7 @@ public sealed class SaveImageDialog : Window
 
         _syncing = false;
         UpdateWarning();
+        UpdateFormatRows();
     }
 
     /// <summary>A format picked: the name's extension follows.</summary>
@@ -239,6 +357,7 @@ public sealed class SaveImageDialog : Window
         }
 
         UpdateWarning();
+        UpdateFormatRows();
     }
 
     private void UpdateWarning()
@@ -317,6 +436,12 @@ public sealed class SaveImageDialog : Window
 
         ResultPath = path;
         _lastDirectory = Path.GetDirectoryName(path);
+        ImageFile.Quality = (int)Math.Round(_quality.Value); // what this save writes with
+        if (ImageFile.Lossy(Path.GetExtension(path)) && App.Config.SaveQuality != ImageFile.Quality)
+        {
+            App.Config.SaveQuality = ImageFile.Quality;
+            App.Config.Save();
+        }
         if (IsVisible)
         {
             DialogResult = true;
