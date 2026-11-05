@@ -136,8 +136,9 @@ public partial class OverlayWindow
     private void UpdateWatermarkHover(Point point)
     {
         var watermark = AnnotationOps.FindWatermark(Editor.Items);
-        var hover = watermark != null && watermark.HitTest(point, 2 * _scale) ? watermark : null;
-        InputLayer.Cursor = hover != null ? Cursors.Hand : Cursors.Arrow;
+        var frameCursor = FrameCursorAt(point);
+        var hover = frameCursor == null && watermark != null && watermark.HitTest(point, 2 * _scale) ? watermark : null;
+        InputLayer.Cursor = frameCursor ?? (hover != null ? Cursors.Hand : Cursors.Arrow);
         if (!ReferenceEquals(Editor.HoverWatermark, hover))
         {
             Editor.HoverWatermark = hover;
@@ -562,6 +563,14 @@ public partial class OverlayWindow
 
     private void UpdateAnnotationHover(Point point)
     {
+        if (FrameCursorAt(point) is { } frameCursor)
+        {
+            // On the capture's edge: it resizes the capture (with any tool), the arrows say so.
+            ClearAnnotationHover();
+            InputLayer.Cursor = frameCursor;
+            return;
+        }
+
         var hit = HitAnnotation(point);
         if (hit != null && SameFamily(hit, _tool))
         {

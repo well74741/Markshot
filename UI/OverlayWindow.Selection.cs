@@ -417,8 +417,18 @@ public partial class OverlayWindow
         return -1;
     }
 
-    /// <summary>A tool that draws in the capture (the frame handles still come first at its edge).</summary>
-    private bool DrawingTool => _tool is not (AnnotationTool.None or AnnotationTool.Select or AnnotationTool.Watermark);
+    /// <summary>Any annotation tool in hand (the frame handles still come first at the capture's edge).</summary>
+    private bool DrawingTool => _tool is not (AnnotationTool.None or AnnotationTool.Select);
+
+    /// <summary>The cursor for the capture's edge / corner under the point; null when the point is not on one.</summary>
+    private Cursor? FrameCursorAt(Point point) => HitHandle(point) switch
+    {
+        0 or 4 => Cursors.SizeNWSE,
+        2 or 6 => Cursors.SizeNESW,
+        1 or 5 => Cursors.SizeNS,
+        3 or 7 => Cursors.SizeWE,
+        _ => null
+    };
 
     private static Rect NormalizeRect(Point a, Point b)
     {

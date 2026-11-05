@@ -433,6 +433,25 @@ static class CaptureTest
         Check(EdgeAt(50 + 2 / frameScale, 100) == 7 && EdgeAt(50 - 8 / frameScale, 100) == 7 && EdgeAt(200, 150 + 2 / frameScale) == 4,
             "pen: the edge and the corner of the capture are still grabbed");
         Check(EdgeAt(50 + 9 / frameScale, 100) == -1 && EdgeAt(120, 100) == -1, "… a little inside, the pen draws (close to the edge too)");
+        var allTools = Enum.GetValues<Markshot.Annotations.AnnotationTool>()
+            .Where(t => t is not (Markshot.Annotations.AnnotationTool.None or Markshot.Annotations.AnnotationTool.Select)).ToList();
+        var missed = new List<string>();
+        foreach (var tool in allTools)
+        {
+            Call(penFrame, "SetTool", tool);
+            if (EdgeAt(50 + 2 / frameScale, 100) != 7 || EdgeAt(200 + 6 / frameScale, 150 + 6 / frameScale) != 4)
+            {
+                missed.Add(tool.ToString());
+            }
+
+            Call(penFrame, "UpdateAnnotationHover", new Point(50 + 2 / frameScale, 100));
+            if (((FrameworkElement)penFrame.FindName("InputLayer")).Cursor != Cursors.SizeWE)
+            {
+                missed.Add(tool + " (cursor)");
+            }
+        }
+
+        Check(missed.Count == 0, $"every annotation tool: the capture's edge is grabbed, with the resize cursor ({string.Join(", ", missed)})");
         Call(penFrame, "SetTool", Markshot.Annotations.AnnotationTool.Select);
         Check(EdgeAt(50 + 9 / frameScale, 100) == 7, "… without a tool the band inside is as wide as before");
         penFrame.Close();

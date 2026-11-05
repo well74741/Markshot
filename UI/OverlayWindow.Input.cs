@@ -40,9 +40,10 @@ public partial class OverlayWindow
             _textEditor.Commit(); // a non-empty text stays selected (OnTextEditEnded)
 
             // A click elsewhere only finishes typing — unless the text tool is
-            // pointed at another text, which then opens for editing.
+            // pointed at another text, which then opens for editing, or the click is on the capture's edge
+            // (which then resizes the capture).
             if (!(_tool == AnnotationTool.Text && HitAnnotation(point) is TextAnnotation other &&
-                  !ReferenceEquals(other, editingText)))
+                  !ReferenceEquals(other, editingText)) && HitHandle(point) < 0)
             {
                 e.Handled = true;
                 return;
