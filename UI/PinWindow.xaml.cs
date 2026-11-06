@@ -178,6 +178,11 @@ public partial class PinWindow : Window
         Motion.FadeOnShow(PinStatus);
         SourceInitialized += (_, _) =>
         {
+            if (!FromCapture && !IsEditor)
+            {
+                Opacity = 0; // fades in from Loaded; the first frame (drawn before Loaded) must not show it at full strength
+            }
+
             ApplyBounds();
             // A lone Alt (the pen's 吸色) must not put the window into menu mode: mouse moves would stop.
             System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle)?.AddHook(

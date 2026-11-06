@@ -106,6 +106,8 @@ static class RecorderFlowTest
         Pump(400);
         var frameWindow = Application.Current.Windows.OfType<Window>().FirstOrDefault(w => w.GetType().Name == "RecordFrameWindow");
         var bar = Window<RecordBarWindow>();
+        Pump(100);
+        Check((bool)typeof(RecordBarWindow).GetProperty("RoundedRegion", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(bar)!, "the recorder bar has rounded corners on Windows 10 too (window region)");
         Check(controller.Phase == RecordPhase.Setup && frameWindow?.IsVisible == true && bar?.IsVisible == true, "opens: frame + toolbar, setup");
         Check(controller.Rect.Width % 2 == 0 && controller.Rect.Height % 2 == 0, $"even size {controller.Rect.Width}x{controller.Rect.Height}");
         var rb = RectOf(bar!);

@@ -459,11 +459,11 @@ static class CaptureTest
             var roundScale = (double)Get(rounder, "_scale");
             Call(rounder, "WheelCorner", 120);
             Call(rounder, "WheelCorner", 120);
-            Check(Math.Abs((double)Get(rounder, "_cornerRadius") - 4 * roundScale) < 0.01 && Math.Abs(config.CaptureCornerRadius - 4 * roundScale) < 0.01,
+            Check(Math.Abs((double)Get(rounder, "_cornerRadius") - 12 * roundScale) < 0.01 && Math.Abs(config.CaptureCornerRadius - 12 * roundScale) < 0.01,
                 $"wheel up twice without a tool: rounder corners, remembered ({Get(rounder, "_cornerRadius")})");
-            for (var i = 0; i < 5; i++) Call(rounder, "WheelCorner", -120);
+            for (var i = 0; i < 3; i++) Call(rounder, "WheelCorner", -120);
             Check((double)Get(rounder, "_cornerRadius") == 0, "… wheel down: back to square, not below");
-            for (var i = 0; i < 80; i++) Call(rounder, "WheelCorner", 120);
+            for (var i = 0; i < 30; i++) Call(rounder, "WheelCorner", 120);
             Check((double)Get(rounder, "_cornerRadius") <= 50, "… at most half the short side");
             SetField(rounder, "_dragging", true);
             SetField(rounder, "_mode", Enum.Parse(typeof(OverlayWindow).GetNestedType("DragMode", BindingFlags.NonPublic)!, "Moving"));

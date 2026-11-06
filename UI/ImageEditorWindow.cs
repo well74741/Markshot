@@ -45,6 +45,7 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly TextBox _heightBox = new();
     private Border? _styleSection;
     private Border? _resetAllFooter;
+    private FrameworkElement? _panelStack;
     private bool _styleShown;
     private static readonly Thickness SectionMargin = new(0, 0, 0, 8);
     private FrameworkElement? _radiusRow;
@@ -103,7 +104,8 @@ public sealed class ImageEditorWindow : PinWindow
     {
         Size,
         Turn,
-        Cut
+        Cut,
+        Colour
     }
 
     public ImageEditorWindow(BitmapSource? image = null, string? path = null, List<Annotation>? annotations = null, PinWindow? sourcePin = null)
@@ -607,11 +609,13 @@ public sealed class ImageEditorWindow : PinWindow
         stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow));
         stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
         stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
+        stack.Children.Add(Section("抠色与替换颜色", null, KeyColorRows()));
         var resetAll = TextButton("重置所有修改", "回到打开时的样子（图片和批注；可用 Ctrl+Z 撤销）", ResetAll);
         resetAll.HorizontalAlignment = HorizontalAlignment.Stretch;
         resetAll.Margin = new Thickness(0);
         UiScale.Attach(stack);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = stack };
+        _panelStack = stack;
         // 重置所有修改 stays at the bottom of the panel, never scrolled out of sight.
         var footer = new Border { Padding = new Thickness(10, 8, 10, 10), BorderThickness = new Thickness(0, 1, 0, 0), Child = resetAll };
         footer.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
@@ -825,6 +829,160 @@ public sealed class ImageEditorWindow : PinWindow
         UpdateUndoButtons();
         UpdateStylePanel();
         Editor.InvalidateVisual();
+    }
+
+    // ------------------------------------------------------------------ 抠色 / 替换颜色
+
+    private Color _keyColor = Colors.White;
+    private Color _replaceColor = Color.FromRgb(0xFF, 0x1E, 0x1E);
+    private readonly Border _keySwatch = new() { Width = 26, Height = 16, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1) };
+    private readonly Border _replaceSwatch = new() { Width = 26, Height = 16, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1) };
+    private readonly Slider _keyTolerance = new() { Minimum = 0, Maximum = 100, Value = 25, IsMoveToPointEnabled = true };
+    private ToggleButton? _keyPickButton;
+    private bool _pickingKey;
+
+    /// <summary>The colour to take out / replace (吸取 from the canvas or chosen), how close counts, and the two actions.</summary>
+    private UIElement KeyColorRows()
+    {
+        var rows = new StackPanel();
+        _keySwatch.Background = new SolidColorBrush(_keyColor);
+        _replaceSwatch.Background = new SolidColorBrush(_replaceColor);
+        _keySwatch.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x55FFFFFF));
+        _replaceSwatch.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x55FFFFFF));
+
+        var pickRow = new WrapPanel();
+        var keyButton = SwatchButton(_keySwatch, "选择要处理的颜色", color => KeyColor = color, () => _keyColor);
+        _keyPickButton = TextToggle("吸取", "在画布上单击吸取要处理的颜色（Esc 取消）");
+        _keyPickButton.Click += (_, _) => SetPickingKey(_keyPickButton.IsChecked == true);
+        pickRow.Children.Add(LabeledRow("颜色", keyButton));
+        pickRow.Children.Add(_keyPickButton);
+        rows.Children.Add(pickRow);
+
+        var value = new TextBlock { FontSize = 12, Width = 34, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Text = "25" };
+        value.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFC8C8C8));
+        _keyTolerance.ValueChanged += (_, _) => value.Text = Math.Round(_keyTolerance.Value).ToString("0", CultureInfo.InvariantCulture);
+        var tolerance = new DockPanel { Margin = new Thickness(0, 2, 0, 6), ToolTip = "颜色相差多少以内算同一种颜色（边缘会柔和过渡）" };
+        var label = Label("容差");
+        label.Width = 48;
+        DockPanel.SetDock(label, Dock.Left);
+        DockPanel.SetDock(value, Dock.Right);
+        tolerance.Children.Add(label);
+        tolerance.Children.Add(value);
+        tolerance.Children.Add(_keyTolerance);
+        rows.Children.Add(tolerance);
+
+        var actions = new WrapPanel();
+        actions.Children.Add(TextButton("抠除颜色", "选中的图片里这种颜色变成透明（Ctrl+Z 撤销）", () => KeyOut()));
+        actions.Children.Add(TextButton("替换为", "选中的图片里这种颜色换成右边的颜色，保留明暗（Ctrl+Z 撤销）", () => ReplaceKeyColor()));
+        var replaceButton = SwatchButton(_replaceSwatch, "替换成的颜色", color => ReplaceColor = color, () => _replaceColor);
+        replaceButton.Margin = new Thickness(0, 0, 6, 6);
+        actions.Children.Add(replaceButton);
+        rows.Children.Add(actions);
+        return rows;
+    }
+
+    private FrameworkElement LabeledRow(string text, FrameworkElement control)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 6, 6) };
+        var label = Label(text);
+        label.Width = 48;
+        label.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(label);
+        row.Children.Add(control);
+        return row;
+    }
+
+    private Button SwatchButton(Border swatch, string tip, Action<Color> chosen, Func<Color> current)
+    {
+        var button = new Button { Style = (Style)Application.Current.FindResource("FooterButton"), MinWidth = 0, Width = 44, Height = 30, Padding = new Thickness(0), Content = swatch, ToolTip = tip };
+        button.Click += (_, _) =>
+        {
+            var picker = new ColorPickerWindow(current()) { Owner = this };
+            picker.ShowDialog();
+            if (picker.Accepted)
+            {
+                chosen(Color.FromRgb(picker.SelectedColor.R, picker.SelectedColor.G, picker.SelectedColor.B));
+            }
+        };
+        return button;
+    }
+
+    /// <summary>The colour 抠除 / 替换 works on.</summary>
+    public Color KeyColor
+    {
+        get => _keyColor;
+        set
+        {
+            _keyColor = value;
+            _keySwatch.Background = new SolidColorBrush(value);
+        }
+    }
+
+    /// <summary>The colour 替换为 puts in.</summary>
+    public Color ReplaceColor
+    {
+        get => _replaceColor;
+        set
+        {
+            _replaceColor = value;
+            _replaceSwatch.Background = new SolidColorBrush(value);
+        }
+    }
+
+    public double KeyTolerance
+    {
+        get => _keyTolerance.Value;
+        set => _keyTolerance.Value = value;
+    }
+
+    private void SetPickingKey(bool on)
+    {
+        _pickingKey = on && _hasImage;
+        if (_keyPickButton != null)
+        {
+            _keyPickButton.IsChecked = _pickingKey;
+        }
+
+        _stage.Cursor = _pickingKey ? Cursors.Cross : null;
+        if (_pickingKey)
+        {
+            Notice("在画布上单击要处理的颜色");
+        }
+    }
+
+    /// <summary>吸取: the colour at a canvas point (pictures and annotations as they look).</summary>
+    public void PickKeyAt(Point canvasPoint)
+    {
+        if (PenEyedropper.Sample(EyedropSource, canvasPoint) is { } color)
+        {
+            KeyColor = Color.FromRgb(color.R, color.G, color.B);
+        }
+
+        SetPickingKey(false);
+    }
+
+    /// <summary>抠除颜色 in the target picture.</summary>
+    public void KeyOut() => ColourStep(image => ColorOps.Key(image, _keyColor, _keyTolerance.Value), "已抠除该颜色（Ctrl+Z 撤销）");
+
+    /// <summary>替换颜色 in the target picture.</summary>
+    public void ReplaceKeyColor() => ColourStep(image => ColorOps.Replace(image, _keyColor, _replaceColor, _keyTolerance.Value), "已替换颜色（Ctrl+Z 撤销）");
+
+    private void ColourStep(Func<BitmapSource, BitmapSource> change, string done)
+    {
+        if (Target is not { Image: not null } picture)
+        {
+            Notice("先选中一张图片");
+            return;
+        }
+
+        GeometryStep(EditGroup.Colour, () =>
+        {
+            Realize(picture);
+            picture.Image = change(picture.Image!);
+            picture.Origin = null; // the result is the new starting point for 调色
+            picture.Adjust = null;
+        });
+        Notice(done);
     }
 
     /// <summary>元素样式 shows while pictures are selected, with the first one's values.</summary>
@@ -1049,9 +1207,11 @@ public sealed class ImageEditorWindow : PinWindow
         _emptyHint.Visibility = _hasImage ? Visibility.Collapsed : Visibility.Visible;
         _checker.Visibility = _hasImage ? Visibility.Visible : Visibility.Collapsed;
         ImageHost.Visibility = _hasImage ? Visibility.Visible : Visibility.Collapsed;
-        if (_panel != null)
+        if (_panelStack != null)
         {
-            _panel.IsEnabled = _hasImage;
+            // The controls rest without a picture; the panel itself still scrolls.
+            _panelStack.IsEnabled = _hasImage;
+            _resetAllFooter!.IsEnabled = _hasImage;
         }
 
         UpdateResetButtons();
@@ -1627,6 +1787,14 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void Stage_SelectDown(object sender, MouseButtonEventArgs e)
     {
+        if (_pickingKey && e.ClickCount == 1)
+        {
+            var spot = e.GetPosition(ImageHost);
+            PickKeyAt(new Point(spot.X / _zoom, spot.Y / _zoom));
+            e.Handled = true;
+            return;
+        }
+
         if (!_hasImage || _overlay != null || e.ClickCount != 1 || _textEditor.IsActive || _polyline != null ||
             _tool is not (AnnotationTool.None or AnnotationTool.Select))
         {
@@ -2780,6 +2948,12 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 return true; // tool letters wait until the crop / path / keystone is finished
             }
+        }
+
+        if (!control && key == Key.Escape && _pickingKey)
+        {
+            SetPickingKey(false);
+            return true;
         }
 
         if (!control && key == Key.Escape && _pendingPaste != null && ReferenceEquals(_selected, _pendingPaste))

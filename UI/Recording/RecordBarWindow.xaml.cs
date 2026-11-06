@@ -67,7 +67,9 @@ public partial class RecordBarWindow : Window
             DwmSetWindowAttribute(handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
             var border = 0x00333333;
             DwmSetWindowAttribute(handle, DWMWA_BORDER_COLOR, ref border, sizeof(int));
+            RoundCorners();
         };
+        SizeChanged += (_, _) => RoundCorners();
         // Off screen until laid out, then straight to its place (it used to show up elsewhere first).
         Left = -32000;
         Top = -32000;
@@ -811,4 +813,45 @@ public partial class RecordBarWindow : Window
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    /// <summary>The window cut to a rounded rectangle (8 DIP corners), the same on Windows 10 and 11.</summary>
+    private void RoundCorners()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect))
+        {
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        var diameter = (int)Math.Round(16 * dpi);
+        var region = CreateRoundRectRgn(0, 0, rect.Right - rect.Left + 1, rect.Bottom - rect.Top + 1, diameter, diameter);
+        if (SetWindowRgn(handle, region, true) == 0)
+        {
+            DeleteObject(region); // kept by the system only when it was taken
+        }
+
+        RoundedRegion = true;
+    }
+
+    /// <summary>For tests: the rounded window region is in place.</summary>
+    internal bool RoundedRegion { get; private set; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowRect
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hwnd, out WindowRect rect);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hwnd, IntPtr region, bool redraw);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr handle);
 }

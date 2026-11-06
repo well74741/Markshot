@@ -1017,7 +1017,7 @@ public partial class OverlayWindow
     }
 
     /// <summary>The corners last adjusted, as far as this area allows (a lasso has none).</summary>
-    /// <summary>One wheel notch: the capture's corner radius by 2 DIP (a lasso capture has no corners).</summary>
+    /// <summary>One wheel notch: the capture's corner radius by 6 DIP (a lasso capture has no corners).</summary>
     private void WheelCorner(int delta)
     {
         if (_lasso != null)
@@ -1027,7 +1027,7 @@ public partial class OverlayWindow
         }
 
         var most = Math.Floor(Math.Min(_selection.Width, _selection.Height) / 2);
-        var step = 2 * _scale;
+        var step = 6 * _scale;
         var radius = Math.Clamp(Math.Round((_cornerRadius + Math.Sign(delta) * step) / step) * step, 0, most);
         _cornerRadius = radius;
         RememberCorner();

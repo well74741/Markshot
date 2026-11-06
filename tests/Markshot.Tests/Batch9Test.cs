@@ -123,6 +123,15 @@ static class Batch9Test
                 $"closing a pin: it shrinks towards a point a little below its middle while it fades ({shrink?.ScaleX:0.00}, {pinRoot.RenderTransformOrigin})");
             Pump(250);
             Check(!swept.IsVisible, "… and is gone");
+            var zoomed = new PinWindow(picture, -4000, -4000) { Sweep = true, Left = -4000, Top = -4000, ShowActivated = false };
+            zoomed.RestoreView(0.5, 1);
+            double firstOpacity = -1;
+            zoomed.SourceInitialized += (_, _) => firstOpacity = zoomed.Opacity;
+            zoomed.Show();
+            Check(firstOpacity == 0, "a restored pin starts invisible before its first frame (it fades in, no flash)");
+            Pump(60);
+            Check(Math.Abs(((FrameworkElement)zoomed.FindName("ImageHost")).ActualWidth - 80) < 1.5, "… and opens at its size (zoom set before it shows, no jump)");
+            zoomed.CloseImmediately();
             var plain = new PinWindow(picture, -4000, -4000) { Left = -4000, Top = -4000, ShowActivated = false };
             var plainHost = (Grid)plain.FindName("ImageHost");
             var plainBefore = plainHost.Children.Count;
@@ -152,12 +161,24 @@ static class Batch9Test
             typeof(AnnotationToolbar).GetMethod("OpenHoverMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(hoverBar, new object[] { penTool });
             Pump(100);
             var popup = (Popup)typeof(AnnotationToolbar).GetField("_hoverPopup", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(hoverBar)!;
-            var hoverItems = ((Menu)((Border)popup.Child).Child).Items.OfType<MenuItem>().ToList();
-            Check(hoverBar.IsHoverMenuOpen && !popup.StaysOpen == false && hoverItems.Select(i => (string)i.Header).SequenceEqual(new[] { "画笔", "荧光笔" }),
+            var card = (Border)((Grid)popup.Child).Children[0];
+            var hoverItems = ((StackPanel)card.Child).Children.OfType<Button>().ToList();
+            Check(hoverBar.IsHoverMenuOpen && popup.StaysOpen && popup.Placement == PlacementMode.Custom &&
+                  hoverItems.Select(i => ((TextBlock)i.Content).Text).SequenceEqual(new[] { "画笔", "荧光笔" }),
                 "… resting on the pen shows 画笔 / 荧光笔 under it (without taking the mouse)");
-            hoverItems[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            var placed = popup.CustomPopupPlacementCallback(new Size(80, 70), new Size(30, 30), new Point())[0].Point;
+            Check(Math.Abs(placed.X - (30 - 80) / 2.0) < 0.01, "… centred under the button");
+            Check(card.ActualWidth < 110 && hoverItems.All(i => i.HorizontalContentAlignment == HorizontalAlignment.Center && ((TextBlock)i.Content).TextAlignment == TextAlignment.Center),
+                $"… a narrow list ({card.ActualWidth:0} DIP) with its words centred");
+            hoverItems[1].RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             Pump(50);
             Check(hoverBar.Tool == Markshot.Annotations.AnnotationTool.Highlighter && !hoverBar.IsHoverMenuOpen, "… picking one takes that tool and closes the list");
+            Check(((FrameworkElement)hoverBar.FindName("ScrollChevron")).Visibility == Visibility.Collapsed, "… the 长截图 ▾ is hidden too (its directions on hover)");
+            typeof(AnnotationToolbar).GetMethod("OpenHoverMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(hoverBar, new object[] { (ButtonBase)hoverBar.FindName("ScrollButton") });
+            var scrollPopup = (Popup)typeof(AnnotationToolbar).GetField("_hoverPopup", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(hoverBar)!;
+            var scrollItems = ((StackPanel)((Border)((Grid)scrollPopup.Child).Children[0]).Child).Children.OfType<Button>().Select(i => ((TextBlock)i.Content).Text).ToList();
+            Check(scrollItems.SequenceEqual(new[] { "竖向长截图", "横向长截图" }), "… resting on 长截图 shows 竖向 / 横向");
+            hoverBar.CloseHoverMenu();
             config.HideToolChevrons = false;
             hoverBar.ApplyToolOrderFromConfig();
             Check(penChevron.Visibility == Visibility.Visible, "setting off: the ▾ buttons are back");

@@ -347,7 +347,7 @@ public partial class App : Application
 
     public PinWindow CreatePin(BitmapSource image, int screenX, int screenY,
         BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null, double cornerRadius = 0,
-        bool fromCapture = false, bool shapedShadow = false, bool sweep = false)
+        bool fromCapture = false, bool shapedShadow = false, bool sweep = false, (double Zoom, double Opacity)? view = null)
     {
         while (_pins.Count >= MaxPins)
         {
@@ -381,6 +381,11 @@ public partial class App : Application
                 }
             }
         };
+
+        if (view is { } shown)
+        {
+            pin.RestoreView(shown.Zoom, shown.Opacity); // before it shows: it opens at its size (no jump from 100 %)
+        }
 
         _pins.Add(pin);
         pin.Show();
@@ -470,9 +475,8 @@ public partial class App : Application
             var (snapshot, entry) = _closedPins[^1];
             _closedPins.RemoveAt(_closedPins.Count - 1);
             History.Remove(entry);
-            var restored = CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
-                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null, sweep: true);
-            restored.RestoreView(snapshot.Zoom, snapshot.Opacity);
+            CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
+                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null, sweep: true, view: (snapshot.Zoom, snapshot.Opacity));
             return;
         }
 
@@ -516,9 +520,8 @@ public partial class App : Application
         {
             var (snapshot, _) = _closedPins[index];
             _closedPins.RemoveAt(index);
-            var restored = CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
-                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null, sweep: true);
-            restored.RestoreView(snapshot.Zoom, snapshot.Opacity);
+            CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
+                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null, sweep: true, view: (snapshot.Zoom, snapshot.Opacity));
             return;
         }
 
@@ -800,9 +803,8 @@ public partial class App : Application
             replace.Close();
         }
 
-        var pin = CreatePin(composed, x, y, baseImage, annotations.Count > 0 ? annotations : null, shapedShadow: ImageOps.HasTransparentCorner(composed), sweep: true);
-        pin.RestoreView(fit, 1);
-        return pin;
+        return CreatePin(composed, x, y, baseImage, annotations.Count > 0 ? annotations : null, shapedShadow: ImageOps.HasTransparentCorner(composed), sweep: true,
+            view: (fit, 1));
     }
 
     /// <summary>A save dialog for an image, then the usual "saved" prompt.</summary>

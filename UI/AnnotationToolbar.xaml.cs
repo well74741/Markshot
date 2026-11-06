@@ -1050,60 +1050,60 @@ public partial class AnnotationToolbar : UserControl
 
     // ---- the ▾ hidden (setting): the styles open on the tool button itself when the pointer is on it
 
-    private (ButtonBase Tool, Button Chevron, (string Label, AnnotationTool Tool)[] Items)[]? _variantTools;
-    private System.Windows.Controls.Primitives.Popup? _hoverPopup;
+    private (ButtonBase Tool, Button Chevron, Func<(string Label, bool Checked, Action Pick)[]> Items)[]? _variantTools;
+    private Popup? _hoverPopup;
     private ButtonBase? _hoverAnchor;
-    private ButtonBase? _hoverPending;
-    private readonly DispatcherTimer _hoverOpen = new() { Interval = TimeSpan.FromMilliseconds(140) };
-    private readonly DispatcherTimer _hoverWatch = new() { Interval = TimeSpan.FromMilliseconds(120) };
-    private long _hoverLeftAt;
+    private readonly DispatcherTimer _hoverLeave = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private bool _hoverWired;
 
     /// <summary>True while the styles of a tool are shown by hovering (no ▾).</summary>
     public bool IsHoverMenuOpen => _hoverPopup?.IsOpen == true;
 
+    /// <summary>The ▾ buttons are hidden (the setting); hovering a tool shows its styles.</summary>
+    public bool HideChevrons { get; private set; }
+
+    private (string, bool, Action)[] Variants(params (string Label, AnnotationTool Tool)[] items) =>
+        items.Select(i => (i.Label, _tool == i.Tool, (Action)(() => PickVariant(i.Tool)))).ToArray();
+
     private void ApplyChevrons(bool hidden)
     {
-        _variantTools ??= new (ButtonBase, Button, (string, AnnotationTool)[])[]
+        _variantTools ??= new (ButtonBase, Button, Func<(string, bool, Action)[]>)[]
         {
-            (ToolShape, ShapeChevron, new[] { ("矩形", AnnotationTool.Rectangle), ("椭圆", AnnotationTool.Ellipse) }),
-            (ToolPen, PenChevron, new[] { ("画笔", AnnotationTool.Pen), ("荧光笔", AnnotationTool.Highlighter) }),
-            (ToolArrow, ArrowChevron, new[] { ("箭头", AnnotationTool.Arrow), ("直线", AnnotationTool.Line) }),
-            (ToolText, TextChevron, new[] { ("文字", AnnotationTool.Text), ("水印", AnnotationTool.Watermark) }),
-            (ToolMosaic, MosaicChevron, new[] { ("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush) }),
-            (ToolEraser, EraserChevron, new[] { ("擦除", AnnotationTool.Eraser), ("抠除", AnnotationTool.Cutout) })
+            (ToolShape, ShapeChevron, () => Variants(("矩形", AnnotationTool.Rectangle), ("椭圆", AnnotationTool.Ellipse))),
+            (ToolPen, PenChevron, () => Variants(("画笔", AnnotationTool.Pen), ("荧光笔", AnnotationTool.Highlighter))),
+            (ToolArrow, ArrowChevron, () => Variants(("箭头", AnnotationTool.Arrow), ("直线", AnnotationTool.Line))),
+            (ToolText, TextChevron, () => Variants(("文字", AnnotationTool.Text), ("水印", AnnotationTool.Watermark))),
+            (ToolMosaic, MosaicChevron, () => Variants(("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush))),
+            (ToolEraser, EraserChevron, () => Variants(("擦除", AnnotationTool.Eraser), ("抠除", AnnotationTool.Cutout))),
+            (ScrollButton, ScrollChevron, () => new (string, bool, Action)[]
+            {
+                ("竖向长截图", !ScrollHorizontal, () => ScrollHorizontal = false),
+                ("横向长截图", ScrollHorizontal, () => ScrollHorizontal = true)
+            })
         };
         if (!_hoverWired)
         {
             _hoverWired = true;
-            _hoverOpen.Tick += (_, _) =>
+            _hoverLeave.Tick += (_, _) =>
             {
-                _hoverOpen.Stop();
-                if (_hoverPending is { IsMouseOver: true } pending && HideChevrons)
+                _hoverLeave.Stop();
+                if (!PointerOnHoverMenu())
                 {
-                    OpenHoverMenu(pending);
+                    CloseHoverMenu();
                 }
             };
-            _hoverWatch.Tick += (_, _) => WatchHoverMenu();
             foreach (var (tool, _, _) in _variantTools)
             {
                 tool.MouseEnter += (_, _) =>
                 {
-                    if (!HideChevrons || ReferenceEquals(_hoverAnchor, tool) && IsHoverMenuOpen)
+                    if (HideChevrons && !(ReferenceEquals(_hoverAnchor, tool) && IsHoverMenuOpen))
                     {
-                        return;
+                        OpenHoverMenu(tool); // at once
                     }
 
-                    _hoverPending = tool;
-                    _hoverOpen.Stop();
-                    _hoverOpen.Start(); // a short rest, so sweeping across the bar does not flash every list
+                    _hoverLeave.Stop();
                 };
-                tool.MouseLeave += (_, _) =>
-                {
-                    if (ReferenceEquals(_hoverPending, tool))
-                    {
-                        _hoverOpen.Stop();
-                    }
-                };
+                tool.MouseLeave += (_, _) => LeftHoverMenu();
             }
         }
 
@@ -1119,84 +1119,84 @@ public partial class AnnotationToolbar : UserControl
         }
     }
 
-    private bool _hoverWired;
+    private bool PointerOnHoverMenu() =>
+        _hoverAnchor?.IsMouseOver == true || (_hoverPopup?.Child as FrameworkElement)?.IsMouseOver == true;
 
-    /// <summary>The ▾ buttons are hidden (the setting); hovering a tool shows its styles.</summary>
-    public bool HideChevrons { get; private set; }
+    /// <summary>Off the button / the list: it closes right away (a few ms to cross from the button into the list).</summary>
+    private void LeftHoverMenu()
+    {
+        if (!IsHoverMenuOpen)
+        {
+            return;
+        }
 
-    /// <summary>The styles of a tool in a small list under its button (stays open while the pointer is on either).</summary>
+        _hoverLeave.Stop();
+        _hoverLeave.Start();
+    }
+
+    /// <summary>The styles of a tool in a small list centred under its button.</summary>
     internal void OpenHoverMenu(ButtonBase tool)
     {
         var entry = _variantTools!.First(t => ReferenceEquals(t.Tool, tool));
         CloseHoverMenu();
-        var menu = new Menu { Background = Brushes.Transparent, Focusable = false };
-        menu.ItemsPanel = new ItemsPanelTemplate(new FrameworkElementFactory(typeof(StackPanel)));
-        foreach (var (label, variant) in entry.Items)
+        var list = new StackPanel();
+        foreach (var (label, isChecked, pick) in entry.Items())
         {
-            var item = new MenuItem { Header = label, IsChecked = _tool == variant, MinWidth = 96 };
+            var item = new Button
+            {
+                Style = (Style)FindResource("ToolButton"),
+                Content = new TextBlock { Text = label, TextAlignment = TextAlignment.Center, FontWeight = isChecked ? FontWeights.SemiBold : FontWeights.Normal },
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                Padding = new Thickness(12, 6, 12, 6),
+                Tag = isChecked
+            };
+            if (isChecked)
+            {
+                item.SetResourceReference(ForegroundProperty, "Accent");
+            }
+
             item.Click += (_, _) =>
             {
                 CloseHoverMenu();
-                PickVariant(variant);
+                pick();
             };
-            menu.Items.Add(item);
+            list.Children.Add(item);
         }
 
-        var card = new Border { Padding = new Thickness(4), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Child = menu, Margin = new Thickness(0, 0, 8, 8) };
+        const double shadowRoom = 8;
+        var card = new Border { Padding = new Thickness(3), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Child = list, Margin = new Thickness(shadowRoom) };
         card.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
         card.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x33FFFFFF));
         card.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.35 };
-        card.LayoutTransform = UiScale.Transform;
-        var popup = new System.Windows.Controls.Primitives.Popup
+        var host = new Grid { Background = Brushes.Transparent, Children = { card }, LayoutTransform = UiScale.Transform };
+        host.MouseEnter += (_, _) => _hoverLeave.Stop();
+        host.MouseLeave += (_, _) => LeftHoverMenu();
+        var dpi = VisualTreeHelper.GetDpi(tool).DpiScaleY;
+        var popup = new Popup
         {
             PlacementTarget = tool,
-            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
-            VerticalOffset = 4,
+            Placement = PlacementMode.Custom,
+            // Centred under the button; the shadow room above it overlaps the button, so the list touches it.
+            CustomPopupPlacementCallback = (popupSize, targetSize, _) => new[]
+            {
+                new CustomPopupPlacement(new Point((targetSize.Width - popupSize.Width) / 2, targetSize.Height - shadowRoom * dpi * UiScale.Factor + 2 * dpi),
+                    PopupPrimaryAxis.Horizontal)
+            },
             StaysOpen = true, // no mouse capture: the tool button stays clickable and the pointer may leave freely
             AllowsTransparency = true,
             Focusable = false,
-            Child = card
+            Child = host
         };
         _hoverPopup = popup;
         _hoverAnchor = tool;
-        _hoverLeftAt = 0;
         popup.IsOpen = true;
         Motion.PopIn(card, fromAbove: true);
-        _hoverWatch.Start();
     }
 
-    private void WatchHoverMenu()
+    public void CloseHoverMenu()
     {
-        if (_hoverPopup is not { IsOpen: true } popup || _hoverAnchor == null)
-        {
-            CloseHoverMenu();
-            return;
-        }
-
-        if (_hoverAnchor.IsMouseOver || (popup.Child as FrameworkElement)?.IsMouseOver == true || !IsVisible)
-        {
-            _hoverLeftAt = IsVisible ? 0 : 1;
-            if (IsVisible)
-            {
-                return;
-            }
-        }
-
-        // Off both for a moment: it closes (a short grace, the gap between the button and the list is crossed).
-        var now = Environment.TickCount64;
-        if (_hoverLeftAt == 0)
-        {
-            _hoverLeftAt = now;
-        }
-        else if (now - _hoverLeftAt >= 260 || !IsVisible)
-        {
-            CloseHoverMenu();
-        }
-    }
-
-    internal void CloseHoverMenu()
-    {
-        _hoverWatch.Stop();
+        _hoverLeave.Stop();
         if (_hoverPopup != null)
         {
             _hoverPopup.IsOpen = false;

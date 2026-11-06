@@ -53,7 +53,9 @@
         </Style>
     </Window.Resources>
 
-    <Border x:Name="Root" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" Background="{DynamicResource T_FF1C1C1C}"
+    <!-- Rounded on every Windows: the DWM corner preference exists on Windows 11 only; elsewhere the window region is
+         rounded (RoundCorners). Not a transparent window: those cannot be left out of the recording. -->
+    <Border x:Name="Root" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" Background="{DynamicResource T_FF1C1C1C}" CornerRadius="8"
             MouseLeftButtonDown="Root_MouseLeftButtonDown" MouseMove="Root_MouseMove" MouseLeftButtonUp="Root_MouseLeftButtonUp">
         <StackPanel>
             <!-- ===== before / while recording ===== -->

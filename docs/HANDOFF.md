@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.45`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.46`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,21 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.46 0.8.46 变更
+
+- 截图滚轮圆角每格 6 DIP（原 2）。
+- 悬停样式列表：鼠标进入工具按钮立即打开（无延迟），离开按钮和列表 50 ms 后关闭（只为从按钮移进列表）；列表是 `StackPanel` 里的 `ToolButton`（文字居中，当前样式蓝色加粗），
+  `Popup` 用 `PlacementMode.Custom` 居中在按钮下方，卡片四周 8 DIP 阴影边距（上边距与按钮重叠，列表紧贴按钮）。长截图按钮也纳入（▾ 同样隐藏，悬停显示竖向 / 横向）。
+- 打开图片图标 `folder_open.png` 线条按 5 px 膨胀加粗（原线条细，小尺寸显得暗）；`IconMask` 统一 `BitmapScalingMode.HighQuality`（大图标缩到 18 DIP 时线条更干净）。
+- 贴图闪一下：非截图来的贴图在 `SourceInitialized` 先设 `Opacity = 0`（第一帧在 Loaded 之前绘制，以前会先满不透明画一帧再从 0 淡入）；
+  恢复 / 编辑器贴回的缩放与透明度经 `CreatePin(view:)` 在显示前设置（以前显示后再 `RestoreView`，先按 100% 出现再跳到原大小）。
+- 编辑器无图片时右侧面板仍可滚动：只禁用面板内容（`_panelStack`）和底部「重置所有修改」，不再禁用整个面板（连滚动条一起禁用了）。
+- 抠色与替换颜色：`Core/ColorOps.cs`（`Weight` 加权 RGB 距离，容差内为 1，之后 4 + 容差/2 的范围线性衰减；`Key` 乘透明度；`Replace` 在 HSL 里按 源→目标 的差值平移色相、饱和度、亮度，按权重混合，灰色源直接取目标色相）。
+  面板新分区：颜色色块（选色）+「吸取」（`_pickingKey`，在画布上单击取 `EyedropSource` 颜色，Esc 取消）、容差滑条、「抠除颜色」「替换为」+ 目标色块；作用于选中图片（`Target`），`GeometryStep(EditGroup.Colour)` 一步撤销，结果成为新的调色起点。
+- 录屏工具栏圆角：DWM 圆角只在 Windows 11 生效，Windows 10 用 `SetWindowRgn(CreateRoundRectRgn)` 裁成 8 DIP 圆角（不用透明窗口：分层窗口不能设 `WDA_EXCLUDEFROMCAPTURE`，会被录进视频）；`Root` 同 8 DIP 圆角。
+  图标：操作录制换成 键盘、延时换成 倒计时（秒表）、重录换成 刷新（ui-icons）。
+- 贴图 Alt 辅助线：按住鼠标左 / 右键时不显示（Alt + 拖动贴图）。
 
 ## 8.1.45 0.8.45 变更
 

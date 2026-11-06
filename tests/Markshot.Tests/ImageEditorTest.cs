@@ -108,6 +108,16 @@ static class ImageEditorTest
         Pump(300);
         Check(!empty.HasImage && !empty.IsDirty && empty.Title.Contains("图片编辑器"), "opens empty");
         Shot((FrameworkElement)empty.Content, "editor_empty.png");
+        {
+            var stack = (FrameworkElement)Field(empty, "_panelStack");
+            ScrollViewer? panelScroll = null;
+            for (DependencyObject? up = stack; up != null && panelScroll == null; up = VisualTreeHelper.GetParent(up))
+            {
+                panelScroll = up as ScrollViewer;
+            }
+
+            Check(!stack.IsEnabled && panelScroll is { IsEnabled: true }, "no picture: the panel's controls rest, but it still scrolls");
+        }
         Check(empty.AllowDrop, "takes dropped files");
         var dropped = (string)typeof(ImageEditorWindow).GetMethod("DroppedImage", BindingFlags.NonPublic | BindingFlags.Static)!
             .Invoke(null, new object[] { new DataObject(DataFormats.FileDrop, new[] { "notes.txt", file }) });
@@ -147,6 +157,49 @@ static class ImageEditorTest
             Check(bars.Count > 0 && bars.All(b => b.Orientation == Orientation.Vertical ? b.Width == 8 : b.Height == 8) &&
                   shown.Count > 0 && shown.All(b => ((Track)b.Template.FindName("PART_Track", b)).Thumb.Template == slim),
                 $"the editor's panel has the slim themed scrollbar ({bars.Count} bars, {shown.Count} shown)");
+        }
+
+        // ---- 抠色 / 替换颜色: the chosen colour (picked from the canvas) goes transparent, or becomes another colour keeping its shading
+        {
+            var px = new byte[100 * 60 * 4];
+            for (var y = 0; y < 60; y++)
+            for (var x = 0; x < 100; x++)
+            {
+                var o = (y * 100 + x) * 4;
+                var green = x < 50;
+                var shade = (byte)(green ? 150 + y : 0);
+                px[o] = green ? (byte)30 : (byte)240; px[o + 1] = green ? shade : (byte)240; px[o + 2] = green ? (byte)30 : (byte)240; px[o + 3] = 255;
+            }
+
+            var keyed = new ImageEditorWindow(BitmapSource.Create(100, 60, 96, 96, PixelFormats.Bgra32, null, px, 400)) { Left = 40, Top = 40, ShowActivated = false };
+            keyed.Show();
+            Pump(300);
+            var keyItems = ((AnnotationEditor)typeof(PinWindow).GetField("Editor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(keyed)!).Items;
+            var photo = keyItems.OfType<ImageAnnotation>().First();
+            keyed.SelectElements(new Annotation[] { photo });
+            keyed.PickKeyAt(new Point(80, 30));
+            Check(keyed.KeyColor == Color.FromRgb(240, 240, 240), $"吸取: the colour under the click ({keyed.KeyColor})");
+            keyed.KeyTolerance = 10;
+            keyed.KeyOut();
+            Pump(50);
+            var keyedPicture = keyItems.OfType<ImageAnnotation>().First().Image!;
+            Check(At(keyedPicture, 80, 30).A == 0 && At(keyedPicture, 20, 30).A == 255, "抠除颜色: the white half is transparent, the green half stays");
+            keyed.UndoStep();
+            Pump(50);
+            Check(At(keyItems.OfType<ImageAnnotation>().First().Image!, 80, 30).A == 255, "… Ctrl+Z puts it back");
+            keyed.SelectElements(new Annotation[] { keyItems.OfType<ImageAnnotation>().First() });
+            keyed.KeyColor = Color.FromRgb(30, 170, 30);
+            keyed.ReplaceColor = Color.FromRgb(40, 60, 220);
+            keyed.KeyTolerance = 20;
+            keyed.ReplaceKeyColor();
+            Pump(50);
+            var swapped = keyItems.OfType<ImageAnnotation>().First().Image!;
+            var top = At(swapped, 20, 2);
+            var bottom = At(swapped, 20, 57);
+            var white = At(swapped, 80, 30);
+            Check(top.B > top.G + 60 && bottom.B > bottom.G + 60 && bottom.B > top.B && white.R == 240 && white.B == 240,
+                $"替换颜色: the green becomes blue with its shading kept, the white stays ({top} / {bottom} / {white})");
+            keyed.Close();
         }
 
         // ---- colour: from the original every time; one undo step per change

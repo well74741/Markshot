@@ -66,7 +66,9 @@ internal sealed class PinCrosshair
     internal void Update()
     {
         var altDown = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-        if (!altDown || Paused?.Invoke() == true || !IsPointerOverHost() || !_host.IsVisible)
+        // Alt + drag moves the pin: no lines while a mouse button is held.
+        var buttonDown = (GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0;
+        if (!altDown || buttonDown || Paused?.Invoke() == true || !IsPointerOverHost() || !_host.IsVisible)
         {
             Hide();
             if (!IsPointerOverHost())
