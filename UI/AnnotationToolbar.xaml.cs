@@ -117,6 +117,8 @@ public partial class AnnotationToolbar : UserControl
     public event Action? ScrollRequested;
     public event Action? EditRequested;
     public event Action? OpenRequested;
+
+    public event Action? NewRequested;
     public event Action? PasteRequested;
 
     /// <summary>The watermark switch: true = show a watermark, false = remove it.</summary>
@@ -1528,6 +1530,8 @@ public partial class AnnotationToolbar : UserControl
     private void Edit_Click(object sender, RoutedEventArgs e) => EditRequested?.Invoke();
 
     private void Open_Click(object sender, RoutedEventArgs e) => OpenRequested?.Invoke();
+
+    private void New_Click(object sender, RoutedEventArgs e) => NewRequested?.Invoke();
 
     private void Paste_Click(object sender, RoutedEventArgs e) => PasteRequested?.Invoke();
 

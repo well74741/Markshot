@@ -181,25 +181,62 @@ static class ImageEditorTest
             Check(keyed.KeyColor == Color.FromRgb(240, 240, 240), $"吸取: the colour under the click ({keyed.KeyColor})");
             keyed.KeyTolerance = 10;
             keyed.KeyOut();
+            Pump(80);
+            BitmapSource Shown() => keyItems.OfType<ImageAnnotation>().First().Image!;
+            var keyBar = (FrameworkElement)Field(keyed, "_keyBar");
+            Check(keyed.IsKeyPreviewing && keyBar.IsVisible && keyBar.VerticalAlignment == VerticalAlignment.Bottom && At(Shown(), 80, 30).A == 0 && At(Shown(), 20, 30).A == 255,
+                "抠除颜色: a preview first, with 应用 / 取消 under the canvas");
+            keyed.KeyColor = Color.FromRgb(235, 235, 235);
+            keyed.KeyTolerance = 0;
+            Pump(120);
+            var partial = At(Shown(), 80, 30).A;
+            keyed.KeyTolerance = 10;
+            Pump(120);
+            Check(partial > 60 && partial < 200 && At(Shown(), 80, 30).A == 0, $"… 容差 and the colour change the preview live (alpha {partial} at 容差 0, 0 at 10)");
+            keyed.CancelKeyPreview();
             Pump(50);
-            var keyedPicture = keyItems.OfType<ImageAnnotation>().First().Image!;
-            Check(At(keyedPicture, 80, 30).A == 0 && At(keyedPicture, 20, 30).A == 255, "抠除颜色: the white half is transparent, the green half stays");
+            Check(!keyed.IsKeyPreviewing && At(Shown(), 80, 30).A == 255 && !((FrameworkElement)Field(keyed, "_keyBar")).IsHitTestVisible == false, "取消: the picture as it was");
+            keyed.SelectElements(new Annotation[] { keyItems.OfType<ImageAnnotation>().First() });
+            keyed.KeyOut();
+            keyed.ApplyKeyPreview();
+            Pump(50);
+            var keyedPicture = Shown();
+            Check(!keyed.IsKeyPreviewing && At(keyedPicture, 80, 30).A == 0 && At(keyedPicture, 20, 30).A == 255, "应用: the white half is transparent, the green half stays");
             keyed.UndoStep();
             Pump(50);
-            Check(At(keyItems.OfType<ImageAnnotation>().First().Image!, 80, 30).A == 255, "… Ctrl+Z puts it back");
+            Check(At(Shown(), 80, 30).A == 255, "… Ctrl+Z puts it back");
             keyed.SelectElements(new Annotation[] { keyItems.OfType<ImageAnnotation>().First() });
             keyed.KeyColor = Color.FromRgb(30, 170, 30);
             keyed.ReplaceColor = Color.FromRgb(40, 60, 220);
             keyed.KeyTolerance = 20;
             keyed.ReplaceKeyColor();
+            keyed.ApplyKeyPreview();
             Pump(50);
-            var swapped = keyItems.OfType<ImageAnnotation>().First().Image!;
+            var swapped = Shown();
             var top = At(swapped, 20, 2);
             var bottom = At(swapped, 20, 57);
             var white = At(swapped, 80, 30);
             Check(top.B > top.G + 60 && bottom.B > bottom.G + 60 && bottom.B > top.B && white.R == 240 && white.B == 240,
                 $"替换颜色: the green becomes blue with its shading kept, the white stays ({top} / {bottom} / {white})");
+            typeof(ImageEditorWindow).GetMethod("SetPickingKey", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(keyed, new object[] { true });
+            var keyStage = (FrameworkElement)Field(keyed, "_stage");
+            Check(keyStage.Cursor == System.Windows.Input.Cursors.Cross && keyStage.ForceCursor, "吸取: a cross over the whole canvas");
+            typeof(ImageEditorWindow).GetMethod("SetPickingKey", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(keyed, new object[] { false });
             keyed.CloseWithoutAsking();
+
+            // 新建画布: an empty canvas of the size and colour chosen
+            var blank = new ImageEditorWindow { Left = 40, Top = 40, ShowActivated = false };
+            blank.Show();
+            Pump(200);
+            Check(blank.NewCanvas(300, 200, Colors.White) && blank.HasImage && blank.Composite.PixelWidth == 300 && blank.Composite.PixelHeight == 200 &&
+                  At(blank.Composite, 150, 100) == (255, 255, 255, 255) && blank.AnnotationCount == 0, "新建画布: 300 × 200 white, nothing on it");
+            var ask = new NewCanvasDialog(640, 480, Colors.Transparent);
+            var chosen = ((int Width, int Height, Color Background)?)typeof(NewCanvasDialog).GetMethod("Current", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ask, null);
+            Check(chosen is { Width: 640, Height: 480 } c && c.Background.A == 0, "… the dialog starts from the current size and background");
+            ask.Close();
+            var newKeys = (string[])typeof(PinWindow).Assembly.GetType("Markshot.UI.ToolbarCatalog")!.GetField("EditorActions")!.GetValue(null)!;
+            Check(newKeys[0] == "New", "the editor bar has 新建画布 first");
+            blank.CloseWithoutAsking();
         }
 
         // ---- colour: from the original every time; one undo step per change

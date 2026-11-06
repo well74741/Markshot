@@ -296,6 +296,7 @@ public sealed class ImageEditorWindow : PinWindow
 
         Toolbar.Visibility = Visibility.Visible;
         Toolbar.OpenRequested += OpenDialog;
+        Toolbar.NewRequested += NewCanvasDialogAsk;
         Toolbar.PasteRequested += PasteImage;
         Toolbar.PinRequested += PinToScreen;
         Toolbar.ToolChanged += _ => CancelSession();
@@ -847,6 +848,7 @@ public sealed class ImageEditorWindow : PinWindow
         var rows = new StackPanel();
         _keySwatch.Background = new SolidColorBrush(_keyColor);
         _replaceSwatch.Background = new SolidColorBrush(_replaceColor);
+        _keyTolerance.ValueChanged += (_, _) => KeyPreviewChanged(); // the preview follows while dragging
         _keySwatch.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x55FFFFFF));
         _replaceSwatch.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x55FFFFFF));
 
@@ -915,6 +917,7 @@ public sealed class ImageEditorWindow : PinWindow
         {
             _keyColor = value;
             _keySwatch.Background = new SolidColorBrush(value);
+            KeyPreviewChanged();
         }
     }
 
@@ -926,6 +929,7 @@ public sealed class ImageEditorWindow : PinWindow
         {
             _replaceColor = value;
             _replaceSwatch.Background = new SolidColorBrush(value);
+            KeyPreviewChanged();
         }
     }
 
@@ -943,7 +947,9 @@ public sealed class ImageEditorWindow : PinWindow
             _keyPickButton.IsChecked = _pickingKey;
         }
 
+        // A cross over the whole canvas while picking (it wins over the pictures' and annotations' own cursors).
         _stage.Cursor = _pickingKey ? Cursors.Cross : null;
+        _stage.ForceCursor = _pickingKey;
         if (_pickingKey)
         {
             Notice("在画布上单击要处理的颜色");
@@ -953,6 +959,22 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>吸取: the colour at a canvas point (pictures and annotations as they look).</summary>
     public void PickKeyAt(Point canvasPoint)
     {
+        if (_keyPreview is { } preview)
+        {
+            // During a preview the picture shows the result: the colour comes from the picture as it was.
+            var local = ToLocal(preview.Picture, canvasPoint);
+            var x = (int)Math.Floor(local.X);
+            var y = (int)Math.Floor(local.Y);
+            if (x >= 0 && y >= 0 && x < preview.Proxy.PixelWidth && y < preview.Proxy.PixelHeight)
+            {
+                var pixel = new byte[4];
+                new FormatConvertedBitmap(preview.Proxy, PixelFormats.Bgra32, null, 0).CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+                KeyColor = Color.FromRgb(pixel[2], pixel[1], pixel[0]);
+                SetPickingKey(false);
+                return;
+            }
+        }
+
         if (PenEyedropper.Sample(EyedropSource, canvasPoint) is { } color)
         {
             KeyColor = Color.FromRgb(color.R, color.G, color.B);
@@ -961,20 +983,160 @@ public sealed class ImageEditorWindow : PinWindow
         SetPickingKey(false);
     }
 
-    /// <summary>抠除颜色 in the target picture.</summary>
-    public void KeyOut() => ColourStep(image => ColorOps.Key(image, _keyColor, _keyTolerance.Value), "已抠除该颜色（Ctrl+Z 撤销）");
+    /// <summary>抠除颜色 of the target picture: a live preview first (容差 and the colour follow), 应用 / 取消 under the canvas.</summary>
+    public void KeyOut() => StartKeyPreview(replace: false);
 
-    /// <summary>替换颜色 in the target picture.</summary>
-    public void ReplaceKeyColor() => ColourStep(image => ColorOps.Replace(image, _keyColor, _replaceColor, _keyTolerance.Value), "已替换颜色（Ctrl+Z 撤销）");
+    /// <summary>替换颜色 of the target picture: a live preview first, like 抠除颜色.</summary>
+    public void ReplaceKeyColor() => StartKeyPreview(replace: true);
 
-    private void ColourStep(Func<BitmapSource, BitmapSource> change, string done)
+    private sealed record KeyPreviewState(ImageAnnotation Picture, BitmapSource Original, BitmapSource Proxy, bool Replace);
+
+    private KeyPreviewState? _keyPreview;
+    private Border? _keyBar;
+    private TextBlock? _keyBarText;
+    private readonly DispatcherTimer _keyTimer = new() { Interval = TimeSpan.FromMilliseconds(30) };
+
+    /// <summary>A colour preview is showing (应用 / 取消 pending).</summary>
+    public bool IsKeyPreviewing => _keyPreview != null;
+
+    private void StartKeyPreview(bool replace)
     {
+        if (_keyPreview is { } running)
+        {
+            _keyPreview = running with { Replace = replace }; // the other button: the same preview, the other action
+            UpdateKeyBar();
+            RefreshKeyPreview();
+            return;
+        }
+
         if (Target is not { Image: not null } picture)
         {
             Notice("先选中一张图片");
             return;
         }
 
+        BakeAdjust();
+        var original = picture.Image!;
+        var side = Math.Max(original.PixelWidth, original.PixelHeight);
+        // Big pictures preview on a copy of at most 1600 px (live while dragging 容差); 应用 works on the full size.
+        var proxy = side <= 1600 ? original : ImageOps.Resize(original, Math.Max(1, original.PixelWidth * 1600 / side), Math.Max(1, original.PixelHeight * 1600 / side));
+        _keyPreview = new KeyPreviewState(picture, original, proxy, replace);
+        UpdateKeyBar();
+        RefreshKeyPreview();
+    }
+
+    private void UpdateKeyBar()
+    {
+        if (_keyBar == null)
+        {
+            _keyBarText = new TextBlock { FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center };
+            _keyBarText.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFF0F0F0));
+            var apply = new Button { Content = "应用", Style = (Style)Application.Current.FindResource("PrimaryButton"), MinWidth = 64, Height = 28, Margin = new Thickness(14, 0, 0, 0) };
+            apply.Click += (_, _) => ApplyKeyPreview();
+            var cancel = new Button { Content = "取消", Style = (Style)Application.Current.FindResource("FooterButton"), MinWidth = 64, Height = 28, Margin = new Thickness(8, 0, 0, 0) };
+            cancel.Click += (_, _) => CancelKeyPreview();
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(_keyBarText);
+            row.Children.Add(apply);
+            row.Children.Add(cancel);
+            _keyBar = new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, 64), // under the canvas, above the annotation bar
+                Padding = new Thickness(14, 7, 8, 7),
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1),
+                Child = row
+            };
+            _keyBar.SetResourceReference(Border.BackgroundProperty, "PanelBackground");
+            _keyBar.SetResourceReference(Border.BorderBrushProperty, "PanelBorder");
+            UiScale.Attach(_keyBar);
+            ((Panel)_sessionBar.Parent).Children.Add(_keyBar);
+            _keyTimer.Tick += (_, _) =>
+            {
+                _keyTimer.Stop();
+                RefreshKeyPreview();
+            };
+        }
+
+        _keyBarText!.Text = _keyPreview?.Replace == true
+            ? "替换颜色预览：拖动右侧「容差」、换颜色或再吸取，效果实时显示。Enter 应用，Esc 取消"
+            : "抠除颜色预览：拖动右侧「容差」、换颜色或再吸取，效果实时显示。Enter 应用，Esc 取消";
+        if (_keyPreview != null)
+        {
+            if (_keyBar.Visibility != Visibility.Visible || Motion.IsHiding(_keyBar))
+            {
+                Motion.PopIn(_keyBar, fromAbove: false);
+            }
+        }
+        else if (_keyBar.Visibility == Visibility.Visible)
+        {
+            Motion.PopOut(_keyBar, towardsAbove: false);
+        }
+    }
+
+    /// <summary>The preview again with the current colour(s) and 容差.</summary>
+    private void RefreshKeyPreview()
+    {
+        if (_keyPreview is not { } preview)
+        {
+            return;
+        }
+
+        preview.Picture.Image = preview.Replace
+            ? ColorOps.Replace(preview.Proxy, _keyColor, _replaceColor, _keyTolerance.Value)
+            : ColorOps.Key(preview.Proxy, _keyColor, _keyTolerance.Value);
+        Editor.InvalidateVisual();
+    }
+
+    private void KeyPreviewChanged()
+    {
+        if (_keyPreview != null)
+        {
+            _keyTimer.Stop();
+            _keyTimer.Start();
+        }
+    }
+
+    /// <summary>应用: the full-size result, one undo step.</summary>
+    public void ApplyKeyPreview()
+    {
+        if (_keyPreview is not { } preview)
+        {
+            return;
+        }
+
+        _keyTimer.Stop();
+        _keyPreview = null;
+        preview.Picture.Image = preview.Original;
+        UpdateKeyBar();
+        var key = _keyColor;
+        var to = _replaceColor;
+        var tolerance = _keyTolerance.Value;
+        ColourStep(preview.Picture, image => preview.Replace ? ColorOps.Replace(image, key, to, tolerance) : ColorOps.Key(image, key, tolerance),
+            preview.Replace ? "已替换颜色（Ctrl+Z 撤销）" : "已抠除该颜色（Ctrl+Z 撤销）");
+    }
+
+    /// <summary>取消: the picture as it was.</summary>
+    public void CancelKeyPreview()
+    {
+        if (_keyPreview is not { } preview)
+        {
+            return;
+        }
+
+        _keyTimer.Stop();
+        _keyPreview = null;
+        preview.Picture.Image = preview.Original;
+        UpdateKeyBar();
+        Editor.InvalidateVisual();
+    }
+
+    private protected override void BeforeHistory() => CancelKeyPreview();
+
+    private void ColourStep(ImageAnnotation picture, Func<BitmapSource, BitmapSource> change, string done)
+    {
         GeometryStep(EditGroup.Colour, () =>
         {
             Realize(picture);
@@ -1507,6 +1669,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>Starts over on an image (opened / dropped); not one undo step.</summary>
     public void LoadImage(BitmapSource image, string? path)
     {
+        CancelKeyPreview();
         CancelSession();
         _textEditor.Commit();
         ClearSelection();
@@ -2059,6 +2222,8 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
+        CancelKeyPreview(); // another change: the colour preview ends unapplied
+
         if (_anglePicture != null)
         {
             ApplyAngle();
@@ -2140,6 +2305,7 @@ public sealed class ImageEditorWindow : PinWindow
 
     private protected override BitmapSource ComposeEditedImage()
     {
+        CancelKeyPreview(); // saved / copied during a preview: the picture as it is
         if (_sessionPicture is { Hidden: true })
         {
             CancelSession(); // saved or copied with a box open: the picture as it is
@@ -2956,6 +3122,20 @@ public sealed class ImageEditorWindow : PinWindow
             return true;
         }
 
+        if (!control && _keyPreview != null && key is Key.Escape or Key.Enter)
+        {
+            if (key == Key.Enter)
+            {
+                ApplyKeyPreview();
+            }
+            else
+            {
+                CancelKeyPreview();
+            }
+
+            return true;
+        }
+
         if (!control && key == Key.Escape && _pendingPaste != null && ReferenceEquals(_selected, _pendingPaste))
         {
             CancelPaste();
@@ -3028,6 +3208,9 @@ public sealed class ImageEditorWindow : PinWindow
         {
             case Key.O:
                 OpenDialog();
+                return true;
+            case Key.N:
+                NewCanvasDialogAsk();
                 return true;
             case Key.S:
                 Save();
@@ -3258,6 +3441,35 @@ public sealed class ImageEditorWindow : PinWindow
         {
             OpenFile(dialog.FileName);
         }
+    }
+
+    /// <summary>新建画布: asks for the size and background, then starts over on an empty canvas.</summary>
+    private void NewCanvasDialogAsk()
+    {
+        var (width, height) = _hasImage ? (_baseImage.PixelWidth, _baseImage.PixelHeight) : (1280, 720);
+        if (NewCanvasDialog.Ask(this, width, height, _hasImage ? CanvasColor : Colors.White) is { } chosen)
+        {
+            NewCanvas(chosen.Width, chosen.Height, chosen.Background);
+        }
+    }
+
+    /// <summary>An empty canvas of this size and colour (asks first when there are unsaved edits).</summary>
+    public bool NewCanvas(int width, int height, Color background)
+    {
+        if (!ConfirmDiscard())
+        {
+            return false;
+        }
+
+        LoadImage(ImageOps.Blank(width, height), null);
+        Editor.Items.Clear(); // no picture element: just the canvas
+        SetBitmap(background.A == 0 ? ImageOps.Blank(width, height) : ImageOps.Solid(width, height, background));
+        _initial = (CurrentState(), new List<Annotation>());
+        UpdateUndoButtons();
+        RefreshPanel();
+        Fit();
+        Notice($"已新建 {width} × {height} 画布：可以粘贴、拖入图片或直接画");
+        return true;
     }
 
     /// <summary>Opens a file here (asks first when the current picture has unsaved edits).</summary>

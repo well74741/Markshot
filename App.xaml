@@ -390,6 +390,11 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/edit.png" /></Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="IconNewMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/new_canvas.png" /></Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="IconOpenMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/folder_open.png" /></Setter.Value>

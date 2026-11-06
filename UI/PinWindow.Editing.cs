@@ -950,8 +950,14 @@ public partial class PinWindow
 
     private protected void Redo() => ApplyHistory(_history.Redo);
 
+    /// <summary>Right before an undo / redo step (the editor ends a colour preview there).</summary>
+    private protected virtual void BeforeHistory()
+    {
+    }
+
     private void ApplyHistory(Func<List<Annotation>, bool> step)
     {
+        BeforeHistory();
         _textEditor.Commit();
         ClearSelection();
         if (!step(Editor.Items))

@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.46`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.47`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,16 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.47 0.8.47 变更
+
+- 新建画布：`NewCanvasDialog`（宽高、常用尺寸 1920×1080 / 1280×720 / 1080×1080 / A4 竖、背景 透明 / 白 / 黑 / 自选，默认取当前画布尺寸和背景）；
+  `ImageEditorWindow.NewCanvas` 先 `ConfirmDiscard`，再按 `LoadImage` 的方式重置，但画布上没有图片元素（只有背景位图）。编辑器工具栏新动作 `New`（`IconNewMask` = ui-icons 新建，默认排第一）、Ctrl+N。
+- 抠色预览：「抠除颜色」「替换为」不再直接修改，而是 `StartKeyPreview`——图片临时显示结果（大于 1600 px 时在缩小副本上算），容差滑条、两个颜色改动经 30 ms 防抖实时重算；
+  画布下方 `_keyBar`（应用 / 取消，Enter / Esc）。应用时在原图全尺寸上算并作为一步撤销；取消、撤销 / 重做（`PinWindow.BeforeHistory` 钩子）、其他图片操作（`GeometryStep`）、保存 / 复制（`ComposeEditedImage`）、打开新图都会先结束预览并还原。
+  预览中吸取颜色取原图（`Proxy`）的像素。吸取时 `_stage.ForceCursor` 让十字光标盖过图片和批注自己的光标。
+- 测试：录屏计时检查的墙钟改在开始录制之前起算（慢的 CI 机器上录制时钟会超前）；抠色测试的编辑器用 `CloseWithoutAsking`（保存提示在 CI 上卡到超时）；
+  `tests/run.ps1` 在 CI 上对超时和无输出的非零退出也写出原因（最后几行）。
 
 ## 8.1.46 0.8.46 变更
 

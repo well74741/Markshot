@@ -384,7 +384,7 @@ static class AnnotateTest
 
             // the bar: 粘贴图片, 打开图片, 清空批注
             var actions = ((Panel)bar.FindName("EditorActions")).Children.OfType<FrameworkElement>().Select(x => (string)x.Tag).ToList();
-            Check(actions.Take(3).SequenceEqual(new[] { "Paste", "Open", "Save" }) && actions.Contains("Clear"), $"editor bar: paste, open, save, clear … ({string.Join(",", actions)})");
+            Check(actions.Take(4).SequenceEqual(new[] { "New", "Paste", "Open", "Save" }) && actions.Contains("Clear"), $"editor bar: new, paste, open, save, clear … ({string.Join(",", actions)})");
             // (the clipboard itself is left alone here: it is the user's)
 
             // tablet pressure: a stroke is thin where the pen pressed lightly, thick where it pressed hard
@@ -408,7 +408,7 @@ static class AnnotateTest
             edBar.ApplyToolOrderFromConfig();
             var edActions = (Panel)edBar.FindName("EditorActions");
             var shown = edActions.Children.OfType<FrameworkElement>().Where(x => x.Visibility == Visibility.Visible).Select(x => (string)x.Tag);
-            Check(string.Join(",", shown) == "Pin,Paste,Open,Save", $"the editor bar has its own order / hidden buttons ({string.Join(",", shown)})");
+            Check(string.Join(",", shown) == "New,Pin,Paste,Open,Save", $"the editor bar has its own order / hidden buttons ({string.Join(",", shown)})");
             Check(!((FrameworkElement)edBar.FindName("ToolNumber")).IsVisible, "and its own hidden tools");
             (cfg.EditorActionOrder, cfg.EditorActionHidden, cfg.EditorToolHidden) = (oldOrder, oldHidden, oldTools);
             edBar.ApplyToolOrderFromConfig();

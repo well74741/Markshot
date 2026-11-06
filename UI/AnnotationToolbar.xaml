@@ -147,6 +147,9 @@
 
                 <!-- The image editor: open, save, copy and pin. -->
                 <StackPanel x:Name="EditorActions" Orientation="Horizontal" Visibility="Collapsed">
+                    <Button Style="{StaticResource IconToolButton}" Click="New_Click" Tag="New" ToolTip="新建画布 (Ctrl+N)">
+                        <Border Style="{StaticResource IconNewMask}" />
+                    </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Paste_Click" Tag="Paste" ToolTip="粘贴剪贴板里的图片 (Ctrl+V)">
                         <Border Style="{StaticResource IconPasteMask}" />
                     </Button>
