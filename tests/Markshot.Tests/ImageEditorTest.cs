@@ -199,7 +199,7 @@ static class ImageEditorTest
             var white = At(swapped, 80, 30);
             Check(top.B > top.G + 60 && bottom.B > bottom.G + 60 && bottom.B > top.B && white.R == 240 && white.B == 240,
                 $"替换颜色: the green becomes blue with its shading kept, the white stays ({top} / {bottom} / {white})");
-            keyed.Close();
+            keyed.CloseWithoutAsking();
         }
 
         // ---- colour: from the original every time; one undo step per change
