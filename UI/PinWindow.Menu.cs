@@ -93,10 +93,7 @@ public partial class PinWindow
             Add("取消多选", ClearPinGroup);
         }
 
-        if ((Application.Current as App)?.PinCount > 1)
-        {
-            Add("关闭所有贴图", () => ((App)Application.Current).CloseAllPins());
-        }
+        Add("关闭所有贴图", () => ((App)Application.Current).CloseAllPins(), gesture: App.Config.CloseAllPinsHotkey);
 
         Add("关闭", Close, gesture: InGroup ? null : "Esc");
         ContextMenu = menu;

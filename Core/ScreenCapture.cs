@@ -8,12 +8,15 @@ namespace Markshot.Core;
 /// <summary>Captures the whole virtual desktop (all monitors) into a frozen bitmap.</summary>
 public static class ScreenCapture
 {
-    public static (BitmapSource Image, Int32Rect Bounds) CaptureVirtualScreen()
+    public static (BitmapSource Image, Int32Rect Bounds) CaptureVirtualScreen() =>
+        Capture(Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN), Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN),
+            Native.GetSystemMetrics(Native.SM_CXVIRTUALSCREEN), Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN));
+
+    /// <summary>One area of the screen (physical pixels).</summary>
+    public static BitmapSource CaptureRegion(Int32Rect area) => Capture(area.X, area.Y, area.Width, area.Height).Image;
+
+    private static (BitmapSource Image, Int32Rect Bounds) Capture(int x, int y, int width, int height)
     {
-        int x = Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN);
-        int y = Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN);
-        int width = Native.GetSystemMetrics(Native.SM_CXVIRTUALSCREEN);
-        int height = Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN);
 
         if (width <= 0 || height <= 0)
         {

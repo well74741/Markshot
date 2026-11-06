@@ -319,7 +319,9 @@ public sealed class CreationGesture
                 break;
 
             case NumberAnnotation number:
-                number.Center = LastPointer;
+                // The badge stays where it was pressed; dragging on draws an arrow out of it to the pointer.
+                number.Center = _start + _offset;
+                number.Tail = (LastPointer - number.Center).Length > number.Radius + 6 ? LastPointer : null;
                 break;
         }
     }

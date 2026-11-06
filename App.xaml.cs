@@ -131,7 +131,8 @@ public partial class App : Application
             RecorderMenuItems,
             ExportDiagnostics,
             ShowPinHistory,
-            () => OpenEditor());
+            () => OpenEditor(),
+            ToggleHotkeys);
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -368,7 +369,7 @@ public partial class App : Application
         pin.Closed += (_, _) =>
         {
             _pins.Remove(pin);
-            if (!_shuttingDown)
+            if (!_shuttingDown && !pin.SkipHistory)
             {
                 var entry = new PinEntry { Image = pin.SourceImage };
                 History.Add(entry);
@@ -883,6 +884,73 @@ public partial class App : Application
         }
     }
 
+    /// <summary>禁用所有快捷键 on / off (tray menu): saved, applied at once.</summary>
+    public void ToggleHotkeys()
+    {
+        Config.HotkeysDisabled = !Config.HotkeysDisabled;
+        Config.Save();
+        ApplyHotkeys();
+        _tray?.ShowBalloon(Config.HotkeysDisabled ? "已禁用所有快捷键" : "快捷键已恢复",
+            Config.HotkeysDisabled ? "截图、贴图等全局快捷键和 Win + 鼠标都已停用，可从托盘菜单恢复。" : "全局快捷键和 Win + 鼠标重新可用。");
+    }
+
+    private WinMouseSelect? _winMouse;
+
+    /// <summary>Win + mouse button draws an area at once (setting); the action per button comes from the settings.</summary>
+    private void StartWinMouse()
+    {
+        if (!Config.WinMouseEnabled)
+        {
+            _winMouse?.Stop();
+            return;
+        }
+
+        _winMouse ??= new WinMouseSelect(WinMouseDone);
+        _winMouse.Start();
+    }
+
+    private void WinMouseDone(MouseButton button, Int32Rect area)
+    {
+        var action = button switch
+        {
+            MouseButton.Left => Config.WinMouseLeft,
+            MouseButton.Middle => Config.WinMouseMiddle,
+            _ => Config.WinMouseRight
+        };
+        if (string.Equals(action, "None", StringComparison.OrdinalIgnoreCase) || area.Width < 2 || area.Height < 2)
+        {
+            return;
+        }
+
+        BitmapSource image;
+        try
+        {
+            image = ScreenCapture.CaptureRegion(area);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Win + 鼠标截取失败", ex);
+            return;
+        }
+
+        switch (action)
+        {
+            case "Ocr":
+                ShowOcr(image);
+                break;
+            case "Pin":
+                CreatePin(image, area.X, area.Y, sweep: true);
+                break;
+            default:
+                if (ClipboardService.CopyImage(image))
+                {
+                    _tray?.ShowBalloon("已复制", $"{area.Width} × {area.Height} 的区域已复制到剪贴板。");
+                }
+
+                break;
+        }
+    }
+
     public void ApplyHotkeys()
     {
         if (_hotkeys == null)
@@ -890,10 +958,24 @@ public partial class App : Application
             return;
         }
 
+        if (Config.HotkeysDisabled)
+        {
+            // 禁用所有快捷键: nothing global is listened to (full-screen games).
+            _hotkeys.RegisterAll();
+            _winMouse?.Stop();
+            return;
+        }
+
+        StartWinMouse();
         var bindings = new List<(string Gesture, Action Action)>
         {
             (Config.CaptureHotkey, () => StartCapture())
         };
+
+        if (!string.IsNullOrWhiteSpace(Config.CloseAllPinsHotkey))
+        {
+            bindings.Add((Config.CloseAllPinsHotkey, CloseAllPins));
+        }
 
         if (!string.IsNullOrWhiteSpace(Config.PinHotkey))
         {

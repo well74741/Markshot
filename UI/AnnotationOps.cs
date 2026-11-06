@@ -47,7 +47,8 @@ internal static class AnnotationOps
             },
             AnnotationTool.Number => new NumberAnnotation
             {
-                Center = point, Number = number, Color = color, Thickness = 1.5, Radius = Math.Max(10, thickness)
+                Center = point, Number = number, Color = color, Thickness = 1.5, Radius = Math.Max(10, thickness),
+                Hollow = toolbar.NumberHollow, Outlined = toolbar.NumberOutlined
             },
             _ => null
         };

@@ -247,7 +247,7 @@ static class AnnotateTest
         Press(a, ModifierKeys.None);
         Check(PinWindow.SelectedPins.Count == 0, "a plain click picks nothing");
         Press(b, ModifierKeys.Shift);
-        Check(PinWindow.SelectedPins.Count == 2 && a.InGroup && b.InGroup && Mark(a) == Visibility.Visible, "click A, Shift+click B: both picked (dashed outline)");
+        Check(PinWindow.SelectedPins.Count == 2 && a.InGroup && b.InGroup && Mark(a) != Visibility.Visible, "click A, Shift+click B: both picked (no dashed outline)");
         Press(c, ModifierKeys.Shift);
         Check(PinWindow.SelectedPins.Count == 3, "Shift+click adds more");
         Check(Press(b, ModifierKeys.Control) && !b.InGroup && Mark(b) == Visibility.Collapsed && PinWindow.SelectedPins.Count == 2, "Ctrl+click takes one out");

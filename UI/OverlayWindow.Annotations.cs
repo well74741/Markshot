@@ -409,6 +409,7 @@ public partial class OverlayWindow
         if (annotation is NumberAnnotation)
         {
             _numberCounter++;
+            InputLayer.Cursor = ToolCursors.Get(AnnotationTool.Number, _thickness, _color, 1, _numberCounter); // the next number, at once
         }
 
         _history.Checkpoint(Editor.Items);
@@ -558,11 +559,25 @@ public partial class OverlayWindow
 
         _thickness = Toolbar.Thickness;
         ActivateWatermarkIfNeeded();
-        InputLayer.Cursor = ToolCursors.Get(tool, _thickness, _color);
+        InputLayer.Cursor = ToolCursors.Get(tool, _thickness, _color, 1, _numberCounter);
     }
 
     private void UpdateAnnotationHover(Point point)
     {
+        // The frame of the text being typed / of the selected element comes first (resize / rotate arrows).
+        if (_textEditor.FrameCursorAt(point) is { } typingFrame)
+        {
+            ClearAnnotationHover();
+            InputLayer.Cursor = typingFrame;
+            return;
+        }
+
+        if (_selectedAnnotation != null && UpdateAnnotationTransformCursor(point))
+        {
+            ClearAnnotationHover();
+            return;
+        }
+
         if (FrameCursorAt(point) is { } frameCursor)
         {
             // On the capture's edge: it resizes the capture (with any tool), the arrows say so.
@@ -579,13 +594,18 @@ public partial class OverlayWindow
             Editor.HoverBounds = bounds;
             Editor.HoverLabel = _tool == AnnotationTool.Text ? "单击编辑 · 拖动移动" : "点击选中并继续编辑";
             Editor.ShowHover = true;
-            InputLayer.Cursor = _tool == AnnotationTool.Text ? Cursors.IBeam : Cursors.Hand;
+            InputLayer.Cursor = _tool switch
+            {
+                AnnotationTool.Text => Cursors.IBeam,
+                AnnotationTool.Number => ToolCursors.Get(AnnotationTool.Number, _thickness, _color, 1, _numberCounter), // the badge stays the pointer
+                _ => Cursors.Hand
+            };
             Editor.InvalidateVisual();
             return;
         }
 
         ClearAnnotationHover();
-        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, 1, _numberCounter);
     }
 
     private void ClearAnnotationHover()

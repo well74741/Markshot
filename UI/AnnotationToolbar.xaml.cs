@@ -37,7 +37,7 @@ public partial class AnnotationToolbar : UserControl
         Eraser
     }
 
-    private readonly List<Border> _swatches = new();
+    private readonly List<System.Windows.Shapes.Ellipse> _swatches = new();
     private bool _configuring;
     private AnnotationTool _tool = AnnotationTool.Select;
     private Annotation? _selection;
@@ -506,15 +506,16 @@ public partial class AnnotationToolbar : UserControl
     {
         foreach (var color in Palette)
         {
-            var swatch = new Border
+            var swatch = new System.Windows.Shapes.Ellipse
             {
                 Width = 20,
                 Height = 20,
-                CornerRadius = new CornerRadius(10),
-                Background = new SolidColorBrush(color),
-                BorderThickness = new Thickness(1),
+                Fill = new SolidColorBrush(color),
+                StrokeThickness = 1,
                 Margin = new Thickness(3, 0, 3, 0),
                 Cursor = Cursors.Hand,
+                SnapsToDevicePixels = false,
+                UseLayoutRounding = false,
                 ToolTip = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
             };
 
@@ -554,8 +555,8 @@ public partial class AnnotationToolbar : UserControl
         for (var i = 0; i < _swatches.Count; i++)
         {
             var selected = Palette[i] == _color;
-            _swatches[i].BorderThickness = new Thickness(selected ? 2 : 1);
-            _swatches[i].BorderBrush = Theme.Brush(selected ? 0xFFFFFFFF : 0x5AFFFFFF);
+            _swatches[i].StrokeThickness = selected ? 2 : 1;
+            _swatches[i].Stroke = Theme.Brush(selected ? 0xFFFFFFFF : 0x5AFFFFFF);
         }
 
         // The custom button always previews the current colour at the current opacity.
@@ -608,6 +609,7 @@ public partial class AnnotationToolbar : UserControl
         FillToggle.Visibility = Visibility.Collapsed;
         CornerGroup.Visibility = Visibility.Collapsed;
         SoftnessGroup.Visibility = Visibility.Collapsed;
+        NumberStyleGroup.Visibility = Visibility.Collapsed;
         _softnessIsEraser = false;
         WidthLabel.Text = "粗细";
         WidthSlider.Minimum = 1;
@@ -710,6 +712,10 @@ public partial class AnnotationToolbar : UserControl
                 WidthLabel.Text = "大小";
                 WidthSlider.Minimum = 8;
                 WidthSlider.Maximum = 40;
+                NumberStyleGroup.Visibility = Visibility.Visible;
+                var shownNumber = annotation as NumberAnnotation;
+                NumberHollowToggle.IsChecked = shownNumber?.Hollow ?? NumberHollow;
+                NumberOutlineToggle.IsChecked = shownNumber?.Outlined ?? NumberOutlined;
                 break;
         }
 
@@ -729,6 +735,7 @@ public partial class AnnotationToolbar : UserControl
             SyncVariant(tool);
             BoldToggle.IsChecked = _textBold;
             ItalicToggle.IsChecked = _textItalic;
+            ShowFont(App.Config?.TextFont);
             BackgroundToggle.IsChecked = _textBackground;
             LevelSlider.Value = Math.Clamp(_mosaicLevel, LevelSlider.Minimum, LevelSlider.Maximum);
             LevelValue.Text = ((int)Math.Round(_mosaicLevel)).ToString(CultureInfo.InvariantCulture);
@@ -854,6 +861,7 @@ public partial class AnnotationToolbar : UserControl
             _textBold = textAnnotation.Bold;
             _textItalic = textAnnotation.Italic;
             _textBackground = textAnnotation.Fill;
+            ShowFont(textAnnotation.FontName);
             ItalicToggle.IsChecked = textAnnotation.Italic;
             BoldToggle.IsChecked = textAnnotation.Bold;
             BackgroundToggle.IsChecked = textAnnotation.Fill;
@@ -1057,6 +1065,7 @@ public partial class AnnotationToolbar : UserControl
     private ButtonBase? _hoverAnchor;
     private readonly DispatcherTimer _hoverLeave = new() { Interval = TimeSpan.FromMilliseconds(50) };
     private bool _hoverWired;
+    private ButtonBase? _hoverSuppressed; // clicked: no list again until the pointer has left it
 
     /// <summary>True while the styles of a tool are shown by hovering (no ▾).</summary>
     public bool IsHoverMenuOpen => _hoverPopup?.IsOpen == true;
@@ -1098,7 +1107,7 @@ public partial class AnnotationToolbar : UserControl
             {
                 tool.MouseEnter += (_, _) =>
                 {
-                    if (HideChevrons && !(ReferenceEquals(_hoverAnchor, tool) && IsHoverMenuOpen))
+                    if (HideChevrons && !(ReferenceEquals(_hoverAnchor, tool) && IsHoverMenuOpen) && !ReferenceEquals(_hoverSuppressed, tool))
                     {
                         OpenHoverMenu(tool); // at once
                     }
@@ -1106,6 +1115,11 @@ public partial class AnnotationToolbar : UserControl
                     _hoverLeave.Stop();
                 };
                 tool.MouseLeave += (_, _) => LeftHoverMenu();
+                tool.PreviewMouseLeftButtonDown += (_, _) =>
+                {
+                    CloseHoverMenu(); // clicked: the tool's settings open under it; the list must not cover them
+                    _hoverSuppressed = tool;
+                };
             }
         }
 
@@ -1127,6 +1141,11 @@ public partial class AnnotationToolbar : UserControl
     /// <summary>Off the button / the list: it closes right away (a few ms to cross from the button into the list).</summary>
     private void LeftHoverMenu()
     {
+        if (_hoverSuppressed is { IsMouseOver: false })
+        {
+            _hoverSuppressed = null;
+        }
+
         if (!IsHoverMenuOpen)
         {
             return;
@@ -1357,6 +1376,96 @@ public partial class AnnotationToolbar : UserControl
         WatermarkAnnotation => AnnotationTool.Watermark,
         _ => AnnotationTool.None
     };
+
+    /// <summary>序号: 空心 (a ring) for new / selected numbers.</summary>
+    public bool NumberHollow => App.Config?.NumberHollow ?? false;
+
+    /// <summary>序号: 描边 for new / selected numbers.</summary>
+    public bool NumberOutlined => App.Config?.NumberOutlined ?? true;
+
+    private void NumberStyle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_configuring || App.Config is not { } config)
+        {
+            return;
+        }
+
+        config.NumberHollow = NumberHollowToggle.IsChecked == true;
+        config.NumberOutlined = NumberOutlineToggle.IsChecked == true;
+        SettingsChanged?.Invoke(); // the selected number follows; new ones and the cursor too
+    }
+
+    // ---- 字体
+
+    private string _textFont = App.Config?.TextFont ?? "";
+
+    /// <summary>The font of new / selected texts ("" = Microsoft YaHei UI).</summary>
+    public string? TextFont => string.IsNullOrWhiteSpace(_textFont) ? null : _textFont;
+
+    private void ShowFont(string? name)
+    {
+        _textFont = name ?? "";
+        FontButtonText.Text = string.IsNullOrWhiteSpace(name) ? "微软雅黑" : FontLibrary.DisplayName(name);
+        FontButtonText.FontFamily = TextAnnotation.FamilyOf(name);
+    }
+
+    private System.Windows.Controls.Primitives.Popup? _fontPopup;
+
+    private void Font_Click(object sender, RoutedEventArgs e)
+    {
+        if (_fontPopup is { IsOpen: true })
+        {
+            _fontPopup.IsOpen = false;
+            return;
+        }
+
+        var list = new ListBox
+        {
+            Style = (Style)FindResource("FontList"),
+            ItemsSource = FontLibrary.All(),
+            MaxHeight = 320,
+            Width = 220
+        };
+        VirtualizingPanel.SetIsVirtualizing(list, true);
+        list.SelectedItem = FontLibrary.All().FirstOrDefault(f => f.Name == (TextFont ?? TextAnnotation.FontFamilyName));
+        list.Loaded += (_, _) =>
+        {
+            if (list.SelectedItem != null)
+            {
+                list.ScrollIntoView(list.SelectedItem);
+            }
+        };
+        list.SelectionChanged += (_, _) =>
+        {
+            if (list.SelectedItem is FontLibrary.Entry chosen && _fontPopup is { IsOpen: true })
+            {
+                ShowFont(chosen.Name == TextAnnotation.FontFamilyName ? null : chosen.Name);
+                if (App.Config is { } config)
+                {
+                    config.TextFont = _textFont;
+                }
+
+                _fontPopup.IsOpen = false;
+                SettingsChanged?.Invoke();
+            }
+        };
+        var card = new Border { Padding = new Thickness(4), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Child = list, Margin = new Thickness(8) };
+        card.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
+        card.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x33FFFFFF));
+        card.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 2, Opacity = 0.4 };
+        _fontPopup = new System.Windows.Controls.Primitives.Popup
+        {
+            PlacementTarget = FontButton,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+            Child = new Grid { Children = { card }, LayoutTransform = UiScale.Transform }
+        };
+        IsMenuOpen = true; // the windows must not take the focus back while the list is open
+        _fontPopup.Closed += (_, _) => IsMenuOpen = _openMenu != null;
+        _fontPopup.IsOpen = true;
+        Motion.PopIn(card, fromAbove: true);
+    }
 
     private void TextStyle_Click(object sender, RoutedEventArgs e)
     {

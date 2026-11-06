@@ -23,7 +23,8 @@ public sealed class TrayService : IDisposable
         Func<IEnumerable<(string Header, Action Action)>>? recorderItems = null,
         Action? diagnostics = null,
         Action? pinHistory = null,
-        Action? imageEditor = null)
+        Action? imageEditor = null,
+        Action? toggleHotkeys = null)
     {
         // The tray menu is a WPF menu in the app's dark rounded style (not the system one),
         // rebuilt on each open so it only lists what applies right now.
@@ -70,6 +71,14 @@ public sealed class TrayService : IDisposable
             }
 
             menu.Items.Add(new System.Windows.Controls.Separator());
+            if (toggleHotkeys != null)
+            {
+                var disabled = App.Config?.HotkeysDisabled == true;
+                var item = new System.Windows.Controls.MenuItem { Header = "禁用所有快捷键", IsChecked = disabled };
+                item.Click += (_, _) => toggleHotkeys();
+                menu.Items.Add(item);
+            }
+
             Add("设置…", settings);
             if (diagnostics != null)
             {

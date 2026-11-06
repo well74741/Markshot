@@ -6,6 +6,7 @@ public static partial class Theme
     private static readonly string[] GeneratedKeys =
     {
         "T_14FFFFFF",
+        "T_1AFFFFFF",
         "T_1FFFFFFF",
         "T_22FFFFFF",
         "T_26FFFFFF",
@@ -50,6 +51,6 @@ public static partial class Theme
         "T_FFEDEDED",
         "T_FFF0F0F0",
         "T_FFF5F5F5",
-        "T_FFFFFFFF"
+        "T_FFFFFFFF",
     };
 }

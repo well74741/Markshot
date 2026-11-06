@@ -71,7 +71,7 @@ public partial class PinWindow
         Toolbar.SetSelection(null);
         var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
         InputLayer.IsHitTestVisible = active;
-        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale) : Cursors.Arrow;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale, _number) : Cursors.Arrow;
         ActivateWatermarkIfNeeded();
     }
 
@@ -94,7 +94,7 @@ public partial class PinWindow
         _thickness = Toolbar.Thickness;
         var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
         InputLayer.IsHitTestVisible = active;
-        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale) : Cursors.Arrow;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale, _number) : Cursors.Arrow;
         ClearAnnotationHover();
         ActivateWatermarkIfNeeded();
     }
@@ -149,7 +149,7 @@ public partial class PinWindow
         _corner = Toolbar.CornerRadius;
         if (_tool is not AnnotationTool.None and not AnnotationTool.Select)
         {
-            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale, _number);
         }
 
         if (_textEditor.Target is { } editing)
@@ -348,7 +348,7 @@ public partial class PinWindow
             // Drawing with the button: keep drawing in the new style, the element stays selected.
             _tool = variant;
             Toolbar.SetTool(variant);
-            InputLayer.Cursor = ToolCursors.Get(variant, _thickness, _color, CursorScale);
+            InputLayer.Cursor = ToolCursors.Get(variant, _thickness, _color, CursorScale, _number);
             SelectQuietly(replacement);
             _freshSelection = replacement;
             return;
@@ -935,7 +935,7 @@ public partial class PinWindow
 
         var active = tool is not AnnotationTool.None and not AnnotationTool.Select;
         InputLayer.IsHitTestVisible = active;
-        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale) : Cursors.Arrow;
+        InputLayer.Cursor = active ? ToolCursors.Get(tool, _thickness, _color, CursorScale, _number) : Cursors.Arrow;
         ClearAnnotationHover();
     }
 
@@ -1171,7 +1171,7 @@ public partial class PinWindow
 
         if (InputLayer.Cursor == Cursors.None)
         {
-            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale, _number);
         }
 
         if (UpdateTextPress(point))
@@ -1530,6 +1530,7 @@ public partial class PinWindow
         if (annotation is NumberAnnotation)
         {
             _number++;
+            InputLayer.Cursor = ToolCursors.Get(AnnotationTool.Number, _thickness, _color, CursorScale, _number); // the next number, at once
         }
 
         _history.Checkpoint(Editor.Items);
@@ -1828,7 +1829,7 @@ public partial class PinWindow
         }
         else
         {
-            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale, _number);
         }
     }
 
@@ -1840,6 +1841,15 @@ public partial class PinWindow
             return;
         }
 
+        // The frame of the selected element: its handles resize, its edge rotates (any tool in hand).
+        if (_selected != null && AnnotationOps.SelectionHit(_selected, IsFreshSelection, _tool, point, 1 / _zoom) is { } frame &&
+            (frame.IsHandle || frame.Rotate))
+        {
+            ClearAnnotationHover();
+            InputLayer.Cursor = frame.IsHandle ? AnnotationEditor.ResizeCursor(frame.Handle, _selected.Rotation) : ToolCursors.GetRotationCursor(true);
+            return;
+        }
+
         var hit = HitAnnotation(point);
         if (hit != null && SameFamily(hit, _tool))
         {
@@ -1848,13 +1858,18 @@ public partial class PinWindow
             Editor.HoverBounds = bounds;
             Editor.HoverLabel = _tool == AnnotationTool.Text ? "单击编辑 · 拖动移动" : "点击选中并继续编辑";
             Editor.ShowHover = true;
-            InputLayer.Cursor = _tool == AnnotationTool.Text ? Cursors.IBeam : Cursors.Hand;
+            InputLayer.Cursor = _tool switch
+            {
+                AnnotationTool.Text => Cursors.IBeam,
+                AnnotationTool.Number => ToolCursors.Get(AnnotationTool.Number, _thickness, _color, CursorScale, _number),
+                _ => Cursors.Hand
+            };
             Editor.InvalidateVisual();
             return;
         }
 
         ClearAnnotationHover();
-        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
+        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale, _number);
     }
 
     private void ClearAnnotationHover()
@@ -1929,7 +1944,7 @@ public partial class PinWindow
 
         _thickness = value;
         Toolbar.SetThickness(value);
-        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
+        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale, _number);
     }
 
     private void AdjustSelectedByWheel(int delta, bool opacity)

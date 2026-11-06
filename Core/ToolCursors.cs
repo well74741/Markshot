@@ -194,8 +194,14 @@ public static class ToolCursors
 
     /// <param name="scale">Screen pixels per canvas pixel (a zoomed pin on a high-DPI screen &gt; 1), so the ring
     /// is as big as the stroke really is on screen.</param>
-    public static Cursor Get(AnnotationTool tool, double thickness = 3, Color? color = null, double scale = 1)
+    /// <param name="number">序号: the number the next click places (the cursor is that badge at its real size).</param>
+    public static Cursor Get(AnnotationTool tool, double thickness = 3, Color? color = null, double scale = 1, int number = 0)
     {
+        if (tool == AnnotationTool.Number && number > 0)
+        {
+            return NumberBadge(number, thickness, color ?? Color.FromRgb(0xFF, 0x1E, 0x1E), scale);
+        }
+
         if (tool == AnnotationTool.Select || tool == AnnotationTool.None)
         {
             return Cursors.Arrow;
@@ -231,6 +237,46 @@ public static class ToolCursors
         }
 
         var cursor = Build(diameter, ink, key) ?? Cursors.Cross;
+        Cache[key] = cursor;
+        return cursor;
+    }
+
+    /// <summary>序号: the badge the next click places, at its real size and a little see-through, centred on the pointer.</summary>
+    private static Cursor NumberBadge(int number, double radius, Color color, double scale)
+    {
+        var hollow = App.Config?.NumberHollow ?? false;
+        var outlined = App.Config?.NumberOutlined ?? true;
+        var r = Math.Max(10, radius) * Math.Max(0.1, scale);
+        var key = $"number-{number}-{r:0.#}-{color.R:X2}{color.G:X2}{color.B:X2}-{hollow}-{outlined}";
+        if (Cache.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        Cursor? cursor = null;
+        try
+        {
+            var size = Math.Min(256, Math.Max(32, (int)Math.Ceiling((r * 2 + 8) / 16) * 16));
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+            {
+                dc.PushOpacity(0.8);
+                new NumberAnnotation
+                {
+                    Center = new Point(size / 2.0, size / 2.0), Number = number, Radius = Math.Min(r, size / 2.0 - 3),
+                    Color = color, Hollow = hollow, Outlined = outlined, Thickness = 1.5
+                }.Draw(dc);
+                dc.Pop();
+            }
+
+            cursor = SaveCursor(visual, size, size / 2, size / 2, $"cursor-{key}.cur");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("创建序号光标失败", ex);
+        }
+
+        cursor ??= Cursors.Cross;
         Cache[key] = cursor;
         return cursor;
     }

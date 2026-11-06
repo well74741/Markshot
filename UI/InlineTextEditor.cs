@@ -306,7 +306,7 @@ public sealed class InlineTextEditor
         var scale = _canvas.Scale <= 0 ? 1 : _canvas.Scale;
         var size = target.MeasureText();
 
-        _box.FontFamily = new FontFamily(TextAnnotation.FontFamilyName);
+        _box.FontFamily = TextAnnotation.FamilyOf(target.FontName);
         _box.FontSize = target.FontSize / scale;
         _box.FontWeight = target.Bold ? FontWeights.Bold : FontWeights.Normal;
         _box.FontStyle = target.Italic ? FontStyles.Italic : FontStyles.Normal;

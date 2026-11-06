@@ -32,7 +32,13 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly TextBlock _sessionText = new() { FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center };
     private readonly Button _sessionApply;
     private readonly TextBlock _statusSize = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock _statusHint = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(16, 0, 12, 0) };
+    private readonly TextBlock _statusHint = MarqueeText(new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(16, 0, 12, 0) });
+
+    private static TextBlock MarqueeText(TextBlock block)
+    {
+        Marquee.SetEnabled(block, true); // a long hint scrolls instead of being cut off
+        return block;
+    }
     private readonly Canvas _toolbarLayer = new() { ClipToBounds = true };
     private readonly System.Windows.Shapes.Rectangle _checker = new() { IsHitTestVisible = false };
     private Point _toolbarAnchor = new(0.5, 14); // the floating bar: centre (fraction of the width), gap to the bottom

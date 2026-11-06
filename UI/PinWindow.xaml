@@ -1,6 +1,7 @@
 <Window x:Class="Markshot.UI.PinWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:core="clr-namespace:Markshot.Core"
         xmlns:annotations="clr-namespace:Markshot.Annotations"
         xmlns:ui="clr-namespace:Markshot.UI"
         Title="Markshot Pin"
@@ -57,7 +58,7 @@
                     Background="{DynamicResource T_E61C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"
                     CornerRadius="6" Padding="8,3">
                 <TextBlock x:Name="PinStatusText" Foreground="{DynamicResource T_FFEDEDED}" FontSize="12" MaxWidth="360"
-                           TextTrimming="CharacterEllipsis" />
+                           TextTrimming="CharacterEllipsis" core:Marquee.Enabled="True" />
             </Border>
         </Grid>
 

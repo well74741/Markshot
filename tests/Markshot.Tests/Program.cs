@@ -41,6 +41,7 @@ static class Program
         if (mode == "recflow") RecorderFlowTest.Run();
         if (mode == "picker") PickerProbe.Run();
         if (mode == "theme") ThemeShot.Run();
+        if (mode == "round48") Round48Test.Run();
         if (mode == "menu") MenuProbe.Run();
         if (mode == "support") SupportTest.Run();
         if (mode == "history") HistoryTest.Run();

@@ -129,6 +129,7 @@ public partial class TranslationWindow : Window
         }
 
         SetStatus("正在识别文字…", StatusKind.Busy);
+        _ = ReadCodesAsync(_image);
 
         try
         {
@@ -162,6 +163,75 @@ public partial class TranslationWindow : Window
             {
                 SetStatus("识别失败：" + ex.Message, StatusKind.Error);
             }
+        }
+    }
+
+    /// <summary>The 二维码 / 条形码 in the picture, read beside the text recognition.</summary>
+    public IReadOnlyList<CodeReader.Code> Codes { get; private set; } = Array.Empty<CodeReader.Code>();
+
+    private async Task ReadCodesAsync(BitmapSource image)
+    {
+        var codes = await Task.Run(() => CodeReader.Read(image));
+        if (_closed)
+        {
+            return;
+        }
+
+        Codes = codes;
+        ShowCodes(codes);
+    }
+
+    public void ShowCodes(IReadOnlyList<CodeReader.Code> codes)
+    {
+        CodePanel.Children.Clear();
+        CodePanel.Visibility = codes.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var code in codes)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+            var kind = new TextBlock { Text = code.Kind, FontSize = 11.5, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+            kind.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFF8A8A8A));
+            DockPanel.SetDock(kind, Dock.Left);
+            var copy = new Button { Content = "复制", Style = (Style)FindResource("PaneAction"), Padding = new Thickness(8, 2, 8, 2), ToolTip = "复制内容" };
+            copy.Click += (_, _) =>
+            {
+                ClipboardService.CopyText(code.Text);
+                SetStatus("已复制" + code.Kind + "内容", StatusKind.Done);
+            };
+            DockPanel.SetDock(copy, Dock.Right);
+            var text = new TextBlock { FontSize = 12.5, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+            if (code.IsLink)
+            {
+                var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(code.Text))
+                {
+                    NavigateUri = new Uri(code.Text.Trim()),
+                    Foreground = (Brush)FindResource("Accent"),
+                    ToolTip = "在浏览器中打开"
+                };
+                link.RequestNavigate += (_, e) =>
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error("打开链接失败", ex);
+                    }
+
+                    e.Handled = true;
+                };
+                text.Inlines.Add(link);
+            }
+            else
+            {
+                text.Text = code.Text;
+                text.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFE6E6E6));
+            }
+
+            row.Children.Add(kind);
+            row.Children.Add(copy);
+            row.Children.Add(text);
+            CodePanel.Children.Add(row);
         }
     }
 

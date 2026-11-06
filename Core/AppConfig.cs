@@ -12,6 +12,22 @@ public sealed class AppConfig
 
     public string RestorePinHotkey { get; set; } = "Ctrl+Alt+Z";
 
+    /// <summary>关闭所有贴图 (global; empty = none).</summary>
+    public string CloseAllPinsHotkey { get; set; } = "Shift+Esc";
+
+    /// <summary>禁用所有快捷键 (full-screen games): no global hotkeys, no Win + mouse.</summary>
+    public bool HotkeysDisabled { get; set; }
+
+    /// <summary>Win + 鼠标键 draws an area on the screen at once (no dimming, no hint) and does what is set for that button.</summary>
+    public bool WinMouseEnabled { get; set; } = true;
+
+    /// <summary>What Win + left / middle / right does: "Ocr" (识别文字), "Pin" (贴图), "Copy" (复制) or "None".</summary>
+    public string WinMouseLeft { get; set; } = "Ocr";
+
+    public string WinMouseMiddle { get; set; } = "Pin";
+
+    public string WinMouseRight { get; set; } = "Copy";
+
     public string TextBypassModifier { get; set; } = "Alt";
 
     public string PinFlipHorizontalHotkey { get; set; } = "Q";
@@ -74,7 +90,11 @@ public sealed class AppConfig
     public string Theme { get; set; } = "Dark";
 
     /// <summary>Interface size: Medium (default) or Large (everything one step larger).</summary>
-    public string UiSize { get; set; } = "Medium";
+    /// <summary>界面大小: Small (as designed, default) / Medium / Large. Stored before 0.8.48: "Medium" = 小, "Large" = 中.</summary>
+    public string UiSize { get; set; } = "Small";
+
+    /// <summary>The meaning of <see cref="UiSize"/> moved in 0.8.48 (old 中 → 小, old 大 → 中); set once that is done.</summary>
+    public int UiSizeVersion { get; set; }
 
     /// <summary>Pin shadow: blur size (DIP, 0 = none), colour (#RRGGBB) and opacity (0–1).</summary>
     public double PinShadowSize { get; set; } = 12;
@@ -190,6 +210,15 @@ public sealed class AppConfig
     /// <summary>软边 of the eraser (0–100): how much of its width erases only partly, fading to the edge.</summary>
     public int EraserSoftness { get; set; }
 
+    /// <summary>序号: 空心 (ring) instead of a filled disc.</summary>
+    public bool NumberHollow { get; set; }
+
+    /// <summary>序号: a light outline around the badge.</summary>
+    public bool NumberOutlined { get; set; } = true;
+
+    /// <summary>文字的字体 (empty = Microsoft YaHei UI).</summary>
+    public string TextFont { get; set; } = "";
+
     /// <summary>The ▾ beside the tool buttons is hidden; the tool's styles open when the pointer rests on the tool.</summary>
     public bool HideToolChevrons { get; set; } = true;
 
@@ -213,6 +242,13 @@ public sealed class AppConfig
 
     public void EnsureDefaults()
     {
+        if (UiSizeVersion < 2)
+        {
+            // Old 中 (designed size) is 小 now, old 大 is 中.
+            UiSize = string.Equals(UiSize, "Large", StringComparison.OrdinalIgnoreCase) ? "Medium" : "Small";
+            UiSizeVersion = 2;
+        }
+
         RecentRegions ??= new List<CaptureRegion>();
         Recorder ??= new RecorderConfig();
 

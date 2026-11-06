@@ -15,11 +15,27 @@ static class ThemeShot
     static void Check(bool ok, string what) { Console.WriteLine((ok ? "PASS " : "FAIL ") + what); if (!ok) _fail++; }
     static void Pump(int ms) { var u = DateTime.Now.AddMilliseconds(ms); while (DateTime.Now < u) { Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background); Thread.Sleep(5); } }
 
-    static void Shot(FrameworkElement root, string file)
+    /// <summary>The element as it is shown (its layout transform, e.g. the settings' fixed size, included).</summary>
+    static RenderTargetBitmap Render(FrameworkElement root)
     {
         root.UpdateLayout();
-        var bmp = new RenderTargetBitmap(Math.Max(1, (int)root.ActualWidth), Math.Max(1, (int)root.ActualHeight), 96, 96, PixelFormats.Pbgra32);
-        bmp.Render(root);
+        var k = root.LayoutTransform is ScaleTransform scale ? scale.ScaleX : 1;
+        var width = Math.Max(1, (int)Math.Round(root.ActualWidth * k));
+        var height = Math.Max(1, (int)Math.Round(root.ActualHeight * k));
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRectangle(new VisualBrush(root) { Stretch = Stretch.Fill }, null, new Rect(0, 0, width, height));
+        }
+
+        var bmp = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        return bmp;
+    }
+
+    static void Shot(FrameworkElement root, string file)
+    {
+        var bmp = Render(root);
         var enc = new PngBitmapEncoder();
         enc.Frames.Add(BitmapFrame.Create(bmp));
         using var f = File.Create(file);
@@ -28,8 +44,7 @@ static class ThemeShot
 
     static Color Pixel(FrameworkElement root, int x, int y)
     {
-        var bmp = new RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32);
-        bmp.Render(root);
+        var bmp = Render(root);
         var px = new byte[4];
         bmp.CopyPixels(new Int32Rect(x, y, 1, 1), px, 4, 0);
         return Color.FromArgb(px[3], px[2], px[1], px[0]);
@@ -55,10 +70,17 @@ static class ThemeShot
         var w0 = settings.Width;
         UiScale.Apply("Large");
         Pump(300);
-        Check(Math.Abs(settings.Width - w0 * UiScale.Large) < 1, $"large size grows the window {w0} -> {settings.Width}");
+        Check(Math.Abs(settings.Width - w0) < 1 && ((FrameworkElement)settings.Content).LayoutTransform is ScaleTransform { ScaleX: UiScale.SettingsFactor },
+            $"the settings keep their size whatever the interface size ({w0} -> {settings.Width})");
         Shot((FrameworkElement)settings.Content, "theme_light_large.png");
-        UiScale.Apply("Medium");
+        UiScale.Apply("Small");
         settings.Close();
+        Check(Math.Abs(UiScale.FactorOf("Small") - 1) < 0.001 && UiScale.FactorOf("Medium") > 1.1 && UiScale.FactorOf("Large") > UiScale.FactorOf("Medium") + 0.1, "三档：小 1, 中 1.15, 大 1.3");
+        var oldMedium = new AppConfig { UiSize = "Medium", UiSizeVersion = 0 };
+        oldMedium.EnsureDefaults();
+        var oldLarge = new AppConfig { UiSize = "Large", UiSizeVersion = 0 };
+        oldLarge.EnsureDefaults();
+        Check(new AppConfig().UiSize == "Small" && oldMedium.UiSize == "Small" && oldLarge.UiSize == "Medium", "old 中 → 小 (default), old 大 → 中");
 
         var bar = new AnnotationToolbar();
         var win = new Window { Content = bar, SizeToContent = SizeToContent.WidthAndHeight, Left = -4000, Top = -4000, ShowActivated = false, WindowStyle = WindowStyle.None, ShowInTaskbar = false, Background = Brushes.Gray };
@@ -70,7 +92,7 @@ static class ThemeShot
         UiScale.Apply("Large");
         Pump(300);
         Check(bar.ActualWidth > mediumWidth * 1.1, $"toolbar is larger: {mediumWidth:0} -> {bar.ActualWidth:0}");
-        UiScale.Apply("Medium");
+        UiScale.Apply("Small");
         Theme.Apply(ThemeMode.Dark);
         Pump(200);
         Shot(bar, "theme_dark_toolbar.png");

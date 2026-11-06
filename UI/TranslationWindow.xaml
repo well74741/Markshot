@@ -181,6 +181,8 @@
                                 Click="CopySource_Click" ToolTip="复制原文" />
                     </Grid>
                     <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource T_14FFFFFF}" Margin="14,8,14,0" />
+                    <!-- 二维码 / 条形码 found in the picture: links open on a click. -->
+                    <StackPanel x:Name="CodePanel" DockPanel.Dock="Top" Margin="14,8,14,0" Visibility="Collapsed" />
                     <TextBox x:Name="SourceBox" Style="{StaticResource PaneEditor}" />
                 </DockPanel>
             </Border>

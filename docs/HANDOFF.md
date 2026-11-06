@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.47`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.48`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,29 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.48 0.8.48 变更
+
+- 界面大小三档：小（原「中」，设计尺寸，默认）/ 中（原「大」，1.15）/ 大（1.3）；`AppConfig.UiSizeVersion` 一次性迁移旧值。设置窗口固定用 1.15（`UiScale.SettingsTransform`，`AttachWindow` 对 `SettingsWindow` 特殊处理），切换大小时不跳。
+- 悬停样式列表：点击该工具按钮时关闭（`_hoverSuppressed`，鼠标离开前不再弹出），不再盖住设置栏。
+- 光标：圆角控制点在 `UpdateCursor` 里先于「选区内 = 移动」判断；选中元素的调整框（手柄 / 旋转）在拿着任何工具时都给对应箭头；
+  `UpdateAnnotationHover`（截图 / 贴图）先看正在输入的文字框和选中元素的框，不再被工具光标盖掉。
+- 悬停亮起：App.xaml 里所有按钮的 `Hl` 进入动画 160 → 60 ms（离开仍 160 ms）。
+- `PlateToggle`（淡底色的开关按钮）：填充、加粗、倾斜、背景、水印开启、序号空心 / 描边、字体按钮。新增主题色键时要同步 `Core/ThemeKeys.g.cs`（本次补了 `T_1AFFFFFF`，已按所有 XAML 重新生成）。
+- 颜色色块改为 `Ellipse`（不贴像素，原来是带圆角的 Border 吸附到设备像素，在缩放屏上像锯齿）；自定义颜色按钮、描边色圆、滑块圆钮关闭像素吸附。
+- 水印图标换成 ui-icons 的 水印（水滴）。
+- 滚动播放 `Core/Marquee.cs`：单行文字放不下时用 `TextEffect` 平移（停 1.6 s → 约 40 DIP/s 滚到尾 → 停 → 滚回），放得下时还原截断方式；用于设置里的状态 / 测试结果 / 配置路径、截图翻译状态、贴图状态、编辑器状态栏。
+  注意 TextBlock 的 `ActualWidth` 在被截断时仍是整行宽，可见宽度要取布局槽（`LayoutInformation.GetLayoutSlot`）。
+- 序号：`NumberAnnotation.Hollow / Outlined / Tail`，数字加大（1 位 1.42×半径、2 位 1.2×、3 位 0.95×），按数字实际墨迹居中；放置时按住拖动 → `CreationGesture` 固定圆心、`Tail` 跟随鼠标画箭头。
+  光标 `ToolCursors.Get(…, number)` = 下一个序号徽章（80% 不透明，实际大小 × 缩放），放下后立即换成下一个号。配置 `NumberHollow / NumberOutlined`。
+- 字体：`TextAnnotation.FontName`（`FamilyOf` 缓存），`Core/FontLibrary`（系统字体，中文名优先排序），工具栏「字体」按钮弹出 `FontList` 列表（每项用自身字体显示，虚拟化）；`AppConfig.TextFont`。
+- 贴图：透明度 < 1 时阴影改为图片外的一圈（`BorderThickness` + 负边距），不再从图片里透出蓝色底；Shift 多选不显示虚线框；`Delete` = `DeleteWithGroup`（`SkipHistory`，不进历史）；
+  「关闭所有贴图」常驻右键菜单，全局快捷键 `CloseAllPinsHotkey`（默认 Shift+Esc）。
+- 禁用所有快捷键：`HotkeysDisabled`（设置 + 托盘菜单 `ToggleHotkeys`），`ApplyHotkeys` 直接注销所有热键并停止 Win + 鼠标。
+- Win + 鼠标：`UI/WinMouseSelect`（低级鼠标钩子）——Win 按住时左 / 中 / 右键按下被吞掉并开始划区域，只显示一个点击穿透的框窗口（按像素 `SetWindowPos`），松开后 40 ms 截取 `ScreenCapture.CaptureRegion`；
+  按下时发送未分配的虚拟键 0xE8 防止松开 Win 弹出开始菜单。动作 `WinMouseLeft / Middle / Right` = Ocr / Pin / Copy / None（设置里每个键一组分段按钮，可重复）。
+- 二维码 / 条形码：ZXing.Net 0.16.11（`Core/CodeReader`，多码、自动旋转、反色、小图放大一倍再试），文字识别窗口左栏顶部列出结果，链接是可点击的 `Hyperlink`（浏览器打开），每条可复制。
+- 测试：新套件 `round48`。
 
 ## 8.1.47 0.8.47 变更
 

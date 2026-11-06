@@ -191,12 +191,31 @@ public static partial class Theme
 }
 
 /// <summary>
-/// Interface size: 中 (as designed) or 大 (everything one step larger). One shared transform is
-/// used as the LayoutTransform of every panel / window content, so switching resizes them all live.
+/// Interface size: 小 (as designed), 中 (one step larger) or 大 (two steps). One shared transform is used as
+/// the LayoutTransform of every panel / window content, so switching resizes them all live.
 /// </summary>
 public static class UiScale
 {
-    public const double Large = 1.15;
+    public const double Medium = 1.15;
+    public const double Large = 1.3;
+
+    /// <summary>The settings window always has this size (it does not grow or shrink with the setting).</summary>
+    public const double SettingsFactor = Medium;
+
+    /// <summary>The settings window's own transform (fixed at <see cref="SettingsFactor"/>).</summary>
+    public static ScaleTransform SettingsTransform { get; } = Freeze(new ScaleTransform(SettingsFactor, SettingsFactor));
+
+    private static ScaleTransform Freeze(ScaleTransform t)
+    {
+        t.Freeze();
+        return t;
+    }
+
+    /// <summary>The factor of a stored size ("Small" / "Medium" / "Large").</summary>
+    public static double FactorOf(string? size) =>
+        string.Equals(size, "Large", StringComparison.OrdinalIgnoreCase) ? Large
+        : string.Equals(size, "Medium", StringComparison.OrdinalIgnoreCase) ? Medium
+        : 1.0;
 
     /// <summary>The shared transform (not frozen: changing it updates every user).</summary>
     public static ScaleTransform Transform { get; } = new(1, 1);
@@ -207,7 +226,7 @@ public static class UiScale
 
     public static void Apply(string? size)
     {
-        var factor = string.Equals(size, "Large", StringComparison.OrdinalIgnoreCase) ? Large : 1.0;
+        var factor = FactorOf(size);
         if (Math.Abs(Transform.ScaleX - factor) < 0.001)
         {
             return;
@@ -227,6 +246,21 @@ public static class UiScale
     /// </summary>
     public static void AttachWindow(Window window)
     {
+        if (window is UI.SettingsWindow)
+        {
+            // The settings keep one size whatever the interface size (switching it there must not jump the window).
+            if (window.Content is FrameworkElement fixedContent)
+            {
+                fixedContent.LayoutTransform = SettingsTransform;
+            }
+
+            if (!double.IsNaN(window.Width)) window.Width *= SettingsFactor;
+            if (!double.IsNaN(window.Height) && window.SizeToContent is SizeToContent.Manual or SizeToContent.Width) window.Height *= SettingsFactor;
+            window.MinWidth *= SettingsFactor;
+            window.MinHeight *= SettingsFactor;
+            return;
+        }
+
         var width = window.Width;
         var height = window.Height;
         var minWidth = window.MinWidth;

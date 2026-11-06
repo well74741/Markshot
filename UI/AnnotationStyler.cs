@@ -21,6 +21,7 @@ internal static class AnnotationStyler
                 text.FontSize = Math.Clamp(toolbar.Thickness, 6, 400);
                 text.Bold = toolbar.TextBold;
                 text.Italic = toolbar.TextItalic;
+                text.FontName = toolbar.TextFont;
                 text.Fill = toolbar.TextBackground;
                 text.StrokeColor = toolbar.StrokeColor;
                 text.StrokeThickness = stroke;
@@ -37,6 +38,8 @@ internal static class AnnotationStyler
                 number.Color = toolbar.Color;
                 number.Radius = Math.Max(8, toolbar.Thickness);
                 number.Thickness = 1.5;
+                number.Hollow = toolbar.NumberHollow;
+                number.Outlined = toolbar.NumberOutlined;
                 break;
 
             case MosaicAnnotation box:
@@ -130,6 +133,7 @@ internal static class AnnotationStyler
             FontSize = Math.Clamp(toolbar.Thickness, 6, 400),
             Bold = toolbar.TextBold,
             Italic = toolbar.TextItalic,
+            FontName = toolbar.TextFont,
             Fill = toolbar.TextBackground,
             StrokeColor = toolbar.StrokeColor,
             StrokeThickness = toolbar.StrokeEnabled ? toolbar.StrokeWidth : 0,

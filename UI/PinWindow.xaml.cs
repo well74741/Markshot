@@ -310,6 +310,19 @@ public partial class PinWindow : Window
     /// <summary>Made from a capture: appears at once (no fade, the capture shows the same pixels) with a light sweep.</summary>
     public bool FromCapture { get; init; }
 
+    /// <summary>Deleted (Delete key): it goes without a trace, not into the history.</summary>
+    public bool SkipHistory { get; private set; }
+
+    /// <summary>Delete: this pin (and the pins picked with it) close and are not kept in the history.</summary>
+    internal void DeleteWithGroup()
+    {
+        foreach (var pin in WithGroup())
+        {
+            pin.SkipHistory = true;
+            pin.Close();
+        }
+    }
+
     /// <summary>Fades in with the light sweeping across it (restored from the history, pinned from the editor).</summary>
     public bool Sweep { get; init; }
 
@@ -342,6 +355,7 @@ public partial class PinWindow : Window
         _zoom = Math.Clamp(zoom, 0.1, 8.0);
         _opacity = Math.Clamp(opacity, 0.2, 1.0);
         Img.Opacity = _opacity;
+        UpdateFrame();
         ApplyBounds();
     }
 
@@ -537,7 +551,23 @@ public partial class PinWindow : Window
             {
                 ShadowBlur.Radius = size;
                 ImageShadowLayer.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-                ImageShadowLayer.Background = new SolidColorBrush(Color.FromArgb((byte)Math.Round(opacity * 255), shadow.R, shadow.G, shadow.B));
+                var shadowBrush = new SolidColorBrush(Color.FromArgb((byte)Math.Round(opacity * 255), shadow.R, shadow.G, shadow.B));
+                if (_opacity < 0.999)
+                {
+                    // A see-through pin: the shadow is a ring around the picture, not a plate behind it
+                    // (the plate's colour, blue while active, showed through the picture).
+                    var ring = Math.Max(6, size);
+                    ImageShadowLayer.Background = Brushes.Transparent;
+                    ImageShadowLayer.BorderBrush = shadowBrush;
+                    ImageShadowLayer.BorderThickness = new Thickness(ring);
+                    ImageShadowLayer.Margin = new Thickness(-ring);
+                }
+                else
+                {
+                    ImageShadowLayer.Background = shadowBrush;
+                    ImageShadowLayer.BorderThickness = new Thickness(0);
+                    ImageShadowLayer.Margin = new Thickness(0);
+                }
             }
         }
     }
@@ -966,6 +996,7 @@ public partial class PinWindow : Window
         {
             _opacity = Math.Clamp(_opacity + (e.Delta > 0 ? 0.1 : -0.1), 0.2, 1.0);
             Img.Opacity = _opacity;
+            UpdateFrame();
         }
         else
         {
@@ -1123,6 +1154,10 @@ public partial class PinWindow : Window
 
                 e.Handled = true;
                 break;
+            case Key.Delete when !control:
+                DeleteWithGroup();
+                e.Handled = true;
+                break;
             case Key.C when control:
                 if (TextLayer.HasSelection)
                 {
@@ -1197,7 +1232,7 @@ public partial class PinWindow : Window
             if (key == Key.Space)
             {
                 _gesture.EndMove();
-                InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale);
+                InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale, _number);
             }
             else if (key == Key.E)
             {
@@ -1255,7 +1290,7 @@ public partial class PinWindow : Window
         Toolbar.SyncFrom(text);
         _tool = AnnotationTool.Text;
         InputLayer.IsHitTestVisible = true;
-        InputLayer.Cursor = ToolCursors.Get(AnnotationTool.Text, _thickness, _color, CursorScale);
+        InputLayer.Cursor = ToolCursors.Get(AnnotationTool.Text, _thickness, _color, CursorScale, _number);
         _textEditor.Begin(text, isNew, caretAt, selectAll);
     }
 

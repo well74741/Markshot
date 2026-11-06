@@ -1,6 +1,7 @@
 <Window x:Class="Markshot.UI.OverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:core="clr-namespace:Markshot.Core"
         xmlns:annotations="clr-namespace:Markshot.Annotations"
         xmlns:ui="clr-namespace:Markshot.UI"
         Title="Markshot"
@@ -106,7 +107,7 @@
                         </StackPanel>
                     </Border>
                     <TextBlock x:Name="TranslateStatusText" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                               VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis" core:Marquee.Enabled="True"
                                Margin="6,0,6,0" />
                     <Button x:Name="TranslateRetry" Style="{StaticResource ToolButton}" Padding="8,2"
                             Foreground="{StaticResource Accent}" Visibility="Collapsed" Content="重试"

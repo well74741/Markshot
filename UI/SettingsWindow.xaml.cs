@@ -21,13 +21,21 @@ public partial class SettingsWindow : Window
         PinHotkeyBox.Text = config.PinHotkey;
         MouseThroughHotkeyBox.Text = config.MouseThroughHotkey;
         RestorePinHotkeyBox.Text = config.RestorePinHotkey;
+        CloseAllPinsHotkeyBox.Text = config.CloseAllPinsHotkey;
+        HotkeysDisabledCheck.IsChecked = config.HotkeysDisabled;
+        WinMouseCheck.IsChecked = config.WinMouseEnabled;
+        _winMouse = new Dictionary<string, string>
+        {
+            ["Left"] = config.WinMouseLeft, ["Middle"] = config.WinMouseMiddle, ["Right"] = config.WinMouseRight
+        };
+        BuildWinMouseRows();
         RecordHotkeyBox.Text = config.RecordHotkey;
         TextBypassBox.Text = config.TextBypassModifier;
         PinFlipHBox.Text = config.PinFlipHorizontalHotkey;
         _theme = config.Theme;
         _uiSize = config.UiSize;
         (_theme switch { "Light" => ThemeLight, "System" => ThemeSystem, _ => ThemeDark }).IsChecked = true;
-        (string.Equals(_uiSize, "Large", StringComparison.OrdinalIgnoreCase) ? SizeLarge : SizeMedium).IsChecked = true;
+        (string.Equals(_uiSize, "Large", StringComparison.OrdinalIgnoreCase) ? SizeLarge : string.Equals(_uiSize, "Medium", StringComparison.OrdinalIgnoreCase) ? SizeMedium : SizeSmall).IsChecked = true;
         UpdateDrawerQr();
         Theme.Changed += UpdateDrawerQr;
         Closed += (_, _) => Theme.Changed -= UpdateDrawerQr;
@@ -453,6 +461,14 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        var hasCloseAll = !string.IsNullOrWhiteSpace(CloseAllPinsHotkeyBox.Text);
+        var closeAll = default(HotkeyGesture);
+        if (hasCloseAll && !HotkeyGesture.TryParse(CloseAllPinsHotkeyBox.Text, out closeAll, out error))
+        {
+            ThemedMessage.Show(this, "提示", "关闭所有贴图快捷键无效：" + error, "确定");
+            return;
+        }
+
         var hasRecord = !string.IsNullOrWhiteSpace(RecordHotkeyBox.Text);
         var record = default(HotkeyGesture);
         if (hasRecord && !HotkeyGesture.TryParse(RecordHotkeyBox.Text, out record, out error))
@@ -472,6 +488,12 @@ public partial class SettingsWindow : Window
         _config.PinHotkey = hasPinHotkey ? pin.Text : "";
         _config.MouseThroughHotkey = hasMouseThrough ? mouseThrough.Text : "";
         _config.RestorePinHotkey = hasRestore ? restore.Text : "";
+        _config.CloseAllPinsHotkey = hasCloseAll ? closeAll.Text : "";
+        _config.HotkeysDisabled = HotkeysDisabledCheck.IsChecked == true;
+        _config.WinMouseEnabled = WinMouseCheck.IsChecked == true;
+        _config.WinMouseLeft = _winMouse["Left"];
+        _config.WinMouseMiddle = _winMouse["Middle"];
+        _config.WinMouseRight = _winMouse["Right"];
         _config.TextBypassModifier = string.IsNullOrWhiteSpace(TextBypassBox.Text)
             ? "Alt"
             : TextBypassBox.Text.Trim();
@@ -779,6 +801,41 @@ public partial class SettingsWindow : Window
         {
             _theme = mode;
             Theme.Apply(mode);
+        }
+    }
+
+    private Dictionary<string, string> _winMouse = new();
+
+    /// <summary>Win + 左键 / 中键 / 右键: each with its own choice of 识别文字 / 贴图 / 复制 / 不使用.</summary>
+    private void BuildWinMouseRows()
+    {
+        WinMouseRows.Children.Clear();
+        foreach (var (button, label) in new[] { ("Left", "Win + 左键"), ("Middle", "Win + 中键"), ("Right", "Win + 右键") })
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            var text = new TextBlock { Text = label, Width = 84, Style = (Style)FindResource("RowLabel") };
+            row.Children.Add(text);
+            var plate = new Border { CornerRadius = new CornerRadius(5), Padding = new Thickness(2) };
+            plate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF2A2A2A));
+            var choices = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (var (action, name) in new[] { ("Ocr", "识别文字"), ("Pin", "贴图"), ("Copy", "复制"), ("None", "不使用") })
+            {
+                var choice = new RadioButton
+                {
+                    Content = name,
+                    Tag = action,
+                    GroupName = "WinMouse" + button + GetHashCode(),
+                    Style = (Style)FindResource("SegmentRadio"),
+                    IsChecked = string.Equals(_winMouse[button], action, StringComparison.OrdinalIgnoreCase)
+                };
+                var key = button;
+                choice.Checked += (_, _) => _winMouse[key] = action;
+                choices.Children.Add(choice);
+            }
+
+            plate.Child = choices;
+            row.Children.Add(plate);
+            WinMouseRows.Children.Add(row);
         }
     }
 

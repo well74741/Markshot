@@ -1166,8 +1166,29 @@ public sealed class TextAnnotation : Annotation
 
     public Color TextColor => Fill ? ContrastOn(Color) : Color;
 
-    public static Typeface TypefaceFor(bool bold, bool italic = false) =>
-        new(Family, italic ? FontStyles.Italic : FontStyles.Normal,
+    /// <summary>字体 (a family installed on this computer); null = Microsoft YaHei UI.</summary>
+    public string? FontName { get; set; }
+
+    private static readonly Dictionary<string, FontFamily> Families = new();
+
+    public static FontFamily FamilyOf(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return Family;
+        }
+
+        if (!Families.TryGetValue(name, out var family))
+        {
+            family = new FontFamily(name);
+            Families[name] = family;
+        }
+
+        return family;
+    }
+
+    public static Typeface TypefaceFor(bool bold, bool italic = false, string? fontName = null) =>
+        new(FamilyOf(fontName), italic ? FontStyles.Italic : FontStyles.Normal,
             bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
 
     public override void Draw(DrawingContext dc)
@@ -1251,7 +1272,7 @@ public sealed class TextAnnotation : Annotation
             text,
             CultureInfo.CurrentUICulture,
             FlowDirection.LeftToRight,
-            TypefaceFor(Bold, Italic),
+            TypefaceFor(Bold, Italic, FontName),
             FontSize,
             brush,
             1.0)
@@ -1275,21 +1296,84 @@ public sealed class NumberAnnotation : Annotation
 
     public double Radius { get; set; } = 14;
 
+    /// <summary>空心: a ring in the colour with the number in the colour (else a disc with a light number).</summary>
+    public bool Hollow { get; set; }
+
+    /// <summary>描边: a light outline around the badge, so it reads on any background.</summary>
+    public bool Outlined { get; set; } = true;
+
+    /// <summary>Where an arrow from the badge points (dragged out while placing it); null = no arrow.</summary>
+    public Point? Tail { get; set; }
+
+    private double RingWidth => Math.Max(1.5, Radius * 0.16);
+
     public override void Draw(DrawingContext dc)
     {
-        var brush = new SolidColorBrush(Color);
-        dc.DrawEllipse(brush, new Pen(Brushes.White, Math.Max(1, Thickness / 2)), Center, Radius, Radius);
+        var ink = new SolidColorBrush(Color);
+        var outline = Outlined ? new Pen(Brushes.White, Math.Max(1.2, Radius * 0.1)) : null;
+        if (Tail is { } tail && (tail - Center).Length > Radius + 2)
+        {
+            DrawTail(dc, ink, tail, outline);
+        }
 
+        if (Hollow)
+        {
+            if (outline != null)
+            {
+                dc.DrawEllipse(null, new Pen(Brushes.White, RingWidth + outline.Thickness * 2), Center, Radius - RingWidth / 2, Radius - RingWidth / 2);
+            }
+
+            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(1, 255, 255, 255)), new Pen(ink, RingWidth), Center, Radius - RingWidth / 2, Radius - RingWidth / 2);
+        }
+        else
+        {
+            dc.DrawEllipse(ink, outline, Center, Radius, Radius);
+        }
+
+        var digits = Number.ToString(CultureInfo.InvariantCulture);
+        // Bigger figures (two digits a little smaller so they still fit the disc).
+        var size = Radius * (digits.Length >= 3 ? 0.95 : digits.Length == 2 ? 1.2 : 1.42);
         var formatted = new FormattedText(
-            Number.ToString(CultureInfo.InvariantCulture),
+            digits,
             CultureInfo.CurrentUICulture,
             FlowDirection.LeftToRight,
             new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
-            Radius * 1.15,
-            Brushes.White,
+            size,
+            Hollow ? ink : Brushes.White,
             1.0);
+        // Centred on the figures' ink (digits sit high in their line box).
+        var top = Center.Y - (formatted.Baseline - size * 0.36);
+        dc.DrawText(formatted, new Point(Center.X - formatted.Width / 2, top));
+    }
 
-        dc.DrawText(formatted, new Point(Center.X - formatted.Width / 2, Center.Y - formatted.Height / 2 - 1));
+    /// <summary>The arrow from the badge's edge to <paramref name="tail"/>.</summary>
+    private void DrawTail(DrawingContext dc, Brush ink, Point tail, Pen? outline)
+    {
+        var direction = tail - Center;
+        direction.Normalize();
+        var from = Center + direction * Radius * 0.9;
+        var width = Math.Max(2, Radius * 0.2);
+        var head = Math.Max(8, width * 3.2);
+        var shaftEnd = tail - direction * head * 0.8;
+        var normal = new Vector(-direction.Y, direction.X);
+        var arrow = new StreamGeometry();
+        using (var context = arrow.Open())
+        {
+            context.BeginFigure(tail, true, true);
+            context.LineTo(tail - direction * head + normal * head * 0.55, true, true);
+            context.LineTo(tail - direction * head - normal * head * 0.55, true, true);
+        }
+
+        arrow.Freeze();
+        if (outline != null)
+        {
+            var halo = new Pen(Brushes.White, width + outline.Thickness * 2) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+            dc.DrawLine(halo, from, shaftEnd);
+            dc.DrawGeometry(Brushes.White, new Pen(Brushes.White, outline.Thickness * 2) { LineJoin = PenLineJoin.Round }, arrow);
+        }
+
+        dc.DrawLine(new Pen(ink, width) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Flat }, from, shaftEnd);
+        dc.DrawGeometry(ink, null, arrow);
     }
 
     public override Rect Bounds => new(Center.X - Radius, Center.Y - Radius, Radius * 2, Radius * 2);
@@ -1297,11 +1381,28 @@ public sealed class NumberAnnotation : Annotation
     public override void Translate(double dx, double dy)
     {
         Center = new Point(Center.X + dx, Center.Y + dy);
+        if (Tail is { } tail)
+        {
+            Tail = new Point(tail.X + dx, tail.Y + dy);
+        }
     }
 
     public override bool HitTest(Point point, double tolerance)
     {
-        return (point - Center).Length <= Radius + tolerance;
+        if ((point - Center).Length <= Radius + tolerance)
+        {
+            return true;
+        }
+
+        if (Tail is not { } tail)
+        {
+            return false;
+        }
+
+        // On the arrow.
+        var line = tail - Center;
+        var t = Math.Clamp(Vector.Multiply(point - Center, line) / Math.Max(1e-6, line.LengthSquared), 0, 1);
+        return (point - (Center + line * t)).Length <= Math.Max(4, Radius * 0.2) + tolerance;
     }
 }
 

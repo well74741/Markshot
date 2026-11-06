@@ -1512,7 +1512,7 @@ public partial class OverlayWindow
             if (key == Key.Space)
             {
                 _gesture.EndMove();
-                InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+                InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, 1, _numberCounter);
             }
             else if (key == Key.E)
             {
@@ -1581,6 +1581,18 @@ public partial class OverlayWindow
             }
         }
 
+        if (_selectedAnnotation == null && HitCornerDot(point) is var roundDot and >= 0)
+        {
+            InputLayer.Cursor = roundDot is 0 or 2 ? Cursors.SizeNWSE : Cursors.SizeNESW; // the rounding dots
+            return;
+        }
+
+        // The frame of the selected element (any tool in hand): its handles resize, its edge rotates.
+        if (_selectedAnnotation != null && _tool is not (AnnotationTool.Select or AnnotationTool.None) && UpdateAnnotationTransformCursor(point))
+        {
+            return;
+        }
+
         if (_tool == AnnotationTool.Select || _tool == AnnotationTool.None)
         {
             if (_selectedAnnotation != null && UpdateAnnotationTransformCursor(point))
@@ -1616,7 +1628,7 @@ public partial class OverlayWindow
 
         if (_tool != AnnotationTool.None && _hasSelection && _selection.Contains(point))
         {
-            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color);
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, 1, _numberCounter);
             return;
         }
 

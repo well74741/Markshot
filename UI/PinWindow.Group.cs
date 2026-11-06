@@ -162,7 +162,7 @@ public partial class PinWindow
     {
         foreach (var window in Application.Current.Windows.OfType<PinWindow>())
         {
-            window.GroupMark.Visibility = Group.Contains(window) ? Visibility.Visible : Visibility.Collapsed;
+            window.GroupMark.Visibility = Visibility.Collapsed; // picked pins show no dashed edge (they move together all the same)
             window.GroupMark.RadiusX = window.GroupMark.RadiusY = window.CornerRadius * window._zoom;
         }
     }
