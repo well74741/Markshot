@@ -36,7 +36,14 @@ foreach ($suite in $Suites) {
     $p = Start-Process -FilePath $exe.FullName -ArgumentList $suite -WorkingDirectory $out -NoNewWindow -PassThru `
         -RedirectStandardOutput $log -RedirectStandardError "$log.err"
     $null = $p.Handle # without this, ExitCode stays empty for redirected processes
-    if (-not $p.WaitForExit(300000)) { $p.Kill(); $failed += "$suite (timeout)"; continue }
+    if (-not $p.WaitForExit(300000)) {
+        $p.Kill()
+        $failed += "$suite (timeout)"
+        $tail = (Get-Content $log -Tail 3 -ErrorAction SilentlyContinue) -join ' | '
+        Write-Host ("  [FAIL] {0,-12} timeout after 300 s; last lines: {1}" -f $suite, $tail) -ForegroundColor Red
+        if ($env:GITHUB_ACTIONS) { Write-Host "::error title=$suite::timeout after 300 s; last lines: $tail" }
+        continue
+    }
     $text = (Get-Content $log -Raw -ErrorAction SilentlyContinue) + (Get-Content "$log.err" -Raw -ErrorAction SilentlyContinue)
     $passes = ([regex]::Matches($text, '(?m)^PASS ')).Count
     $fails = [regex]::Matches($text, '(?m)^FAIL .*$') | ForEach-Object { $_.Value }
@@ -48,6 +55,7 @@ foreach ($suite in $Suites) {
         if ($env:GITHUB_ACTIONS) {
             # Annotations are readable on the run page without downloading the logs.
             $first = ($fails + ($text -split "`n" | Select-String 'Unhandled|   at ' | Select-Object -First 4 | ForEach-Object { $_.Line })) -join ' | '
+            if (-not $first) { $first = "exit code $($p.ExitCode); last lines: " + ((Get-Content $log -Tail 3 -ErrorAction SilentlyContinue) -join ' | ') }
             Write-Host "::error title=$suite::$first"
         }
         if ($crashed) { Write-Host ($text -split "`n" | Select-String 'Unhandled|   at Markshot' | Select-Object -First 6 | Out-String) -ForegroundColor Red }
