@@ -129,9 +129,9 @@ static class RecorderFlowTest
             $"录屏区域回中: centred on the monitor ({c.X},{c.Y} {c.Width}x{c.Height})");
 
         // ---- record 1.2 s, pause 0.4 s, record 0.5 s
+        var wall = System.Diagnostics.Stopwatch.StartNew(); // before Start: the recording clock can never be ahead of it, however slow the machine
         controller.Start();
         Check(PumpUntil(() => controller.Phase == RecordPhase.Recording, 8000), "recording starts (" + notice + ")");
-        var wall = System.Diagnostics.Stopwatch.StartNew();
         Pump(1200);
         controller.TogglePause();
         Check(controller.Phase == RecordPhase.Paused, "paused");
