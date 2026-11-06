@@ -733,8 +733,9 @@ static class AnnotateTest
             var zoomLabel = (FrameworkElement)Get(zoomPin, "PinZoomLabel");
             Check(zoomLabel.Visibility == Visibility.Visible && ((TextBlock)Get(zoomPin, "PinZoomText")).Text == "150%" && zoomLabel.VerticalAlignment == VerticalAlignment.Bottom && zoomLabel.HorizontalAlignment == HorizontalAlignment.Left,
                 "zooming: the scale in the lower left corner");
-            Pump(1300);
-            Check(zoomLabel.Visibility != Visibility.Visible, "… gone when the zooming stops");
+            var zoomWait = System.Diagnostics.Stopwatch.StartNew(); // 0.8 s + the fade; a slow machine may take longer
+            while (zoomLabel.Visibility == Visibility.Visible && zoomWait.ElapsedMilliseconds < 3000) Pump(50);
+            Check(zoomLabel.Visibility != Visibility.Visible && zoomWait.ElapsedMilliseconds > 700, $"… gone when the zooming stops ({zoomWait.ElapsedMilliseconds} ms)");
             zoomPin.CloseImmediately();
 
             // double-click on the empty part: view mode, and annotating without a tool
