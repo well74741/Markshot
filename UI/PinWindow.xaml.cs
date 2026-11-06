@@ -213,11 +213,12 @@ public partial class PinWindow : Window
                     _fadingOut = true;
                     IsHitTestVisible = false;
                     BeginAnimation(OpacityProperty, new DoubleAnimation(0, Motion.Fast) { EasingFunction = Motion.Ease });
-                    // …and shrinks quickly towards its middle while it fades.
+                    // …and shrinks quickly towards a point a little below its middle while it fades (it seems to sink
+                    // away from the viewer).
                     var shrink = new ScaleTransform(1, 1);
-                    RootGrid.RenderTransformOrigin = new Point(0.5, 0.5);
+                    RootGrid.RenderTransformOrigin = new Point(0.5, 0.72);
                     RootGrid.RenderTransform = shrink;
-                    var away = new DoubleAnimation(1, 0.6, Motion.Fast) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
+                    var away = new DoubleAnimation(1, 0.55, Motion.Fast) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
                     shrink.BeginAnimation(ScaleTransform.ScaleXProperty, away);
                     shrink.BeginAnimation(ScaleTransform.ScaleYProperty, away);
                     var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(170) };

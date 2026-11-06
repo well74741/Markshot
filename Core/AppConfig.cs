@@ -190,6 +190,9 @@ public sealed class AppConfig
     /// <summary>软边 of the eraser (0–100): how much of its width erases only partly, fading to the edge.</summary>
     public int EraserSoftness { get; set; }
 
+    /// <summary>The ▾ beside the tool buttons is hidden; the tool's styles open when the pointer rests on the tool.</summary>
+    public bool HideToolChevrons { get; set; } = true;
+
     /// <summary>截图里按一次 Esc 直接退出；关掉时逐步退出（先放下工具 / 取消选中，再取消选区，最后退出）。</summary>
     public bool EscExitsCapture { get; set; } = true;
 

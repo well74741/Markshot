@@ -65,6 +65,7 @@ public partial class SettingsWindow : Window
         AskOpenFolderCheck.IsChecked = config.AskOpenFolderAfterSave;
         EscExitsCheck.IsChecked = config.EscExitsCapture;
         QuickDoubleClickCheck.IsChecked = config.QuickDoubleClickCopy;
+        HideChevronsCheck.IsChecked = config.HideToolChevrons;
         SaveDirBox.Text = config.SaveDirectory;
         Loaded += (_, _) => RefreshUpdate(quiet: true);
         OcrLanguageBox.Text = config.OcrLanguage;
@@ -532,6 +533,7 @@ public partial class SettingsWindow : Window
         _config.AskOpenFolderAfterSave = AskOpenFolderCheck.IsChecked == true;
         _config.EscExitsCapture = EscExitsCheck.IsChecked == true;
         _config.QuickDoubleClickCopy = QuickDoubleClickCheck.IsChecked == true;
+        _config.HideToolChevrons = HideChevronsCheck.IsChecked == true;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();
         // Keep following the installer's folder unless another one was entered.

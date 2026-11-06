@@ -37,15 +37,6 @@ internal static class ToolbarCatalog
 
     public static UIElement Icon(string key)
     {
-        if (key is "Ocr")
-        {
-            return new Path
-            {
-                Style = (Style)Application.Current.FindResource("IconPath"),
-                Data = (Geometry)Application.Current.FindResource("IconOcr")
-            };
-        }
-
         var mask = key switch
         {
             "Shape" => "IconRectMask",
@@ -66,6 +57,7 @@ internal static class ToolbarCatalog
             "Record" => "IconRecordMask",
             "Scroll" => "IconScrollMask",
             "Edit" => "IconEditMask",
+            "Ocr" => "IconOcrMask",
             _ => "IconTranslateMask"
         };
         return new Border { Style = (Style)Application.Current.FindResource(mask) };

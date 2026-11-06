@@ -119,8 +119,8 @@ static class Batch9Test
             Pump(80);
             var pinRoot = (FrameworkElement)swept.FindName("RootGrid");
             var shrink = pinRoot.RenderTransform as ScaleTransform;
-            Check(shrink != null && shrink.ScaleX < 0.98 && shrink.ScaleX > 0.55 && pinRoot.RenderTransformOrigin == new Point(0.5, 0.5),
-                $"closing a pin: it shrinks towards its middle while it fades ({shrink?.ScaleX:0.00})");
+            Check(shrink != null && shrink.ScaleX < 0.98 && shrink.ScaleX > 0.5 && pinRoot.RenderTransformOrigin.X == 0.5 && pinRoot.RenderTransformOrigin.Y > 0.6,
+                $"closing a pin: it shrinks towards a point a little below its middle while it fades ({shrink?.ScaleX:0.00}, {pinRoot.RenderTransformOrigin})");
             Pump(250);
             Check(!swept.IsVisible, "… and is gone");
             var plain = new PinWindow(picture, -4000, -4000) { Left = -4000, Top = -4000, ShowActivated = false };
@@ -133,6 +133,43 @@ static class Batch9Test
                   typeof(PinWindow).Assembly.GetType("Markshot.UI.PinMagnifier") == null, "Alt over a pin: 辅助线 (no magnifier card any more)");
             plain.Close();
             Pump(250);
+        }
+
+        // ---- the ▾ beside the tools hidden (default): resting on a tool shows its styles
+        {
+            var config = Markshot.App.Config;
+            var chevronsBefore = config.HideToolChevrons;
+            Check(new AppConfig().HideToolChevrons, "setting: 隐藏收纳按钮, on by default");
+            config.HideToolChevrons = true;
+            var hoverBar = new AnnotationToolbar();
+            var hoverWin = new Window { Content = hoverBar, SizeToContent = SizeToContent.WidthAndHeight, Left = -4000, Top = -4000, WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false };
+            hoverWin.Show();
+            hoverBar.SetMode(AnnotationToolbarMode.Capture);
+            Pump(100);
+            var penChevron = (FrameworkElement)hoverBar.FindName("PenChevron");
+            Check(penChevron.Visibility == Visibility.Collapsed && ((FrameworkElement)hoverBar.FindName("EraserChevron")).Visibility == Visibility.Collapsed, "… the ▾ buttons are gone");
+            var penTool = (ButtonBase)hoverBar.FindName("ToolPen");
+            typeof(AnnotationToolbar).GetMethod("OpenHoverMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(hoverBar, new object[] { penTool });
+            Pump(100);
+            var popup = (Popup)typeof(AnnotationToolbar).GetField("_hoverPopup", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(hoverBar)!;
+            var hoverItems = ((Menu)((Border)popup.Child).Child).Items.OfType<MenuItem>().ToList();
+            Check(hoverBar.IsHoverMenuOpen && !popup.StaysOpen == false && hoverItems.Select(i => (string)i.Header).SequenceEqual(new[] { "画笔", "荧光笔" }),
+                "… resting on the pen shows 画笔 / 荧光笔 under it (without taking the mouse)");
+            hoverItems[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Pump(50);
+            Check(hoverBar.Tool == Markshot.Annotations.AnnotationTool.Highlighter && !hoverBar.IsHoverMenuOpen, "… picking one takes that tool and closes the list");
+            config.HideToolChevrons = false;
+            hoverBar.ApplyToolOrderFromConfig();
+            Check(penChevron.Visibility == Visibility.Visible, "setting off: the ▾ buttons are back");
+            config.HideToolChevrons = chevronsBefore;
+            hoverWin.Close();
+
+            var ocrIcon = typeof(PinWindow).Assembly.GetType("Markshot.UI.ToolbarCatalog")!.GetMethod("Icon")!.Invoke(null, new object[] { "Ocr" });
+            Check(ocrIcon is Border { OpacityMask: DrawingBrush }, "文字识别's icon is a mask like the others (it shook as a stretched path while the bar popped in)");
+            var palette = (Color[])typeof(AnnotationToolbar).GetField("Palette", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            var red = palette[0];
+            var saturation = (Math.Max(red.R, Math.Max(red.G, red.B)) - Math.Min(red.R, Math.Min(red.G, red.B))) / (double)Math.Max(red.R, Math.Max(red.G, red.B));
+            Check(red.R == 255 && saturation > 0.85, $"the red preset is a saturated red (#{red.R:X2}{red.G:X2}{red.B:X2})");
         }
 
         // ---- the eraser's 软边: full in the middle of the stroke, fading towards its edge

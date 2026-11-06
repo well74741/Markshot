@@ -450,6 +450,31 @@ static class CaptureTest
         Check(!(bool)Get(rightStepper, "_hasSelection") && !(bool)Get(rightStepper, "_finishing"), "right click with 逐步退出: steps back like Esc (the area goes, the capture stays)");
         rightStepper.Close();
 
+        // no tool: the wheel rounds the capture's corners (remembered); moving the area shows no loupe
+        {
+            var wheelCornerBefore = config.CaptureCornerRadius;
+            var rounder = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
+            SetField(rounder, "_hasSelection", true);
+            SetField(rounder, "_selection", new Rect(50, 50, 150, 100));
+            var roundScale = (double)Get(rounder, "_scale");
+            Call(rounder, "WheelCorner", 120);
+            Call(rounder, "WheelCorner", 120);
+            Check(Math.Abs((double)Get(rounder, "_cornerRadius") - 4 * roundScale) < 0.01 && Math.Abs(config.CaptureCornerRadius - 4 * roundScale) < 0.01,
+                $"wheel up twice without a tool: rounder corners, remembered ({Get(rounder, "_cornerRadius")})");
+            for (var i = 0; i < 5; i++) Call(rounder, "WheelCorner", -120);
+            Check((double)Get(rounder, "_cornerRadius") == 0, "… wheel down: back to square, not below");
+            for (var i = 0; i < 80; i++) Call(rounder, "WheelCorner", 120);
+            Check((double)Get(rounder, "_cornerRadius") <= 50, "… at most half the short side");
+            SetField(rounder, "_dragging", true);
+            SetField(rounder, "_mode", Enum.Parse(typeof(OverlayWindow).GetNestedType("DragMode", BindingFlags.NonPublic)!, "Moving"));
+            Check(!(bool)Call(rounder, "ShouldShowMagnifier", new Point(100, 100))!, "moving the area: no loupe");
+            SetField(rounder, "_mode", Enum.Parse(typeof(OverlayWindow).GetNestedType("DragMode", BindingFlags.NonPublic)!, "Resizing"));
+            Check((bool)Call(rounder, "ShouldShowMagnifier", new Point(100, 100))!, "… resizing it still has the loupe");
+            SetField(rounder, "_dragging", false);
+            rounder.Close();
+            config.CaptureCornerRadius = wheelCornerBefore;
+        }
+
         // a pen in hand: the capture's edges still resize it (a narrow band inside, the full band outside)
         var penFrame = new OverlayWindow(screen, new Int32Rect(-4000, -4000, 300, 200));
         SetField(penFrame, "_hasSelection", true);

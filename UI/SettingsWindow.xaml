@@ -591,6 +591,10 @@
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0"
                                        Text="单击按钮开关（变暗 = 不显示），长按拖动排序；批注栏上也可以长按按钮直接拖动排序。" />
+                            <CheckBox x:Name="HideChevronsCheck" Margin="84,10,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                      Content="隐藏批注工具旁的收纳按钮 ▾" />
+                            <TextBlock Style="{StaticResource Hint}" Margin="124,4,0,0" TextWrapping="Wrap"
+                                       Text="隐藏后，鼠标移到工具按钮上直接展开样式列表（矩形 / 椭圆、画笔 / 荧光笔…），更省空间。" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

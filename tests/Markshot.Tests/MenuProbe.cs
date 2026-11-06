@@ -17,6 +17,7 @@ static class MenuProbe
     public static void Run()
     {
         Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        Markshot.App.Config.HideToolChevrons = false; // the ▾ buttons are what is probed here
         var bar = new AnnotationToolbar();
         var win = new Window { Content = bar, SizeToContent = SizeToContent.WidthAndHeight, Left = 200, Top = 200, WindowStyle = WindowStyle.None, ShowInTaskbar = false };
         win.Show();

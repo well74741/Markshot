@@ -123,9 +123,13 @@ public partial class OverlayWindow
         }
 
         Hint.Visibility = Visibility.Collapsed;
-        if (_mode is DragMode.Moving or DragMode.Resizing && _dragging)
+        if (_mode == DragMode.Resizing && _dragging)
         {
-            Magnifier.Visibility = Visibility.Visible;
+            Magnifier.Visibility = Visibility.Visible; // resizing aims at pixels; moving the area does not need the loupe
+        }
+        else if (_mode == DragMode.Moving && _dragging)
+        {
+            Magnifier.Visibility = Visibility.Collapsed;
         }
 
         if (_finishing)
@@ -1406,7 +1410,12 @@ public partial class OverlayWindow
             return true;
         }
 
-        if (_mode is DragMode.Moving or DragMode.Resizing && _dragging)
+        if (_dragging && _mode == DragMode.Moving)
+        {
+            return false; // moving the area: no loupe
+        }
+
+        if (_mode == DragMode.Resizing && _dragging)
         {
             return true;
         }

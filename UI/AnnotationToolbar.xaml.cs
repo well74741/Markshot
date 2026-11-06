@@ -1,4 +1,6 @@
 using Markshot.Annotations;
+using System.Windows.Controls.Primitives;
+using System.Windows.Threading;
 
 namespace Markshot.UI;
 
@@ -13,7 +15,7 @@ public partial class AnnotationToolbar : UserControl
 {
     private static readonly Color[] Palette =
     {
-        Color.FromRgb(0xD9, 0x4B, 0x38),
+        Color.FromRgb(0xFF, 0x1E, 0x1E),
         Color.FromRgb(0xE4, 0xC4, 0x5A),
         Color.FromRgb(0x68, 0xB6, 0x6B),
         Color.FromRgb(0x5C, 0x8F, 0xE6),
@@ -40,7 +42,7 @@ public partial class AnnotationToolbar : UserControl
     private AnnotationTool _tool = AnnotationTool.Select;
     private Annotation? _selection;
     private Color _color = Palette[0];
-    private Color _customColor = Color.FromRgb(0xD9, 0x4B, 0x38);
+    private Color _customColor = Color.FromRgb(0xFF, 0x1E, 0x1E);
     private double _thickness = 3;
     private double _corner;
     private bool _fill;
@@ -279,6 +281,7 @@ public partial class AnnotationToolbar : UserControl
         ApplyToolOrder(
             _mode switch { AnnotationToolbarMode.Capture => config.CaptureToolOrder, AnnotationToolbarMode.Editor => config.EditorToolOrder, _ => config.PinToolOrder },
             _mode switch { AnnotationToolbarMode.Capture => config.CaptureToolHidden, AnnotationToolbarMode.Editor => config.EditorToolHidden, _ => config.PinToolHidden });
+        ApplyChevrons(config.HideToolChevrons);
         ApplyActionOrder(EditorActions, config.EditorActionOrder, config.EditorActionHidden, ToolbarCatalog.EditorActions);
         ApplyActionOrder(CaptureActions, config.CaptureActionOrder, config.CaptureActionHidden, ToolbarCatalog.CaptureActions);
         ApplyActionOrder(PinActions, config.PinActionOrder, config.PinActionHidden, ToolbarCatalog.PinActions);
@@ -1043,6 +1046,164 @@ public partial class AnnotationToolbar : UserControl
         };
         anchor.ContextMenu = menu;
         menu.IsOpen = true;
+    }
+
+    // ---- the ▾ hidden (setting): the styles open on the tool button itself when the pointer is on it
+
+    private (ButtonBase Tool, Button Chevron, (string Label, AnnotationTool Tool)[] Items)[]? _variantTools;
+    private System.Windows.Controls.Primitives.Popup? _hoverPopup;
+    private ButtonBase? _hoverAnchor;
+    private ButtonBase? _hoverPending;
+    private readonly DispatcherTimer _hoverOpen = new() { Interval = TimeSpan.FromMilliseconds(140) };
+    private readonly DispatcherTimer _hoverWatch = new() { Interval = TimeSpan.FromMilliseconds(120) };
+    private long _hoverLeftAt;
+
+    /// <summary>True while the styles of a tool are shown by hovering (no ▾).</summary>
+    public bool IsHoverMenuOpen => _hoverPopup?.IsOpen == true;
+
+    private void ApplyChevrons(bool hidden)
+    {
+        _variantTools ??= new (ButtonBase, Button, (string, AnnotationTool)[])[]
+        {
+            (ToolShape, ShapeChevron, new[] { ("矩形", AnnotationTool.Rectangle), ("椭圆", AnnotationTool.Ellipse) }),
+            (ToolPen, PenChevron, new[] { ("画笔", AnnotationTool.Pen), ("荧光笔", AnnotationTool.Highlighter) }),
+            (ToolArrow, ArrowChevron, new[] { ("箭头", AnnotationTool.Arrow), ("直线", AnnotationTool.Line) }),
+            (ToolText, TextChevron, new[] { ("文字", AnnotationTool.Text), ("水印", AnnotationTool.Watermark) }),
+            (ToolMosaic, MosaicChevron, new[] { ("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush) }),
+            (ToolEraser, EraserChevron, new[] { ("擦除", AnnotationTool.Eraser), ("抠除", AnnotationTool.Cutout) })
+        };
+        if (!_hoverWired)
+        {
+            _hoverWired = true;
+            _hoverOpen.Tick += (_, _) =>
+            {
+                _hoverOpen.Stop();
+                if (_hoverPending is { IsMouseOver: true } pending && HideChevrons)
+                {
+                    OpenHoverMenu(pending);
+                }
+            };
+            _hoverWatch.Tick += (_, _) => WatchHoverMenu();
+            foreach (var (tool, _, _) in _variantTools)
+            {
+                tool.MouseEnter += (_, _) =>
+                {
+                    if (!HideChevrons || ReferenceEquals(_hoverAnchor, tool) && IsHoverMenuOpen)
+                    {
+                        return;
+                    }
+
+                    _hoverPending = tool;
+                    _hoverOpen.Stop();
+                    _hoverOpen.Start(); // a short rest, so sweeping across the bar does not flash every list
+                };
+                tool.MouseLeave += (_, _) =>
+                {
+                    if (ReferenceEquals(_hoverPending, tool))
+                    {
+                        _hoverOpen.Stop();
+                    }
+                };
+            }
+        }
+
+        HideChevrons = hidden;
+        foreach (var (_, chevron, _) in _variantTools)
+        {
+            chevron.Visibility = hidden ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        if (!hidden)
+        {
+            CloseHoverMenu();
+        }
+    }
+
+    private bool _hoverWired;
+
+    /// <summary>The ▾ buttons are hidden (the setting); hovering a tool shows its styles.</summary>
+    public bool HideChevrons { get; private set; }
+
+    /// <summary>The styles of a tool in a small list under its button (stays open while the pointer is on either).</summary>
+    internal void OpenHoverMenu(ButtonBase tool)
+    {
+        var entry = _variantTools!.First(t => ReferenceEquals(t.Tool, tool));
+        CloseHoverMenu();
+        var menu = new Menu { Background = Brushes.Transparent, Focusable = false };
+        menu.ItemsPanel = new ItemsPanelTemplate(new FrameworkElementFactory(typeof(StackPanel)));
+        foreach (var (label, variant) in entry.Items)
+        {
+            var item = new MenuItem { Header = label, IsChecked = _tool == variant, MinWidth = 96 };
+            item.Click += (_, _) =>
+            {
+                CloseHoverMenu();
+                PickVariant(variant);
+            };
+            menu.Items.Add(item);
+        }
+
+        var card = new Border { Padding = new Thickness(4), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Child = menu, Margin = new Thickness(0, 0, 8, 8) };
+        card.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
+        card.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x33FFFFFF));
+        card.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.35 };
+        card.LayoutTransform = UiScale.Transform;
+        var popup = new System.Windows.Controls.Primitives.Popup
+        {
+            PlacementTarget = tool,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            VerticalOffset = 4,
+            StaysOpen = true, // no mouse capture: the tool button stays clickable and the pointer may leave freely
+            AllowsTransparency = true,
+            Focusable = false,
+            Child = card
+        };
+        _hoverPopup = popup;
+        _hoverAnchor = tool;
+        _hoverLeftAt = 0;
+        popup.IsOpen = true;
+        Motion.PopIn(card, fromAbove: true);
+        _hoverWatch.Start();
+    }
+
+    private void WatchHoverMenu()
+    {
+        if (_hoverPopup is not { IsOpen: true } popup || _hoverAnchor == null)
+        {
+            CloseHoverMenu();
+            return;
+        }
+
+        if (_hoverAnchor.IsMouseOver || (popup.Child as FrameworkElement)?.IsMouseOver == true || !IsVisible)
+        {
+            _hoverLeftAt = IsVisible ? 0 : 1;
+            if (IsVisible)
+            {
+                return;
+            }
+        }
+
+        // Off both for a moment: it closes (a short grace, the gap between the button and the list is crossed).
+        var now = Environment.TickCount64;
+        if (_hoverLeftAt == 0)
+        {
+            _hoverLeftAt = now;
+        }
+        else if (now - _hoverLeftAt >= 260 || !IsVisible)
+        {
+            CloseHoverMenu();
+        }
+    }
+
+    internal void CloseHoverMenu()
+    {
+        _hoverWatch.Stop();
+        if (_hoverPopup != null)
+        {
+            _hoverPopup.IsOpen = false;
+            _hoverPopup = null;
+        }
+
+        _hoverAnchor = null;
     }
 
     private void ShowVariantMenu(Button anchor, params (string Label, AnnotationTool Tool)[] items) =>

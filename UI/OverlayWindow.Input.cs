@@ -974,6 +974,12 @@ public partial class OverlayWindow
 
                 e.Handled = true;
             }
+            else if (_active == null && _hasSelection && !_dragging)
+            {
+                // No tool in hand: the wheel rounds the capture's corners (up = rounder), remembered for the next one.
+                WheelCorner(e.Delta);
+                e.Handled = true;
+            }
 
             return;
         }
@@ -1011,6 +1017,24 @@ public partial class OverlayWindow
     }
 
     /// <summary>The corners last adjusted, as far as this area allows (a lasso has none).</summary>
+    /// <summary>One wheel notch: the capture's corner radius by 2 DIP (a lasso capture has no corners).</summary>
+    private void WheelCorner(int delta)
+    {
+        if (_lasso != null)
+        {
+            ShowWheelTip("手绘截图没有圆角");
+            return;
+        }
+
+        var most = Math.Floor(Math.Min(_selection.Width, _selection.Height) / 2);
+        var step = 2 * _scale;
+        var radius = Math.Clamp(Math.Round((_cornerRadius + Math.Sign(delta) * step) / step) * step, 0, most);
+        _cornerRadius = radius;
+        RememberCorner();
+        UpdateSelectionVisuals();
+        ShowWheelTip(radius <= 0 ? "圆角：无 · 滚轮：上 变圆，下 变方" : $"圆角：{Math.Round(radius / _scale)} · 滚轮：上 变圆，下 变方");
+    }
+
     private void ApplyRememberedCorner()
     {
         if (_lasso == null && _hasSelection)

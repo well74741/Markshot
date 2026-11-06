@@ -304,7 +304,7 @@ static class AnnotateTest
         Check(cutItems.OfType<CutoutAnnotation>().Count() == 1 && AnnotationOps_HitNothing(cutItems, new Point(150, 50)), "the hole is never selected");
         var toolbarCut = (AnnotationToolbar)Get(cutEditor, "Toolbar");
         toolbarCut.SetTool(AnnotationTool.Eraser);
-        Check(((FrameworkElement)toolbarCut.FindName("EraserChevron")).Visibility == Visibility.Visible, "the eraser button has its ▾ menu");
+        Check(((FrameworkElement)toolbarCut.FindName("EraserChevron")).Visibility == (Markshot.App.Config.HideToolChevrons ? Visibility.Collapsed : Visibility.Visible), "the eraser button has its ▾ menu (unless the ▾ are hidden: then on hover)");
         var modes = (FrameworkElement)toolbarCut.FindName("EraserModes");
         var row = (Panel)VisualTreeHelper.GetParent(modes);
         Check(row.Children.IndexOf(modes) == 0, "擦除 / 抠除 are the first thing in the settings row");

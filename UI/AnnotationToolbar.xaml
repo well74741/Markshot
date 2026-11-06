@@ -97,7 +97,7 @@
                         <Border Style="{StaticResource IconRecordMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Ocr_Click" Tag="Ocr" ToolTip="文字识别">
-                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IconOcr}" />
+                        <Border Style="{StaticResource IconOcrMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Close_Click" Tag="Close" ToolTip="关闭 (Esc)">
                         <Border Style="{StaticResource IconCloseMask}" />

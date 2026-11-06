@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.44`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.45`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,17 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.45 0.8.45 变更
+
+- 截图：选好区域、未拿批注工具（也没选中元素）时滚轮调圆角（`WheelCorner`，每格 2 DIP，0 ～ 短边一半，`RememberCorner` 记住，`WheelTip` 显示「圆角：N」；手绘截图提示没有圆角）。
+  拖动移动选区不显示放大镜（`ShouldShowMagnifier` 与 `UpdateSelectionVisuals` 只在 Resizing 时显示）。
+- 贴图关闭：缩放中心 `RenderTransformOrigin = (0.5, 0.72)`，缩到 0.55，看起来往中心偏下沉下去。
+- 隐藏 ▾（`AppConfig.HideToolChevrons`，默认开）：`AnnotationToolbar.ApplyChevrons` 收起六个工具的 ▾；鼠标停在工具按钮上 140 ms 后 `OpenHoverMenu`
+  在按钮下方弹出 `Popup`（`StaysOpen = true`，不抓鼠标，工具按钮仍可直接点）里的竖排 `Menu`（同 ContextMenu 的 MenuItem 样式、勾选当前样式），
+  鼠标离开按钮和列表 260 ms 后关闭（`WatchHoverMenu` 轮询）。设置 → 批注栏 的开关，保存后贴图 / 编辑器 / 下次截图生效。
+- 红色预设改为 #FF1E1E（原 #D94B38 偏灰）。
+- 文字识别图标改为 `IconOcrMask`（`DrawingBrush` 画同一几何的蒙版）：原来是 Stretch 的 `Path`，工具栏弹出时的缩放动画里每帧对齐像素，看起来在抖。
 
 ## 8.1.44 0.8.44 变更
 
