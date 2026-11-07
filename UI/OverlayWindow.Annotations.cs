@@ -606,7 +606,10 @@ public partial class OverlayWindow
         }
 
         ClearAnnotationHover();
-        InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, 1, _numberCounter);
+        // Outside the area the plain arrow (setting the tool's cursor here and the arrow right after made it flicker).
+        InputLayer.Cursor = _hasSelection && !_selection.Contains(point)
+            ? Cursors.Arrow
+            : ToolCursors.Get(_tool, _thickness, _color, 1, _numberCounter);
     }
 
     private void ClearAnnotationHover()
@@ -634,6 +637,7 @@ public partial class OverlayWindow
             annotation is MosaicAnnotation or WatermarkAnnotation,
         AnnotationTool.Text => annotation is TextAnnotation,
         AnnotationTool.Number => annotation is NumberAnnotation,
+        AnnotationTool.Spotlight => annotation is SpotlightAnnotation,
         _ => false
     };
 

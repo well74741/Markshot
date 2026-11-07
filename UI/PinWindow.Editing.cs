@@ -1939,6 +1939,7 @@ public partial class PinWindow
             annotation is MosaicAnnotation or WatermarkAnnotation,
         AnnotationTool.Text => annotation is TextAnnotation,
         AnnotationTool.Number => annotation is NumberAnnotation,
+        AnnotationTool.Spotlight => annotation is SpotlightAnnotation,
         _ => false
     };
 

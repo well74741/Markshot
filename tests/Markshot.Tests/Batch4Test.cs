@@ -68,8 +68,8 @@ static class Batch4Test
         Pump(450); // let the slide-open finish
         stack.UpdateLayout();
 
-        var mosaicTypes = ((Panel)((Border)((Panel)bars[0].FindName("MosaicVariants")).Children.OfType<Border>().First()).Child).Children.OfType<RadioButton>().Select(r => (string)r.Content).ToList();
-        Check(string.Join("|", mosaicTypes) == "区域|画笔", $"mosaic 类型 = [{string.Join("|", mosaicTypes)}]");
+        var mosaicTypes = ((Panel)bars[0].FindName("MosaicVariants")).Children.OfType<RadioButton>().Select(r => (string)r.Tag).ToList();
+        Check(string.Join("|", mosaicTypes) == "Mosaic|MosaicBrush", $"mosaic styles as two icons = [{string.Join("|", mosaicTypes)}]");
         Check(watermarkChecked,
             "watermark sits on the text button (checked, button switched to 水印)");
         var wmVisible = new[] { "WidthGroup", "AngleGroup", "ColorSection" }

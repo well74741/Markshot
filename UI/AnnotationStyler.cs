@@ -46,6 +46,12 @@ internal static class AnnotationStyler
                 SetLevel(box, toolbar.MosaicLevel, mosaicSource);
                 break;
 
+            case SpotlightAnnotation spotlight:
+                spotlight.Ellipse = toolbar.SpotlightEllipse;
+                spotlight.Darkness = toolbar.SpotlightDarkness;
+                spotlight.Feather = toolbar.SpotlightFeather;
+                break;
+
             case MosaicBrushAnnotation brush:
                 brush.Thickness = Math.Max(2, toolbar.Thickness);
                 SetLevel(brush, toolbar.MosaicLevel, mosaicSource);

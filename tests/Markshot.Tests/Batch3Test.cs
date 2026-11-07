@@ -65,8 +65,8 @@ static class Batch3Test
         toolbar.SetTool(AnnotationTool.Mosaic);
         host.UpdateLayout();
         var variants = (Panel)toolbar.FindName("MosaicVariants");
-        var labels = string.Join("|", variants.Children.OfType<Border>().SelectMany(b => ((Panel)b.Child).Children.OfType<RadioButton>()).Select(r => r.Content));
-        Check(variants.Visibility == Visibility.Visible && labels == "区域|画笔", $"mosaic tool shows 类型 [{labels}]");
+        var labels = string.Join("|", variants.Children.OfType<RadioButton>().Select(r => r.Tag));
+        Check(variants.Visibility == Visibility.Visible && labels == "Mosaic|MosaicBrush", $"mosaic tool shows its two style icons [{labels}]");
         Check(((FrameworkElement)toolbar.FindName("LevelGroup")).Visibility == Visibility.Visible, "mosaic tool shows 程度");
         toolbar.SetTool(AnnotationTool.Watermark);
         host.UpdateLayout();

@@ -53,7 +53,7 @@ static class Batch6Test
         // ---- Tab variants and style conversion rules
         Check((AnnotationTool?)Ops("NextVariant", AnnotationTool.Rectangle) == AnnotationTool.Ellipse &&
               (AnnotationTool?)Ops("NextVariant", AnnotationTool.Watermark) == AnnotationTool.Text &&
-              (AnnotationTool?)Ops("NextVariant", AnnotationTool.Number) == null, "Tab cycles the styles of one button");
+              (AnnotationTool?)Ops("NextVariant", AnnotationTool.Number) == AnnotationTool.Spotlight, "Tab cycles the styles of one button (序号 ↔ 聚焦 since 0.8.60)");
         var rect = new RectAnnotation { Rect = new Rect(10, 10, 50, 30) };
         Check((bool)Ops("CanConvert", rect, AnnotationTool.Ellipse)! && !(bool)Ops("CanConvert", rect, AnnotationTool.Rectangle)! &&
               !(bool)Ops("CanConvert", rect, AnnotationTool.Arrow)!, "a selected rectangle converts to an ellipse only");

@@ -323,6 +323,11 @@ public sealed class CreationGesture
                 mosaic.Rotation = mosaicRotation;
                 break;
 
+            case SpotlightAnnotation spotlight:
+                spotlight.Rect = PlaceRect(out var spotRotation);
+                spotlight.Rotation = spotRotation;
+                break;
+
             case NumberAnnotation number:
                 // The badge stays where it was pressed; dragging on draws an arrow out of it to the pointer.
                 number.Center = _start + _offset;
@@ -356,7 +361,7 @@ public sealed class CreationGesture
     {
         var dx = end.X - start.X;
         var dy = end.Y - start.Y;
-        if (Target is RectAnnotation or EllipseAnnotation or MosaicAnnotation)
+        if (Target is RectAnnotation or EllipseAnnotation or MosaicAnnotation or SpotlightAnnotation)
         {
             var size = Math.Max(Math.Abs(dx), Math.Abs(dy));
             return new Point(start.X + Math.Sign(dx == 0 ? 1 : dx) * size, start.Y + Math.Sign(dy == 0 ? 1 : dy) * size);

@@ -261,7 +261,7 @@ public static class ToolCursors
         }
 
         if (tool is AnnotationTool.Rectangle or AnnotationTool.Ellipse or AnnotationTool.Line or AnnotationTool.Polyline
-            or AnnotationTool.Arrow or AnnotationTool.Mosaic or AnnotationTool.Watermark or AnnotationTool.Number)
+            or AnnotationTool.Arrow or AnnotationTool.Mosaic or AnnotationTool.Watermark or AnnotationTool.Number or AnnotationTool.Spotlight)
         {
             return Cursors.Cross;
         }

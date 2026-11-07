@@ -307,7 +307,7 @@ static class AnnotateTest
         Check(((FrameworkElement)toolbarCut.FindName("EraserChevron")).Visibility == (Markshot.App.Config.HideToolChevrons ? Visibility.Collapsed : Visibility.Visible), "the eraser button has its ▾ menu (unless the ▾ are hidden: then on hover)");
         var modes = (FrameworkElement)toolbarCut.FindName("EraserModes");
         var row = (Panel)VisualTreeHelper.GetParent(modes);
-        Check(row.Children.IndexOf(modes) == 0, "擦除 / 抠除 are the first thing in the settings row");
+        Check(row.Children.Cast<FrameworkElement>().TakeWhile(c => !ReferenceEquals(c, modes)).All(c => c.Visibility != Visibility.Visible), "擦除 / 抠除 are the first thing shown in the settings row");
         Check(AnnotationOps_Next(AnnotationTool.Eraser) == AnnotationTool.Cutout && AnnotationOps_Next(AnnotationTool.Cutout) == AnnotationTool.Eraser, "Tab switches 擦除 ↔ 抠除");
         toolbarCut.PickVariant(AnnotationTool.Cutout);
         Check(toolbarCut.EraserCutout && ((RadioButton)toolbarCut.FindName("EraserCut")).IsChecked == true, "the eraser has the 抠除 style");

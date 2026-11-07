@@ -17,7 +17,8 @@ public enum AnnotationTool
     Eraser,
     MosaicBrush,
     Polyline,
-    Cutout
+    Cutout,
+    Spotlight
 }
 
 /// <summary>Head of an arrow: 尖头 (swept, pointed tail), 线形 (open head), 三角 (filled head), 双向 (heads at both ends).</summary>
@@ -1618,6 +1619,161 @@ public sealed class MosaicBrushAnnotation : Annotation
 
     public override bool HitTest(Point point, double tolerance) =>
         GeometryUtil.DistanceToPolyline(point, Points) <= tolerance + Thickness / 2;
+}
+
+/// <summary>
+/// 聚焦: a rectangle or ellipse that stays clear while everything around it is darkened. Several of them darken the
+/// picture once, together (each one's area is clear); the edge can be feathered — only the edge, the inside stays clear
+/// and the outside fully dark. No outline, no colour.
+/// </summary>
+public sealed class SpotlightAnnotation : Annotation
+{
+    public Rect Rect { get; set; }
+
+    public bool Ellipse { get; set; }
+
+    /// <summary>How dark the outside is (0–1).</summary>
+    public double Darkness { get; set; } = 0.55;
+
+    /// <summary>Width of the soft edge (canvas pixels), centred on the shape's outline.</summary>
+    public double Feather { get; set; } = 12;
+
+    /// <summary>The spotlights drawn together (set by <see cref="Spotlights.Prepare"/>); the first one draws them all.</summary>
+    internal List<SpotlightAnnotation>? Group;
+
+    internal bool Lead = true;
+
+    public override bool Erasable => false;
+
+    public override Rect Bounds => Rect;
+
+    public override void Translate(double dx, double dy) => Rect = new Rect(Rect.X + dx, Rect.Y + dy, Rect.Width, Rect.Height);
+
+    public override Annotation Clone()
+    {
+        var copy = (SpotlightAnnotation)base.Clone();
+        copy.Group = null;
+        copy.Lead = true;
+        return copy;
+    }
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        var area = Rect;
+        area.Inflate(tolerance, tolerance);
+        return area.Contains(point);
+    }
+
+    /// <summary>选择: its edge (the inside is the picture under it).</summary>
+    public override bool HitContent(Point point, double tolerance)
+    {
+        var reach = tolerance + 4;
+        var outer = Rect;
+        outer.Inflate(reach, reach);
+        if (!outer.Contains(point))
+        {
+            return false;
+        }
+
+        var inner = Rect;
+        if (inner.Width <= reach * 2 || inner.Height <= reach * 2)
+        {
+            return true;
+        }
+
+        inner.Inflate(-reach, -reach);
+        return !inner.Contains(point);
+    }
+
+    /// <summary>The shape grown (or shrunk, negative) by <paramref name="by"/> pixels, turned with the element.</summary>
+    internal Geometry Shape(double by)
+    {
+        var area = Rect;
+        var grow = Math.Max(by, -Math.Min(area.Width, area.Height) / 2 + 0.5);
+        area.Inflate(grow, grow);
+        Geometry shape = Ellipse ? new EllipseGeometry(area) : new RectangleGeometry(area);
+        if (Math.Abs(Rotation) >= 0.01)
+        {
+            shape.Transform = new RotateTransform(Rotation, Rect.X + Rect.Width / 2, Rect.Y + Rect.Height / 2);
+        }
+
+        return shape;
+    }
+
+    public override void Draw(DrawingContext dc)
+    {
+        if (!Lead)
+        {
+            return; // drawn with the group's first spotlight
+        }
+
+        Spotlights.DrawGroup(dc, Group ?? new List<SpotlightAnnotation> { this });
+    }
+}
+
+/// <summary>Draws the darkened outside of one or more spotlights at once.</summary>
+public static class Spotlights
+{
+    private static readonly Rect Everywhere = new(-100000, -100000, 200000, 200000); // clipped to the picture by whoever draws
+
+    /// <summary>Before a canvas is drawn: its spotlights are grouped, the first draws them all.</summary>
+    public static void Prepare(IEnumerable<Annotation> items)
+    {
+        var all = items.OfType<SpotlightAnnotation>().Where(spot => !spot.Hidden).ToList();
+        for (var i = 0; i < all.Count; i++)
+        {
+            all[i].Group = all;
+            all[i].Lead = i == 0;
+        }
+    }
+
+    public static void DrawGroup(DrawingContext dc, IReadOnlyList<SpotlightAnnotation> group)
+    {
+        var shown = group.Where(spot => !spot.Hidden && spot.Rect.Width > 0.5 && spot.Rect.Height > 0.5).ToList();
+        if (shown.Count == 0)
+        {
+            return;
+        }
+
+        var darkness = Math.Clamp(shown.Max(spot => spot.Darkness), 0, 1);
+        Geometry Holes(double t) // t: 0 = the inner edge of the feather, 1 = its outer edge
+        {
+            var union = new GeometryGroup { FillRule = FillRule.Nonzero };
+            foreach (var spot in shown)
+            {
+                var feather = Math.Max(0, spot.Feather);
+                union.Children.Add(spot.Shape(feather * (t - 0.5)));
+            }
+
+            return union;
+        }
+
+        Brush Dark(double alpha)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb((byte)Math.Round(Math.Clamp(alpha, 0, 1) * 255), 0, 0, 0));
+            brush.Freeze();
+            return brush;
+        }
+
+        var everywhere = new RectangleGeometry(Everywhere);
+        var soft = shown.Any(spot => spot.Feather >= 0.5);
+        if (!soft)
+        {
+            dc.DrawGeometry(Dark(darkness), null, new CombinedGeometry(GeometryCombineMode.Exclude, everywhere, Holes(0.5)));
+            return;
+        }
+
+        // The soft edge in steps from clear (inside) to the full darkness (outside).
+        const int steps = 12;
+        dc.DrawGeometry(Dark(darkness), null, new CombinedGeometry(GeometryCombineMode.Exclude, everywhere, Holes(1)));
+        var inner = Holes(0);
+        for (var i = 0; i < steps; i++)
+        {
+            var outer = Holes((i + 1) / (double)steps);
+            dc.DrawGeometry(Dark(darkness * (i + 0.5) / steps), null, new CombinedGeometry(GeometryCombineMode.Exclude, outer, inner));
+            inner = outer;
+        }
+    }
 }
 
 internal static class GeometryUtil

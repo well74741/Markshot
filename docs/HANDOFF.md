@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.59`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.60`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,18 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.60 0.8.60 变更
+
+- 聚焦 `SpotlightAnnotation`（`AnnotationTool.Spotlight`，序号按钮的第二种样式，VariantFamily 7，Tab 互换）：Rect / Ellipse / Darkness / Feather，无描边无颜色。
+  `Spotlights.Prepare(items)`（在 `AnnotationEditor.DrawOrder` 里调用；画预览时把 Preview 也并进来）把同一画布的聚焦分成一组，第一个画全部：
+  一个超大矩形减去所有聚焦形状的并集，羽化分 12 级从形状内缩 f/2 到外扩 f/2 逐级加深（只在边缘）；绘制范围由调用方的裁剪限定（截图里是选区，贴图 / 编辑器是图片）。
+  选择按边缘（`HitContent`），调整框 / 旋转 / Alt / Shift 同图形。工具栏：`NumberVariants`、`SpotlightGroup`（矩形 / 椭圆、暗度 10–95 %、羽化 0–80）。
+- 工具栏：马赛克样式改为两个图标；`NumberStyleGroup` 移到大小滑条左边；抠除图标 = 图标库「蒙版.png」；序号按钮加 ▾ / 悬停列表。
+- 截图区外光标闪：`UpdateAnnotationHover` 末尾总设工具光标，随后 `UpdateCursor` 设箭头。现在区外直接箭头。
+- 编辑器：元素样式针对所有选中元素（`StyledElements`）：透明度（Annotation.Opacity）、圆角（图片 / 矩形）、阴影 / 描边 / 描边色（仅图片；选了形状变灰）；
+  行的出现 / 隐藏用 `AnimateSectionHeight` 过渡。调色「重置」在 `_adjust.IsNeutral` 时变灰，「重置所有修改」在没有撤销记录时变灰。
+  贴到屏幕：整张合成图贴出，不带批注和撤销记录。
 
 ## 8.1.59 0.8.59 变更
 

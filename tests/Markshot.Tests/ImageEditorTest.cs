@@ -626,7 +626,7 @@ static class ImageEditorTest
         Pump(300);
         pinner.SetAdjust(new ImageAdjust(Invert: true));
         Call(pinner, "PinToScreen");
-        Check(made != null && handed.Count == 1 && handedComposed.PixelWidth == 300 && At(handedBase, 200, 100).R == 255 && !pinner.IsDirty, "贴到屏幕: the adjusted picture + editable annotations; counts as kept");
+        Check(made != null && handed.Count == 0 && handedComposed.PixelWidth == 300 && At(handedBase, 200, 100).R == 255 && !pinner.IsDirty, "贴到屏幕: the adjusted picture with the annotations merged in (0.8.60); counts as kept");
         Pump(50);
         Check(!pinner.IsVisible, "贴到屏幕 closes the editor");
         made.Show();

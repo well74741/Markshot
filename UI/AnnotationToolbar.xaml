@@ -57,9 +57,12 @@
                 </Button>
 
                 <RadioButton x:Name="ToolNumber" Style="{StaticResource IconToolRadio}"
-                             Tag="Number" GroupName="Tool" Click="Tool_Click" ToolTip="序号 (S)">
-                    <Border Style="{StaticResource IconNumberMask}" />
+                             Tag="Number" GroupName="Tool" Click="Tool_Click" ToolTip="序号 (S) / 聚焦">
+                    <Border x:Name="ToolNumberIcon" Style="{StaticResource IconNumberMask}" />
                 </RadioButton>
+                <Button Style="{StaticResource ChevronButton}" Click="NumberMenu_Click" ToolTip="序号 / 聚焦" x:Name="NumberChevron">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource IconChevron}" Width="10" Height="10" />
+                </Button>
 
                 <RadioButton x:Name="ToolMosaic" Style="{StaticResource IconToolRadio}"
                              Tag="Mosaic" GroupName="Tool" Click="Tool_Click" ToolTip="马赛克（区域 / 画笔）">
@@ -178,6 +181,17 @@
                     Margin="0,3,0,0" Padding="2,3,0,0">
                 <!-- Same height for every tool's row. -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Height="32">
+                    <!-- The number button's two styles: 序号 / 聚焦 (the outside darkened). -->
+                    <StackPanel x:Name="NumberVariants" Orientation="Horizontal" Visibility="Collapsed">
+                        <RadioButton x:Name="VariantNumber" Style="{StaticResource IconToolRadio}" Tag="Number" GroupName="Variant" Checked="Variant_Checked" ToolTip="序号（Tab 切换）">
+                            <Border Style="{StaticResource IconNumberMask}" />
+                        </RadioButton>
+                        <RadioButton x:Name="VariantSpotlight" Style="{StaticResource IconToolRadio}" Tag="Spotlight" GroupName="Variant" Checked="Variant_Checked"
+                                     ToolTip="聚焦：画矩形 / 椭圆，里面保持原样，外面变暗（Shift 方形，Alt 从中心）">
+                            <Border Style="{StaticResource IconSpotlightMask}" />
+                        </RadioButton>
+                    </StackPanel>
+
                     <!-- The eraser's two styles: 擦除 (annotations) / 抠除 (a transparent hole through everything). -->
                     <StackPanel x:Name="EraserModes" Orientation="Horizontal" Visibility="Collapsed">
                         <RadioButton x:Name="EraserErase" Style="{StaticResource IconToolRadio}" Tag="Eraser" GroupName="Variant" Checked="Variant_Checked" ToolTip="擦除：擦掉批注（Tab 切换）">
@@ -249,19 +263,49 @@
                     </StackPanel>
 
                     <StackPanel x:Name="MosaicVariants" Orientation="Horizontal" Visibility="Collapsed">
-                        <TextBlock Text="类型" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" Margin="4,0,6,0" />
-                        <Border Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2" VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal">
-                                <RadioButton x:Name="VariantMosaic" Style="{StaticResource SegmentRadio}" Tag="Mosaic" GroupName="Variant"
-                                             Checked="Variant_Checked" Content="区域" ToolTip="框选区域打码" />
-                                <RadioButton x:Name="VariantMosaicBrush" Style="{StaticResource SegmentRadio}" Tag="MosaicBrush" GroupName="Variant"
-                                             Checked="Variant_Checked" Content="画笔" ToolTip="涂抹打码（Shift 画直线）" />
-                            </StackPanel>
-                        </Border>
+                        <RadioButton x:Name="VariantMosaic" Style="{StaticResource IconToolRadio}" Tag="Mosaic" GroupName="Variant"
+                                     Checked="Variant_Checked" ToolTip="区域马赛克：框选打码（Tab 切换）">
+                            <Border Style="{StaticResource IconMosaicMask}" />
+                        </RadioButton>
+                        <RadioButton x:Name="VariantMosaicBrush" Style="{StaticResource IconToolRadio}" Tag="MosaicBrush" GroupName="Variant"
+                                     Checked="Variant_Checked" ToolTip="画笔马赛克：涂抹打码（Shift 画直线）">
+                            <Border Style="{StaticResource IconMosaicBrushMask}" />
+                        </RadioButton>
+                    </StackPanel>
+
+                    <!-- 聚焦: its shape, how dark the outside is, the soft edge. -->
+                    <StackPanel x:Name="SpotlightGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <RadioButton x:Name="SpotlightRect" Style="{StaticResource IconToolRadio}" GroupName="SpotlightShape" Click="SpotlightShape_Click" ToolTip="矩形聚焦">
+                            <Border Style="{StaticResource IconRectMask}" />
+                        </RadioButton>
+                        <RadioButton x:Name="SpotlightEllipseToggle" Style="{StaticResource IconToolRadio}" GroupName="SpotlightShape" Click="SpotlightShape_Click" ToolTip="椭圆聚焦">
+                            <Border Style="{StaticResource IconEllipseMask}" />
+                        </RadioButton>
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <TextBlock Text="暗度" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />
+                        <Slider x:Name="DarknessSlider" Focusable="False" IsMoveToPointEnabled="True" Width="80" Minimum="10" Maximum="95" Value="55"
+                                ValueChanged="Darkness_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
+                        <TextBlock x:Name="DarknessValue" Text="55%" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="30"
+                                   TextAlignment="Center" VerticalAlignment="Center" />
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <TextBlock Text="羽化" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" ToolTip="聚焦边缘的柔和程度（像素）" />
+                        <Slider x:Name="FeatherSlider" Focusable="False" IsMoveToPointEnabled="True" Width="80" Minimum="0" Maximum="80" Value="12"
+                                ValueChanged="Feather_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
+                        <TextBlock x:Name="FeatherValue" Text="12" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="22"
+                                   TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <ToggleButton x:Name="FillToggle" Style="{StaticResource PlateToggle}" Content="填充"
                                   Click="Fill_Click" ToolTip="填充图形" />
+
+                    <StackPanel x:Name="NumberStyleGroup" Orientation="Horizontal" Visibility="Collapsed">
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <ToggleButton x:Name="NumberHollowToggle" Style="{StaticResource PlateToggle}" Content="空心"
+                                      Click="NumberStyle_Click" ToolTip="空心：圆环 + 彩色数字（关闭 = 纯色底 + 白色数字）" />
+                        <ToggleButton x:Name="NumberOutlineToggle" Style="{StaticResource PlateToggle}" Content="描边"
+                                      Click="NumberStyle_Click" ToolTip="序号外圈的白色描边" />
+                    </StackPanel>
 
                     <StackPanel x:Name="WidthGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border x:Name="WidthSeparator" Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
@@ -272,13 +316,6 @@
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
-                    <StackPanel x:Name="NumberStyleGroup" Orientation="Horizontal" Visibility="Collapsed">
-                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
-                        <ToggleButton x:Name="NumberHollowToggle" Style="{StaticResource PlateToggle}" Content="空心"
-                                      Click="NumberStyle_Click" ToolTip="空心：圆环 + 彩色数字（关闭 = 纯色底 + 白色数字）" />
-                        <ToggleButton x:Name="NumberOutlineToggle" Style="{StaticResource PlateToggle}" Content="描边"
-                                      Click="NumberStyle_Click" ToolTip="序号外圈的白色描边" />
-                    </StackPanel>
 
                     <StackPanel x:Name="CornerGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="5,0" />

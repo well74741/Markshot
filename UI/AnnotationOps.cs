@@ -41,6 +41,10 @@ internal static class AnnotationOps
             AnnotationTool.Pen => new PenAnnotation { Color = color, Thickness = thickness, Softness = toolbar.Softness },
             AnnotationTool.Highlighter => new PenAnnotation { Color = color, Thickness = thickness, Highlight = true, Softness = toolbar.Softness },
             AnnotationTool.Mosaic => new MosaicAnnotation { Rect = new Rect(point, point), BlockSize = toolbar.MosaicLevel },
+            AnnotationTool.Spotlight => new SpotlightAnnotation
+            {
+                Rect = new Rect(point, point), Ellipse = toolbar.SpotlightEllipse, Darkness = toolbar.SpotlightDarkness, Feather = toolbar.SpotlightFeather
+            },
             AnnotationTool.MosaicBrush => new MosaicBrushAnnotation
             {
                 Thickness = Math.Max(2, thickness), BlockSize = toolbar.MosaicLevel
@@ -166,6 +170,7 @@ internal static class AnnotationOps
         AnnotationTool.Mosaic or AnnotationTool.MosaicBrush => 4,
         AnnotationTool.Eraser or AnnotationTool.Cutout => 6,
         AnnotationTool.Text or AnnotationTool.Watermark => 5,
+        AnnotationTool.Number or AnnotationTool.Spotlight => 7,
         _ => 0
     };
 
@@ -188,6 +193,8 @@ internal static class AnnotationOps
         AnnotationTool.MosaicBrush => AnnotationTool.Mosaic,
         AnnotationTool.Text => AnnotationTool.Watermark,
         AnnotationTool.Watermark => AnnotationTool.Text,
+        AnnotationTool.Number => AnnotationTool.Spotlight,
+        AnnotationTool.Spotlight => AnnotationTool.Number,
         _ => null
     };
 
@@ -209,6 +216,7 @@ internal static class AnnotationOps
         WatermarkAnnotation => AnnotationTool.Watermark,
         TextAnnotation => AnnotationTool.Text,
         NumberAnnotation => AnnotationTool.Number,
+        SpotlightAnnotation => AnnotationTool.Spotlight,
         _ => AnnotationTool.None
     };
 
@@ -231,6 +239,7 @@ internal static class AnnotationOps
         RectAnnotation rect => rect.Rect.Width < 2 && rect.Rect.Height < 2,
         EllipseAnnotation ellipse => ellipse.Rect.Width < 2 && ellipse.Rect.Height < 2,
         MosaicAnnotation box => box.Rect.Width < 2 || box.Rect.Height < 2,
+        SpotlightAnnotation spot => spot.Rect.Width < 2 || spot.Rect.Height < 2,
         ArrowAnnotation arrow => (arrow.End - arrow.Start).Length < 2,
         LineAnnotation line => (line.End - line.Start).Length < 2,
         PolylineAnnotation polyline => polyline.Points.Count < 2,
@@ -345,6 +354,9 @@ internal static class AnnotationOps
                 break;
             case MosaicAnnotation mosaic:
                 mosaic.Rect = target; // the pattern is canvas-wide, nothing to rebuild
+                break;
+            case SpotlightAnnotation spotlight:
+                spotlight.Rect = target;
                 break;
             case LineAnnotation line:
                 line.Start = MapShapePoint(line.Start, source, target);

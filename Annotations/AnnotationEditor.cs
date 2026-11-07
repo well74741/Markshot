@@ -194,6 +194,15 @@ public sealed class AnnotationEditor : FrameworkElement
 
         if (Preview != null)
         {
+            if (Preview is SpotlightAnnotation)
+            {
+                Spotlights.Prepare(Items.Append(Preview)); // the one being drawn joins the others (no double darkening)
+                foreach (var spot in Items.OfType<SpotlightAnnotation>())
+                {
+                    DrawItem(dc, spot);
+                }
+            }
+
             DrawItem(dc, Preview);
         }
 
@@ -305,6 +314,28 @@ public sealed class AnnotationEditor : FrameworkElement
     {
         if (annotation.Hidden)
         {
+            return;
+        }
+
+        if (annotation is SpotlightAnnotation spotlight)
+        {
+            // Its own geometry (each spotlight of the group turned its own way), and its own opacity.
+            if (spotlight.Opacity < 0.999)
+            {
+                dc.PushOpacity(Math.Clamp(spotlight.Opacity, 0, 1));
+                spotlight.Draw(dc);
+                dc.Pop();
+            }
+            else
+            {
+                spotlight.Draw(dc);
+            }
+
+            if (highlight != null)
+            {
+                dc.DrawGeometry(null, new Pen(highlight, 2), spotlight.Shape(0));
+            }
+
             return;
         }
 
@@ -427,6 +458,7 @@ public sealed class AnnotationEditor : FrameworkElement
 
     public static IEnumerable<Annotation> DrawOrder(IReadOnlyList<Annotation> items)
     {
+        Spotlights.Prepare(items); // drawn together by the first one
         var watermark = items.OfType<WatermarkAnnotation>().FirstOrDefault();
         if (watermark == null)
         {

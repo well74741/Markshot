@@ -92,7 +92,8 @@ public partial class AnnotationToolbar : UserControl
         [ToolFamily.Line] = AnnotationTool.Arrow,
         [ToolFamily.Text] = AnnotationTool.Text,
         [ToolFamily.Mosaic] = AnnotationTool.Mosaic,
-        [ToolFamily.Eraser] = AnnotationTool.Eraser
+        [ToolFamily.Eraser] = AnnotationTool.Eraser,
+        [ToolFamily.Number] = AnnotationTool.Number
     };
 
     public event Action<AnnotationTool>? ToolChanged;
@@ -722,6 +723,25 @@ public partial class AnnotationToolbar : UserControl
                 break;
 
             case ToolFamily.Number:
+                if (annotation == null)
+                {
+                    NumberVariants.Visibility = Visibility.Visible; // 序号 / 聚焦
+                }
+
+                if (tool == AnnotationTool.Spotlight || annotation is SpotlightAnnotation)
+                {
+                    // 聚焦: shape, darkness and soft edge; no size, no colour.
+                    WidthGroup.Visibility = Visibility.Collapsed;
+                    ColorSection.Visibility = Visibility.Collapsed;
+                    SpotlightGroup.Visibility = Visibility.Visible;
+                    var spot = annotation as SpotlightAnnotation;
+                    _spotlightEllipse = spot?.Ellipse ?? _spotlightEllipse;
+                    _spotlightDarkness = spot?.Darkness ?? _spotlightDarkness;
+                    _spotlightFeather = spot?.Feather ?? _spotlightFeather;
+                    ShowSpotlight();
+                    break;
+                }
+
                 WidthLabel.Text = "大小";
                 WidthSlider.Minimum = 8;
                 WidthSlider.Maximum = 40;
@@ -797,6 +817,8 @@ public partial class AnnotationToolbar : UserControl
         EraserModes.Visibility = Visibility.Collapsed;
         PenVariants.Visibility = Visibility.Collapsed;
         MosaicVariants.Visibility = Visibility.Collapsed;
+        NumberVariants.Visibility = Visibility.Collapsed;
+        SpotlightGroup.Visibility = Visibility.Collapsed;
     }
 
     private void SyncVariant(AnnotationTool tool)
@@ -818,6 +840,8 @@ public partial class AnnotationToolbar : UserControl
         EraserCut.IsChecked = tool == AnnotationTool.Cutout;
         VariantText.IsChecked = tool == AnnotationTool.Text;
         VariantWatermark.IsChecked = tool == AnnotationTool.Watermark;
+        VariantNumber.IsChecked = tool == AnnotationTool.Number;
+        VariantSpotlight.IsChecked = tool == AnnotationTool.Spotlight;
         _configuring = wasConfiguring;
     }
 
@@ -934,7 +958,7 @@ public partial class AnnotationToolbar : UserControl
         AnnotationTool.Mosaic or AnnotationTool.MosaicBrush => ToolFamily.Mosaic,
         AnnotationTool.Watermark => ToolFamily.Watermark,
         AnnotationTool.Text => ToolFamily.Text,
-        AnnotationTool.Number => ToolFamily.Number,
+        AnnotationTool.Number or AnnotationTool.Spotlight => ToolFamily.Number,
         AnnotationTool.Eraser or AnnotationTool.Cutout => ToolFamily.Eraser,
         _ => ToolFamily.None
     };
@@ -947,7 +971,7 @@ public partial class AnnotationToolbar : UserControl
         MosaicAnnotation or MosaicBrushAnnotation => ToolFamily.Mosaic,
         WatermarkAnnotation => ToolFamily.Watermark,
         TextAnnotation => ToolFamily.Text,
-        NumberAnnotation => ToolFamily.Number,
+        NumberAnnotation or SpotlightAnnotation => ToolFamily.Number,
         _ => ToolFamily.None
     };
 
@@ -1014,6 +1038,9 @@ public partial class AnnotationToolbar : UserControl
 
     private void EraserMenu_Click(object sender, RoutedEventArgs e) =>
         ShowVariantMenu((Button)sender, ("擦除", AnnotationTool.Eraser), ("抠除", AnnotationTool.Cutout));
+
+    private void NumberMenu_Click(object sender, RoutedEventArgs e) =>
+        ShowVariantMenu((Button)sender, ("序号", AnnotationTool.Number), ("聚焦", AnnotationTool.Spotlight));
 
     private void MosaicMenu_Click(object sender, RoutedEventArgs e) =>
         ShowVariantMenu((Button)sender, ("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush));
@@ -1088,6 +1115,73 @@ public partial class AnnotationToolbar : UserControl
     /// <summary>The ▾ buttons are hidden (the setting); hovering a tool shows its styles.</summary>
     public bool HideChevrons { get; private set; }
 
+    // ---- 聚焦 ----------------------------------------------------------------------------------------------------
+    private bool _spotlightEllipse;
+    private double _spotlightDarkness = 0.55;
+    private double _spotlightFeather = 12;
+
+    public bool SpotlightEllipse => _spotlightEllipse;
+
+    public double SpotlightDarkness => _spotlightDarkness;
+
+    public double SpotlightFeather => _spotlightFeather;
+
+    private void ShowSpotlight()
+    {
+        var was = _configuring;
+        _configuring = true;
+        SpotlightRect.IsChecked = !_spotlightEllipse;
+        SpotlightEllipseToggle.IsChecked = _spotlightEllipse;
+        DarknessSlider.Value = Math.Round(_spotlightDarkness * 100);
+        DarknessValue.Text = $"{Math.Round(_spotlightDarkness * 100)}%";
+        FeatherSlider.Value = Math.Round(_spotlightFeather);
+        FeatherValue.Text = $"{Math.Round(_spotlightFeather)}";
+        _configuring = was;
+    }
+
+    private void SpotlightShape_Click(object sender, RoutedEventArgs e)
+    {
+        _spotlightEllipse = ReferenceEquals(sender, SpotlightEllipseToggle);
+        if (!_configuring)
+        {
+            SettingsChanged?.Invoke();
+        }
+    }
+
+    private void Darkness_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (DarknessValue == null)
+        {
+            return;
+        }
+
+        DarknessValue.Text = $"{Math.Round(e.NewValue)}%";
+        if (_configuring)
+        {
+            return;
+        }
+
+        _spotlightDarkness = Math.Clamp(e.NewValue / 100, 0.05, 1);
+        SettingsChanged?.Invoke();
+    }
+
+    private void Feather_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (FeatherValue == null)
+        {
+            return;
+        }
+
+        FeatherValue.Text = $"{Math.Round(e.NewValue)}";
+        if (_configuring)
+        {
+            return;
+        }
+
+        _spotlightFeather = Math.Max(0, Math.Round(e.NewValue));
+        SettingsChanged?.Invoke();
+    }
+
     private readonly Dictionary<ButtonBase, object> _listToolTips = new();
 
     private (string, bool, Action)[] Variants(params (string Label, AnnotationTool Tool)[] items) =>
@@ -1103,6 +1197,7 @@ public partial class AnnotationToolbar : UserControl
             (ToolText, TextChevron, () => Variants(("文字", AnnotationTool.Text), ("水印", AnnotationTool.Watermark))),
             (ToolMosaic, MosaicChevron, () => Variants(("区域马赛克", AnnotationTool.Mosaic), ("画笔马赛克", AnnotationTool.MosaicBrush))),
             (ToolEraser, EraserChevron, () => Variants(("擦除", AnnotationTool.Eraser), ("抠除", AnnotationTool.Cutout))),
+            (ToolNumber, NumberChevron, () => Variants(("序号", AnnotationTool.Number), ("聚焦", AnnotationTool.Spotlight))),
             (ScrollButton, ScrollChevron, () => new (string, bool, Action)[]
             {
                 ("竖向长截图", !ScrollHorizontal, () => ScrollHorizontal = false),
@@ -1357,6 +1452,7 @@ public partial class AnnotationToolbar : UserControl
             }),
             ToolFamily.Text => (ToolText, ToolTextIcon, tool == AnnotationTool.Watermark ? "IconWatermarkMask" : "IconTextMask"),
             ToolFamily.Eraser => (ToolEraser, ToolEraserIcon, tool == AnnotationTool.Cutout ? "IconCutoutMask" : "IconEraserMask"),
+            ToolFamily.Number => (ToolNumber, ToolNumberIcon, tool == AnnotationTool.Spotlight ? "IconSpotlightMask" : "IconNumberMask"),
             _ => (ToolMosaic, ToolMosaicIcon, tool == AnnotationTool.MosaicBrush ? "IconMosaicBrushMask" : "IconMosaicMask")
         };
         button.Tag = tool.ToString();
@@ -1396,6 +1492,7 @@ public partial class AnnotationToolbar : UserControl
         PenAnnotation => AnnotationTool.Pen,
         TextAnnotation => AnnotationTool.Text,
         NumberAnnotation => AnnotationTool.Number,
+        SpotlightAnnotation => AnnotationTool.Spotlight,
         MosaicAnnotation => AnnotationTool.Mosaic,
         MosaicBrushAnnotation => AnnotationTool.MosaicBrush,
         WatermarkAnnotation => AnnotationTool.Watermark,

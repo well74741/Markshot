@@ -54,6 +54,10 @@ public sealed class ImageEditorWindow : PinWindow
     private Border? _resetAllFooter;
     private FrameworkElement? _panelStack;
     private FrameworkElement? _radiusRow;
+    private FrameworkElement? _shadowRow;
+    private FrameworkElement? _borderRow;
+    private FrameworkElement? _borderColorRow;
+    private FrameworkElement? _opacityRow;
     private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _styleSliders = new();
     private readonly Border _borderSwatch = new() { Width = 22, Height = 14, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1) };
     private readonly Dictionary<string, RadioButton> _backgroundButtons = new();
@@ -641,15 +645,22 @@ public sealed class ImageEditorWindow : PinWindow
         fitRow.Children.Add(Label(" px"));
         stack.Children.Add(Section("画布与尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _keepRatio, _snapMoves } }, fitRow, BackgroundRow()));
         _radiusRow = StyleSlider("圆角", "Radius", 0, 120);
-        _styleSection = Section("元素样式", null, _radiusRow, StyleSlider("阴影", "Shadow", 0, 60), StyleSlider("描边", "Border", 0, 24), BorderColorRow());
+        _shadowRow = StyleSlider("阴影", "Shadow", 0, 60);
+        _borderRow = StyleSlider("描边", "Border", 0, 24);
+        _borderColorRow = BorderColorRow();
+        _opacityRow = StyleSlider("透明度", "Opacity", 0, 100);
+        _styleSliders["Opacity"].Slider.Minimum = 5;
+        _styleSection = Section("元素样式", null, _radiusRow, _shadowRow, _borderRow, _borderColorRow, _opacityRow);
         // Always there (it rests while no picture is selected); 裁切与变形 takes its old place at the top.
         ((UIElement)_styleSection.Tag).IsEnabled = false;
         stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
         stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow));
         stack.Children.Add(_styleSection);
-        stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
+        _adjustReset = TextButton("重置", "调色恢复默认", ResetAdjust);
+        stack.Children.Add(Section("调色", _adjustReset, colour));
         stack.Children.Add(Section("抠色与替换颜色", null, KeyColorRows()));
         var resetAll = TextButton("重置所有修改", "回到打开时的样子（图片和批注；可用 Ctrl+Z 撤销）", ResetAll);
+        _resetAllButton = resetAll;
         resetAll.HorizontalAlignment = HorizontalAlignment.Stretch;
         resetAll.Margin = new Thickness(0, 0, 4, 0);
         var clearImage = TextButton("清空图片", "关掉这张图片，回到空的编辑器（没保存的修改会先询问）", () => ClearDocument());
@@ -775,8 +786,26 @@ public sealed class ImageEditorWindow : PinWindow
         RefreshPanel();
     }
 
-    /// <summary>The selected pictures (a 多选 of pictures counts): what 元素样式 changes.</summary>
+    /// <summary>The selected pictures (a 多选 of pictures counts): what 元素样式's shadow / outline change.</summary>
     private List<ImageAnnotation> StyledPictures => SelectedElements.OfType<ImageAnnotation>().ToList();
+
+    /// <summary>Everything 元素样式 can change: pictures, shapes, lines, text … (not the watermark or 抠除 holes).</summary>
+    private List<Annotation> StyledElements => SelectedElements.Where(item => item is not (WatermarkAnnotation or CutoutAnnotation)).ToList();
+
+    /// <summary>Rounded corners: a picture (not a free shape) or a rectangle.</summary>
+    private static bool HasCorners(Annotation item) => item is ImageAnnotation { IsShaped: false } or RectAnnotation;
+
+    /// <summary>A row applies to every selected element (others have it their own way: it greys out).</summary>
+    private bool StyleApplies(string key)
+    {
+        var elements = StyledElements;
+        return elements.Count > 0 && key switch
+        {
+            "Radius" => elements.All(HasCorners),
+            "Shadow" or "Border" => elements.All(item => item is ImageAnnotation), // a shape has its own stroke
+            _ => true
+        };
+    }
 
     private FrameworkElement StyleSlider(string title, string key, double max, double maximum)
     {
@@ -835,20 +864,22 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>元素样式 of the selected pictures (a slider drag is one undo step).</summary>
     public void SetPictureStyle(string key, double value)
     {
-        var pictures = StyledPictures;
-        if (pictures.Count == 0)
+        var elements = StyledElements;
+        if (elements.Count == 0 || !StyleApplies(key))
         {
             return;
         }
 
-        _history.CheckpointCoalesced(Editor.Items, (pictures[0], "style", key));
-        foreach (var picture in pictures)
+        _history.CheckpointCoalesced(Editor.Items, (elements[0], "style", key));
+        foreach (var element in elements)
         {
-            switch (key)
+            switch (key, element)
             {
-                case "Radius": picture.Radius = value; break;
-                case "Shadow": picture.ShadowSize = value; break;
-                default: picture.BorderWidth = value; break;
+                case ("Opacity", _): element.Opacity = Math.Clamp(value / 100, 0.05, 1); break;
+                case ("Radius", ImageAnnotation picture): picture.Radius = value; break;
+                case ("Radius", RectAnnotation rect): rect.CornerRadius = value; break;
+                case ("Shadow", ImageAnnotation picture): picture.ShadowSize = value; break;
+                case ("Border", ImageAnnotation picture): picture.BorderWidth = value; break;
             }
         }
 
@@ -1203,25 +1234,52 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
-        var first = StyledPictures.FirstOrDefault();
+        var first = StyledElements.FirstOrDefault();
         var controls = (UIElement)_styleSection.Tag;
-        controls.IsEnabled = first != null; // always shown; it rests without a selected picture
+        controls.IsEnabled = first != null; // always shown; it rests without a selected element
         controls.Opacity = first != null ? 1 : 0.5;
+        var pictures = StyledPictures;
+        // Rows come and go with the kind of element (the section eases to its new height); rows that do not suit
+        // all the selected elements grey out.
+        AnimateSectionHeight(_styleSection, () =>
+        {
+            _radiusRow!.Visibility = first == null || StyledElements.Any(HasCorners) ? Visibility.Visible : Visibility.Collapsed;
+            var pictureRows = first == null || pictures.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _shadowRow!.Visibility = pictureRows;
+            _borderRow!.Visibility = pictureRows;
+            _borderColorRow!.Visibility = pictureRows;
+        });
+        foreach (var (row, key) in new[] { (_radiusRow!, "Radius"), (_shadowRow!, "Shadow"), (_borderRow!, "Border"), (_borderColorRow!, "Border") })
+        {
+            var on = first == null || StyleApplies(key);
+            row.IsEnabled = on;
+            row.Opacity = on ? 1 : 0.4;
+        }
+
         if (first == null)
         {
-            _radiusRow!.Visibility = Visibility.Visible;
             return;
         }
 
-        // A free shape has no corners to round; its shadow and outline follow the shape.
-        _radiusRow!.Visibility = StyledPictures.All(picture => picture.IsShaped) ? Visibility.Collapsed : Visibility.Visible;
+        var firstPicture = pictures.FirstOrDefault();
+        var syncingStyle = _syncingControls;
+        _syncingControls = true;
+        _styleSliders["Opacity"].Slider.Value = Math.Round(first.Opacity * 100);
+        _styleSliders["Radius"].Slider.Value = first is RectAnnotation corner ? corner.CornerRadius : firstPicture?.Radius ?? 0;
+        _syncingControls = syncingStyle;
+        if (firstPicture == null)
+        {
+            return;
+        }
+
+        first = firstPicture;
 
         var syncing = _syncingControls;
         _syncingControls = true;
-        _styleSliders["Radius"].Slider.Value = first.Radius;
-        _styleSliders["Shadow"].Slider.Value = first.ShadowSize;
-        _styleSliders["Border"].Slider.Value = first.BorderWidth;
-        _borderSwatch.Background = new SolidColorBrush(first.BorderColor);
+        _styleSliders["Radius"].Slider.Value = ((ImageAnnotation)first).Radius;
+        _styleSliders["Shadow"].Slider.Value = ((ImageAnnotation)first).ShadowSize;
+        _styleSliders["Border"].Slider.Value = ((ImageAnnotation)first).BorderWidth;
+        _borderSwatch.Background = new SolidColorBrush(((ImageAnnotation)first).BorderColor);
         _syncingControls = syncing;
     }
 
@@ -1543,6 +1601,7 @@ public sealed class ImageEditorWindow : PinWindow
                 AnnotationTool.Polyline => "单击放第一个点 · 也可拖出一段 · Alt+滚轮 粗细",
                 AnnotationTool.Pen or AnnotationTool.Highlighter => "拖动书写 · 按住 Alt 单击吸色 · Shift 直线 · Alt+滚轮 笔刷大小 · Shift+滚轮 软边 · Ctrl+滚轮 透明度 · Tab 画笔 / 荧光笔",
                 AnnotationTool.Mosaic => "拖出打码区域 · Alt+滚轮 程度 · Tab 画笔马赛克",
+                AnnotationTool.Spotlight => "拖出聚焦区域：里面保持原样，外面变暗 · Shift 方形 · Alt 从中心 · Tab 序号",
                 AnnotationTool.MosaicBrush => "涂抹打码 · Shift 直线 · Alt+滚轮 笔刷大小 · Tab 区域马赛克",
                 AnnotationTool.Text => "双击空白处新建文字 · 单击已有文字编辑 · 拖动移动 · Alt+滚轮 字号",
                 AnnotationTool.Watermark => "拖动移动水印 · 双击修改文字 · Alt+滚轮 字号",
@@ -2328,6 +2387,48 @@ public sealed class ImageEditorWindow : PinWindow
         {
             button.IsEnabled = _beforeGroup.ContainsKey(group);
         }
+
+        // Nothing changed there: its 重置 rests (grey).
+        if (_adjustReset != null)
+        {
+            _adjustReset.IsEnabled = _hasImage && !_adjust.IsNeutral;
+        }
+
+        if (_resetAllButton != null)
+        {
+            _resetAllButton.IsEnabled = _hasImage && _history.CanUndo;
+        }
+    }
+
+    private Button? _adjustReset;
+    private Button? _resetAllButton;
+
+    /// <summary>A section changes its rows: it eases from its old height to the new one instead of jumping.</summary>
+    private static void AnimateSectionHeight(FrameworkElement section, Action change)
+    {
+        var before = section.ActualHeight;
+        change();
+        if (before <= 0 || !section.IsLoaded)
+        {
+            return;
+        }
+
+        section.BeginAnimation(HeightProperty, null);
+        section.Height = double.NaN;
+        section.Measure(new Size(section.ActualWidth, double.PositiveInfinity));
+        var after = section.DesiredSize.Height - section.Margin.Top - section.Margin.Bottom;
+        if (Math.Abs(after - before) < 1)
+        {
+            return;
+        }
+
+        var grow = new System.Windows.Media.Animation.DoubleAnimation(before, after, Motion.Fast) { EasingFunction = Motion.Ease };
+        grow.Completed += (_, _) =>
+        {
+            section.BeginAnimation(HeightProperty, null);
+            section.Height = double.NaN; // back to its own height
+        };
+        section.BeginAnimation(HeightProperty, grow);
     }
 
     private protected override BitmapSource ComposeEditedImage()
@@ -3638,18 +3739,9 @@ public sealed class ImageEditorWindow : PinWindow
         var composed = ComposeEditedImage();
         var center = PointToScreen(new Point(ActualWidth / 2, ActualHeight / 2));
         var work = Monitors.At((int)center.X, (int)center.Y).WorkArea;
-        // A pin has one picture under its annotations: everything up to the topmost picture goes into
-        // it, what lies above stays editable there (the holes of 抠除 always do).
-        var lastPicture = Editor.Items.FindLastIndex(item => item is ImageAnnotation);
-        var flat = ImageOps.Render(_baseImage.PixelWidth, _baseImage.PixelHeight, dc =>
-        {
-            dc.DrawImage(_baseImage, new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight)); // the background colour
-            foreach (var item in Editor.Items.Take(lastPicture + 1))
-            {
-                AnnotationEditor.DrawItem(dc, item);
-            }
-        });
-        var annotations = Editor.Items.Where((item, i) => i > lastPicture || item is CutoutAnnotation).Select(item => item.Clone()).ToList();
+        // Everything goes into the picture: the pin keeps no annotations or steps (less memory, nothing to store).
+        var flat = composed;
+        var annotations = new List<Annotation>();
         _sourcePin = PinAction != null
             ? PinAction(flat, annotations, composed)
             : ((App)Application.Current).PinFromEditor(flat, annotations, composed, _sourcePin, work);
