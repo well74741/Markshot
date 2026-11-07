@@ -87,6 +87,18 @@ public sealed class AnimatedImage
         var count = Math.Clamp(codec.FrameCount, 1, 400);
         var frameInfo = codec.FrameInfo;
         var scale = Math.Min(1.0, maxSide / (double)Math.Max(width, height));
+        // All frames stay in memory while it plays: at most ~600 MB of them (a long, large GIF plays smaller).
+        var budget = 600.0 * 1024 * 1024 / (count * 4.0);
+        scale = Math.Min(scale, Math.Sqrt(budget / Math.Max(1.0, (double)width * height)));
+        var needed = new HashSet<int>();
+        for (var i = 0; i < count && i < frameInfo.Length; i++)
+        {
+            if (frameInfo[i].RequiredFrame >= 0)
+            {
+                needed.Add(frameInfo[i].RequiredFrame);
+            }
+        }
+
         var outWidth = Math.Max(1, (int)Math.Round(width * scale));
         var outHeight = Math.Max(1, (int)Math.Round(height * scale));
         var decoded = new SKBitmap?[count];
@@ -120,8 +132,15 @@ public sealed class AnimatedImage
                     break;
                 }
 
-                decoded[i] = bitmap;
                 frames.Add(ToSource(bitmap, outWidth, outHeight));
+                if (needed.Contains(i))
+                {
+                    decoded[i] = bitmap; // a later frame draws over it
+                }
+                else
+                {
+                    bitmap.Dispose();
+                }
                 var milliseconds = codec.FrameCount > 1 && i < frameInfo.Length ? frameInfo[i].Duration : 0;
                 durations.Add(TimeSpan.FromMilliseconds(milliseconds <= 10 ? 100 : milliseconds)); // like browsers: 0 / 10 ms = 100 ms
             }
@@ -185,9 +204,25 @@ public sealed class AnimatedImage
     {
         image.BeginAnimation(System.Windows.Controls.Image.SourceProperty, null);
         image.Source = Frames[0];
+        if (CreateAnimation() is { } animation)
+        {
+            image.BeginAnimation(System.Windows.Controls.Image.SourceProperty, animation);
+        }
+    }
+
+    private ObjectAnimationUsingKeyFrames? _animation;
+
+    /// <summary>The frames as an endless animation of Image.Source (null for a still picture).</summary>
+    public ObjectAnimationUsingKeyFrames? CreateAnimation()
+    {
         if (!IsAnimated)
         {
-            return;
+            return null;
+        }
+
+        if (_animation != null)
+        {
+            return _animation;
         }
 
         var animation = new ObjectAnimationUsingKeyFrames { Duration = Length, RepeatBehavior = RepeatBehavior.Forever };
@@ -199,7 +234,7 @@ public sealed class AnimatedImage
         }
 
         animation.Freeze();
-        image.BeginAnimation(System.Windows.Controls.Image.SourceProperty, animation);
+        return _animation = animation;
     }
 
     /// <summary>The first frame as a tray icon (square, the picture centred).</summary>

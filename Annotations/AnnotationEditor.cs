@@ -610,7 +610,7 @@ public sealed class AnnotationEditor : FrameworkElement
         {
             StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round
         }, grip);
-        dc.DrawGeometry(null, new Pen(Brushes.White, 1.6 * unit)
+        dc.DrawGeometry(null, new Pen(Accent, 1.6 * unit) // the frame's blue
         {
             StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round
         }, grip);

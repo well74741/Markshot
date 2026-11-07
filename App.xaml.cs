@@ -239,7 +239,8 @@ public partial class App : Application
         {
             _float = new UI.FloatButtonWindow(Config, FloatAction, () => ShowSettings("Float"), () => SetFloatButton(false));
             _float.Closed += (_, _) => _float = null;
-            _float.PinRequested += image => CreatePinAtCursor(image, sweep: true);
+            _float.PinRequested += image => PinCentered(image);
+            _float.PinFileRequested += (file, index) => PinFile(file, index % 8);
             _float.Show();
             if (_capturing)
             {
@@ -282,6 +283,9 @@ public partial class App : Application
                 break;
             case "Editor":
                 OpenEditor();
+                break;
+            case "History":
+                ShowPinHistory();
                 break;
             default:
                 StartCapture();
@@ -487,7 +491,8 @@ public partial class App : Application
 
     public PinWindow CreatePin(BitmapSource image, int screenX, int screenY,
         BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null, double cornerRadius = 0,
-        bool fromCapture = false, bool shapedShadow = false, bool sweep = false, (double Zoom, double Opacity)? view = null)
+        bool fromCapture = false, bool shapedShadow = false, bool sweep = false, (double Zoom, double Opacity)? view = null,
+        AnimatedImage? animation = null)
     {
         while (_pins.Count >= MaxPins)
         {
@@ -502,7 +507,8 @@ public partial class App : Application
             CornerRadius = cornerRadius,
             ShapedShadow = shapedShadow,
             FromCapture = fromCapture,
-            Sweep = sweep
+            Sweep = sweep,
+            Animation = animation
         };
 
         pin.Closed += (_, _) =>
@@ -557,7 +563,40 @@ public partial class App : Application
     public void CreatePinAtCursor(BitmapSource image, bool sweep = false)
     {
         var cursor = Native.CursorPosition();
-        CreatePin(image, cursor.X + 16, cursor.Y + 16, sweep: sweep);
+        // A picture with see-through parts: the shadow follows its shape (no plate behind it).
+        CreatePin(image, cursor.X + 16, cursor.Y + 16, sweep: sweep, shapedShadow: ImageOps.HasTransparentCorner(image));
+    }
+
+    /// <summary>A picture dropped on the floating button: in the middle of its screen, shrunk to fit; a moving one plays.</summary>
+    public PinWindow? PinCentered(BitmapSource image, AnimatedImage? animation = null, int? offset = null)
+    {
+        var at = _float?.Center ?? new Point(Native.CursorPosition().X, Native.CursorPosition().Y);
+        var work = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)at.X, (int)at.Y)).WorkingArea;
+        var fit = Math.Min(1, Math.Min((work.Width - 32) / (double)image.PixelWidth, (work.Height - 32) / (double)image.PixelHeight));
+        var shift = (offset ?? 0) * 24; // several dropped at once: each a little further
+        var x = work.X + (work.Width - (int)(image.PixelWidth * fit)) / 2 + shift;
+        var y = work.Y + (work.Height - (int)(image.PixelHeight * fit)) / 2 + shift;
+        return CreatePin(image, x, y, sweep: true, view: (fit, 1), shapedShadow: ImageOps.HasTransparentCorner(image), animation: animation);
+    }
+
+    /// <summary>A picture file for a pin: a GIF / WebP / APNG that moves plays; null when it does not open.</summary>
+    public PinWindow? PinFile(string path, int offset = 0)
+    {
+        var moving = AnimatedImage.Load(path, maxSide: 2400);
+        if (moving is { IsAnimated: true })
+        {
+            return PinCentered(moving.Frames[0], moving, offset);
+        }
+
+        try
+        {
+            return PinCentered(ImageFile.Load(path), offset: offset);
+        }
+        catch (Exception ex) when (ex is NotSupportedException or IOException or UnauthorizedAccessException or FileFormatException or ArgumentException or InvalidOperationException)
+        {
+            Log.Info("拖到悬浮按钮的文件不是图片：" + path);
+            return null;
+        }
     }
 
     public void PinFromClipboard()

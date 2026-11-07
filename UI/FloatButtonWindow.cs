@@ -14,11 +14,14 @@ namespace Markshot.UI;
 /// </summary>
 public sealed class FloatButtonWindow : Window
 {
-    public const double MainSize = 46;
+    /// <summary>The main button at size 1 (the setting goes up to twice that).</summary>
+    public const double BaseSize = 46;
+
+    private double MainSize => BaseSize * Math.Clamp(_config.FloatIconSize, 1, 2);
     private const double ItemSize = 34;
     private const double Gap = 8;
 
-    public static readonly string[] Actions = { "Capture", "Record", "Ocr", "Editor" };
+    public static readonly string[] Actions = { "Capture", "Record", "Ocr", "Editor", "History" };
 
     private readonly AppConfig _config;
     private readonly Action<string> _run;
@@ -44,6 +47,8 @@ public sealed class FloatButtonWindow : Window
     private bool _moving;
     private Native.POINT _pressPoint;
     private (double X, double Y) _pressCenter;
+    private bool _hoverBlocked; // back after a capture with the pointer on it: stays closed until the pointer comes again
+    private bool _fadingOut;
 
     /// <summary>Where the pointer is (screen pixels); replaceable in tests.</summary>
     internal static Func<Native.POINT> Pointer = Native.CursorPosition;
@@ -74,10 +79,7 @@ public sealed class FloatButtonWindow : Window
         RenderOptions.SetBitmapScalingMode(_icon, BitmapScalingMode.HighQuality);
         _main = new Border
         {
-            Width = MainSize,
-            Height = MainSize,
             Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), // the whole round area takes the mouse
-            CornerRadius = new CornerRadius(MainSize / 2),
             Child = _icon,
             Cursor = Cursors.Hand,
             ToolTip = "单击截图 · 拖动移动 · 右键更多"
@@ -96,7 +98,7 @@ public sealed class FloatButtonWindow : Window
         };
         _plate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xF21E1E1E));
         _row = new StackPanel { Orientation = Orientation.Horizontal };
-        _root = new Grid { Children = { _row } };
+        _root = new Grid { Children = { _row }, Opacity = 0 }; // fades in once it is in place (no jump on the first frame)
         Content = _root;
         _reorder = new ReorderBehavior(_items);
         _reorder.Reordered += keys =>
@@ -110,13 +112,21 @@ public sealed class FloatButtonWindow : Window
 
         _main.MouseEnter += (_, _) =>
         {
-            if (!_pressed)
+            if (!_pressed && !_hoverBlocked)
             {
                 Expand();
             }
         };
+        _main.MouseLeave += (_, _) =>
+        {
+            if (!_expanded)
+            {
+                _hoverBlocked = false;
+            }
+        };
         _row.MouseLeave += (_, _) =>
         {
+            _hoverBlocked = false;
             if (!_reorder.IsDragging && !_pressed)
             {
                 Collapse();
@@ -139,9 +149,15 @@ public sealed class FloatButtonWindow : Window
         _main.Drop += (_, e) =>
         {
             e.Handled = true;
-            foreach (var image in DroppedImages(e.Data))
+            var index = 0;
+            foreach (var file in DroppedFiles(e.Data))
             {
-                PinRequested?.Invoke(image);
+                PinFileRequested?.Invoke(file, index++);
+            }
+
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.Bitmap) is BitmapSource bitmap)
+            {
+                PinRequested?.Invoke(bitmap);
             }
         };
         _main.MouseRightButtonUp += (_, e) =>
@@ -158,9 +174,10 @@ public sealed class FloatButtonWindow : Window
         };
         Loaded += (_, _) =>
         {
-
             (_centerX, _centerY) = StartCenter();
             Place();
+            // Shown only once it is where it belongs, side and all (it was drawn once on the wrong side: a jump).
+            Dispatcher.BeginInvoke(() => FadeIn(), DispatcherPriority.Render);
         };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(Place, DispatcherPriority.Loaded);
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
@@ -175,8 +192,15 @@ public sealed class FloatButtonWindow : Window
 
     public bool IsExpanded => _expanded;
 
-    /// <summary>A picture dropped on the button: the app pins it at the pointer.</summary>
+    /// <summary>A picture dropped on the button (not a file): the app pins it in the middle of the screen.</summary>
     public event Action<BitmapSource>? PinRequested;
+
+    /// <summary>A picture file dropped on the button: the app pins it (a moving one plays) in the middle of the screen.</summary>
+    public event Action<string, int>? PinFileRequested;
+
+    /// <summary>The files of a drop (at most 20).</summary>
+    public static List<string> DroppedFiles(IDataObject data) =>
+        data.GetData(DataFormats.FileDrop) is string[] files ? files.Where(File.Exists).Take(20).ToList() : new List<string>();
 
     private static void OnDragOver(object sender, DragEventArgs e)
     {
@@ -228,6 +252,7 @@ public sealed class FloatButtonWindow : Window
         "Record" => "录屏",
         "Ocr" => "文字识别",
         "Editor" => "图片编辑器",
+        "History" => "贴图历史",
         _ => key
     };
 
@@ -236,6 +261,7 @@ public sealed class FloatButtonWindow : Window
         "Capture" => "IconCaptureMask",
         "Record" => "IconRecordMask",
         "Ocr" => "IconOcrMask",
+        "History" => "IconHistoryMask",
         _ => "IconEditMask"
     };
 
@@ -282,6 +308,9 @@ public sealed class FloatButtonWindow : Window
     public void ApplyLook()
     {
         FloatIcon.Load(_config).Play(_icon);
+        _main.Width = MainSize;
+        _main.Height = MainSize;
+        _main.CornerRadius = new CornerRadius(MainSize / 2);
         var opacity = Math.Clamp(_config.FloatIconOpacity, 0.2, 1);
         _icon.Opacity = opacity;
         var size = Math.Clamp(_config.PinShadowSize, 0, 40);
@@ -547,6 +576,12 @@ public sealed class FloatButtonWindow : Window
         var wasShown = IsVisible;
         _suspended = true;
         Collapse();
+        if (wasShown)
+        {
+            // A quick fade, waited for here (the screenshot comes right after), then gone before it is taken.
+            FadeOutAndWait();
+        }
+
         UpdateShown();
         if (wasShown)
         {
@@ -558,7 +593,55 @@ public sealed class FloatButtonWindow : Window
     public void Resume()
     {
         _suspended = false;
+        // Back with the pointer still on it (it was clicked): closed until the pointer leaves and comes again.
+        var cursor = Pointer();
+        _hoverBlocked = PointerOnItOverride?.Invoke() ?? (_handle != IntPtr.Zero && Native.GetWindowRect(_handle, out var rect) &&
+                        cursor.X >= rect.Left && cursor.X < rect.Right && cursor.Y >= rect.Top && cursor.Y < rect.Bottom);
         UpdateShown();
+    }
+
+    /// <summary>Tests: whether the pointer is on the button.</summary>
+    public Func<bool>? PointerOnItOverride;
+
+    /// <summary>Closed after a capture until the pointer comes again (tests).</summary>
+    internal bool HoverBlocked { get => _hoverBlocked; set => _hoverBlocked = value; }
+
+    internal double Shown => _root.Opacity;
+
+    private static readonly Duration FadeTime = new(TimeSpan.FromMilliseconds(110));
+
+    private void FadeIn()
+    {
+        _fadingOut = false;
+        _root.BeginAnimation(OpacityProperty, new DoubleAnimation(1, FadeTime) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+    }
+
+    private void FadeOut(Action completed)
+    {
+        _fadingOut = true;
+        var animation = new DoubleAnimation(0, new Duration(TimeSpan.FromMilliseconds(80)));
+        animation.Completed += (_, _) =>
+        {
+            if (_fadingOut)
+            {
+                completed();
+            }
+        };
+        _root.BeginAnimation(OpacityProperty, animation);
+    }
+
+    /// <summary>Fades out and returns when it is done (at most ~150 ms).</summary>
+    private void FadeOutAndWait()
+    {
+        var frame = new DispatcherFrame();
+        FadeOut(() => frame.Continue = false);
+        var guard = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Send, (_, _) => frame.Continue = false, Dispatcher);
+        guard.Start();
+        Dispatcher.PushFrame(frame);
+        guard.Stop();
+        _fadingOut = false;
+        _root.BeginAnimation(OpacityProperty, null);
+        _root.Opacity = 0;
     }
 
     public bool IsHiddenForFullscreen => _fullscreenHidden;
@@ -576,15 +659,36 @@ public sealed class FloatButtonWindow : Window
     private void UpdateShown()
     {
         var show = !_suspended && !_fullscreenHidden;
-        if (show && !IsVisible)
+        if (show && (!IsVisible || _fadingOut))
         {
-            Show();
-            Place();
+            if (!IsVisible)
+            {
+                _root.BeginAnimation(OpacityProperty, null);
+                _root.Opacity = 0;
+                Show();
+                Place();
+            }
+
+            FadeIn();
         }
         else if (!show && IsVisible)
         {
             Collapse();
-            Hide();
+            if (_root.Opacity <= 0.01 && !_fadingOut)
+            {
+                Hide();
+            }
+            else if (!_fadingOut)
+            {
+                FadeOut(() =>
+                {
+                    _fadingOut = false;
+                    if (_suspended || _fullscreenHidden)
+                    {
+                        Hide();
+                    }
+                });
+            }
         }
     }
 

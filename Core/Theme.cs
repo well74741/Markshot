@@ -177,10 +177,29 @@ public static partial class Theme
     /// <summary>Keeps a window's title bar in step with theme switches.</summary>
     public static void TrackTitleBar(Window window)
     {
-        void Update() => ApplyTitleBar(window);
+        void Update()
+        {
+            ApplyTitleBar(window);
+            if (window.Icon != null)
+            {
+                window.Icon = Logo(); // the white logo is not readable on a light title bar: a dark one there
+            }
+        }
+
         window.SourceInitialized += (_, _) => Update();
         Changed += Update;
         window.Closed += (_, _) => Changed -= Update;
+    }
+
+    private static ImageSource? _logo;
+    private static ImageSource? _logoDark;
+
+    /// <summary>The logo for a title bar of the current theme (white on dark, dark on light).</summary>
+    public static ImageSource Logo()
+    {
+        var name = IsLight ? "markshot_dark.ico" : "markshot.ico";
+        ref var cached = ref IsLight ? ref _logoDark : ref _logo;
+        return cached ??= BitmapFrame.Create(new Uri("pack://application:,,,/Markshot;component/Assets/" + name));
     }
 
     private static T Freeze<T>(T freezable) where T : Freezable

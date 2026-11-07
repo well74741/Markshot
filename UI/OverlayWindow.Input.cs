@@ -147,9 +147,17 @@ public partial class OverlayWindow
 
             if (_selection.Contains(point))
             {
-                // The mouse-up lands on the new text box, not on this layer.
                 _dragging = false;
-                BeginTextEdit(AnnotationStyler.NewText(point, Toolbar), isNew: true, caretAt: null);
+                if (e.ClickCount >= 2)
+                {
+                    // A double-click on the blank: a new text (the mouse-up lands on its box, not on this layer).
+                    BeginTextEdit(AnnotationStyler.NewText(point, Toolbar), isNew: true, caretAt: null);
+                }
+                else
+                {
+                    ClearAnnotationSelection(); // a single click on the blank only lets go of the selected text
+                }
+
                 e.Handled = true;
                 return;
             }
@@ -1068,6 +1076,7 @@ public partial class OverlayWindow
         }
 
         if (e.ClickCount != 2 || !App.Config.QuickDoubleClickCopy || !_hasSelection || _closed || _finishing ||
+            _tool == AnnotationTool.Text || // the text tool's double-click makes a new text
             e.OriginalSource is not DependencyObject source || PenEyedropper.AltDown ||
             !_selection.Contains(ToPixels(e.GetPosition(InputLayer))))
         {

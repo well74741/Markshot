@@ -192,6 +192,9 @@ public sealed class AppConfig
     /// <summary>After saving an image, ask whether to open its folder.</summary>
     public bool AskOpenFolderAfterSave { get; set; } = true;
 
+    /// <summary>图片编辑器 移动吸附: moved elements snap to the canvas and each other.</summary>
+    public bool EditorSnap { get; set; } = true;
+
     /// <summary>The editor's 适应内容 margin (pixels).</summary>
     public int EditorFitMargin { get; set; }
 
@@ -252,7 +255,7 @@ public sealed class AppConfig
     public int FloatButtonY { get; set; } = int.MinValue;
 
     /// <summary>The floating button's row: Capture (截屏), Record (录屏), Ocr (文字识别), Editor (图片编辑器).</summary>
-    public string FloatActionOrder { get; set; } = "Capture,Record,Ocr,Editor";
+    public string FloatActionOrder { get; set; } = "Capture,Record,Ocr,Editor,History";
 
     public string FloatActionHidden { get; set; } = "";
 
@@ -261,6 +264,9 @@ public sealed class AppConfig
 
     /// <summary>The floating button's own picture (a file in the config folder; empty = the Markshot logo). Also the tray icon.</summary>
     public string FloatIcon { get; set; } = "";
+
+    /// <summary>The floating button's size: 1 (as designed, the smallest) to 2 (twice as big).</summary>
+    public double FloatIconSize { get; set; } = 1;
 
     /// <summary>The floating button's opacity (0.2–1).</summary>
     public double FloatIconOpacity { get; set; } = 1;

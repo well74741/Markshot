@@ -109,6 +109,8 @@ public partial class SettingsWindow : Window
         var reorder = FillToolbarRow(FloatActionsRow, FloatButtonWindow.Actions, _config.FloatActionOrder, _config.FloatActionHidden);
         reorder.Reordered += _ => ApplyFloatRow();
         FloatActionsRow.MouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(ApplyFloatRow, DispatcherPriority.Input);
+        FloatSizeSlider.Value = Math.Round(Math.Clamp(_config.FloatIconSize, 1, 2) * 100);
+        FloatSizeValue.Text = $"{FloatSizeSlider.Value:0}%";
         FloatOpacitySlider.Value = Math.Round(Math.Clamp(_config.FloatIconOpacity, 0.2, 1) * 100);
         FloatOpacityValue.Text = $"{FloatOpacitySlider.Value:0}%";
         ShowFloatIcon();
@@ -171,6 +173,29 @@ public partial class SettingsWindow : Window
     }
 
     private DispatcherTimer? _opacitySave;
+
+    /// <summary>悬浮按钮 尺寸: 100 % (the smallest, as designed) to 200 %.</summary>
+    private void FloatSize_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (FloatSizeValue == null)
+        {
+            return;
+        }
+
+        FloatSizeValue.Text = $"{e.NewValue:0}%";
+        if (!_ready)
+        {
+            return;
+        }
+
+        _config.FloatIconSize = Math.Round(e.NewValue) / 100;
+        _opacitySave ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _opacitySave.Stop();
+        _opacitySave.Tick -= SaveOpacity;
+        _opacitySave.Tick += SaveOpacity;
+        _opacitySave.Start();
+        RunningApp?.FloatButton?.ApplyLook();
+    }
 
     private void SaveOpacity(object? sender, EventArgs e)
     {

@@ -289,6 +289,20 @@ public partial class OverlayWindow : Window
             {
                 _rightReset = false;
                 e.Handled = true;
+                if (_selectedAnnotation != null)
+                {
+                    // An element is selected: the right click lets go of it (and puts a tool down: 选择).
+                    _textEditor.Commit();
+                    ClearAnnotationSelection();
+                    if (_tool is not AnnotationTool.None and not AnnotationTool.Select)
+                    {
+                        SetTool(AnnotationTool.Select);
+                    }
+
+                    UpdateCursorToPointer();
+                    return;
+                }
+
                 if (_tool is not AnnotationTool.None and not AnnotationTool.Select)
                 {
                     // With a tool in hand the first right click puts it down (选择, its settings row closes).

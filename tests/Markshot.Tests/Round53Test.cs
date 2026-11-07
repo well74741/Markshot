@@ -145,7 +145,7 @@ static class Round53Test
             Check(settings.FindName("FloatCard") is Border && settings.FindName("FloatEnabledCheck") is CheckBox && settings.FindName("FloatOpacitySlider") is Slider,
                 "样式 has the floating button's settings");
             var row = (Panel)settings.FindName("FloatActionsRow");
-            Check(row.Children.Count == 4, "the floating button's row: 截屏, 录屏, 文字识别, 图片编辑器");
+            Check(row.Children.Count == 5, "the floating button's row: 截屏, 录屏, 文字识别, 图片编辑器, 贴图历史");
             var gif = MakeGif(Path.Combine(dir, "spin.gif"));
             Check((bool)Call(settings, "UseFloatIcon", gif)! && FloatIcon.IsCustom(config) && File.Exists(FloatIcon.CustomPath(config)!), "a picture file becomes the icon (copied beside the settings)");
             var preview = (Image)settings.FindName("FloatIconImage");
@@ -189,7 +189,7 @@ static class Round53Test
             Check(floatSource.Contains("DwmFlush();"), "the floating button is off the screen before a screenshot is taken");
             Check(button.Center.X <= work.Right && button.Center.Y <= work.Bottom && button.PanelOnLeft, "on the right of the screen, the row opens to the left");
             GetWindowRect(handle, out var before);
-            Check(button.ShownActions.SequenceEqual(new[] { "Capture", "Record", "Ocr", "Editor" }), "the row: 截屏, 录屏, 文字识别, 图片编辑器");
+            Check(button.ShownActions.SequenceEqual(new[] { "Capture", "Record", "Ocr", "Editor", "History" }), "the row: 截屏, 录屏, 文字识别, 图片编辑器");
             Call(button, "Hover", true);
             Pump(150);
             Check(button.IsExpanded, "the pointer on it opens the row at once");
@@ -203,7 +203,7 @@ static class Round53Test
             config.FloatActionHidden = "Record";
             config.FloatActionOrder = "Editor,Capture,Ocr,Record";
             button.BuildItems();
-            Check(button.ShownActions.SequenceEqual(new[] { "Editor", "Capture", "Ocr" }), "the row follows the settings (order, hidden ones out)");
+            Check(button.ShownActions.SequenceEqual(new[] { "Editor", "History", "Capture", "Ocr" }), "the row follows the settings (order, hidden ones out)");
             Call(button, "DragBy", 100000.0, 100000.0);
             Pump(100);
             var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)button.Center.X, (int)button.Center.Y)).WorkingArea;
@@ -213,6 +213,7 @@ static class Round53Test
             Check(headers.SequenceEqual(new[] { "设置…", "全屏时自动隐藏", "关闭悬浮按钮" }), "the right-click menu: 设置, 全屏时自动隐藏, 关闭");
             button.FullscreenOverride = () => true;
             button.CheckFullscreen();
+            Pump(300); // after its fade
             Check(!button.IsVisible && button.IsHiddenForFullscreen, "a full-screen program in front hides it");
             button.FullscreenOverride = () => false;
             button.CheckFullscreen();
@@ -228,7 +229,7 @@ static class Round53Test
             button.PinRequested += pinned.Add;
             var drop = new DataObject(DataFormats.FileDrop, new[] { MakeGif(Path.Combine(dir, "drop.gif")), Path.Combine(dir, "config.json.missing") });
             Check(FloatButtonWindow.DroppedImages(drop).Count == 1, "a picture dropped on the button opens (other files are skipped)");
-            Check(File.ReadAllText(Repo.File("App.xaml.cs")).Contains("PinRequested += image => CreatePinAtCursor"), "a picture dropped on the button is pinned");
+            Check(File.ReadAllText(Repo.File("App.xaml.cs")).Contains("PinRequested += image => PinCentered(image)"), "a picture dropped on the button is pinned");
             button.Close();
             var app = File.ReadAllText(Repo.File("App.xaml.cs"));
             Check(app.Contains("\"悬浮按钮回中\"") && app.Contains("_float?.Suspend()") && app.Contains("OcrOnSelect = ocr"),

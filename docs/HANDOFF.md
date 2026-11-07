@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.54`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.55`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,28 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.55 0.8.55 变更
+
+- 悬浮按钮：`FloatIconSize`（1～2，设置里 100 %～200 % 滑条，`MainSize = BaseSize × 它`）；浮窗加 `History`（贴图历史，图标库「历史.png」→ `history.png`）。
+  - 开关时左右闪：窗口第一次显示时按默认一侧排好，`Place` 再换到另一侧——现在根 Grid 透明度 0，放好位置后（Render 优先级）淡入。
+  - 截图：`Suspend` 先 80 ms 淡出并用 `DispatcherFrame` 等它结束（最多 150 ms），再 Hide + DwmFlush；`Resume` 淡入（110 ms）。全屏隐藏也走淡出。
+  - 点按钮截图后菜单闪出：回来时鼠标还在按钮上，MouseEnter 立即展开。`Resume` 时鼠标在窗口里就 `_hoverBlocked`，鼠标离开后才解除。
+  - 拖入：文件走 `PinFileRequested(file, index)` → `App.PinFile`：动图（`AnimatedImage.Load(maxSide 2400)` 帧数 > 1）带 `Animation` 贴出，其余 `ImageFile.Load`；
+    都在悬浮按钮所在屏幕中央（`PinCentered`，过大缩小，多张错开 24 px）。
+- 动图贴图：`PinWindow.Animation`，`UpdateAnimation()` 在 Loaded / 进出批注 / 旋转翻转后调用：未批注、没画东西、没旋转时用 `ObjectAnimationUsingKeyFrames` 播放 Img.Source。
+  复制 / 保存仍是第一帧。`AnimatedImage` 解码限制总内存约 600 MB（超了按比例缩小），只保留被后续帧依赖的解码帧。
+  有透明角的图片（剪贴板贴图、拖入）`ShapedShadow`：阴影沿轮廓（DropShadowEffect 在 Img 上），不会再有蓝色底板。
+- 设置：悬浮按钮卡片移到「贴图阴影」下面；「界面大小」改名「工具栏大小」。
+- 编辑器：底部「重置所有修改 | 清空图片」（`ClearDocument`：未保存先问，回到空编辑器）；画布尺寸「锁定比例 / 移动吸附」（`EditorSnap`，默认开，关掉 `Snap` 直接返回）；
+  删掉双击图片 / 元素打开调节框（选中就有调节框）；浅色主题标题栏用 `markshot_dark.ico`（`Theme.TrackTitleBar` 跟主题换 `Theme.Logo()`）。
+- 批注：
+  - 选中元素后换工具，元素大小被改：`SyncVariant` 结尾把 `_configuring` 置 false，`ConfigureForTool` 随后设滑条值时触发了 SettingsChanged → 套到选中元素上。现在恢复原值。
+    `RememberSize` 只在没有选中元素时记工具大小（选中元素不再改工具的大小）。
+  - 选中元素时右键：取消选中并放下工具（截图 `_rightReset` 分支；贴图 `RightClickDeselects`；编辑器在选中元素 / 多选上右键仍是层级菜单）。
+  - 文字工具：空白处单击只取消选中，双击才新建（快速双击复制在文字工具下不生效）。
+  - 拖动刚画的元素跳开：同类工具点中元素开始移动时 `_pressPoint` 还是画它时的按下点，`MoveSelectedTo` 按它算偏移；现在每次按下都更新。
+  - 旋转把手改为框的蓝色（`Accent`）。
 
 ## 8.1.54 0.8.54 变更
 

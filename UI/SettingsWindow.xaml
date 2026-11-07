@@ -650,7 +650,7 @@
                                                      Content="跟随系统" Checked="Theme_Checked" />
                                     </StackPanel>
                                 </Border>
-                                <TextBlock Grid.Row="2" Text="界面大小" Style="{StaticResource RowLabel}" />
+                                <TextBlock Grid.Row="2" Text="工具栏大小" Style="{StaticResource RowLabel}" />
                                 <Border Grid.Row="2" Grid.Column="1" Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2" HorizontalAlignment="Left">
                                     <StackPanel Orientation="Horizontal">
                                         <RadioButton x:Name="SizeSmall" Style="{StaticResource SegmentRadio}" GroupName="UiSize" Tag="Small"
@@ -663,7 +663,42 @@
                                 </Border>
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="选择后立即生效并保存。浅色：所有界面换成浅色；跟随系统：随 Windows 的应用主题切换。界面大小：中、大让按钮、文字等界面元素整体大一号、两号（设置窗口本身保持不变）。" />
+                                       Text="选择后立即生效并保存。浅色：所有界面换成浅色；跟随系统：随 Windows 的应用主题切换。工具栏大小：中、大让工具栏、菜单等的按钮和文字整体大一号、两号（设置窗口本身保持不变）。" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="贴图阴影" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="阴影大小" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                <DockPanel Grid.Column="1">
+                                    <TextBlock x:Name="ShadowSizeValue" DockPanel.Dock="Right" Width="34" TextAlignment="Right"
+                                               Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
+                                    <Slider x:Name="ShadowSizeSlider" Minimum="0" Maximum="40" IsMoveToPointEnabled="True"
+                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
+                                </DockPanel>
+                                <TextBlock Grid.Column="2" Text="颜色" Style="{StaticResource RowLabel}" Margin="18,0,8,0" />
+                                <Button Grid.Column="3" x:Name="ShadowColorButton" Style="{StaticResource FooterButton}" MinWidth="0"
+                                        Width="44" Height="26" Padding="0" Click="ShadowColor_Click" ToolTip="阴影颜色">
+                                    <Border x:Name="ShadowColorSwatch" Width="22" Height="14" CornerRadius="3"
+                                            BorderBrush="{DynamicResource T_55FFFFFF}" BorderThickness="1" />
+                                </Button>
+                                <DockPanel Grid.Column="4" Margin="18,0,0,0">
+                                    <TextBlock Text="透明度" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                    <TextBlock x:Name="ShadowOpacityValue" DockPanel.Dock="Right" Width="38" TextAlignment="Right"
+                                               Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
+                                    <Slider x:Name="ShadowOpacitySlider" Minimum="0" Maximum="100" IsMoveToPointEnabled="True"
+                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
+                                </DockPanel>
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -705,7 +740,14 @@
                                             <Button x:Name="FloatIconReset" Style="{StaticResource FooterButton}" Content="重置" Margin="8,0,0,0" Click="FloatIconReset_Click" />
                                         </StackPanel>
                                         <DockPanel Margin="0,10,0,0" Width="230" HorizontalAlignment="Left">
-                                            <TextBlock Text="透明度" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                            <TextBlock Text="尺寸" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" Width="40" />
+                                            <TextBlock x:Name="FloatSizeValue" DockPanel.Dock="Right" Width="38" TextAlignment="Right"
+                                                       Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
+                                            <Slider x:Name="FloatSizeSlider" Minimum="100" Maximum="200" IsMoveToPointEnabled="True"
+                                                    VerticalAlignment="Center" ValueChanged="FloatSize_Changed" />
+                                        </DockPanel>
+                                        <DockPanel Margin="0,8,0,0" Width="230" HorizontalAlignment="Left">
+                                            <TextBlock Text="透明度" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" Width="40" />
                                             <TextBlock x:Name="FloatOpacityValue" DockPanel.Dock="Right" Width="38" TextAlignment="Right"
                                                        Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
                                             <Slider x:Name="FloatOpacitySlider" Minimum="20" Maximum="100" IsMoveToPointEnabled="True"
@@ -716,41 +758,6 @@
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
                                        Text="浮窗按钮：单击开关，长按拖动排序（悬浮按钮上同样可长按排序）。图标可选 PNG / JPG / GIF / WebP 等，动图按原速播放；也可把图片拖到预览框，或复制后按 Ctrl+V。托盘图标跟着一起换，阴影与贴图阴影相同。" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource Card}">
-                        <StackPanel>
-                            <TextBlock Text="贴图阴影" Style="{StaticResource CardTitle}" />
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="阴影大小" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
-                                <DockPanel Grid.Column="1">
-                                    <TextBlock x:Name="ShadowSizeValue" DockPanel.Dock="Right" Width="34" TextAlignment="Right"
-                                               Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
-                                    <Slider x:Name="ShadowSizeSlider" Minimum="0" Maximum="40" IsMoveToPointEnabled="True"
-                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
-                                </DockPanel>
-                                <TextBlock Grid.Column="2" Text="颜色" Style="{StaticResource RowLabel}" Margin="18,0,8,0" />
-                                <Button Grid.Column="3" x:Name="ShadowColorButton" Style="{StaticResource FooterButton}" MinWidth="0"
-                                        Width="44" Height="26" Padding="0" Click="ShadowColor_Click" ToolTip="阴影颜色">
-                                    <Border x:Name="ShadowColorSwatch" Width="22" Height="14" CornerRadius="3"
-                                            BorderBrush="{DynamicResource T_55FFFFFF}" BorderThickness="1" />
-                                </Button>
-                                <DockPanel Grid.Column="4" Margin="18,0,0,0">
-                                    <TextBlock Text="透明度" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
-                                    <TextBlock x:Name="ShadowOpacityValue" DockPanel.Dock="Right" Width="38" TextAlignment="Right"
-                                               Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
-                                    <Slider x:Name="ShadowOpacitySlider" Minimum="0" Maximum="100" IsMoveToPointEnabled="True"
-                                            VerticalAlignment="Center" ValueChanged="Shadow_Changed" />
-                                </DockPanel>
-                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>

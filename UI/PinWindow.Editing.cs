@@ -409,6 +409,7 @@ public partial class PinWindow
         UpdateUndoButtons();
         ApplyBounds();
         InputLayer.Focus();
+        UpdateAnimation(); // annotating: the still first frame
     }
 
     /// <summary>编辑: the image editor opens on this pin (image and editable annotations); re-pinning from there replaces it.</summary>
@@ -478,6 +479,8 @@ public partial class PinWindow
         {
             RefreshTextLayer();
         }
+
+        UpdateAnimation(); // nothing drawn on it: it moves again
     }
 
     /// <summary>The active pin always has somewhere for the keys to go (with nothing focused WPF drops them).</summary>
@@ -534,6 +537,7 @@ public partial class PinWindow
         }
 
         if (e.ClickCount != 2 || App.Config?.QuickDoubleClickCopy != true || _locked || _clickThrough ||
+            (_editMode && _tool == AnnotationTool.Text) || // the text tool's double-click makes a new text
             PenEyedropper.AltDown || !PointerOver(ImageHost))
         {
             return;
@@ -981,6 +985,8 @@ public partial class PinWindow
     private void Input_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         var point = ToPixels(e.GetPosition(InputLayer));
+        // Every drag measures from this press (a move used the press that drew the element: it jumped by that much).
+        _pressPoint = point;
         if (PenEyedropper.IsPen(_tool) && PenEyedropper.AltDown)
         {
             // 吸色: Alt + click with the pen takes the colour under the cross.
@@ -1079,9 +1085,13 @@ public partial class PinWindow
             {
                 BeginTextPress(pressed, point, InputLayer);
             }
+            else if (e.ClickCount >= 2)
+            {
+                BeginTextEdit(AnnotationStyler.NewText(point, Toolbar), isNew: true, caretAt: null); // a double-click on the blank: a new text
+            }
             else
             {
-                BeginTextEdit(AnnotationStyler.NewText(point, Toolbar), isNew: true, caretAt: null);
+                ClearSelection(); // a single click on the blank only lets go of the selected text
             }
 
             e.Handled = true;

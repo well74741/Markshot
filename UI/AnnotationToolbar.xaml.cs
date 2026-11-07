@@ -802,6 +802,8 @@ public partial class AnnotationToolbar : UserControl
 
     private void SyncVariant(AnnotationTool tool)
     {
+        // Called while configuring a tool too: it must not end that (the size set right after went to the selected element).
+        var wasConfiguring = _configuring;
         _configuring = true;
         VariantRect.IsChecked = tool == AnnotationTool.Rectangle;
         VariantEllipse.IsChecked = tool == AnnotationTool.Ellipse;
@@ -817,7 +819,7 @@ public partial class AnnotationToolbar : UserControl
         EraserCut.IsChecked = tool == AnnotationTool.Cutout;
         VariantText.IsChecked = tool == AnnotationTool.Text;
         VariantWatermark.IsChecked = tool == AnnotationTool.Watermark;
-        _configuring = false;
+        _configuring = wasConfiguring;
     }
 
     private void SyncFromAnnotation(Annotation annotation)
@@ -1368,10 +1370,10 @@ public partial class AnnotationToolbar : UserControl
 
     private void RememberSize()
     {
-        var tool = _selection != null ? ToolOf(_selection) : _tool;
-        if (_toolSizes.ContainsKey(tool))
+        // Only the tool's own size: showing / changing a selected element's size leaves the tools as they were.
+        if (_selection == null && _toolSizes.ContainsKey(_tool))
         {
-            _toolSizes[tool] = _thickness;
+            _toolSizes[_tool] = _thickness;
         }
     }
 

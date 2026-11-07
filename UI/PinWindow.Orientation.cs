@@ -221,6 +221,7 @@ public partial class PinWindow
         Toolbar.SetSelection(null);
         Editor.InvalidateVisual();
         ApplyBounds();
+        UpdateAnimation(); // turned / flipped: the still picture from here on
     }
 
     private static Rect MapRect(Rect rect, Func<Point, Point> map)

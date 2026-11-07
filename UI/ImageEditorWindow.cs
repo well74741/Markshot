@@ -59,7 +59,10 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly Border _borderSwatch = new() { Width = 22, Height = 14, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1) };
     private readonly Dictionary<string, RadioButton> _backgroundButtons = new();
     private readonly TextBox _fitMargin = new();
-    private readonly CheckBox _keepRatio = new() { Content = "锁定比例", IsChecked = true, FontSize = 12, Margin = new Thickness(0, 6, 0, 0) };
+    private readonly CheckBox _keepRatio = new() { Content = "锁定比例", IsChecked = true, FontSize = 12 };
+
+    /// <summary>移动吸附: moved elements snap to the canvas and each other (remembered).</summary>
+    private readonly CheckBox _snapMoves = new() { Content = "移动吸附", FontSize = 12, Margin = new Thickness(16, 0, 0, 0), ToolTip = "移动元素时吸附到画布和其他元素的边缘、中线（按住 Alt 临时不吸附）" };
     private readonly Slider _angle = new() { Minimum = -180, Maximum = 180, IsMoveToPointEnabled = true };
     private readonly TextBlock _angleValue = new() { FontSize = 12, Width = 40, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
     private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _sliders = new();
@@ -251,47 +254,6 @@ public sealed class ImageEditorWindow : PinWindow
         Toolbar.DragFinished += RememberToolbarPlace;
         BuildCropSize();
         _toolbarLayer.Children.Add(_cropSize);
-        // Double-click on the picture (no tool, not on an annotation): the 调节框 for size and angle.
-        ImageHost.PreviewMouseLeftButtonDown += (_, e) =>
-        {
-            if (e.ClickCount != 2 || _overlay != null || !_hasImage || _textEditor.IsActive || _tool is not (AnnotationTool.None or AnnotationTool.Select))
-            {
-                return;
-            }
-
-            var at = e.GetPosition(ImageHost);
-            // On a picture (or the empty canvas: the first picture), not on an annotation.
-            var pixel = new Point(at.X / _zoom, at.Y / _zoom);
-            var hit = AnnotationOps.HitTest(Editor.Items, pixel, 7 / _zoom);
-            if (hit == null && !InGroup(pixel) && !new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight).Contains(pixel))
-            {
-                return; // beside the canvas: nothing to open
-            }
-
-            if (_group.Count > 1 && (hit == null || InGroup(pixel)))
-            {
-                StartSession(EditorOverlayMode.Transform); // the box around all of them
-                e.Handled = true;
-            }
-            else if (hit is not (null or ImageAnnotation or TextAnnotation or WatermarkAnnotation))
-            {
-                ClearGroup();
-                SelectQuietly(hit); // an annotation gets the box too
-                StartSession(EditorOverlayMode.Transform);
-                e.Handled = true;
-            }
-            else if (hit is null or ImageAnnotation)
-            {
-                ClearGroup();
-                if (hit is ImageAnnotation picture)
-                {
-                    SelectQuietly(picture);
-                }
-
-                StartSession(EditorOverlayMode.Transform);
-                e.Handled = true;
-            }
-        };
         DockPanel.SetDock(status, Dock.Bottom);
         DockPanel.SetDock(panel, Dock.Right);
         _layout.Children.Add(status);
@@ -535,11 +497,18 @@ public sealed class ImageEditorWindow : PinWindow
         _widthBox.TextChanged += (_, _) => KeepRatio(_widthBox);
         _heightBox.TextChanged += (_, _) => KeepRatio(_heightBox);
         _keepRatio.SetResourceReference(ForegroundProperty, Theme.Key(0xFFD8D8D8));
+        _snapMoves.SetResourceReference(ForegroundProperty, Theme.Key(0xFFD8D8D8));
+        _snapMoves.IsChecked = App.Config.EditorSnap;
+        _snapMoves.Click += (_, _) =>
+        {
+            App.Config.EditorSnap = _snapMoves.IsChecked == true;
+            App.Config.Save();
+        };
         var sizeRow = new StackPanel { Orientation = Orientation.Horizontal };
         sizeRow.Children.Add(_widthBox);
         sizeRow.Children.Add(new TextBlock { Text = "×", Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.Gray });
         sizeRow.Children.Add(_heightBox);
-        var applySize = TextButton("应用", "改变画布尺寸：内容居中不缩放，多出的地方透明（图片本身的大小用双击图片的调节框）", ApplyTypedSize);
+        var applySize = TextButton("应用", "改变画布尺寸：内容居中不缩放，多出的地方透明（图片本身的大小：选中图片拖它的调节框）", ApplyTypedSize);
         applySize.Margin = new Thickness(8, 0, 0, 0);
         sizeRow.Children.Add(applySize);
 
@@ -608,7 +577,7 @@ public sealed class ImageEditorWindow : PinWindow
         fitRow.Children.Add(marginLabel);
         fitRow.Children.Add(_fitMargin);
         fitRow.Children.Add(Label(" px"));
-        stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, _keepRatio, fitRow, BackgroundRow()));
+        stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _keepRatio, _snapMoves } }, fitRow, BackgroundRow()));
         _radiusRow = StyleSlider("圆角", "Radius", 0, 120);
         _styleSection = Section("元素样式", null, _radiusRow, StyleSlider("阴影", "Shadow", 0, 60), StyleSlider("描边", "Border", 0, 24), BorderColorRow());
         _styleSection.Visibility = Visibility.Collapsed;
@@ -619,12 +588,21 @@ public sealed class ImageEditorWindow : PinWindow
         stack.Children.Add(Section("抠色与替换颜色", null, KeyColorRows()));
         var resetAll = TextButton("重置所有修改", "回到打开时的样子（图片和批注；可用 Ctrl+Z 撤销）", ResetAll);
         resetAll.HorizontalAlignment = HorizontalAlignment.Stretch;
-        resetAll.Margin = new Thickness(0);
+        resetAll.Margin = new Thickness(0, 0, 4, 0);
+        var clearImage = TextButton("清空图片", "关掉这张图片，回到空的编辑器（没保存的修改会先询问）", () => ClearDocument());
+        clearImage.HorizontalAlignment = HorizontalAlignment.Stretch;
+        clearImage.Margin = new Thickness(4, 0, 0, 0);
+        var footerRow = new Grid();
+        footerRow.ColumnDefinitions.Add(new ColumnDefinition());
+        footerRow.ColumnDefinitions.Add(new ColumnDefinition());
+        Grid.SetColumn(clearImage, 1);
+        footerRow.Children.Add(resetAll);
+        footerRow.Children.Add(clearImage);
         UiScale.Attach(stack);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = stack };
         _panelStack = stack;
         // 重置所有修改 stays at the bottom of the panel, never scrolled out of sight.
-        var footer = new Border { Padding = new Thickness(10, 8, 10, 10), BorderThickness = new Thickness(0, 1, 0, 0), Child = resetAll };
+        var footer = new Border { Padding = new Thickness(10, 8, 10, 10), BorderThickness = new Thickness(0, 1, 0, 0), Child = footerRow };
         footer.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
         UiScale.Attach(footer);
         _resetAllFooter = footer;
@@ -1549,7 +1527,7 @@ public sealed class ImageEditorWindow : PinWindow
         }
         else if (_group.Count > 1)
         {
-            text = $"已选 {_group.Count} 个元素 · 拖动一起移动 · 方向键微调 · Delete 删除 · Shift 加选 / Ctrl 减选 · 双击调节框 · 裁切与变形作用于选中元素";
+            text = $"已选 {_group.Count} 个元素 · 拖动一起移动 · 方向键微调 · Delete 删除 · Shift 加选 / Ctrl 减选 · 裁切与变形作用于选中元素";
         }
         else if (_selected != null)
         {
@@ -1565,12 +1543,12 @@ public sealed class ImageEditorWindow : PinWindow
                 AnnotationTool.Pen or AnnotationTool.Highlighter => "拖动书写 · 按住 Alt 单击吸色 · Shift 直线 · Alt+滚轮 笔刷大小 · Shift+滚轮 软边 · Ctrl+滚轮 透明度 · Tab 画笔 / 荧光笔",
                 AnnotationTool.Mosaic => "拖出打码区域 · Alt+滚轮 程度 · Tab 画笔马赛克",
                 AnnotationTool.MosaicBrush => "涂抹打码 · Shift 直线 · Alt+滚轮 笔刷大小 · Tab 区域马赛克",
-                AnnotationTool.Text => "单击输入文字 · 单击已有文字编辑 · 拖动移动 · Alt+滚轮 字号",
+                AnnotationTool.Text => "双击空白处新建文字 · 单击已有文字编辑 · 拖动移动 · Alt+滚轮 字号",
                 AnnotationTool.Watermark => "拖动移动水印 · 双击修改文字 · Alt+滚轮 字号",
                 AnnotationTool.Number => "单击放序号 · Alt+滚轮 大小",
                 AnnotationTool.Eraser => "拖动擦掉批注 · Alt+滚轮 橡皮大小 · Ctrl+滚轮 擦除强度 · Tab 抠除",
                 AnnotationTool.Cutout => "拖动把图片和批注一起擦成透明 · Alt+滚轮 大小 · Tab 擦除",
-                _ => "选择：单击选中 · 空白处拖动框选 · Shift 加选 · Ctrl 减选 · Ctrl+A 全选 · 双击调节框 · 右键调整层级 · Ctrl+V 粘贴图片"
+                _ => "选择：单击选中 · 空白处拖动框选 · Shift 加选 · Ctrl 减选 · Ctrl+A 全选 · 右键调整层级 · Ctrl+V 粘贴图片"
             } + " · " + view;
         }
 
@@ -1711,6 +1689,47 @@ public sealed class ImageEditorWindow : PinWindow
         UpdateHint();
     }
 
+    /// <summary>清空图片: back to the empty editor (asks first when there are unsaved changes). False when that was cancelled.</summary>
+    public bool ClearDocument(bool ask = true)
+    {
+        if (!_hasImage || (ask && !ConfirmDiscard()))
+        {
+            return false;
+        }
+
+        CancelKeyPreview();
+        CancelSession();
+        _textEditor.Commit();
+        ClearSelection();
+        _adjustTimer.Stop();
+        _adjustPending = false;
+        Editor.Items.Clear();
+        _history.Clear();
+        _beforeGroup.Clear();
+        _lastGroup = null;
+        _initial = null;
+        _savedChange = _history.ChangeCount;
+        _hasImage = false;
+        _path = null;
+        ClearGroup();
+        _pendingPaste = null;
+        _waitingPin?.ShowAgain();
+        _waitingPin = null;
+        _sourcePin = null;
+        _unsavedNew = false;
+        _proxy = null;
+        _proxyOf = null;
+        _adjustTarget = null;
+        _anglePicture = null;
+        SetBitmap(ImageOps.FromPixels(new byte[4], 1, 1));
+        Editor.InvalidateVisual();
+        UpdateUndoButtons();
+        UpdateTitle();
+        RefreshPanel();
+        UpdateHint();
+        return true;
+    }
+
     /// <summary>The bitmap under the annotations changes (size included); mosaics are rebuilt from it.</summary>
     private void SetBitmap(BitmapSource image)
     {
@@ -1816,7 +1835,7 @@ public sealed class ImageEditorWindow : PinWindow
 
     private Point Snap(IReadOnlyList<Annotation> moving, Rect wanted)
     {
-        if (PenEyedropper.AltDown)
+        if (PenEyedropper.AltDown || !App.Config.EditorSnap)
         {
             Editor.Guides = null;
             return wanted.TopLeft;
@@ -3239,6 +3258,34 @@ public sealed class ImageEditorWindow : PinWindow
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Right click: on the selected element(s) their menu (layers, align …); anywhere else it lets go of the selection.
+    /// </summary>
+    private protected override bool RightClickDeselects(MouseButtonEventArgs e)
+    {
+        if (_overlay != null || (_selected == null && _group.Count == 0))
+        {
+            return false;
+        }
+
+        var at = e.GetPosition(ImageHost);
+        var pixel = new Point(at.X / _zoom, at.Y / _zoom);
+        if (InGroup(pixel) || (_selected != null && AnnotationEditor.RotatedBounds(_selected).Contains(pixel)))
+        {
+            return false;
+        }
+
+        ClearGroup();
+        if (!base.RightClickDeselects(e))
+        {
+            ClearSelection();
+        }
+
+        UpdateStylePanel();
+        UpdateHint();
+        return true;
     }
 
     private protected override void BuildContextMenu()

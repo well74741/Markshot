@@ -258,6 +258,12 @@ public partial class PinWindow : Window
         {
             if (e.LeftButton != MouseButtonState.Pressed)
             {
+                if (_editMode && _active == null && !_erasing && _polyline == null && RightClickDeselects(e))
+                {
+                    _suppressContextMenu = true;
+                    e.Handled = true;
+                }
+
                 return;
             }
 
@@ -307,6 +313,47 @@ public partial class PinWindow : Window
 
     /// <summary>The shadow follows the image's own shape (a lasso capture with transparent surroundings).</summary>
     public bool ShapedShadow { get; init; }
+
+    /// <summary>
+    /// Right click while an element is selected: it is let go (a tool in hand is put down, 选择); the menu comes with the
+    /// next right click. True when it was handled.
+    /// </summary>
+    private protected virtual bool RightClickDeselects(MouseButtonEventArgs e)
+    {
+        if (_selected == null)
+        {
+            return false;
+        }
+
+        _textEditor.Commit();
+        ClearSelection();
+        if (_tool is not AnnotationTool.None and not AnnotationTool.Select)
+        {
+            Toolbar.DeactivateTools();
+        }
+
+        return true;
+    }
+
+    /// <summary>A moving picture (GIF / WebP): it plays while the pin shows it as it came (not while annotating, nor once drawn on / turned).</summary>
+    public AnimatedImage? Animation { get; init; }
+
+    /// <summary>The moving picture is playing (tests).</summary>
+    public bool IsPlaying => Img.HasAnimatedProperties;
+
+    private protected void UpdateAnimation()
+    {
+        var play = Animation is { IsAnimated: true } && !_editMode && !IsEditor && Editor.Items.Count == 0 &&
+                   ReferenceEquals(_baseImage, _originalImage);
+        if (play && !Img.HasAnimatedProperties)
+        {
+            Img.BeginAnimation(System.Windows.Controls.Image.SourceProperty, Animation!.CreateAnimation());
+        }
+        else if (!play && Img.HasAnimatedProperties)
+        {
+            Img.BeginAnimation(System.Windows.Controls.Image.SourceProperty, null);
+        }
+    }
 
     /// <summary>Made from a capture: appears at once (no fade, the capture shows the same pixels) with a light sweep.</summary>
     public bool FromCapture { get; init; }
@@ -377,6 +424,7 @@ public partial class PinWindow : Window
         }
 
         UpdateFrame(); // ShapedShadow / CornerRadius are set after the constructor drew the first shadow
+        UpdateAnimation();
 
         var handle = new WindowInteropHelper(this).Handle;
         var dpi = handle != IntPtr.Zero ? Native.GetDpiForWindow(handle) / 96.0 : 1.0;

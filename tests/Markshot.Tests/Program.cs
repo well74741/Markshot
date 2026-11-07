@@ -47,6 +47,7 @@ static class Program
         if (mode == "theme") ThemeShot.Run();
         if (mode == "round48") Round48Test.Run();
         if (mode == "round53") Round53Test.Run();
+        if (mode == "round55") Round55Test.Run();
         if (mode == "menu") MenuProbe.Run();
         if (mode == "support") SupportTest.Run();
         if (mode == "history") HistoryTest.Run();
