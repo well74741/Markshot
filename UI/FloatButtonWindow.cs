@@ -132,6 +132,18 @@ public sealed class FloatButtonWindow : Window
                 EndPress(click: false);
             }
         };
+        // A picture dragged onto the button is pinned on the screen.
+        _main.AllowDrop = true;
+        _main.DragEnter += OnDragOver;
+        _main.DragOver += OnDragOver;
+        _main.Drop += (_, e) =>
+        {
+            e.Handled = true;
+            foreach (var image in DroppedImages(e.Data))
+            {
+                PinRequested?.Invoke(image);
+            }
+        };
         _main.MouseRightButtonUp += (_, e) =>
         {
             e.Handled = true;
@@ -162,6 +174,41 @@ public sealed class FloatButtonWindow : Window
     }
 
     public bool IsExpanded => _expanded;
+
+    /// <summary>A picture dropped on the button: the app pins it at the pointer.</summary>
+    public event Action<BitmapSource>? PinRequested;
+
+    private static void OnDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.Bitmap) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    /// <summary>The pictures in a drop (files that do not open as pictures are skipped; at most 20).</summary>
+    public static List<BitmapSource> DroppedImages(IDataObject data)
+    {
+        var images = new List<BitmapSource>();
+        if (data.GetData(DataFormats.FileDrop) is string[] files)
+        {
+            foreach (var file in files.Take(20))
+            {
+                try
+                {
+                    images.Add(ImageFile.Load(file));
+                }
+                catch (Exception ex) when (ex is NotSupportedException or IOException or UnauthorizedAccessException or FileFormatException or ArgumentException or InvalidOperationException)
+                {
+                    Log.Info("拖到悬浮按钮的文件不是图片：" + file);
+                }
+            }
+        }
+        else if (data.GetData(DataFormats.Bitmap) is BitmapSource bitmap)
+        {
+            images.Add(bitmap);
+        }
+
+        return images;
+    }
 
     /// <summary>The panel opens to the left (the button is on the right half of its screen).</summary>
     public bool PanelOnLeft => _panelLeft;

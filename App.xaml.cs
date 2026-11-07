@@ -239,6 +239,7 @@ public partial class App : Application
         {
             _float = new UI.FloatButtonWindow(Config, FloatAction, () => ShowSettings("Float"), () => SetFloatButton(false));
             _float.Closed += (_, _) => _float = null;
+            _float.PinRequested += image => CreatePinAtCursor(image, sweep: true);
             _float.Show();
             if (_capturing)
             {

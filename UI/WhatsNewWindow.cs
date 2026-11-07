@@ -7,6 +7,7 @@ public static class ReleaseNotes
 {
     public static readonly (string Version, string[] Lines)[] All =
     {
+        ("0.8.54", new[] { "把图片拖到悬浮按钮上，直接贴图在屏幕上" }),
         ("0.8.53", new[]
         {
             "悬浮按钮：单击截图，鼠标移上去展开截屏 / 录屏 / 文字识别 / 图片编辑器；可换图标（支持 GIF / WebP 动图）",

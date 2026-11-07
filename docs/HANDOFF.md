@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.53`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.54`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -646,6 +646,10 @@ un.ps1 batch1 menu`。
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
 
+## 8.1.54 0.8.54 变更
+
+- 图片拖到悬浮按钮上 = 贴图（见 8.1.53 悬浮按钮一节），`ReleaseNotes` 加 0.8.54。
+
 ## 8.1.53 0.8.53 变更
 
 - 通知：`TrayService.ShowBalloon` 不再用 Windows 气泡（大卡片 + 提示音），改为 `UI/Toast.cs`：右下角（鼠标所在屏幕的工作区）一个小气泡，
@@ -669,6 +673,7 @@ un.ps1 batch1 menu`。
   - 图标：`Core/AnimatedImage.cs`（SkiaSharp `SKCodec` 逐帧解码 GIF / WebP / APNG，按帧时长用 `ObjectAnimationUsingKeyFrames` 播放；0 / 10 ms 帧按 100 ms），
     `FloatIcon` 把选的图片复制到配置目录（`float_icon_时间.扩展名`），粘贴的存 PNG；托盘图标用第一帧（`TrayService.SetIcon`）。
   - 设置 → 样式「悬浮按钮」卡片：开关、全屏隐藏、浮窗按钮行（`FillToolbarRow` 复用，现在返回 ReorderBehavior）、预览框（拖入 / Ctrl+V / 选择图片 / 重置）、透明度；都是改了就保存。
+  - 图片拖到悬浮按钮上 = 贴图（`PinRequested` → `CreatePinAtCursor`，`DroppedImages` 读文件 / 位图）。
   - 托盘菜单：「悬浮按钮」（勾选）和开着时的「悬浮按钮回中」（鼠标所在屏幕中心）。
 - 批注：
   - 选中一个元素时换到别的工具（不同类），工具栏先丢掉选中再配置，工具用自己的大小（以前选中序号再点画笔，画笔拿了序号的大小）。

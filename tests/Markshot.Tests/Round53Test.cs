@@ -105,7 +105,7 @@ static class Round53Test
 
         // ---- what is new after an update
         {
-            Check(ReleaseNotes.Since("0.8.52", "0.8.53").Select(n => n.Version).SequenceEqual(new[] { "0.8.53" }), "from the previous version: only its notes");
+            Check(ReleaseNotes.Since("0.8.52", "0.8.53").Select(n => n.Version).SequenceEqual(new[] { "0.8.53" }) && ReleaseNotes.Since("0.8.53", "0.8.54").Count == 1, "from the previous version: only its notes");
             Check(ReleaseNotes.Since("", "0.8.53+abc").Select(n => n.Version).SequenceEqual(new[] { "0.8.53" }), "from an unknown older version: the current notes");
             Check(ReleaseNotes.Since("0.8.46", "0.8.53").Count >= 5 && ReleaseNotes.Since("0.8.53", "0.8.53").Count == 0, "from further back: every version since");
             Check(ReleaseNotes.All[0].Version == typeof(AppVersion).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0],
@@ -224,6 +224,11 @@ static class Round53Test
             config.PinShadowSize = 20;
             button.ApplyLook();
             Check(button.IconImage.Effect is System.Windows.Media.Effects.DropShadowEffect { BlurRadius: 20 }, "the shadow is the pins' shadow");
+            var pinned = new List<BitmapSource>();
+            button.PinRequested += pinned.Add;
+            var drop = new DataObject(DataFormats.FileDrop, new[] { MakeGif(Path.Combine(dir, "drop.gif")), Path.Combine(dir, "config.json.missing") });
+            Check(FloatButtonWindow.DroppedImages(drop).Count == 1, "a picture dropped on the button opens (other files are skipped)");
+            Check(File.ReadAllText(Repo.File("App.xaml.cs")).Contains("PinRequested += image => CreatePinAtCursor"), "a picture dropped on the button is pinned");
             button.Close();
             var app = File.ReadAllText(Repo.File("App.xaml.cs"));
             Check(app.Contains("\"悬浮按钮回中\"") && app.Contains("_float?.Suspend()") && app.Contains("OcrOnSelect = ocr"),
