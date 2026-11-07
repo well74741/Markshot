@@ -1422,7 +1422,8 @@ public partial class PinWindow : Window
             return false;
         }
 
-        return string.Equals(configured.Trim(), key.ToString(), StringComparison.OrdinalIgnoreCase)
+        return string.Equals(configured.Trim(), ToolHotkeys.Name(key), StringComparison.OrdinalIgnoreCase)
+               || string.Equals(configured.Trim(), key.ToString(), StringComparison.OrdinalIgnoreCase)
                || (configured.Trim().Length == 1
                    && char.ToUpperInvariant(configured.Trim()[0]) == (char)('A' + ((int)key - (int)Key.A)));
     }

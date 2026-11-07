@@ -189,6 +189,7 @@ public readonly record struct HotkeyGesture(uint Modifiers, uint VirtualKey, str
 
         return key switch
         {
+            Key.Oem3 => "`", // the key above Tab
             Key.Escape => "Esc",
             Key.Space => "Space",
             Key.Tab => "Tab",
@@ -248,6 +249,12 @@ public readonly record struct HotkeyGesture(uint Modifiers, uint VirtualKey, str
             if (c is >= '0' and <= '9')
             {
                 key = (Key)((int)Key.D0 + (c - '0'));
+                return true;
+            }
+
+            if (c is '`' or '~')
+            {
+                key = Key.Oem3;
                 return true;
             }
         }

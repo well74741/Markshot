@@ -9,7 +9,7 @@
         SizeToContent="WidthAndHeight"
         ShowInTaskbar="True"
         Topmost="True"
-        Background="{DynamicResource T_FF1C1C1C}"
+        Background="{DynamicResource T_FF1E1E1E}"
         UseLayoutRounding="True"
         FontFamily="Microsoft YaHei UI"
         Foreground="{DynamicResource TextPrimary}">
@@ -55,11 +55,12 @@
 
     <!-- Rounded on every Windows: the DWM corner preference exists on Windows 11 only; elsewhere the window region is
          rounded (RoundCorners). Not a transparent window: those cannot be left out of the recording. -->
-    <Border x:Name="Root" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" Background="{DynamicResource T_FF1C1C1C}" CornerRadius="8"
+    <Border x:Name="Root" Background="{DynamicResource T_FF1E1E1E}" CornerRadius="9"
             MouseLeftButtonDown="Root_MouseLeftButtonDown" MouseMove="Root_MouseMove" MouseLeftButtonUp="Root_MouseLeftButtonUp">
-        <StackPanel>
+        <Grid>
+        <StackPanel x:Name="Rows">
             <!-- ===== before / while recording ===== -->
-            <StackPanel x:Name="RecordRow" Orientation="Horizontal" Margin="6,4">
+            <StackPanel x:Name="RecordRow" Orientation="Horizontal" Margin="5,3">
                 <Ellipse x:Name="RecDot" Width="8" Height="8" Fill="{DynamicResource T_FF7A7A7A}" Margin="4,0,6,0" VerticalAlignment="Center" />
                 <TextBlock x:Name="TimeText" Text="00:00" Style="{StaticResource BarText}" FontFamily="Consolas" FontSize="13" MinWidth="44" />
                 <Border Style="{StaticResource Sep}" />
@@ -76,7 +77,7 @@
                     </Button>
                     <Border Style="{StaticResource Sep}" />
                     <ToggleButton x:Name="DelayToggle" Style="{StaticResource IconToolToggle}" Click="DelayToggle_Click" ToolTip="延时开始">
-                        <Border Style="{StaticResource IconCountdownMask}" Width="16" Height="16" />
+                        <Border Style="{StaticResource IconCountdownMask}" />
                     </ToggleButton>
                     <Button x:Name="DelayButton" Style="{StaticResource ToolButton}" Height="30" Padding="4,0" Click="Delay_Click" ToolTip="延时秒数" />
                     <Border Style="{StaticResource Sep}" />
@@ -88,39 +89,39 @@
                     </StackPanel>
                 </Button>
                 <ToggleButton x:Name="PauseToggle" Style="{StaticResource IconToolToggle}" Margin="4,0,0,0" Click="Pause_Click" ToolTip="暂停 / 继续">
-                    <Border x:Name="PauseIcon" Style="{StaticResource IconPauseMask}" Width="16" Height="16" />
+                    <Border x:Name="PauseIcon" Style="{StaticResource IconPauseMask}" />
                 </ToggleButton>
                 <Border Style="{StaticResource Sep}" />
                 <ToggleButton x:Name="SystemToggle" Style="{StaticResource IconToolToggle}" Click="System_Click" ToolTip="录制系统声音">
-                    <Border Style="{StaticResource IconSpeakerMask}" Width="17" Height="17" />
+                    <Border Style="{StaticResource IconSpeakerMask}" />
                 </ToggleButton>
                 <ToggleButton x:Name="MicToggle" Style="{StaticResource IconToolToggle}" Click="Mic_Click" ToolTip="录制麦克风">
-                    <Border Style="{StaticResource IconMicMask}" Width="17" Height="17" />
+                    <Border Style="{StaticResource IconMicMask}" />
                 </ToggleButton>
                 <ToggleButton x:Name="KeysToggle" Style="{StaticResource IconToolToggle}" Click="Keys_Click" ToolTip="操作录制：在录像左下角显示按下的按键和鼠标键">
-                    <Border Style="{StaticResource IconKeysMask}" Width="17" Height="17" />
+                    <Border Style="{StaticResource IconKeysMask}" />
                 </ToggleButton>
                 <Border Style="{StaticResource Sep}" />
                 <Button x:Name="RetakeButton" Style="{StaticResource IconToolButton}" Click="Retake_Click" ToolTip="重录">
-                    <Border Style="{StaticResource IconRetakeMask}" Width="17" Height="17" />
+                    <Border Style="{StaticResource IconRetakeMask}" />
                 </Button>
                 <Button Style="{StaticResource IconToolButton}" Click="Exit_Click" ToolTip="退出录屏">
-                    <Border Style="{StaticResource IconExitMask}" Width="17" Height="17" />
+                    <Border Style="{StaticResource IconExitMask}" />
                 </Button>
             </StackPanel>
 
             <!-- ===== preview after stopping ===== -->
             <StackPanel x:Name="PreviewRows" Visibility="Collapsed">
                 <rec:TrimBar x:Name="Trim" Margin="8,4,8,0" />
-                <StackPanel Orientation="Horizontal" Margin="6,0,6,4">
+                <StackPanel Orientation="Horizontal" Margin="5,0,5,3">
                     <Button x:Name="PlayButton" Style="{StaticResource IconToolButton}" Click="Play_Click" ToolTip="播放 / 暂停（空格）">
-                        <Border x:Name="PlayIcon" Style="{StaticResource IconPlayMask}" Width="15" Height="15" />
+                        <Border x:Name="PlayIcon" Style="{StaticResource IconPlayMask}" />
                     </Button>
                     <TextBlock x:Name="PreviewTime" Style="{StaticResource BarText}" FontFamily="Consolas" Margin="4,0,6,0" MinWidth="96" />
                     <Border Style="{StaticResource Sep}" />
                     <Button x:Name="SpeedButton" Style="{StaticResource ToolButton}" Height="30" Click="Speed_Click" ToolTip="倍速（保存时也按这个倍速）" />
                     <ToggleButton x:Name="SoundToggle" Style="{StaticResource IconToolToggle}" Click="Sound_Click" ToolTip="声音（关闭 = 保存为无声）">
-                        <Border Style="{StaticResource IconSpeakerMask}" Width="17" Height="17" />
+                        <Border Style="{StaticResource IconSpeakerMask}" />
                     </ToggleButton>
                     <Border Style="{StaticResource Sep}" />
                     <Button x:Name="SaveButton" Style="{StaticResource IconToolButton}" Click="Save_Click" ToolTip="保存 MP4 / GIF">
@@ -131,10 +132,10 @@
                     </Button>
                     <Border Style="{StaticResource Sep}" />
                     <Button Style="{StaticResource IconToolButton}" Click="Retake_Click" ToolTip="重录">
-                        <Border Style="{StaticResource IconRetakeMask}" Width="17" Height="17" />
+                        <Border Style="{StaticResource IconRetakeMask}" />
                     </Button>
                     <Button Style="{StaticResource IconToolButton}" Click="Exit_Click" ToolTip="退出录屏">
-                        <Border Style="{StaticResource IconExitMask}" Width="17" Height="17" />
+                        <Border Style="{StaticResource IconExitMask}" />
                     </Button>
                 </StackPanel>
             </StackPanel>
@@ -143,5 +144,14 @@
             <TextBlock x:Name="StatusText" Visibility="Collapsed" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" Margin="10,0,10,6"
                        TextWrapping="Wrap" MaxWidth="560" />
         </StackPanel>
+        <!-- The annotation bar's narrow inner shade along the edge. -->
+        <Grid x:Name="BarShadeClip" IsHitTestVisible="False">
+            <Border CornerRadius="9" BorderThickness="3" BorderBrush="#2E000000">
+                <Border.Effect>
+                    <BlurEffect Radius="4" KernelType="Gaussian" />
+                </Border.Effect>
+            </Border>
+        </Grid>
+        </Grid>
     </Border>
 </Window>

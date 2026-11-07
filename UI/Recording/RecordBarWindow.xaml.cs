@@ -37,6 +37,18 @@ public partial class RecordBarWindow : Window
     {
         InitializeComponent();
         UiScale.Attach(Root);
+        BarShadeClip.SizeChanged += (_, _) =>
+            BarShadeClip.Clip = new RectangleGeometry(new Rect(0, 0, BarShadeClip.ActualWidth, BarShadeClip.ActualHeight), 9, 9);
+        foreach (var box in new[] { WidthBox, HeightBox })
+        {
+            box.TextChanged += (_, _) =>
+            {
+                if (box.IsKeyboardFocusWithin)
+                {
+                    _sizeTyped = true;
+                }
+            };
+        }
         _controller = controller;
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Markshot;component/Assets/markshot.ico"));
         controller.Changed += Refresh;
@@ -91,7 +103,12 @@ public partial class RecordBarWindow : Window
         // Off screen until laid out, then straight to its place (it used to show up elsewhere first).
         Left = -32000;
         Top = -32000;
-        ContentRendered += (_, _) => Place();
+        ContentRendered += (_, _) =>
+        {
+            Place();
+            Rows.Opacity = 0;
+            Motion.PopIn(Rows, fromAbove: false, duration: Motion.Bar); // in with a quick settle
+        };
         SizeChanged += (_, _) =>
         {
             if (_placed)
@@ -119,9 +136,38 @@ public partial class RecordBarWindow : Window
 
     public void CloseNow()
     {
+        if (_closing)
+        {
+            return;
+        }
+
         _closing = true;
         _popup?.SetCurrentValue(Popup.IsOpenProperty, false);
-        Close();
+        if (!IsVisible || Opacity < 0.01)
+        {
+            Close();
+            return;
+        }
+
+        // Out with a quick fade (the window itself: it is not see-through, its content fades to the plate's colour).
+        var done = false;
+        void Finish()
+        {
+            if (!done)
+            {
+                done = true;
+                Close();
+            }
+        }
+
+        Motion.PopOut(Rows, towardsAbove: false, completed: Finish, duration: Motion.Bar);
+        var fallback = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        fallback.Tick += (_, _) =>
+        {
+            fallback.Stop();
+            Finish(); // no rendering (tests, a locked screen): closed anyway
+        };
+        fallback.Start();
     }
 
     public void RestoreFromTaskbar()
@@ -251,12 +297,13 @@ public partial class RecordBarWindow : Window
             OnPhaseChanged(phase);
         }
 
-        RecordRow.Visibility = preview ? Visibility.Collapsed : Visibility.Visible;
-        PreviewRows.Visibility = preview ? Visibility.Visible : Visibility.Collapsed;
+        Reveal(RecordRow, !preview);
+        Reveal(PreviewRows, preview);
 
         var setup = phase == RecordPhase.Setup;
         var live = phase is RecordPhase.Recording or RecordPhase.Paused;
-        SetupGroup.Visibility = setup ? Visibility.Visible : Visibility.Collapsed;
+        Reveal(SetupGroup, setup);
+        Reveal(PauseToggle, live);
         FpsButton.Content = $"{config.Fps} fps";
         if (!WidthBox.IsKeyboardFocusWithin && !HeightBox.IsKeyboardFocusWithin)
         {
@@ -270,7 +317,6 @@ public partial class RecordBarWindow : Window
         SystemToggle.IsChecked = config.SystemAudio;
         MicToggle.IsChecked = config.Microphone;
         KeysToggle.IsChecked = _controller.KeysOn;
-        PauseToggle.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
         PauseToggle.IsChecked = false;
         SetPauseBlink(phase == RecordPhase.Paused);
         PauseIcon.Style = (Style)FindResource(phase == RecordPhase.Paused ? "IconPlayMask" : "IconPauseMask");
@@ -312,6 +358,29 @@ public partial class RecordBarWindow : Window
                 StatusText.Visibility = Visibility.Visible;
                 _statusTimer.Stop();
             }
+        }
+    }
+
+    /// <summary>A part of the bar appears with a quick fade and settle (start, stop, the preview, 重录 back to setting up).</summary>
+    private static void Reveal(FrameworkElement element, bool visible)
+    {
+        if (visible == (element.Visibility == Visibility.Visible))
+        {
+            return;
+        }
+
+        if (!visible)
+        {
+            element.BeginAnimation(OpacityProperty, null);
+            element.Visibility = Visibility.Collapsed; // the bar shrinks at once (a fading part would hold its room)
+            return;
+        }
+
+        element.Visibility = Visibility.Visible;
+        if (element.IsLoaded || PresentationSource.FromVisual(element) != null)
+        {
+            element.Opacity = 0;
+            Motion.PopIn(element, fromAbove: false, duration: Motion.Bar);
         }
     }
 
@@ -420,7 +489,7 @@ public partial class RecordBarWindow : Window
     private void ShowStatus(string message)
     {
         StatusText.Text = message;
-        StatusText.Visibility = Visibility.Visible;
+        Reveal(StatusText, true);
         _statusTimer.Stop();
         _statusTimer.Start();
     }
@@ -433,7 +502,23 @@ public partial class RecordBarWindow : Window
 
     private void SizePresets_Click(object sender, RoutedEventArgs e) =>
         ShowMenu((FrameworkElement)sender, RecorderController.SizePresets.Select(p =>
-            ($"{p.W} × {p.H}", _controller.Rect.Width == p.W && _controller.Rect.Height == p.H, (Action)(() => _controller.SetSize(p.W, p.H)))));
+            ($"{p.W} × {p.H}", _controller.Rect.Width == p.W && _controller.Rect.Height == p.H, (Action)(() => UsePreset(() => _controller.SetSize(p.W, p.H)))))
+            .Append(("全屏", _controller.IsFullScreen, (Action)(() => UsePreset(_controller.SetFullScreen)))));
+
+    /// <summary>A size from the menu: the size boxes forget what was typed (and follow), dragging goes on from there.</summary>
+    private void UsePreset(Action apply)
+    {
+        _sizeTyped = false;
+        if (WidthBox.IsKeyboardFocusWithin || HeightBox.IsKeyboardFocusWithin)
+        {
+            Keyboard.ClearFocus();
+        }
+
+        apply();
+        Refresh();
+    }
+
+    private bool _sizeTyped; // the size boxes were typed in since they last showed the area's size
 
     private void DelayToggle_Click(object sender, RoutedEventArgs e) =>
         _controller.SetDelay(DelayToggle.IsChecked == true, _controller.Config.Delay);
@@ -468,6 +553,13 @@ public partial class RecordBarWindow : Window
 
     private void ApplyTypedSize()
     {
+        if (!_sizeTyped)
+        {
+            Refresh(); // only what was typed is applied (a box losing the keyboard used to put an old size back)
+            return;
+        }
+
+        _sizeTyped = false;
         if (int.TryParse(WidthBox.Text.Trim(), out var w) && int.TryParse(HeightBox.Text.Trim(), out var h) &&
             (w != _controller.Rect.Width || h != _controller.Rect.Height))
         {
@@ -886,7 +978,7 @@ public partial class RecordBarWindow : Window
 
         _regionSize = (width, height);
         var dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        var diameter = (int)Math.Round(16 * dpi);
+        var diameter = (int)Math.Round(18 * dpi);
         var region = CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
         if (SetWindowRgn(handle, region, true) == 0)
         {

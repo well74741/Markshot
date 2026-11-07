@@ -18,7 +18,6 @@ public sealed class FloatButtonWindow : Window
     public const double BaseSize = 46;
 
     private double MainSize => BaseSize * Math.Clamp(_config.FloatIconSize, 1, 2);
-    private const double ItemSize = 34;
     private const double Gap = 8;
 
     public static readonly string[] Actions = { "Capture", "Record", "Ocr", "Editor", "History", "AddPin" };
@@ -32,6 +31,7 @@ public sealed class FloatButtonWindow : Window
     private readonly Border _main;
     private readonly System.Windows.Controls.Image _icon;
     private readonly Border _plate;
+    private readonly Grid _plateHost;
     private readonly StackPanel _items;
     private readonly ScaleTransform _plateScale = new(1, 1);
     private readonly ReorderBehavior _reorder;
@@ -87,18 +87,36 @@ public sealed class FloatButtonWindow : Window
         ToolTipService.SetInitialShowDelay(_main, 900);
 
         _items = new StackPanel { Orientation = Orientation.Horizontal };
-        _plate = new Border
+        // The annotation bar's plate: same colour, corners, padding and the narrow inner shade; its buttons are the
+        // bar's IconToolButton (30 DIP, 18 DIP icons, the same hover).
+        var shade = new Border
         {
             CornerRadius = new CornerRadius(9),
-            Padding = new Thickness(4),
-            Child = _items,
+            BorderThickness = new Thickness(3),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x2E, 0, 0, 0)),
+            Effect = new BlurEffect { Radius = 4, KernelType = KernelType.Gaussian },
+            IsHitTestVisible = false
+        };
+        var shadeClip = new Grid { IsHitTestVisible = false, Children = { shade } };
+        shadeClip.SizeChanged += (_, _) => shadeClip.Clip = new RectangleGeometry(new Rect(0, 0, shadeClip.ActualWidth, shadeClip.ActualHeight), 9, 9);
+        var face = new Border { CornerRadius = new CornerRadius(9), Padding = new Thickness(5, 3, 5, 3), Child = _items };
+        face.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xF21E1E1E));
+        _plate = new Border
+        {
+            Child = new Grid { Children = { face, shadeClip } },
             VerticalAlignment = VerticalAlignment.Center,
             Visibility = Visibility.Hidden, // keeps its room: the window does not change size when it opens
-            RenderTransform = _plateScale,
-            LayoutTransform = UiScale.Transform // the row's buttons are as big as the annotation bar's (工具栏大小)
+            RenderTransform = _plateScale
+        };
+        // Room for every button, whatever is shown: changing the row in the settings never resizes the window
+        // (a resize moved the button for a frame — it flickered left and right).
+        _plateHost = new Grid
+        {
+            Width = Actions.Length * 30 + 10 + Gap,
+            LayoutTransform = UiScale.Transform, // as big as the annotation bar (工具栏大小)
+            Children = { _plate }
         };
         UiScale.Changed += OnUiScaleChanged;
-        _plate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xF21E1E1E));
         _row = new StackPanel { Orientation = Orientation.Horizontal };
         _root = new Grid { Children = { _row }, Opacity = 0 }; // fades in once it is in place (no jump on the first frame)
         Content = _root;
@@ -277,30 +295,21 @@ public sealed class FloatButtonWindow : Window
         var hidden = ToolbarCatalog.Set(_config.FloatActionHidden);
         foreach (var key in ToolbarCatalog.Order(_config.FloatActionOrder, Actions))
         {
-            var mask = new Border { Style = (Style)Application.Current.FindResource(IconStyle(key)), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            Theme.Bind(mask, Border.BackgroundProperty, 0xFFFFFFFF);
-            var item = new Border
+            var item = new Button
             {
-                Width = ItemSize,
-                Height = ItemSize,
-                CornerRadius = new CornerRadius(6),
-                Background = Brushes.Transparent,
-                Child = mask,
+                Style = (Style)Application.Current.FindResource("IconToolButton"),
+                Content = new Border { Style = (Style)Application.Current.FindResource(IconStyle(key)) },
                 Tag = key,
-                Cursor = Cursors.Hand,
                 ToolTip = Label(key) + "（长按拖动排序）",
                 Visibility = hidden.Contains(key) ? Visibility.Collapsed : Visibility.Visible
             };
-            item.MouseEnter += (_, _) => Theme.Bind(item, Border.BackgroundProperty, 0x26FFFFFF);
-            item.MouseLeave += (_, _) => item.Background = Brushes.Transparent;
-            item.MouseLeftButtonUp += (_, e) =>
+            item.Click += (_, _) =>
             {
                 if (_reorder.JustDragged || _reorder.IsDragging)
                 {
                     return;
                 }
 
-                e.Handled = true;
                 Run(key);
             };
             _items.Children.Add(item);
@@ -327,10 +336,14 @@ public sealed class FloatButtonWindow : Window
         _icon.Effect = Shadow();
         _plate.Effect = Shadow();
         _root.Margin = new Thickness(Math.Max(8, size + 4));
-        Arrange(_panelLeft);
+        if (_row.Children.Count == 0)
+        {
+            Arrange(_panelLeft);
+        }
+
         if (IsLoaded)
         {
-            Dispatcher.BeginInvoke(Place, DispatcherPriority.Loaded);
+            Place(); // now: the size and the place change together (no frame at the old place)
         }
     }
 
@@ -355,17 +368,18 @@ public sealed class FloatButtonWindow : Window
     {
         _panelLeft = panelLeft;
         _row.Children.Clear();
-        _plate.Margin = panelLeft ? new Thickness(0, 0, Gap, 0) : new Thickness(Gap, 0, 0, 0);
+        _plate.Padding = panelLeft ? new Thickness(0, 0, Gap, 0) : new Thickness(Gap, 0, 0, 0); // inside: the gap takes the mouse when open
+        _plate.HorizontalAlignment = panelLeft ? HorizontalAlignment.Right : HorizontalAlignment.Left; // next to the button
         _plate.RenderTransformOrigin = new Point(panelLeft ? 1 : 0, 0.5);
         if (panelLeft)
         {
-            _row.Children.Add(_plate);
+            _row.Children.Add(_plateHost);
             _row.Children.Add(_main);
         }
         else
         {
             _row.Children.Add(_main);
-            _row.Children.Add(_plate);
+            _row.Children.Add(_plateHost);
         }
     }
 
@@ -377,7 +391,7 @@ public sealed class FloatButtonWindow : Window
         }
 
         _expanded = true;
-        _row.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)); // the gap keeps the mouse too
+        _plate.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)); // the gap to the button keeps the mouse too
         _plate.Visibility = Visibility.Visible;
         var duration = new Duration(TimeSpan.FromMilliseconds(90));
         _plateScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.4, 1, duration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
@@ -392,7 +406,7 @@ public sealed class FloatButtonWindow : Window
         }
 
         _expanded = false;
-        _row.Background = null;
+        _plate.Background = null;
         _plateScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
         _plate.BeginAnimation(OpacityProperty, null);
         _plate.Visibility = Visibility.Hidden; // at once

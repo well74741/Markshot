@@ -328,6 +328,28 @@ public sealed class RecorderController
         Changed?.Invoke();
     }
 
+    /// <summary>全屏: the whole monitor the area is (mostly) on.</summary>
+    public void SetFullScreen()
+    {
+        if (Phase != RecordPhase.Setup)
+        {
+            return;
+        }
+
+        var b = Monitors.At(Rect.X + Rect.Width / 2, Rect.Y + Rect.Height / 2).Bounds;
+        SetRect(new Int32Rect(b.X, b.Y, b.Width, b.Height));
+    }
+
+    /// <summary>The area is a whole monitor.</summary>
+    public bool IsFullScreen
+    {
+        get
+        {
+            var b = Monitors.At(Rect.X + Rect.Width / 2, Rect.Y + Rect.Height / 2).Bounds;
+            return Math.Abs(Rect.X - b.X) <= 1 && Math.Abs(Rect.Y - b.Y) <= 1 && Math.Abs(Rect.Width - b.Width) <= 2 && Math.Abs(Rect.Height - b.Height) <= 2;
+        }
+    }
+
     /// <summary>Typed size in physical pixels, kept centred on the area.</summary>
     public void SetSize(int width, int height)
     {

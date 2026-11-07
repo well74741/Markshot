@@ -83,8 +83,9 @@ static class Batch7Test
         hint.Invoke(settings, new object?[] { false, 144.0 });
         var turn = typeof(SettingsWindow).GetMethod("TurnQr", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         turn.Invoke(settings, new object[] { true });
-        Pump(400);
         var qrImage = (Image)settings.FindName("DrawerQr");
+        // The turn takes ~240 ms of animation: wait for its end, not a fixed time (a busy machine renders later).
+        for (var i = 0; i < 60 && !(settings.ShowsSecondQr && ((ScaleTransform)settings.FindName("DrawerQrScale")).ScaleX == 1); i++) Pump(50);
         Check(settings.ShowsSecondQr && ((BitmapImage)qrImage.Source).UriSource.ToString().Contains("wechat") && ((ScaleTransform)settings.FindName("DrawerQrScale")).ScaleX == 1,
             "hovered: turned over to the WeChat code (upright again)");
         turn.Invoke(settings, new object[] { false });

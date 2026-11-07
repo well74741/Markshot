@@ -237,7 +237,8 @@
             <StackPanel Margin="12,18,12,12">
                 <TextBlock Text="Markshot" Foreground="{DynamicResource T_FFF5F5F5}" FontSize="15" FontWeight="SemiBold" Margin="8,0,0,2" />
                 <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
-                    <TextBlock x:Name="VersionText" Foreground="{DynamicResource T_FF6E6E6E}" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock x:Name="VersionText" Foreground="{DynamicResource T_FF6E6E6E}" FontSize="11" VerticalAlignment="Center"
+                               Background="Transparent" Cursor="Help" MouseEnter="VersionText_MouseEnter" MouseLeave="VersionText_MouseLeave" />
                     <Button x:Name="CheckUpdateButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="4,0,0,0"
                             Foreground="{DynamicResource T_FF8A8A8A}" ToolTip="检查更新"
                             Click="CheckUpdate_Click" VerticalAlignment="Center">
@@ -268,7 +269,7 @@
                       MouseEnter="DrawerHandle_MouseEnter" MouseLeave="DrawerHandle_MouseLeave"
                       MouseLeftButtonDown="DrawerHandle_MouseLeftButtonDown" MouseMove="DrawerHandle_MouseMove"
                       MouseLeftButtonUp="DrawerHandle_MouseLeftButtonUp">
-                    <Border x:Name="DrawerCoffee" Style="{StaticResource IconCoffeeMask}" Width="16" Height="16"
+                    <Border x:Name="DrawerCoffee" Style="{StaticResource IconCoffeeMask}" Width="32" Height="32"
                             Background="{DynamicResource T_FF8A8A8A}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     <TextBlock x:Name="DrawerHint" Text="往上拉，请杯咖~" Foreground="{DynamicResource T_FF8A8A8A}" FontSize="12"
                                HorizontalAlignment="Center" Opacity="0" />
@@ -877,9 +878,9 @@
         <!-- Footer -->
         <Border Grid.Column="1" Grid.Row="1" BorderBrush="{DynamicResource T_14FFFFFF}" BorderThickness="0,1,0,0" Padding="24,12,20,14">
             <DockPanel>
+                <Button x:Name="ResetDefaultsButton" DockPanel.Dock="Left" Content="恢复默认设置" ToolTip="所有设置恢复为默认值（翻译 API Key 保留）"
+                        Style="{StaticResource FooterButton}" Click="ResetDefaults_Click" Margin="0,0,14,0" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button x:Name="ResetDefaultsButton" Content="恢复默认设置" ToolTip="所有设置恢复为默认值（翻译 API Key 保留）"
-                            Style="{StaticResource FooterButton}" Click="ResetDefaults_Click" Margin="0,0,8,0" />
                     <Button Content="关闭" ToolTip="关闭设置（没保存的修改会询问）" Style="{StaticResource FooterButton}" Click="Cancel_Click" />
                     <Button Content="保存" Style="{StaticResource PrimaryButton}" Click="Save_Click" Margin="8,0,0,0"
                             IsDefault="True" />

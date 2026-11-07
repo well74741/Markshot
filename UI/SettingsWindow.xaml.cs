@@ -106,6 +106,14 @@ public partial class SettingsWindow : Window
         AddHandler(System.Windows.Controls.Primitives.RangeBase.ValueChangedEvent, new RoutedPropertyChangedEventHandler<double>((s, e) => OnSettingEdited(s, e)));
         AddHandler(PasswordBox.PasswordChangedEvent, new RoutedEventHandler(OnSettingEdited));
         Closing += OnClosingAsk;
+        Closed += (_, _) =>
+        {
+            _notesClose.Stop();
+            if (_notesPopup != null)
+            {
+                _notesPopup.IsOpen = false;
+            }
+        };
         PreviewKeyDown += OnEscape;
         Activated += (_, _) => _activatedAt = Environment.TickCount64;
         _ready = true;
@@ -741,7 +749,12 @@ public partial class SettingsWindow : Window
     private static string NormalizeToolKey(string text, string fallback)
     {
         var value = (text ?? string.Empty).Trim().ToUpperInvariant();
-        if (value.Length == 1 && char.IsLetterOrDigit(value[0]))
+        if (value == "~")
+        {
+            value = "`"; // Shift + the key above Tab
+        }
+
+        if (value.Length == 1 && (char.IsLetterOrDigit(value[0]) || value[0] == '`'))
         {
             return value;
         }
@@ -965,6 +978,90 @@ public partial class SettingsWindow : Window
 
     /// <summary>The footer line (tests).</summary>
     public string StatusLine => StatusText.Text;
+
+    // ---- the version: what changed lately, on hover ------------------------------------------------------------------
+
+    private System.Windows.Controls.Primitives.Popup? _notesPopup;
+    private readonly DispatcherTimer _notesClose = new() { Interval = TimeSpan.FromMilliseconds(180) };
+
+    /// <summary>The release-notes card under the version (tests).</summary>
+    internal System.Windows.Controls.Primitives.Popup? NotesPopup => _notesPopup;
+
+    private void VersionText_MouseEnter(object sender, MouseEventArgs e)
+    {
+        _notesClose.Stop();
+        _notesPopup ??= BuildNotesPopup();
+        if (!_notesPopup.IsOpen)
+        {
+            _notesPopup.IsOpen = true;
+            if (_notesPopup.Child is FrameworkElement card)
+            {
+                Motion.PopIn(card, fromAbove: true, duration: Motion.Bar);
+            }
+        }
+    }
+
+    private void VersionText_MouseLeave(object sender, MouseEventArgs e)
+    {
+        _notesClose.Tick -= CloseNotes;
+        _notesClose.Tick += CloseNotes;
+        _notesClose.Start(); // a moment to move onto the card itself
+    }
+
+    private void CloseNotes(object? sender, EventArgs e)
+    {
+        _notesClose.Stop();
+        if (_notesPopup is { IsOpen: true, IsMouseOver: false } && !VersionText.IsMouseOver)
+        {
+            _notesPopup.IsOpen = false;
+        }
+    }
+
+    private System.Windows.Controls.Primitives.Popup BuildNotesPopup()
+    {
+        var body = new StackPanel { Width = 330 };
+        foreach (var (version, lines) in ReleaseNotes.All.Take(3))
+        {
+            var heading = new TextBlock { Text = version, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, body.Children.Count == 0 ? 0 : 10, 0, 2) };
+            heading.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFF0F0F0));
+            body.Children.Add(heading);
+            foreach (var line in lines)
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 3, 0, 0) };
+                var dot = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Margin = new Thickness(1, 6, 7, 0), VerticalAlignment = VerticalAlignment.Top };
+                dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "Accent");
+                DockPanel.SetDock(dot, Dock.Left);
+                var text = new TextBlock { Text = line, FontSize = 11.5, TextWrapping = TextWrapping.Wrap };
+                text.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFB8B8B8));
+                row.Children.Add(dot);
+                row.Children.Add(text);
+                body.Children.Add(row);
+            }
+        }
+
+        var card = new Border
+        {
+            Child = body,
+            Padding = new Thickness(14, 10, 14, 12),
+            Margin = new Thickness(8),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 0, Opacity = 0.4 }
+        };
+        card.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
+        card.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x33FFFFFF));
+        var popup = new System.Windows.Controls.Primitives.Popup
+        {
+            Child = new Grid { Children = { card }, LayoutTransform = UiScale.SettingsTransform },
+            PlacementTarget = VersionText,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            AllowsTransparency = true,
+            StaysOpen = true,
+            VerticalOffset = 2
+        };
+        popup.MouseLeave += (_, _) => VersionText_MouseLeave(popup, null!);
+        return popup;
+    }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
