@@ -657,6 +657,8 @@ un.ps1 batch1 menu`。
   - 识别换成 zxing-cpp（NuGet `ZXingCpp` 0.5.3，原生 `runtimes/win-x64/native/ZXing.dll`）：多码、格式全、比 ZXing.Net 快 5～50 倍（实测 6 码 1200×800 约 10 ms，4K 约 0.5 s 含首次加载）。
     再用 ZXing.Net 补漏（zxing-cpp 读不出的低对比度码），画面不超过 250 万像素时两者都跑，按文字 + 位置重叠去重。原生库缺失时自动只用 ZXing.Net。
     格式名：zxing-cpp 是 "QR Code"（带空格），`KindOf` 去掉空格 / 下划线再比较。码的位置直接取四个角点。
+  - 原生 `ZXing.dll` 与 ZXing.Net 的 `zxing.dll` 文件名只差大小写，发布时冲突：`ZXingCpp` 包 `ExcludeAssets="native"`，原生库以 `zxingcpp-native.dll` 复制到输出 / 发布目录，
+    `CodeReader` 静态构造里 `NativeLibrary.SetDllImportResolver` 把 "ZXing" 指向它。测试 `round48` 直接调 `ReadNative` 确认原生库确实在用。
   - 截图打开时 `CodeReader.WarmUp` 预加载原生库；区域停稳 120 ms（原 250）后读；结果回来时区域已变则丢弃（以前可能把旧结果当成新区域的）。
   - 定位只画四个 L 形角标（`CornerMarks`，带一点阴影）；信息卡紧贴角标；离开码 0.4 s 后才隐藏（`_codeHideTimer`），途中进入卡片则保留，离开卡片再隐藏。码的判定范围外扩 6 像素。
 

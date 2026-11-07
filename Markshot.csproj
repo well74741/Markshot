@@ -52,7 +52,9 @@
     <!-- 录屏: system sound (WASAPI loopback) and microphone capture (MIT). -->
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
-    <PackageReference Include="ZXingCpp" Version="0.5.3" />
+    <!-- 二维码: zxing-cpp. Its native ZXing.dll has the same file name as ZXing.Net's zxing.dll (Windows ignores case), so it
+         is shipped as zxingcpp-native.dll and loaded by name (CodeReader). -->
+    <PackageReference Include="ZXingCpp" Version="0.5.3" ExcludeAssets="native" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -78,6 +80,11 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(PkgZXingCpp)/runtimes/win-x64/native/ZXing.dll" Link="zxingcpp-native.dll"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
 </Project>

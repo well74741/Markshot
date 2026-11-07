@@ -296,6 +296,10 @@ static class Round48Test
                     Array.Copy(code.Pixels, y * code.Width * 4, many, ((60 + (k / 3) * 380 + y) * 1200 + 60 + (k % 3) * 380) * 4, code.Width * 4);
             }
 
+            var gray = new byte[1200 * 800];
+            for (var i = 0; i < gray.Length; i++) gray[i] = many[i * 4];
+            var native = (System.Collections.IList)typeof(CodeReader).GetMethod("ReadNative", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, new object[] { gray, 1200, 800, 1.0 })!;
+            Check(native.Count == 6, $"zxing-cpp (shipped as zxingcpp-native.dll) loads and reads all six itself ({native.Count})");
             var sixWatch = System.Diagnostics.Stopwatch.StartNew();
             var six = CodeReader.Read(BitmapSource.Create(1200, 800, 96, 96, PixelFormats.Bgra32, null, many, 1200 * 4));
             Check(six.Count == 6 && six.All(c => c.Area != null), $"six codes in one area: all six, each with its place ({six.Count}, {sixWatch.ElapsedMilliseconds} ms)");

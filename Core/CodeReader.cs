@@ -6,6 +6,28 @@ namespace Markshot.Core;
 /// </summary>
 public static class CodeReader
 {
+    static CodeReader()
+    {
+        // zxing-cpp asks for "ZXing": the native library is shipped as zxingcpp-native.dll (see Markshot.csproj).
+        try
+        {
+            System.Runtime.InteropServices.NativeLibrary.SetDllImportResolver(typeof(ZXingCpp.BarcodeReader).Assembly, (name, _, _) =>
+            {
+                if (!name.StartsWith("ZXing", StringComparison.OrdinalIgnoreCase))
+                {
+                    return IntPtr.Zero;
+                }
+
+                var path = Path.Combine(AppContext.BaseDirectory, "zxingcpp-native.dll");
+                return File.Exists(path) && System.Runtime.InteropServices.NativeLibrary.TryLoad(path, out var handle) ? handle : IntPtr.Zero;
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            // a resolver is already set
+        }
+    }
+
     /// <summary>One code found: what it says, its kind and whether it is a web address.</summary>
     /// <param name="Area">Where the code is in the picture (pixels), when the reader could tell.</param>
     public sealed record Code(string Text, string Kind, Rect? Area = null)
