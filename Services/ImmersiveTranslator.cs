@@ -155,6 +155,11 @@ public static class ImmersiveTranslator
                     ;
                 lock (CacheGate)
                 {
+                    if (Cache.Count > 5000)
+                    {
+                        Cache.Clear(); // it only saves asking again: a fresh start beats growing for days
+                    }
+
                     for (var k = 0; k < batch.Count; k++)
                     {
                         var text = results[k].Trim();

@@ -104,6 +104,10 @@ public partial class PinWindow
         // every element, so re-editing never shows the annotations twice.
         var transformed = new TransformedBitmap(_baseImage, transform);
         transformed.Freeze();
+        if (IsMoving)
+        {
+            _animation = _animation!.Transformed(transform); // every frame turns too: it keeps moving
+        }
 
         // One pattern per mosaic strength: the stored undo steps share it with the live elements.
         var patterns = new Dictionary<double, (BitmapSource? Pattern, Rect Area)>();

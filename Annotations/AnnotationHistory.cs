@@ -8,7 +8,7 @@ namespace Markshot.Annotations;
 public sealed class AnnotationHistory
 {
     private const int MaxDepth = 50;
-    private const long MaxExtraBytes = 1500L * 1024 * 1024;
+    private const long MaxExtraBytes = 500L * 1024 * 1024;
 
     /// <summary>A snapshot of the elements plus whatever else the owner wants undone with them.</summary>
     private sealed class Entry : List<Annotation>

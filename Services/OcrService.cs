@@ -18,12 +18,33 @@ public static class OcrService
 
     public static Task<string> RecognizeAsync(BitmapSource image, string languageTag = "")
     {
+        image = Shareable(image);
         return Task.Run(() => Recognize(image, languageTag));
+    }
+
+    /// <summary>A picture the worker thread may read: frozen here, on the thread that owns it (or a frozen copy).</summary>
+    private static BitmapSource Shareable(BitmapSource image)
+    {
+        if (image.IsFrozen)
+        {
+            return image;
+        }
+
+        if (image.CanFreeze)
+        {
+            image.Freeze();
+            return image;
+        }
+
+        var copy = new WriteableBitmap(image);
+        copy.Freeze();
+        return copy;
     }
 
     public static Task<IReadOnlyList<OcrTextBlock>> RecognizeBlocksAsync(
         BitmapSource image, string languageTag = "")
     {
+        image = Shareable(image);
         return Task.Run(() => RecognizeBlocks(image, languageTag));
     }
 

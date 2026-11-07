@@ -118,6 +118,11 @@ public partial class App : Application
 
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             Log.Error("未处理的异常", args.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Log.Error("后台任务异常", args.Exception);
+            args.SetObserved();
+        };
 
         _hotkeys = new HotkeyManager();
         _tray = new TrayService(
@@ -143,6 +148,7 @@ public partial class App : Application
         ApplyOpenWith();
 
         ApplyFloatButton();
+        FloatIcon.CleanUp(Config);
         if (FloatIcon.IsCustom(Config))
         {
             _tray.SetIcon(FloatIcon.Load(Config));
@@ -519,9 +525,15 @@ public partial class App : Application
                 var entry = new PinEntry { Image = pin.SourceImage };
                 History.Add(entry);
                 PinStore.Save(entry, pin.SourceImage);
+                if (entry.FilePath != null)
+                {
+                    entry.Image = null; // on disk now: read back when it is needed
+                }
+
                 _closedPins.Add((pin.Snapshot(), entry));
                 _pinHistoryWindow?.Refresh();
-                if (_closedPins.Count > 30)
+                // The exact restore (annotations, zoom) keeps whole pictures: at most 30 pins and ~800 MB of them.
+                while (_closedPins.Count > 30 || (_closedPins.Count > 3 && _closedPins.Sum(closed => SnapshotBytes(closed.Snapshot)) > 800L * 1024 * 1024))
                 {
                     _closedPins.RemoveAt(0);
                 }
@@ -539,6 +551,10 @@ public partial class App : Application
     }
 
     public int PinCount => _pins.Count;
+
+    private static long SnapshotBytes(PinSnapshot snapshot) =>
+        (long)snapshot.Image.PixelWidth * snapshot.Image.PixelHeight * 4 +
+        (snapshot.BaseImage is { } baseImage && !ReferenceEquals(baseImage, snapshot.Image) ? (long)baseImage.PixelWidth * baseImage.PixelHeight * 4 : 0);
 
     /// <summary>After an image was saved: offer to open its folder (unless turned off).</summary>
     public void ShowSavedPrompt(string path)

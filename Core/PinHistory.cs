@@ -10,13 +10,16 @@ public sealed class PinEntry
 
     public DateTime Created { get; set; } = DateTime.Now;
 
-    public BitmapSource? LoadImage()
-    {
-        if (Image != null)
-        {
-            return Image;
-        }
+    private BitmapSource? _thumbnail;
 
+    /// <summary>The full picture: in memory until it is on disk, then read from the file each time (not kept for every entry).</summary>
+    public BitmapSource? LoadImage() => Image ?? Read(0);
+
+    /// <summary>A small picture for the history window (kept: a few KB).</summary>
+    public BitmapSource? Thumbnail() => _thumbnail ??= Image != null ? Image : Read(320);
+
+    private BitmapSource? Read(int width)
+    {
         if (string.IsNullOrWhiteSpace(FilePath) || !File.Exists(FilePath))
         {
             return null;
@@ -27,10 +30,15 @@ public sealed class PinEntry
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+            if (width > 0)
+            {
+                bitmap.DecodePixelWidth = width;
+            }
+
             bitmap.UriSource = new Uri(FilePath);
             bitmap.EndInit();
             bitmap.Freeze();
-            Image = bitmap;
             return bitmap;
         }
         catch (Exception ex)

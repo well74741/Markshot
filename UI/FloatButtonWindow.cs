@@ -94,8 +94,10 @@ public sealed class FloatButtonWindow : Window
             Child = _items,
             VerticalAlignment = VerticalAlignment.Center,
             Visibility = Visibility.Hidden, // keeps its room: the window does not change size when it opens
-            RenderTransform = _plateScale
+            RenderTransform = _plateScale,
+            LayoutTransform = UiScale.Transform // the row's buttons are as big as the annotation bar's (工具栏大小)
         };
+        UiScale.Changed += OnUiScaleChanged;
         _plate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xF21E1E1E));
         _row = new StackPanel { Orientation = Orientation.Horizontal };
         _root = new Grid { Children = { _row }, Opacity = 0 }; // fades in once it is in place (no jump on the first frame)
@@ -184,6 +186,7 @@ public sealed class FloatButtonWindow : Window
         Closed += (_, _) =>
         {
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
+            UiScale.Changed -= OnUiScaleChanged;
             _fullscreenWatch.Stop();
         };
         _fullscreenWatch.Tick += (_, _) => CheckFullscreen();
@@ -538,6 +541,8 @@ public sealed class FloatButtonWindow : Window
         return (work.Right - offset, work.Bottom - offset);
     }
 
+    private void OnUiScaleChanged() => Dispatcher.BeginInvoke(Place, DispatcherPriority.Loaded);
+
     private void OnDisplayChanged(object? sender, EventArgs e) =>
         Dispatcher.BeginInvoke(() => MoveTo(_centerX, _centerY, keepInside: true), DispatcherPriority.Background);
 
@@ -562,7 +567,15 @@ public sealed class FloatButtonWindow : Window
         var mainX = _panelLeft ? ActualWidth - margin - MainSize / 2 : margin + MainSize / 2;
         var x = (int)Math.Round(_centerX - mainX * scale);
         var y = (int)Math.Round(_centerY - ActualHeight / 2 * scale);
-        Native.SetWindowPos(_handle, Native.HWND_TOPMOST, x, y, 0, 0, 0x0001 /* NOSIZE */ | Native.SWP_NOACTIVATE);
+        // Through Left / Top, not SetWindowPos: WPF draws a see-through window together with its own idea of the
+        // position, and after a SetWindowPos the next frame showed it once more where it had been (a flash on the drag path).
+        var dpi = VisualTreeHelper.GetDpi(this);
+        Left = x / dpi.DpiScaleX;
+        Top = y / dpi.DpiScaleY;
+        if (!_moving)
+        {
+            Native.SetWindowPos(_handle, Native.HWND_TOPMOST, 0, 0, 0, 0, 0x0001 /* NOSIZE */ | 0x0002 /* NOMOVE */ | Native.SWP_NOACTIVATE);
+        }
     }
 
     // ---- hidden during a capture / behind full-screen programs ------------------------------------

@@ -470,8 +470,9 @@ public sealed class HotkeyManager : IDisposable
         {
             _hookThreadId = GetCurrentThreadId();
             _mouseProc = MouseHook;
-            _mouseHook = SetWindowsHookEx(WhMouseLl, _mouseProc, GetModuleHandle(null), 0);
-            installed = _mouseHook != IntPtr.Zero;
+            var hook = SetWindowsHookEx(WhMouseLl, _mouseProc, GetModuleHandle(null), 0);
+            _mouseHook = hook;
+            installed = hook != IntPtr.Zero;
             ready.Set();
             if (!installed)
             {
@@ -484,8 +485,8 @@ public sealed class HotkeyManager : IDisposable
                 DispatchMessage(ref msg);
             }
 
-            UnhookWindowsHookEx(_mouseHook);
-            _mouseHook = IntPtr.Zero;
+            UnhookWindowsHookEx(hook); // its own hook, not whatever the field holds by now
+            Interlocked.CompareExchange(ref _mouseHook, IntPtr.Zero, hook);
         })
         { IsBackground = true, Name = "Markshot mouse hotkeys" };
         _hookThread.Start();

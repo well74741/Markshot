@@ -503,7 +503,18 @@ public partial class OverlayWindow : Window
         FocusWindow();
 
         var handle = new WindowInteropHelper(this).Handle;
-        Native.SetForegroundWindow(handle);
+        // The keyboard must come here (Esc, the tool keys) also when the capture was started by a click on the floating
+        // button (it never activates, so Windows may refuse a plain SetForegroundWindow).
+        Native.ForceForeground(handle);
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_closed && !IsActive)
+            {
+                Native.ForceForeground(handle);
+                Activate();
+                FocusWindow();
+            }
+        }, DispatcherPriority.ApplicationIdle);
 
         PositionHint();
         StartDimConverge();

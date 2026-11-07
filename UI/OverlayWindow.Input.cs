@@ -1338,14 +1338,23 @@ public partial class OverlayWindow
             return;
         }
 
-        if (control && key == Key.Z)
+        // Z / Shift+Z (built in), Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z: undo / redo. (Ctrl+Shift+Z used to undo: the Ctrl+Z test came first.)
+        if (key == Key.Z && (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
         {
-            Undo();
+            if (shift)
+            {
+                Redo();
+            }
+            else
+            {
+                Undo();
+            }
+
             e.Handled = true;
             return;
         }
 
-        if (control && (key == Key.Y || (shift && key == Key.Z)))
+        if (control && key == Key.Y)
         {
             Redo();
             e.Handled = true;

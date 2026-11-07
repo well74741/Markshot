@@ -24,6 +24,18 @@ public sealed class AnimatedImage
 
     public TimeSpan Length => TimeSpan.FromTicks(Durations.Sum(d => d.Ticks));
 
+    /// <summary>Every frame turned / mirrored the same way (a moving pin that was rotated or flipped).</summary>
+    public AnimatedImage Transformed(Transform transform)
+    {
+        var frames = Frames.Select(frame =>
+        {
+            var turned = new TransformedBitmap(frame, transform);
+            turned.Freeze();
+            return (BitmapSource)turned;
+        }).ToList();
+        return new AnimatedImage(frames, Durations);
+    }
+
     public static AnimatedImage FromBitmap(BitmapSource image)
     {
         var frame = image.IsFrozen ? image : (BitmapSource)image.GetCurrentValueAsFrozen();
@@ -350,20 +362,43 @@ public static class FloatIcon
     /// <summary>重置: the Markshot logo again.</summary>
     public static void Reset(AppConfig config) => Replace(config, "");
 
-    private static void Replace(AppConfig config, string name)
+    // The old picture stays until the settings are saved (不保存 goes back to it); CleanUp then removes the unused ones.
+    private static void Replace(AppConfig config, string name) => config.FloatIcon = name;
+
+    /// <summary>Removes the floating button pictures in the config folder other than the one in use.</summary>
+    public static void CleanUp(AppConfig config)
     {
-        var old = CustomPath(config);
-        config.FloatIcon = name;
-        if (old != null && !string.Equals(old, CustomPath(config), StringComparison.OrdinalIgnoreCase))
+        try
         {
-            try
+            if (!System.IO.Directory.Exists(Directory))
             {
-                File.Delete(old);
+                return;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+
+            var keep = CustomPath(config);
+            foreach (var file in System.IO.Directory.GetFiles(Directory, "float_icon_*"))
             {
-                // In use (being read): it stays, a new start uses the new one anyway.
+                if (!string.Equals(file, keep, StringComparison.OrdinalIgnoreCase))
+                {
+                    Forget(file);
+                }
             }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Error("清理悬浮按钮图片失败", ex);
+        }
+    }
+
+    public static void Forget(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // In use (being read): it goes at the next clean-up.
         }
     }
 }

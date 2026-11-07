@@ -19,6 +19,82 @@ internal static class Native
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern bool SetProp(IntPtr window, string name, IntPtr data);
 
+    /// <summary>
+    /// Brings a window to the front with the keyboard, also when Markshot did not get the last input (a click on the
+    /// never-activating floating button, a timer): Windows then refuses SetForegroundWindow and Esc went to the other program.
+    /// A harmless unassigned key (0xE8) makes this process the last input; failing that, the input queues are joined briefly.
+    /// </summary>
+    public static bool ForceForeground(IntPtr window)
+    {
+        if (window == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        if (GetForegroundWindow() == window)
+        {
+            return true;
+        }
+
+        var inputs = new[]
+        {
+            new KeyInput { Type = 1, Vk = 0xE8 },
+            new KeyInput { Type = 1, Vk = 0xE8, Flags = 2 /* KEYEVENTF_KEYUP */ }
+        };
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<KeyInput>());
+        if (SetForegroundWindow(window) && GetForegroundWindow() == window)
+        {
+            return true;
+        }
+
+        var front = GetForegroundWindow();
+        var frontThread = GetWindowThreadProcessId(front, out _);
+        var mine = GetCurrentThreadId();
+        if (frontThread == 0 || frontThread == mine)
+        {
+            return SetForegroundWindow(window);
+        }
+
+        AttachThreadInput(mine, frontThread, true);
+        try
+        {
+            BringWindowToTop(window);
+            SetForegroundWindow(window);
+        }
+        finally
+        {
+            AttachThreadInput(mine, frontThread, false);
+        }
+
+        return GetForegroundWindow() == window;
+    }
+
+    // INPUT with a KEYBDINPUT (the union padded to the size of a MOUSEINPUT on 64-bit).
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KeyInput
+    {
+        public uint Type;
+        private uint _pad;
+        public ushort Vk;
+        public ushort Scan;
+        public uint Flags;
+        public uint Time;
+        public IntPtr Extra;
+        private long _pad2;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint count, KeyInput[] inputs, int size);
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint attach, uint to, bool on);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr window);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
     public const int SM_XVIRTUALSCREEN = 76;
     public const int SM_YVIRTUALSCREEN = 77;
     public const int SM_CXVIRTUALSCREEN = 78;

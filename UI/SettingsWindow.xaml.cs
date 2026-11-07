@@ -94,7 +94,109 @@ public partial class SettingsWindow : Window
         }
 
         PreviewKeyDown += OnPreviewKeyDownFloat;
+        foreach (var name in LiveSettings)
+        {
+            _liveSaved[name] = typeof(AppConfig).GetProperty(name)!.GetValue(config);
+        }
+
+        // Any change made in the window (typed, ticked, slid, picked) is a change to save.
+        AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new RoutedEventHandler(OnSettingEdited));
+        AddHandler(System.Windows.Controls.Primitives.ToggleButton.CheckedEvent, new RoutedEventHandler(OnSettingEdited));
+        AddHandler(System.Windows.Controls.Primitives.ToggleButton.UncheckedEvent, new RoutedEventHandler(OnSettingEdited));
+        AddHandler(System.Windows.Controls.Primitives.RangeBase.ValueChangedEvent, new RoutedPropertyChangedEventHandler<double>((s, e) => OnSettingEdited(s, e)));
+        AddHandler(PasswordBox.PasswordChangedEvent, new RoutedEventHandler(OnSettingEdited));
+        Closing += OnClosingAsk;
         _ready = true;
+    }
+
+    /// <summary>Settings the window applies at once for a preview (theme, size, the floating button): put back when not saved.</summary>
+    private static readonly string[] LiveSettings =
+    {
+        "Theme", "UiSize", "FloatButtonEnabled", "FloatHideFullscreen", "FloatActionOrder", "FloatActionHidden",
+        "FloatIcon", "FloatIconOpacity", "FloatIconSize"
+    };
+
+    private readonly Dictionary<string, object?> _liveSaved = new();
+    private bool _dirty;
+    private bool _asked;
+
+    /// <summary>There are changes that 保存 has not kept yet (tests).</summary>
+    public bool HasUnsavedChanges => _dirty;
+
+    /// <summary>Tests: the answer the close question gets (0 保存, 1 不保存, 2 取消).</summary>
+    internal Func<int>? AskOverride;
+
+    /// <summary>Tests: the answer for every settings window (no question box that would wait for a click).</summary>
+    internal static Func<int>? AskAll;
+
+    private void MarkDirty()
+    {
+        if (_ready)
+        {
+            _dirty = true;
+        }
+    }
+
+    private void OnSettingEdited(object sender, RoutedEventArgs e)
+    {
+        // Moving between pages is no change.
+        if (e.OriginalSource is RadioButton { GroupName: "Nav" } || e.OriginalSource is FrameworkElement { Name: "DrawerQrSlider" })
+        {
+            return;
+        }
+
+        MarkDirty();
+    }
+
+    private void OnClosingAsk(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_dirty || _asked)
+        {
+            return;
+        }
+
+        var answer = AskOverride?.Invoke() ?? AskAll?.Invoke() ??
+                     ThemedMessage.Show(this, "设置未保存", "修改的设置还没有保存，关闭后不会生效。要保存吗？", "保存", "不保存", "取消");
+        if (answer == 0)
+        {
+            var saves = _saves;
+            Save_Click(this, new RoutedEventArgs());
+            if (_saves == saves)
+            {
+                e.Cancel = true; // a setting is not valid: the message said which
+                return;
+            }
+        }
+        else if (answer == 1)
+        {
+            DiscardLive();
+        }
+        else
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        _asked = true;
+    }
+
+    /// <summary>不保存: the live previews go back to what is saved (the floating button, its picture; the app restores the theme).</summary>
+    private void DiscardLive()
+    {
+        var newIcon = FloatIcon.CustomPath(_config);
+        foreach (var (name, value) in _liveSaved)
+        {
+            typeof(AppConfig).GetProperty(name)!.SetValue(_config, value);
+        }
+
+        if (newIcon != null && !string.Equals(newIcon, FloatIcon.CustomPath(_config), StringComparison.OrdinalIgnoreCase))
+        {
+            FloatIcon.Forget(newIcon); // a picture taken in here and not kept
+        }
+
+        _dirty = false;
+        RunningApp?.ApplyFloatButton();
+        RunningApp?.RefreshFloatLook();
     }
 
     private bool _ready; // the constructor has filled everything in: changes from here on are the user's
@@ -128,24 +230,29 @@ public partial class SettingsWindow : Window
 
         _config.FloatActionOrder = order;
         _config.FloatActionHidden = hidden;
-        _config.Save();
+        MarkDirty();
         RunningApp?.RefreshFloatLook();
     }
 
     /// <summary>The switch follows the floating button's own menu / the tray.</summary>
-    public void SyncFloatSwitch() => FloatEnabledCheck.IsChecked = _config.FloatButtonEnabled;
+    public void SyncFloatSwitch()
+    {
+        // Switched (and saved) outside the window: that is the saved state now, not a change made here.
+        _liveSaved["FloatButtonEnabled"] = _config.FloatButtonEnabled;
+        var dirty = _dirty;
+        FloatEnabledCheck.IsChecked = _config.FloatButtonEnabled;
+        _dirty = dirty;
+    }
 
     private void FloatEnabled_Click(object sender, RoutedEventArgs e)
     {
         _config.FloatButtonEnabled = FloatEnabledCheck.IsChecked == true;
-        _config.Save();
-        RunningApp?.ApplyFloatButton();
+        RunningApp?.ApplyFloatButton(); // shown / hidden at once; kept only with 保存
     }
 
     private void FloatFullscreen_Click(object sender, RoutedEventArgs e)
     {
         _config.FloatHideFullscreen = FloatFullscreenCheck.IsChecked == true;
-        _config.Save();
         RunningApp?.FloatButton?.CheckFullscreen();
     }
 
@@ -164,15 +271,9 @@ public partial class SettingsWindow : Window
         }
 
         _config.FloatIconOpacity = Math.Round(e.NewValue) / 100;
-        _opacitySave ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-        _opacitySave.Stop();
-        _opacitySave.Tick -= SaveOpacity;
-        _opacitySave.Tick += SaveOpacity;
-        _opacitySave.Start();
         RunningApp?.FloatButton?.ApplyLook();
     }
 
-    private DispatcherTimer? _opacitySave;
 
     /// <summary>悬浮按钮 尺寸: 100 % (the smallest, as designed) to 200 %.</summary>
     private void FloatSize_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -189,19 +290,9 @@ public partial class SettingsWindow : Window
         }
 
         _config.FloatIconSize = Math.Round(e.NewValue) / 100;
-        _opacitySave ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-        _opacitySave.Stop();
-        _opacitySave.Tick -= SaveOpacity;
-        _opacitySave.Tick += SaveOpacity;
-        _opacitySave.Start();
         RunningApp?.FloatButton?.ApplyLook();
     }
 
-    private void SaveOpacity(object? sender, EventArgs e)
-    {
-        _opacitySave?.Stop();
-        _config.Save();
-    }
 
     private void ShowFloatIcon()
     {
@@ -213,7 +304,7 @@ public partial class SettingsWindow : Window
     /// <summary>A new picture was taken (or reset): preview, the floating button and the tray icon follow.</summary>
     private void FloatIconChanged()
     {
-        _config.Save();
+        MarkDirty();
         ShowFloatIcon();
         RunningApp?.RefreshFloatLook();
     }
@@ -221,9 +312,18 @@ public partial class SettingsWindow : Window
     /// <summary>Takes a picture file for the floating button (tests call it too).</summary>
     internal bool UseFloatIcon(string path)
     {
-        if (!FloatIcon.SetFile(_config, path))
+        try
         {
-            ThemedMessage.Show(this, "提示", "这个文件不是能打开的图片。", "确定");
+            if (!FloatIcon.SetFile(_config, path))
+            {
+                ThemedMessage.Show(this, "提示", "这个文件不是能打开的图片。", "确定");
+                return false;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Error("设置悬浮按钮图标失败", ex);
+            ThemedMessage.Show(this, "提示", "无法保存这张图片：" + ex.Message, "确定");
             return false;
         }
 
@@ -233,7 +333,17 @@ public partial class SettingsWindow : Window
 
     internal void UseFloatIcon(BitmapSource image)
     {
-        FloatIcon.SetImage(_config, image);
+        try
+        {
+            FloatIcon.SetImage(_config, image);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Error("设置悬浮按钮图标失败", ex);
+            ThemedMessage.Show(this, "提示", "无法保存这张图片：" + ex.Message, "确定");
+            return;
+        }
+
         FloatIconChanged();
     }
 
@@ -797,6 +907,13 @@ public partial class SettingsWindow : Window
 
         Saved = true;
         _saves++;
+        _dirty = false;
+        foreach (var name in LiveSettings)
+        {
+            _liveSaved[name] = typeof(AppConfig).GetProperty(name)!.GetValue(_config);
+        }
+
+        FloatIcon.CleanUp(_config); // pictures replaced in here and now not used
         SavedChanges?.Invoke(); // applied now; the window stays open
         ShowSavedNotice();
     }
@@ -1000,12 +1117,15 @@ public partial class SettingsWindow : Window
                     return;
                 }
 
+                MarkDirty();
+
                 var off = _hiddenButtons.Add(id) || !_hiddenButtons.Remove(id);
                 Motion.Fade(icon, off ? 0.28 : 1);
             };
             row.Children.Add(button);
         }
 
+        reorder.Reordered += _ => MarkDirty();
         return reorder;
     }
 
@@ -1027,12 +1147,7 @@ public partial class SettingsWindow : Window
         {
             _theme = mode;
             Theme.Apply(mode);
-            if (_ready && _config.Theme != mode)
-            {
-                // Chosen = kept (it used to wait for 保存, and was lost when the window closed or Markshot updated).
-                _config.Theme = mode;
-                _config.Save();
-            }
+
         }
     }
 
@@ -1077,11 +1192,8 @@ public partial class SettingsWindow : Window
         {
             _uiSize = size;
             UiScale.Apply(size);
-            if (_ready && _config.UiSize != size)
-            {
-                _config.UiSize = size;
-                _config.Save();
-            }
+            RunningApp?.FloatButton?.ApplyLook();
+
         }
     }
 
@@ -1205,6 +1317,7 @@ public partial class SettingsWindow : Window
         {
             var chosen = picker.SelectedColor;
             _shadowColor = $"#{chosen.R:X2}{chosen.G:X2}{chosen.B:X2}";
+            MarkDirty();
             ShadowOpacitySlider.Value = Math.Round(chosen.A / 2.55); // the picker's alpha is the shadow opacity
             UpdateShadowPreview();
         }

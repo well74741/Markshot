@@ -192,6 +192,11 @@ public sealed class AppConfig
     /// <summary>After saving an image, ask whether to open its folder.</summary>
     public bool AskOpenFolderAfterSave { get; set; } = true;
 
+    /// <summary>贴图历史 window size as last left (DIP; 0 = the default).</summary>
+    public double PinHistoryWidth { get; set; }
+
+    public double PinHistoryHeight { get; set; }
+
     /// <summary>图片编辑器 移动吸附: moved elements snap to the canvas and each other.</summary>
     public bool EditorSnap { get; set; } = true;
 
@@ -509,7 +514,7 @@ public sealed class AppConfig
         }
 
         var json = JsonSerializer.Serialize(this, JsonOptions);
-        File.WriteAllText(path, json, new UTF8Encoding(false));
+        AtomicFile.WriteAllText(path, json);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -618,6 +623,17 @@ public sealed class RecorderConfig
     public int LastWidth { get; set; }
 
     public int LastHeight { get; set; }
+}
+
+/// <summary>Files written whole or not at all: to a temporary file beside it, then moved over the old one.</summary>
+public static class AtomicFile
+{
+    public static void WriteAllText(string path, string text)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, text, new UTF8Encoding(false));
+        File.Move(temp, path, overwrite: true);
+    }
 }
 
 public static class Log

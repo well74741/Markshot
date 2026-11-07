@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.55`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.56`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,34 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.56 0.8.56 变更
+
+- 悬浮按钮点击截图后 Esc 偶尔无效：按钮窗口不激活，Markshot 不是最后收到输入的程序时 Windows 拒绝 SetForegroundWindow，键盘留在原程序。
+  `Native.ForceForeground`：先 SendInput 一个无意义键 0xE8 让本进程成为最后输入者，不行再 AttachThreadInput；截图窗口 Loaded 用它，ApplicationIdle 时没激活再补一次。
+- 悬浮按钮拖动闪一帧：用 SetWindowPos 移动透明窗口后 WPF 下一帧还按旧 Left/Top 画了一次。改为设置 Left/Top（物理像素 / DPI）。
+  浮窗按钮行加 `LayoutTransform = UiScale.Transform`，和批注栏同大，跟随「工具栏大小」。
+- 动图贴图：`IsMoving` 时不进入批注（提示一下）；旋转 / 翻转时 `AnimatedImage.Transformed` 把每一帧一起变换，`UpdateAnimation` 重新开始播放。
+- 贴图快速点击选中元素时跳动：贴图拖动的松开没收到（快速双击、捕获丢失）时 `_dragging` 还在，之后鼠标移动就从旧按下点拖动贴图。
+  现在移动时左键已松开就结束拖动（`EndStaleDrag`），按下 4 px 内不动贴图，点中元素时也结束残留的拖动，LostMouseCapture 收尾。
+- 正在输入的文字拖调节框跳动：框随字号变大时 TextBox 先滚动了内容（宽度下一帧才更新）。拖框时 `Refresh` 里立即 UpdateLayout 并把滚动归零。
+- Z / Shift+Z：截图（`CaptureKeyDown` 之后的按键处理）和贴图批注里撤销 / 重做；Ctrl+Shift+Z 以前被 Ctrl+Z 抢先当成撤销，现在是重做。
+- 贴图历史：`UniformGrid` 按宽度算列数，瓷砖拉伸填满；窗口大小存 `PinHistoryWidth/Height`。
+- 录屏工具栏显示不全：圆角区域（SetWindowRgn）在 SizeChanged 时取 GetWindowRect，窗口刚变大时还是旧尺寸，新的部分被裁掉。改为 WM_SIZE 钩子用真实尺寸重做区域。
+- 编辑器「清空图片」：来源贴图直接关闭（进贴图历史），不再贴回屏幕。
+- 设置：不再即时保存。窗口里任何修改（文本、勾选、滑条、密码、工具栏按钮开关 / 排序、阴影颜色、悬浮按钮图标）标记未保存；
+  关闭时问 保存 / 不保存 / 取消。主题、工具栏大小、悬浮按钮各项仍即时预览（写在 App.Config 上），不保存时 `DiscardLive` 按打开时的值还原（`LiveSettings` 列表），
+  主题由 App 的 Closed 处理还原。悬浮按钮换图不再立即删旧图，保存后 / 启动时 `FloatIcon.CleanUp` 删除不用的 `float_icon_*`；不保存时删掉新拷贝。
+  测试：`SettingsWindow.AskAll`（Program.cs 设为「不保存」），单个窗口可用 `AskOverride`。
+- 稳定性（全面检查后改的）：
+  - 关闭的图片编辑器被 `UiScale.Changed` 的 lambda 一直引用（连同图片和撤销记录）：存成字段，Closed 里移除。
+  - 光标缓存无上限（每个尺寸 / 颜色 / 序号一个 Windows 光标句柄，还写一个 .cur 文件）：LRU 96 个，加载后删除 .cur。
+  - 关闭的贴图：历史条目存盘后不再持有整图（`PinEntry.LoadImage` 每次读文件，`Thumbnail()` 320 px 缓存给历史窗口）；
+    精确恢复用的 `_closedPins` 另限总大小约 800 MB。撤销记录每个窗口上限 1.5 GB → 500 MB。
+  - `TaskScheduler.UnobservedTaskException` 记日志；`AtomicFile`（先写 .tmp 再替换）写 config.json 和贴图历史索引。
+  - 录屏结束（StopAsync）异常会回到设置状态并提示，不再卡在「处理中」；保存 / 复制录像的 IO 错误弹提示。
+  - 贴图关闭时停止原位翻译和文字层识别；「打开方式」管道监听任何异常后继续监听；OCR 在调用线程冻结图片；
+    长截图预览失败不再每 100 ms 重复；鼠标热键钩子线程只摘自己的钩子；原位翻译缓存超过 5000 条清空；悬浮按钮换图的 IO 错误弹提示。
 
 ## 8.1.55 0.8.55 变更
 

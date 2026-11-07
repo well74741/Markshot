@@ -338,6 +338,15 @@ public sealed class InlineTextEditor
             _box.Focus();
         }
 
+        if (_framing)
+        {
+            // Resized / moved by its frame: the box is laid out now (not a frame later than the text the canvas draws)
+            // and never scrolled inside — a box that scrolled while it grew showed the caret beside the text (a jump).
+            _box.UpdateLayout();
+            _box.ScrollToHorizontalOffset(0);
+            _box.ScrollToVerticalOffset(0);
+        }
+
         _canvas.InvalidateVisual();
     }
 

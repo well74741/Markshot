@@ -179,8 +179,9 @@ public static class OpenRequests
                 {
                     return;
                 }
-                catch (IOException ex)
+                catch (Exception ex)
                 {
+                    // Any failure (the pipe name taken, a file that does not open …) and it listens again.
                     Log.Error("接收打开请求失败", ex);
                     await Task.Delay(500, stop).ContinueWith(_ => { });
                 }

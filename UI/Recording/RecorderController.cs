@@ -629,7 +629,23 @@ public sealed class RecorderController
         Phase = RecordPhase.Finishing;
         _tick.Stop();
         Changed?.Invoke();
+        try
+        {
+            await FinishAsync(generation);
+        }
+        catch (Exception ex)
+        {
+            // ffmpeg missing / not starting, a sound track that does not close …: not stuck in 处理中.
+            Log.Error("结束录屏失败", ex);
+            if (generation == _generation)
+            {
+                Fail("录像处理失败：" + ex.Message);
+            }
+        }
+    }
 
+    private async Task FinishAsync(int generation)
+    {
         var video = _video!;
         var session = _session!;
         var result = await video.StopAsync();

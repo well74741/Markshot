@@ -175,7 +175,7 @@ public static class PinStore
     private static void WriteRecords(List<PinRecord> records)
     {
         var json = JsonSerializer.Serialize(records, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(IndexPath, json);
+        AtomicFile.WriteAllText(IndexPath, json);
     }
 
     private static void TryDelete(string path)

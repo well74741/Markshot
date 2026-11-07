@@ -8,7 +8,7 @@ param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Suites)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $all = @('batch1', 'batch2', 'batch3', 'batch4', 'batch5', 'batch6', 'batch7', 'batch8', 'batch9',
-         'editor', 'cornerprobe', 'picker', 'menu', 'theme', 'support', 'history', 'stitch', 'imageops', 'imageeditor', 'annotate', 'capture', 'hover', 'files', 'reccore', 'recflow', 'round48', 'round53', 'round55')
+         'editor', 'cornerprobe', 'picker', 'menu', 'theme', 'support', 'history', 'stitch', 'imageops', 'imageeditor', 'annotate', 'capture', 'hover', 'files', 'reccore', 'recflow', 'round48', 'round53', 'round55', 'round56')
 if (-not $Suites -or $Suites.Count -eq 0) { $Suites = $all }
 
 $dotnet = Join-Path $env:USERPROFILE '.dotnet\dotnet.exe'

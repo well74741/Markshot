@@ -12,7 +12,45 @@ namespace Markshot.Core;
 /// </summary>
 public static class ToolCursors
 {
+    // At most CacheSize built cursors (sizes × colours × numbers grew without end, each a Windows cursor handle).
+    // An evicted one is only dropped here: its handle goes when nothing shows it any more (SafeHandle).
+    private const int CacheSize = 96;
     private static readonly Dictionary<string, Cursor> Cache = new();
+    private static readonly LinkedList<string> CacheOrder = new();
+
+    private static bool TryCached(string key, out Cursor cursor)
+    {
+        if (Cache.TryGetValue(key, out cursor!))
+        {
+            CacheOrder.Remove(key);
+            CacheOrder.AddLast(key);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void Remember(string key, Cursor cursor)
+    {
+        Cache[key] = cursor;
+        CacheOrder.Remove(key);
+        CacheOrder.AddLast(key);
+        while (CacheOrder.Count > CacheSize && CacheOrder.First is { } oldest)
+        {
+            CacheOrder.RemoveFirst();
+            if (Cache.Remove(oldest.Value, out var dropped))
+            {
+                Handles.RemoveAll(handle => ReferenceEquals(HandleOf(dropped), handle));
+            }
+        }
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Cursor, CursorHandle> Owners = new();
+
+    private static CursorHandle? HandleOf(Cursor cursor) => Owners.TryGetValue(cursor, out var handle) ? handle : null;
+
+    /// <summary>Cursors kept (tests).</summary>
+    internal static int CachedCount => Cache.Count;
     private static readonly Dictionary<bool, Cursor> RotationCache = new();
     private static readonly List<CursorHandle> Handles = new();
 
@@ -181,9 +219,19 @@ public static class ToolCursors
             return null;
         }
 
+        try
+        {
+            File.Delete(file); // loaded: the file is not needed any more (one per size / colour / number piled up)
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+
         var safeHandle = new CursorHandle(handle);
         Handles.Add(safeHandle);
-        return CursorInteropHelper.Create(safeHandle);
+        var made = CursorInteropHelper.Create(safeHandle);
+        Owners.AddOrUpdate(made, safeHandle);
+        return made;
     }
 
     private static Point Polar(double cx, double cy, double radius, double degrees)
@@ -231,13 +279,13 @@ public static class ToolCursors
             ? Colors.White
             : color ?? Color.FromRgb(0xF5, 0xF5, 0xF5);
         var key = $"{tool}-{diameter}-{ink.R:X2}{ink.G:X2}{ink.B:X2}";
-        if (Cache.TryGetValue(key, out var cached))
+        if (TryCached(key, out var cached))
         {
             return cached;
         }
 
         var cursor = Build(diameter, ink, key) ?? Cursors.Cross;
-        Cache[key] = cursor;
+        Remember(key, cursor);
         return cursor;
     }
 
@@ -248,7 +296,7 @@ public static class ToolCursors
         var outlined = App.Config?.NumberOutlined ?? true;
         var r = Math.Max(10, radius) * Math.Max(0.1, scale);
         var key = $"number-{number}-{r:0.#}-{color.R:X2}{color.G:X2}{color.B:X2}-{hollow}-{outlined}";
-        if (Cache.TryGetValue(key, out var cached))
+        if (TryCached(key, out var cached))
         {
             return cached;
         }
@@ -277,7 +325,7 @@ public static class ToolCursors
         }
 
         cursor ??= Cursors.Cross;
-        Cache[key] = cursor;
+        Remember(key, cursor);
         return cursor;
     }
 

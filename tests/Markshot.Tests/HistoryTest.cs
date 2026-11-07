@@ -60,7 +60,7 @@ static class HistoryTest
         var found = new List<Border>();
         void Walk(DependencyObject d)
         {
-            if (d is WrapPanel wrap) { found.AddRange(wrap.Children.OfType<Border>()); return; }
+            if (d is System.Windows.Controls.Primitives.UniformGrid wrap) { found.AddRange(wrap.Children.OfType<Border>()); return; }
             for (var i = 0; i < VisualTreeHelper.GetChildrenCount(d); i++) Walk(VisualTreeHelper.GetChild(d, i));
         }
         Walk(root);

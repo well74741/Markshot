@@ -6,7 +6,9 @@ namespace Markshot.UI;
 /// </summary>
 public sealed class PinHistoryWindow : Window
 {
-    private readonly WrapPanel _tiles = new() { Margin = new Thickness(14, 4, 6, 14) };
+    // As many columns as fit, the tiles stretched to fill the width (three fixed tiles left a wide gap on the right).
+    private readonly System.Windows.Controls.Primitives.UniformGrid _tiles = new() { Margin = new Thickness(14, 4, 6, 14), VerticalAlignment = VerticalAlignment.Top };
+    private const double TileWidth = 148;
     private readonly TextBlock _empty;
 
     private readonly Func<IReadOnlyList<PinEntry>> _entries;
@@ -56,6 +58,7 @@ public sealed class PinHistoryWindow : Window
         list.Children.Add(_empty);
         list.Children.Add(_tiles);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = list };
+        scroll.SizeChanged += (_, _) => FitColumns(scroll.ViewportWidth > 0 ? scroll.ViewportWidth : scroll.ActualWidth);
         var root = new DockPanel();
         root.SetResourceReference(Panel.BackgroundProperty, Theme.Key(0xFF1A1A1A));
         DockPanel.SetDock(header, Dock.Top);
@@ -65,6 +68,23 @@ public sealed class PinHistoryWindow : Window
 
         Theme.TrackTitleBar(this);
         UiScale.AttachWindow(this);
+        if (App.Config is { PinHistoryWidth: > 0, PinHistoryHeight: > 0 } saved)
+        {
+            // The size it was left at.
+            Width = Math.Min(saved.PinHistoryWidth, SystemParameters.WorkArea.Width);
+            Height = Math.Min(saved.PinHistoryHeight, SystemParameters.WorkArea.Height);
+        }
+
+        Closing += (_, _) =>
+        {
+            if (WindowState == WindowState.Normal && App.Config is { } config &&
+                (Math.Abs(config.PinHistoryWidth - ActualWidth) > 0.5 || Math.Abs(config.PinHistoryHeight - ActualHeight) > 0.5))
+            {
+                config.PinHistoryWidth = Math.Round(ActualWidth);
+                config.PinHistoryHeight = Math.Round(ActualHeight);
+                config.Save();
+            }
+        };
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape)
@@ -74,6 +94,16 @@ public sealed class PinHistoryWindow : Window
         };
         Refresh();
     }
+
+    /// <summary>Columns for the width (each tile at least its designed width, the rest shared out).</summary>
+    private void FitColumns(double width)
+    {
+        var room = width - _tiles.Margin.Left - _tiles.Margin.Right;
+        _tiles.Columns = Math.Max(1, (int)Math.Floor((room + 8) / (TileWidth + 8)));
+    }
+
+    /// <summary>Columns shown (tests).</summary>
+    internal int Columns => _tiles.Columns;
 
     public void Refresh()
     {
@@ -88,12 +118,11 @@ public sealed class PinHistoryWindow : Window
 
     private FrameworkElement Tile(PinEntry entry)
     {
-        var image = entry.LoadImage();
+        var image = entry.Thumbnail();
         var picture = new Image
         {
             Source = image,
             Stretch = Stretch.Uniform,
-            Width = 132,
             Height = 92,
             SnapsToDevicePixels = true
         };
@@ -106,13 +135,13 @@ public sealed class PinHistoryWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center
         };
         time.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFF9A9A9A));
-        var size = image == null ? "" : $"{image.PixelWidth} × {image.PixelHeight}";
+        var size = "";
         var stack = new StackPanel();
         stack.Children.Add(new Border { Child = picture, Background = (Brush)Application.Current.FindResource("SmallCheckerBrush"), CornerRadius = new CornerRadius(4) });
         stack.Children.Add(time);
         var tile = new Border
         {
-            Width = 148,
+            MinWidth = TileWidth,
             Margin = new Thickness(0, 0, 8, 8),
             Padding = new Thickness(8),
             CornerRadius = new CornerRadius(8),

@@ -172,10 +172,7 @@ static class Round55Test
             Check(pin.IsPlaying, "a GIF pin plays");
             Call(pin, "EnterEditMode");
             Pump(50);
-            Check(!pin.IsPlaying, "annotating it: the still first frame");
-            Call(pin, "ExitEditMode", false);
-            Pump(50);
-            Check(pin.IsPlaying, "nothing drawn: it moves again");
+            Check(pin.IsPlaying, "it is not annotated (0.8.56): it keeps playing");
             var img = (Image)Get(pin, "Img")!;
             Check(img.Effect is System.Windows.Media.Effects.DropShadowEffect && ((UIElement)Get(pin, "ImageShadowLayer")!).Visibility != Visibility.Visible,
                 "its shadow follows the picture (no plate behind see-through parts)");

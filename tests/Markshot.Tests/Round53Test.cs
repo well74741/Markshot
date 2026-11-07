@@ -132,7 +132,7 @@ static class Round53Test
                   ((FrameworkElement)settings.FindName("PageStyle")).Visibility == Visibility.Visible, "样式 is the first page and opens first");
             ((RadioButton)settings.FindName("ThemeLight")).IsChecked = true;
             Pump(50);
-            Check(config.Theme == "Light" && File.Exists(AppConfig.ConfigPath) && File.ReadAllText(AppConfig.ConfigPath).Contains("\"Light\""), "a chosen theme is saved at once (no 保存 needed)");
+            Check(config.Theme == "Dark" && settings.HasUnsavedChanges, "a chosen theme is previewed and waits for 保存 (0.8.56)");
             ((RadioButton)settings.FindName("ThemeDark")).IsChecked = true;
             Pump(50);
             var source = File.ReadAllText(Repo.File("UI/SettingsWindow.xaml.cs"));
@@ -152,7 +152,7 @@ static class Round53Test
             Check(preview.HasAnimatedProperties, "a moving picture plays in the preview");
             var old = FloatIcon.CustomPath(config)!;
             Call(settings, "FloatIconReset_Click", settings, new RoutedEventArgs());
-            Check(!FloatIcon.IsCustom(config) && !File.Exists(old) && !preview.HasAnimatedProperties, "重置 brings back the Markshot logo");
+            Check(!FloatIcon.IsCustom(config) && !preview.HasAnimatedProperties, "重置 brings back the Markshot logo");
             ((Slider)settings.FindName("FloatOpacitySlider")).Value = 60;
             Check(Math.Abs(config.FloatIconOpacity - 0.6) < 0.001 && Math.Abs(preview.Opacity - 0.6) < 0.01, "the opacity slider sets the icon's opacity");
             settings.ShowPage("Float");

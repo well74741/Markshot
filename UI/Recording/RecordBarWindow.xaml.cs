@@ -68,8 +68,26 @@ public partial class RecordBarWindow : Window
             var border = 0x00333333;
             DwmSetWindowAttribute(handle, DWMWA_BORDER_COLOR, ref border, sizeof(int));
             RoundCorners();
+            // The region follows the window's real size (WM_SIZE): taken at SizeChanged it could still be the old, smaller
+            // size of a bar that had just grown, and the region cut the new part off.
+            HwndSource.FromHwnd(handle)?.AddHook((IntPtr _, int message, IntPtr _, IntPtr lParam, ref bool _) =>
+            {
+                if (message == 0x0005 /* WM_SIZE */)
+                {
+                    var width = (int)(lParam.ToInt64() & 0xFFFF);
+                    var height = (int)((lParam.ToInt64() >> 16) & 0xFFFF);
+                    RoundCorners(width, height);
+                }
+
+                return IntPtr.Zero;
+            });
         };
-        SizeChanged += (_, _) => RoundCorners();
+        SizeChanged += (_, _) => Dispatcher.BeginInvoke(() => RoundCorners(), DispatcherPriority.Loaded);
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            _regionSize = default; // the corners change with the DPI
+            RoundCorners();
+        }, DispatcherPriority.Loaded);
         // Off screen until laid out, then straight to its place (it used to show up elsewhere first).
         Left = -32000;
         Top = -32000;
@@ -532,7 +550,15 @@ public partial class RecordBarWindow : Window
         }
 
         var directory = _controller.SaveDirectory;
-        Directory.CreateDirectory(directory);
+        try
+        {
+            Directory.CreateDirectory(directory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Error("创建录屏保存目录失败", ex); // the dialog still opens (somewhere else can be chosen)
+        }
+
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
             Title = "保存录像",
@@ -546,14 +572,33 @@ public partial class RecordBarWindow : Window
             return;
         }
 
-        if (await _controller.ExportAsync(Options(gif), dialog.FileName))
+        try
         {
-            _controller.MarkSaved(dialog.FileName);
-            ((App)Application.Current).ShowSavedPrompt(dialog.FileName);
+            if (await _controller.ExportAsync(Options(gif), dialog.FileName))
+            {
+                _controller.MarkSaved(dialog.FileName);
+                ((App)Application.Current).ShowSavedPrompt(dialog.FileName);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("保存录像失败", ex);
+            ThemedMessage.Show(this, "保存失败", ex.Message, "确定");
         }
     }
 
-    private async void Copy_Click(object sender, RoutedEventArgs e) => await _controller.CopyAsync(Options(false));
+    private async void Copy_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await _controller.CopyAsync(Options(false));
+        }
+        catch (Exception ex)
+        {
+            Log.Error("复制录像失败", ex);
+            ThemedMessage.Show(this, "复制失败", ex.Message, "确定");
+        }
+    }
 
     /// <summary>Right-click on the preview: 保存 / 复制 / 重录 / 退出.</summary>
     private ContextMenu PreviewMenu()
@@ -568,7 +613,7 @@ public partial class RecordBarWindow : Window
 
         Add("保存为 MP4…", () => SaveNow(false));
         Add("保存为 GIF…", () => SaveNow(true));
-        Add("复制视频文件", () => _ = _controller.CopyAsync(Options(false)));
+        Add("复制视频文件", () => Copy_Click(this, new RoutedEventArgs()));
         menu.Items.Add(new Separator());
         Add("重录", _controller.Retake);
         Add("退出录屏", _controller.RequestClose);
@@ -815,17 +860,34 @@ public partial class RecordBarWindow : Window
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
     /// <summary>The window cut to a rounded rectangle (8 DIP corners), the same on Windows 10 and 11.</summary>
-    private void RoundCorners()
+    private void RoundCorners(int width = 0, int height = 0)
     {
         var handle = new WindowInteropHelper(this).Handle;
-        if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect))
+        if (handle == IntPtr.Zero)
         {
             return;
         }
 
+        if (width <= 0 || height <= 0)
+        {
+            if (!GetWindowRect(handle, out var rect))
+            {
+                return;
+            }
+
+            width = rect.Right - rect.Left;
+            height = rect.Bottom - rect.Top;
+        }
+
+        if (width == _regionSize.Width && height == _regionSize.Height)
+        {
+            return;
+        }
+
+        _regionSize = (width, height);
         var dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
         var diameter = (int)Math.Round(16 * dpi);
-        var region = CreateRoundRectRgn(0, 0, rect.Right - rect.Left + 1, rect.Bottom - rect.Top + 1, diameter, diameter);
+        var region = CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
         if (SetWindowRgn(handle, region, true) == 0)
         {
             DeleteObject(region); // kept by the system only when it was taken
@@ -833,6 +895,8 @@ public partial class RecordBarWindow : Window
 
         RoundedRegion = true;
     }
+
+    private (int Width, int Height) _regionSize;
 
     /// <summary>For tests: the rounded window region is in place.</summary>
     internal bool RoundedRegion { get; private set; }

@@ -663,7 +663,7 @@
                                 </Border>
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="选择后立即生效并保存。浅色：所有界面换成浅色；跟随系统：随 Windows 的应用主题切换。工具栏大小：中、大让工具栏、菜单等的按钮和文字整体大一号、两号（设置窗口本身保持不变）。" />
+                                       Text="选择后立即预览，点“保存”后保留（关闭时会询问）。浅色：所有界面换成浅色；跟随系统：随 Windows 的应用主题切换。工具栏大小：中、大让工具栏、菜单等的按钮和文字整体大一号、两号（设置窗口本身保持不变）。" />
                         </StackPanel>
                     </Border>
 

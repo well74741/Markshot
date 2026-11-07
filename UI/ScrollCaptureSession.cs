@@ -112,7 +112,15 @@ public sealed class ScrollCaptureSession
         {
             _lastPreviewLength = _stitcher.Height;
             _lastPreviewAt = Environment.TickCount64;
-            _preview.Update(Result(), _stitcher.Full, Horizontal);
+            try
+            {
+                _preview.Update(Result(), _stitcher.Full, Horizontal);
+            }
+            catch (Exception ex) when (ex is OutOfMemoryException or ArgumentException or InvalidOperationException or OverflowException)
+            {
+                Log.Error("长截图预览失败", ex);
+                _lastPreviewAt = Environment.TickCount64 + 5000; // not again on every tick
+            }
         }
     }
 

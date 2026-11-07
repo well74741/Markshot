@@ -162,7 +162,11 @@ public partial class PinWindow : Window
 
         Loaded += OnLoaded;
         ImageHost.SizeChanged += (_, _) => UpdateFrame(); // the see-through shadow's clip follows the size
-        Closed += (_, _) => LeaveGroup();
+        Closed += (_, _) =>
+        {
+            LeaveGroup();
+            StopBackgroundWork();
+        };
         LocationChanged += (_, _) => PlaceToolbar(); // the toolbar window follows the pin
         // Alt over the pin: 辅助线 through the pointer across the screen (as in the capture).
         if (!IsEditor)
@@ -289,6 +293,13 @@ public partial class PinWindow : Window
             }
         };
         MouseUp += OnMouseUp;
+        LostMouseCapture += (_, _) =>
+        {
+            if (_dragging && Mouse.LeftButton != MouseButtonState.Pressed)
+            {
+                EndStaleDrag();
+            }
+        };
         ContextMenuOpening += (_, args) =>
         {
             if (_suppressContextMenu)
@@ -314,6 +325,21 @@ public partial class PinWindow : Window
     /// <summary>The shadow follows the image's own shape (a lasso capture with transparent surroundings).</summary>
     public bool ShapedShadow { get; init; }
 
+    /// <summary>Closed: work still running for it (in-place translation, text recognition) stops and is dropped.</summary>
+    private void StopBackgroundWork()
+    {
+        try
+        {
+            CancelInPlaceTranslation();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("关闭贴图时停止翻译失败", ex);
+        }
+
+        _textLayerVersion++;
+    }
+
     /// <summary>
     /// Right click while an element is selected: it is let go (a tool in hand is put down, 选择); the menu comes with the
     /// next right click. True when it was handled.
@@ -336,17 +362,22 @@ public partial class PinWindow : Window
     }
 
     /// <summary>A moving picture (GIF / WebP): it plays while the pin shows it as it came (not while annotating, nor once drawn on / turned).</summary>
-    public AnimatedImage? Animation { get; init; }
+    public AnimatedImage? Animation { get => _animation; init => _animation = value; }
+
+    private AnimatedImage? _animation;
+
+    /// <summary>A moving pin is only a pin: it turns and flips (and keeps moving), it is not annotated.</summary>
+    public bool IsMoving => _animation is { IsAnimated: true };
 
     /// <summary>The moving picture is playing (tests).</summary>
     public bool IsPlaying => Img.HasAnimatedProperties;
 
     private protected void UpdateAnimation()
     {
-        var play = Animation is { IsAnimated: true } && !_editMode && !IsEditor && Editor.Items.Count == 0 &&
-                   ReferenceEquals(_baseImage, _originalImage);
-        if (play && !Img.HasAnimatedProperties)
+        var play = IsMoving && !_editMode && !IsEditor && Editor.Items.Count == 0;
+        if (play)
         {
+            // (Again after a turn: the frames are new.)
             Img.BeginAnimation(System.Windows.Controls.Image.SourceProperty, Animation!.CreateAnimation());
         }
         else if (!play && Img.HasAnimatedProperties)
@@ -726,6 +757,7 @@ public partial class PinWindow : Window
                 var hit = HitAnnotation(point);
                 if (hit != null)
                 {
+                    EndStaleDrag();
                     SelectAnnotation(hit);
                     _pendingTextClick = false;
                     _dragMoved = false;
@@ -762,9 +794,29 @@ public partial class PinWindow : Window
         _dragStartLeft = _left;
         _dragStartTop = _top;
         _dragging = true;
+        _pinMoved = false;
         BeginGroupDrag();
         CaptureMouse();
         e.Handled = true;
+    }
+
+    private bool _pinMoved; // the pin drag has passed its threshold
+
+    /// <summary>A pin drag whose release went elsewhere (capture lost, a quick double-click): over, at the place it is.</summary>
+    private void EndStaleDrag()
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+
+        _dragging = false;
+        if (IsMouseCaptured)
+        {
+            ReleaseMouseCapture();
+        }
+
+        EndGroupDrag(_left != _dragStartLeft || _top != _dragStartTop);
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)
@@ -864,8 +916,21 @@ public partial class PinWindow : Window
             return;
         }
 
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            // The release never arrived: moving the mouse later must not drag the pin from an old press (it jumped).
+            EndStaleDrag();
+            return;
+        }
+
         var cursor = Native.CursorPosition();
         var (moveX, moveY) = Straighten(cursor.X - _dragStartCursorX, cursor.Y - _dragStartCursorY);
+        if (!_pinMoved && Math.Abs(moveX) + Math.Abs(moveY) < 4)
+        {
+            return; // a click (quick clicks while selecting elements) does not nudge the pin
+        }
+
+        _pinMoved = true;
         _left = _dragStartLeft + moveX;
         _top = _dragStartTop + moveY;
         ApplyBounds();

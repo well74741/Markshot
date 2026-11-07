@@ -17,6 +17,9 @@ static class Program
         var configDir = Path.Combine(Path.GetTempPath(), "markshot-tests-" + Environment.ProcessId);
         Directory.CreateDirectory(configDir);
         Markshot.Core.AppConfig.PathOverride = Path.Combine(configDir, "config.json");
+        // A settings window closed with changes would wait for an answer: tests answer 不保存 unless they set their own.
+        typeof(Markshot.UI.SettingsWindow).GetField("AskAll", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .SetValue(null, new Func<int>(() => 1));
         var app = new Application();
         var xaml = File.ReadAllText(Repo.File("App.xaml"));
         var start = xaml.IndexOf("<Application.Resources>") + "<Application.Resources>".Length;
@@ -48,6 +51,7 @@ static class Program
         if (mode == "round48") Round48Test.Run();
         if (mode == "round53") Round53Test.Run();
         if (mode == "round55") Round55Test.Run();
+        if (mode == "round56") Round56Test.Run();
         if (mode == "menu") MenuProbe.Run();
         if (mode == "support") SupportTest.Run();
         if (mode == "history") HistoryTest.Run();

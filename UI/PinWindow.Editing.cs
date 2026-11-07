@@ -384,6 +384,13 @@ public partial class PinWindow
             return;
         }
 
+        if (IsMoving)
+        {
+            // A moving picture is pinned as it is (turn / flip / zoom / opacity), not annotated.
+            ShowPinStatus("动图贴图不支持批注（可旋转、翻转、缩放）", TimeSpan.FromSeconds(1.6));
+            return;
+        }
+
         _editMode = true;
         TextLayer.ClearSelection();
         TextLayer.Visibility = Visibility.Collapsed;
@@ -845,9 +852,18 @@ public partial class PinWindow
             return;
         }
 
-        if (control && key == Key.Z)
+        // Z / Shift+Z (built in) and Ctrl+Z / Ctrl+Shift+Z: undo / redo.
+        if (key == Key.Z && (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
         {
-            Undo();
+            if (shift)
+            {
+                Redo();
+            }
+            else
+            {
+                Undo();
+            }
+
             e.Handled = true;
             return;
         }

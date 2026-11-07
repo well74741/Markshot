@@ -45,6 +45,7 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly Border _cropSize = new() { CornerRadius = new CornerRadius(3), Padding = new Thickness(3, 1, 3, 1), Visibility = Visibility.Collapsed };
     private readonly TextBox _cropWidth = new();
     private readonly TextBox _cropHeight = new();
+    private Action? _panelWidth;
     private (State State, List<Annotation> Items)? _initial; // the picture as it was opened (重置所有修改)
     private readonly TextBlock _statusZoom = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Width = 48, TextAlignment = TextAlignment.Center };
     private readonly TextBox _widthBox = new();
@@ -352,6 +353,11 @@ public sealed class ImageEditorWindow : PinWindow
         Closed += (_, _) =>
         {
             Theme.Changed -= OnThemeChanged;
+            if (_panelWidth != null)
+            {
+                UiScale.Changed -= _panelWidth; // static event: it kept the whole closed editor alive
+            }
+
             _adjustTimer.Stop();
             _waitingPin?.ShowAgain(); // not re-pinned: the pin it came from comes back as it was
         };
@@ -614,7 +620,8 @@ public sealed class ImageEditorWindow : PinWindow
         _panel = frame;
         frame.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF151515));
         frame.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
-        UiScale.Changed += () => frame.Width = 262 * UiScale.Factor;
+        _panelWidth = () => frame.Width = 262 * UiScale.Factor;
+        UiScale.Changed += _panelWidth;
         frame.Width = 262 * UiScale.Factor;
         return frame;
     }
@@ -1713,7 +1720,8 @@ public sealed class ImageEditorWindow : PinWindow
         _path = null;
         ClearGroup();
         _pendingPaste = null;
-        _waitingPin?.ShowAgain();
+        // The pin this came from was cleared away with it: it does not come back on the screen (it goes to the pin history).
+        _waitingPin?.CloseImmediately();
         _waitingPin = null;
         _sourcePin = null;
         _unsavedNew = false;
