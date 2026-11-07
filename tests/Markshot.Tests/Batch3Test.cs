@@ -70,8 +70,8 @@ static class Batch3Test
         Check(((FrameworkElement)toolbar.FindName("LevelGroup")).Visibility == Visibility.Visible, "mosaic tool shows 程度");
         toolbar.SetTool(AnnotationTool.Watermark);
         host.UpdateLayout();
-        var visible = new[] { "WidthGroup", "AngleGroup", "OpacityGroup", "ColorSection" }.All(n => ((FrameworkElement)toolbar.FindName(n)).Visibility == Visibility.Visible);
-        Check(visible && ((TextBlock)toolbar.FindName("WidthLabel")).Text == "大小", "watermark shows 大小 / 倾斜 / 透明度 / 颜色");
+        var visible = new[] { "WidthGroup", "AngleGroup", "ColorSection" }.All(n => ((FrameworkElement)toolbar.FindName(n)).Visibility == Visibility.Visible);
+        Check(visible && ((FrameworkElement)toolbar.FindName("OpacityGroup")).Visibility != Visibility.Visible && ((TextBlock)toolbar.FindName("WidthLabel")).Text == "大小", "watermark shows 大小 / 倾斜 / 颜色, no opacity slider (0.8.59)");
         ((Slider)toolbar.FindName("AngleSlider")).Value = 30;
         Check(Math.Abs(toolbar.WatermarkAngle - 30) < 0.001, "tilt slider sets the watermark angle");
         var mark = new WatermarkAnnotation { Rect = new Rect(0, 0, 400, 300) };

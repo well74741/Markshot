@@ -39,6 +39,10 @@ public sealed class CreationGesture
 
     private Point? _straightAnchor;
     private int _straightBase;
+    private bool _centered; // Alt: the press is the middle, the shape grows both ways
+
+    /// <summary>Alt is held (read at each move and when the key changes).</summary>
+    public static bool AltHeld => (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
 
     public CreationGesture(Annotation target, Point start)
     {
@@ -75,9 +79,10 @@ public sealed class CreationGesture
     };
 
     /// <summary>Feeds a pointer position (canvas pixels) with the current modifier state.</summary>
-    public void Move(Point pointer, bool shift, bool ctrl)
+    public void Move(Point pointer, bool shift, bool ctrl, bool alt = false)
     {
         LastPointer = pointer;
+        _centered = alt;
         if (IsFreehand)
         {
             MoveFreehand(pointer, shift);
@@ -289,12 +294,12 @@ public sealed class CreationGesture
         switch (Target)
         {
             case LineAnnotation line:
-                line.Start = _start + _offset;
+                line.Start = FarStart();
                 line.End = RotateAround(_baseEnd, _start, _rotation) + _offset;
                 break;
 
             case ArrowAnnotation arrow:
-                arrow.Start = _start + _offset;
+                arrow.Start = FarStart();
                 arrow.End = RotateAround(_baseEnd, _start, _rotation) + _offset;
                 break;
 
@@ -326,6 +331,11 @@ public sealed class CreationGesture
         }
     }
 
+    /// <summary>A line's start: where it was pressed, or (Alt, drawn from its middle) mirrored from the end.</summary>
+    private Point FarStart() => _centered
+        ? RotateAround(_start - (_baseEnd - _start), _start, _rotation) + _offset
+        : _start + _offset;
+
     /// <summary>
     /// Elements store their rotation about their own centre. A box rotated about
     /// the start point equals the same box rotated about its centre and shifted
@@ -334,7 +344,7 @@ public sealed class CreationGesture
     /// </summary>
     private Rect PlaceRect(out double rotation)
     {
-        var box = new Rect(_start, _baseEnd);
+        var box = _centered ? new Rect(_start - (_baseEnd - _start), _baseEnd) : new Rect(_start, _baseEnd);
         rotation = _rotation;
         var center = new Point(box.X + box.Width / 2, box.Y + box.Height / 2);
         var placed = RotateAround(center, _start, _rotation) + _offset;

@@ -762,7 +762,7 @@ public partial class PinWindow
             }
             else if (AnnotationOps.IsModifier(key))
             {
-                _gesture.Move(_gesture.LastPointer, shift, control);
+                _gesture.Move(_gesture.LastPointer, shift, control, CreationGesture.AltHeld);
                 Editor.InvalidateVisual();
                 return;
             }
@@ -1221,7 +1221,7 @@ public partial class PinWindow
         if (_gesture != null)
         {
             _gesture.Pressure = PenEyedropper.Pressure(e, InputLayer); // tablet pen: the width follows the pressure
-            _gesture.Move(point, IsShiftDown, IsCtrlDown);
+            _gesture.Move(point, IsShiftDown, IsCtrlDown, CreationGesture.AltHeld);
             if (_gesture.Target is NumberAnnotation && InputLayer.Cursor != Cursors.None)
             {
                 InputLayer.Cursor = Cursors.None; // dragging out the arrow: its head is the pointer (a cursor would hide it)
@@ -1734,7 +1734,8 @@ public partial class PinWindow
         }
     }
 
-    private protected Annotation? HitAnnotation(Point point) => AnnotationOps.HitTest(Editor.Items, point, 7 / _zoom);
+    private protected Annotation? HitAnnotation(Point point) =>
+        AnnotationOps.HitTest(Editor.Items, point, 7 / _zoom, byContent: _tool is AnnotationTool.None or AnnotationTool.Select);
 
     /// <summary>上下层: the selected element moves within the stack (one undo step).</summary>
     private protected void MoveLayer(Annotation annotation, int to)

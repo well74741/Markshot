@@ -769,6 +769,9 @@ public sealed class FloatButtonWindow : Window
         Add("粘贴剪贴板", "PasteClipboard");
         Add("关闭所有贴图", "CloseAllPins");
         menu.Items.Add(new Separator());
+        var hotkeys = new MenuItem { Header = "禁用所有快捷键", IsChecked = _config.HotkeysDisabled };
+        hotkeys.Click += (_, _) => Run("ToggleHotkeys");
+        menu.Items.Add(hotkeys);
         var settings = new MenuItem { Header = "设置…" };
         settings.Click += (_, _) => _openSettings();
         menu.Items.Add(settings);

@@ -744,6 +744,12 @@ public partial class OverlayWindow : Window
             return true;
         }
 
+        if (key is Key.LeftAlt or Key.RightAlt && (_gesture != null || (_dragging && _mode == DragMode.Creating)))
+        {
+            _tapKey = null; // drawing: Alt = from the middle, not the 辅助线 tap
+            return false;
+        }
+
         var config = App.Config;
         var modifiers = Keyboard.Modifiers;
         foreach (var configured in new[] { config.CrosshairKey, config.CaptureCursorKey })

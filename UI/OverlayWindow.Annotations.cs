@@ -129,7 +129,8 @@ public partial class OverlayWindow
         UpdateCursor(ToPixels(Mouse.GetPosition(InputLayer)));
     }
 
-    private Annotation? HitAnnotation(Point point) => AnnotationOps.HitTest(Editor.Items, point, 7 * _scale);
+    private Annotation? HitAnnotation(Point point) =>
+        AnnotationOps.HitTest(Editor.Items, point, 7 * _scale, byContent: _tool is AnnotationTool.None or AnnotationTool.Select);
 
     private double EraserWidth => Math.Max(2, _thickness);
 

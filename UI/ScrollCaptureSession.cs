@@ -4,6 +4,15 @@ using Markshot.Core.Recording;
 
 namespace Markshot.UI;
 
+/// <summary>The colour of the long screenshot's state line.</summary>
+public enum ScrollState
+{
+    Idle,
+    Good,
+    Warn,
+    Bad
+}
+
 /// <summary>What the user chose at the end of a long screenshot.</summary>
 public enum ScrollCaptureAction
 {
@@ -96,16 +105,21 @@ public sealed class ScrollCaptureSession
             return;
         }
 
+        var started = Stopwatch.GetTimestamp();
+        int added;
         try
         {
             var frame = Source?.Invoke() ?? GrabScreen();
-            _stitcher.Add(Horizontal ? Transpose(frame, _rect.Width, _rect.Height) : frame);
+            added = _stitcher.Add(Horizontal ? Transpose(frame, _rect.Width, _rect.Height) : frame);
         }
         catch (Exception ex)
         {
             Log.Error("长截图抓屏失败", ex);
+            _preview.ShowState(ScrollState.Bad, "抓屏失败：" + ex.Message, "");
             return;
         }
+
+        ReportState(added, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
 
         // The preview is rebuilt at most ~3 times a second (a long image is large).
         if (_stitcher.Height != _lastPreviewLength && Environment.TickCount64 - _lastPreviewAt > 300)
@@ -123,6 +137,41 @@ public sealed class ScrollCaptureSession
             }
         }
     }
+
+    private ScrollStitcher.Outcome _shownOutcome = ScrollStitcher.Outcome.First;
+
+    /// <summary>What just happened, in the preview window: placed, waiting, or why it cannot go on.</summary>
+    private void ReportState(int added, double milliseconds)
+    {
+        var outcome = _stitcher.LastOutcome;
+        // Stopped after losing the place: that is still the state until a frame fits again.
+        if (outcome != ScrollStitcher.Outcome.Same || _shownOutcome is not (ScrollStitcher.Outcome.TooFar or ScrollStitcher.Outcome.Animating or ScrollStitcher.Outcome.Gap))
+        {
+            _shownOutcome = outcome;
+        }
+
+        var step = Math.Abs(_stitcher.LastShift);
+        var view = Math.Max(1, _stitcher.ViewHeight);
+        var fast = step > view * 0.7;
+        var direction = Horizontal ? "向右" : "向下";
+        var (state, text) = _shownOutcome switch
+        {
+            ScrollStitcher.Outcome.First => (ScrollState.Idle, $"等待滚动：在框内{direction}滚动"),
+            ScrollStitcher.Outcome.Same => (ScrollState.Idle, "等待滚动（画面没有变化）"),
+            ScrollStitcher.Outcome.Placed when added == 0 => (ScrollState.Good, "正在回滚（这段已拼接过）"),
+            ScrollStitcher.Outcome.Placed when fast => (ScrollState.Warn, $"滚动较快 +{added} 行：再快就会跟丢"),
+            ScrollStitcher.Outcome.Placed => (ScrollState.Good, $"正在拼接 +{added} 行"),
+            ScrollStitcher.Outcome.TooFar => (ScrollState.Bad, "跟丢了：滚动太快，两帧之间没有重叠。往回滚一点，再慢一些"),
+            ScrollStitcher.Outcome.Animating => (ScrollState.Bad, "无法拼接：画面只有局部在变，内容没有整体移动（动画、视频？或这里滚不动）"),
+            ScrollStitcher.Outcome.Gap => (ScrollState.Bad, "跳得太远，中间会缺一段：滚回去一点"),
+            _ => (ScrollState.Warn, "已到最大长度")
+        };
+        _preview.ShowState(state, text,
+            $"长度 {_stitcher.Height} · 本帧移动 {step}/{view} 行\n成功 {_stitcher.PlacedFrames} 帧 · 跟丢 {_stitcher.LostFrames} 帧 · 处理 {milliseconds:0} ms");
+    }
+
+    /// <summary>The state line shown now (tests).</summary>
+    internal string StateText => _preview.StateText;
 
     /// <summary>The stitched image the right way round.</summary>
     public BitmapSource Result()
@@ -265,7 +314,25 @@ public sealed class ScrollCaptureSession
     private sealed class ScrollPreviewWindow : Window
     {
         private readonly Image _image = new() { Stretch = Stretch.Uniform };
-        private readonly TextBlock _status = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        private readonly TextBlock _status = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
+        private readonly TextBlock _state = new() { FontSize = 12.5, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        private readonly TextBlock _diagnostics = new() { FontSize = 10.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+
+        public string StateText => _state.Text;
+
+        /// <summary>The live state: what the stitcher did with the last frame, and its numbers.</summary>
+        public void ShowState(ScrollState state, string text, string diagnostics)
+        {
+            _state.Text = text;
+            _diagnostics.Text = diagnostics;
+            _state.Foreground = new SolidColorBrush(state switch
+            {
+                ScrollState.Good => Color.FromRgb(0x3F, 0xC4, 0x7A),
+                ScrollState.Warn => Color.FromRgb(0xF5, 0xA6, 0x23),
+                ScrollState.Bad => Color.FromRgb(0xFF, 0x5A, 0x5A),
+                _ => Theme.Color(0xFFC8C8C8)
+            });
+        }
 
         public ScrollPreviewWindow(Int32Rect rect)
         {
@@ -276,15 +343,17 @@ public sealed class ScrollCaptureSession
             ShowActivated = false;
             Topmost = true;
             Width = 220;
-            Height = 330;
+            Height = 400;
             FontFamily = new FontFamily("Microsoft YaHei UI");
+            _diagnostics.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFF8A8A8A));
             _status.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFC8C8C8));
             _status.Text = "在框内滚动鼠标滚轮（或拖滚动条），新内容会自动拼接。";
             var host = new Border { Child = _image, CornerRadius = new CornerRadius(4), ClipToBounds = true };
             host.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF151515));
             var root = new DockPanel { Margin = new Thickness(10) };
-            DockPanel.SetDock(_status, Dock.Bottom);
-            root.Children.Add(_status);
+            var texts = new StackPanel { Children = { _state, _diagnostics, _status } };
+            DockPanel.SetDock(texts, Dock.Bottom);
+            root.Children.Add(texts);
             root.Children.Add(host);
             var frame = new Border { Child = root, BorderThickness = new Thickness(1), BorderBrush = (Brush)Application.Current.FindResource("PanelBorder") };
             frame.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1C1C1C));
@@ -326,7 +395,7 @@ public sealed class ScrollCaptureSession
             var length = horizontal ? image.PixelWidth : image.PixelHeight;
             _status.Text = full
                 ? $"已到最大长度（{length} 像素）。"
-                : $"已拼接 {image.PixelWidth} × {image.PixelHeight}。继续{(horizontal ? "向右" : "向下")}滚动；Tab 切换横竖。";
+                : $"已拼接 {image.PixelWidth} × {image.PixelHeight}。Tab 切换横竖。";
         }
     }
 

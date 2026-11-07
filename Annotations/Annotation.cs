@@ -183,6 +183,12 @@ public abstract class Annotation
     {
     }
 
+    /// <summary>
+    /// 选择: is the element's actual content here? (An outline without fill is only its line, a picture only its
+    /// visible pixels, so what lies under the empty part can be picked.)
+    /// </summary>
+    public virtual bool HitContent(Point point, double tolerance) => HitTest(point, tolerance);
+
     public virtual bool HitTest(Point point, double tolerance)
     {
         var bounds = Bounds;
@@ -199,6 +205,31 @@ public abstract class Annotation
 public sealed class RectAnnotation : Annotation
 {
     public Rect Rect { get; set; }
+
+    public override bool HitContent(Point point, double tolerance)
+    {
+        var reach = tolerance + Thickness / 2;
+        var outer = Rect;
+        outer.Inflate(reach, reach);
+        if (!outer.Contains(point))
+        {
+            return false;
+        }
+
+        if (Fill)
+        {
+            return true;
+        }
+
+        var inner = Rect;
+        if (inner.Width <= reach * 2 || inner.Height <= reach * 2)
+        {
+            return true;
+        }
+
+        inner.Inflate(-reach, -reach);
+        return !inner.Contains(point);
+    }
 
     public override void Draw(DrawingContext dc)
     {
@@ -228,6 +259,22 @@ public sealed class RectAnnotation : Annotation
 public sealed class EllipseAnnotation : Annotation
 {
     public Rect Rect { get; set; }
+
+    public override bool HitContent(Point point, double tolerance)
+    {
+        var reach = tolerance + Thickness / 2;
+        var rx = Rect.Width / 2;
+        var ry = Rect.Height / 2;
+        var cx = Rect.X + rx;
+        var cy = Rect.Y + ry;
+        bool Within(double a, double b) => a > 0 && b > 0 && Math.Pow((point.X - cx) / a, 2) + Math.Pow((point.Y - cy) / b, 2) <= 1;
+        if (!Within(rx + reach, ry + reach))
+        {
+            return false;
+        }
+
+        return Fill || !Within(rx - reach, ry - reach);
+    }
 
     public override void Draw(DrawingContext dc)
     {
@@ -631,6 +678,38 @@ public sealed class ImageAnnotation : Annotation
     public BitmapSource? Origin { get; set; }
 
     public ImageAdjust? Adjust { get; set; }
+
+    /// <summary>Only where the picture shows: a see-through part lets the click through to what lies under it.</summary>
+    public override bool HitContent(Point point, double tolerance)
+    {
+        if (!Rect.Contains(point) || Rect.Width <= 0 || Rect.Height <= 0)
+        {
+            return false;
+        }
+
+        if (Image is not { } image || (image.Format != PixelFormats.Bgra32 && image.Format != PixelFormats.Pbgra32))
+        {
+            return true;
+        }
+
+        var x = Math.Clamp((int)((point.X - Rect.X) / Rect.Width * image.PixelWidth), 0, image.PixelWidth - 1);
+        var y = Math.Clamp((int)((point.Y - Rect.Y) / Rect.Height * image.PixelHeight), 0, image.PixelHeight - 1);
+        var reach = (int)Math.Ceiling(Math.Max(0, tolerance) * image.PixelWidth / Rect.Width);
+        // Around the point (the hand is not that exact), a few pixels are enough to tell.
+        foreach (var (dx, dy) in new[] { (0, 0), (-reach, 0), (reach, 0), (0, -reach), (0, reach) })
+        {
+            var px = Math.Clamp(x + dx, 0, image.PixelWidth - 1);
+            var py = Math.Clamp(y + dy, 0, image.PixelHeight - 1);
+            var pixel = new byte[4];
+            image.CopyPixels(new Int32Rect(px, py, 1, 1), pixel, 4, 0);
+            if (pixel[3] >= 16)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>元素样式 (canvas pixels): rounded corners, a soft drop shadow below, an outline drawn inside the edge.</summary>
     public double Radius { get; set; }

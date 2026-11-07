@@ -210,7 +210,7 @@ static class Round53Test
             Check(button.Center.X < screen.Right && button.Center.Y < screen.Bottom && config.FloatButtonX == (int)Math.Round(button.Center.X),
                 "dropped beyond the edge it stays on a screen (and the place is remembered)");
             var headers = (IReadOnlyList<string>)Call(button, "MenuHeaders")!;
-            Check(headers.SequenceEqual(new[] { "添加贴图…", "粘贴剪贴板", "关闭所有贴图", "设置…", "全屏时自动隐藏", "关闭悬浮按钮" }), "the right-click menu: 设置, 全屏时自动隐藏, 关闭");
+            Check(headers.SequenceEqual(new[] { "添加贴图…", "粘贴剪贴板", "关闭所有贴图", "禁用所有快捷键", "设置…", "全屏时自动隐藏", "关闭悬浮按钮" }), "the right-click menu: 设置, 全屏时自动隐藏, 关闭");
             button.FullscreenOverride = () => true;
             button.CheckFullscreen();
             Pump(300); // after its fade

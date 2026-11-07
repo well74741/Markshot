@@ -197,6 +197,9 @@ public sealed class AppConfig
 
     public double PinHistoryHeight { get; set; }
 
+    /// <summary>图片编辑器: the panel sections left folded (their titles).</summary>
+    public string EditorFoldedSections { get; set; } = "";
+
     /// <summary>图片编辑器 移动吸附: moved elements snap to the canvas and each other.</summary>
     public bool EditorSnap { get; set; } = true;
 

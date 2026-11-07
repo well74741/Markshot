@@ -31,7 +31,7 @@ public static class Motion
     public static readonly Duration Fast = new(TimeSpan.FromMilliseconds(160));
 
     /// <summary>The annotation bar showing / hiding (snappier than other pop-ins).</summary>
-    public static readonly Duration Bar = new(TimeSpan.FromMilliseconds(100));
+    public static readonly Duration Bar = new(TimeSpan.FromMilliseconds(70));
     public static readonly Duration Base = new(TimeSpan.FromMilliseconds(240));
     public static readonly Duration Slow = new(TimeSpan.FromMilliseconds(320));
     public static readonly Duration Slide = new(TimeSpan.FromMilliseconds(220));

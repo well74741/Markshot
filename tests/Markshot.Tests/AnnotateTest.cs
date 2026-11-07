@@ -513,20 +513,14 @@ static class AnnotateTest
             var items2 = ((AnnotationEditor)Get(se2, "Editor")).Items;
             var photo = items2.OfType<ImageAnnotation>().First();
             var styleSection = (FrameworkElement)typeof(ImageEditorWindow).GetField("_styleSection", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;
-            Check(styleSection.Visibility != Visibility.Visible, "元素样式 hidden while no picture is selected");
+            Check(styleSection.Visibility == Visibility.Visible && !((UIElement)styleSection.Tag).IsEnabled, "元素样式 always shown, resting while no picture is selected");
             var heightBefore = styleSection.ActualHeight;
             se2.SelectElements(new Annotation[] { photo });
-            Check(styleSection.Visibility == Visibility.Visible, "… shows for a selected picture");
-            Pump(60);
-            var midway = styleSection.ActualHeight;
-            Pump(400);
-            Check(heightBefore == 0 && midway < styleSection.ActualHeight - 4 && double.IsNaN(styleSection.Height),
-                $"… sliding open (height {midway:0} on the way to {styleSection.ActualHeight:0}), the sections below pushed down");
+            Pump(100);
+            Check(((UIElement)styleSection.Tag).IsEnabled && Math.Abs(styleSection.ActualHeight - heightBefore) < 40, "… usable for a selected picture, without the panel jumping");
             se2.SelectElements(Array.Empty<Annotation>());
-            Pump(60);
-            Check(styleSection.Visibility == Visibility.Visible && styleSection.ActualHeight > 0, "… and sliding shut when nothing is selected");
-            Pump(400);
-            Check(styleSection.Visibility != Visibility.Visible, "… then gone");
+            Pump(100);
+            Check(styleSection.Visibility == Visibility.Visible && !((UIElement)styleSection.Tag).IsEnabled, "… and resting again when nothing is selected");
             se2.SelectElements(new Annotation[] { photo });
             Pump(400);
             var footer = (FrameworkElement)typeof(ImageEditorWindow).GetField("_resetAllFooter", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;
@@ -997,7 +991,7 @@ static class AnnotateTest
     }
 
     static bool AnnotationOps_HitNothing(List<Annotation> items, Point p) =>
-        typeof(PinWindow).Assembly.GetType("Markshot.UI.AnnotationOps")!.GetMethod("HitTest")!.Invoke(null, new object[] { items, p, 4.0 }) is not CutoutAnnotation;
+        typeof(PinWindow).Assembly.GetType("Markshot.UI.AnnotationOps")!.GetMethod("HitTest")!.Invoke(null, new object[] { items, p, 4.0, false }) is not CutoutAnnotation;
 
     static Rect AnnotationOps_ResizeFromHandle(Rect start, double rotation, int handle, Point p) =>
         (Rect)typeof(PinWindow).Assembly.GetType("Markshot.UI.AnnotationOps")!.GetMethod("ResizeFromHandle")!.Invoke(null, new object[] { start, rotation, handle, p, false })!;

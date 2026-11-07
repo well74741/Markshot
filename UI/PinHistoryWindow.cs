@@ -15,9 +15,11 @@ public sealed class PinHistoryWindow : Window
     private readonly Action<PinEntry> _restore;
     private readonly Action<PinEntry> _delete;
     private readonly Action _clear;
+    private readonly Action<PinEntry>? _edit;
 
-    public PinHistoryWindow(Func<IReadOnlyList<PinEntry>> entries, Action<PinEntry> restore, Action<PinEntry> delete, Action clearAll)
+    public PinHistoryWindow(Func<IReadOnlyList<PinEntry>> entries, Action<PinEntry> restore, Action<PinEntry> delete, Action clearAll, Action<PinEntry>? edit = null)
     {
+        _edit = edit;
         _entries = entries;
         _restore = restore;
         _delete = delete;
@@ -181,6 +183,13 @@ public sealed class PinHistoryWindow : Window
             Refresh();
         };
         menu.Items.Add(pin);
+        if (_edit != null)
+        {
+            var edit = new MenuItem { Header = "编辑图片" };
+            edit.Click += (_, _) => _edit(entry);
+            menu.Items.Add(edit);
+        }
+
         menu.Items.Add(copy);
         menu.Items.Add(new Separator());
         menu.Items.Add(remove);

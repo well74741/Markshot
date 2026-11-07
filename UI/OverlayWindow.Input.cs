@@ -418,7 +418,7 @@ public partial class OverlayWindow
         if (_gesture != null)
         {
             _gesture.Pressure = PenEyedropper.Pressure(e, InputLayer); // tablet pen: the width follows the pressure
-            _gesture.Move(point, IsShiftDown, IsCtrlDown);
+            _gesture.Move(point, IsShiftDown, IsCtrlDown, CreationGesture.AltHeld);
             if (_gesture.Target is NumberAnnotation && InputLayer.Cursor != Cursors.None)
             {
                 InputLayer.Cursor = Cursors.None; // dragging out the arrow: its head is the pointer (a cursor would hide it)
@@ -589,13 +589,7 @@ public partial class OverlayWindow
         {
             case DragMode.Creating:
             {
-                var rect = NormalizeRect(_dragStart, point);
-                if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
-                {
-                    rect = MakeSquare(_dragStart, point);
-                }
-
-                _selection = ClampToScreen(rect);
+                _selection = ClampToScreen(CreatingRect(_dragStart, point));
                 _hasSelection = _selection.Width >= 2 && _selection.Height >= 2;
                 ApplyRememberedCorner();
                 RequestSelectionVisuals(); // drawn once per frame, however fast the mouse reports
@@ -1152,6 +1146,7 @@ public partial class OverlayWindow
         var key = AnnotationOps.RealKey(e);
         var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+        RefreshCreating(key);
         if (CaptureKeyDown(key, e.IsRepeat))
         {
             e.Handled = true;
@@ -1209,7 +1204,7 @@ public partial class OverlayWindow
             }
             else if (AnnotationOps.IsModifier(key))
             {
-                _gesture.Move(_gesture.LastPointer, shift, control);
+                _gesture.Move(_gesture.LastPointer, shift, control, CreationGesture.AltHeld);
                 Editor.InvalidateVisual();
                 return;
             }
@@ -1524,9 +1519,37 @@ public partial class OverlayWindow
         }
     }
 
+    /// <summary>The area being drawn, as a rectangle in Photoshop: Shift square, Alt from the press as its middle, both together.</summary>
+    internal static Rect CreatingRect(Point start, Point end, bool shift, bool alt)
+    {
+        var rect = shift ? MakeSquare(start, end) : NormalizeRect(start, end);
+        if (alt)
+        {
+            rect = new Rect(start.X - rect.Width, start.Y - rect.Height, rect.Width * 2, rect.Height * 2);
+        }
+
+        return rect;
+    }
+
+    private static Rect CreatingRect(Point start, Point end) =>
+        CreatingRect(start, end, (Keyboard.Modifiers & ModifierKeys.Shift) != 0, (Keyboard.Modifiers & ModifierKeys.Alt) != 0);
+
+    /// <summary>Shift / Alt pressed or released while the area is drawn: it changes at once, without a mouse move.</summary>
+    private void RefreshCreating(Key key)
+    {
+        if (_dragging && _mode == DragMode.Creating && !_spaceDrag && _pendingWindow == Rect.Empty &&
+            key is Key.LeftShift or Key.RightShift or Key.LeftAlt or Key.RightAlt)
+        {
+            _selection = ClampToScreen(CreatingRect(_dragStart, ToPixels(Mouse.GetPosition(InputLayer))));
+            _hasSelection = _selection.Width >= 2 && _selection.Height >= 2;
+            RequestSelectionVisuals();
+        }
+    }
+
     private void OnPreviewKeyUp(object sender, KeyEventArgs e)
     {
         var key = AnnotationOps.RealKey(e);
+        RefreshCreating(key);
         if (!_closed && CaptureKeyUp(key))
         {
             e.Handled = true;
@@ -1548,7 +1571,7 @@ public partial class OverlayWindow
             }
             else if (AnnotationOps.IsModifier(key))
             {
-                _gesture.Move(_gesture.LastPointer, IsShiftDown, IsCtrlDown);
+                _gesture.Move(_gesture.LastPointer, IsShiftDown, IsCtrlDown, CreationGesture.AltHeld);
                 Editor.InvalidateVisual();
             }
 
@@ -1673,7 +1696,7 @@ public partial class OverlayWindow
             2 or 6 => Cursors.SizeNESW,
             1 or 5 => Cursors.SizeNS,
             3 or 7 => Cursors.SizeWE,
-            _ => _hasSelection && _selection.Contains(point) ? Cursors.SizeAll : Cursors.Cross
+            _ => !_hasSelection ? Cursors.Cross : _selection.Contains(point) ? Cursors.SizeAll : Cursors.Arrow // outside the area: the plain arrow
         };
     }
 

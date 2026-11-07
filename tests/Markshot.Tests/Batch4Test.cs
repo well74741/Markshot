@@ -72,10 +72,10 @@ static class Batch4Test
         Check(string.Join("|", mosaicTypes) == "区域|画笔", $"mosaic 类型 = [{string.Join("|", mosaicTypes)}]");
         Check(watermarkChecked,
             "watermark sits on the text button (checked, button switched to 水印)");
-        var wmVisible = new[] { "WidthGroup", "AngleGroup", "OpacityGroup", "ColorSection" }
+        var wmVisible = new[] { "WidthGroup", "AngleGroup", "ColorSection" }
             .Select(n => (n, ((FrameworkElement)bars[1].FindName(n)).IsVisible)).ToList();
-        Check(wmVisible.All(v => v.IsVisible) && !((FrameworkElement)bars[1].FindName("MosaicVariants")).IsVisible,
-            "watermark row shows 大小/倾斜/透明度/颜色 (no mosaic type): " + string.Join(",", wmVisible.Select(v => $"{v.n}={v.IsVisible}")));
+        Check(wmVisible.All(v => v.IsVisible) && !((FrameworkElement)bars[1].FindName("MosaicVariants")).IsVisible && !((FrameworkElement)bars[1].FindName("OpacityGroup")).IsVisible,
+            "watermark row shows 大小/倾斜/颜色, no opacity slider, no mosaic type: " + string.Join(",", wmVisible.Select(v => $"{v.n}={v.IsVisible}")));
         var host = (FrameworkElement)bars[1].FindName("SettingsHost");
         Check(host.ActualHeight > 20 && host.ActualWidth > 300, $"settings row is open ({host.ActualWidth:F0}x{host.ActualHeight:F0})");
         Save(stack, (int)stack.ActualWidth, (int)stack.ActualHeight, "toolbar_b4.png");

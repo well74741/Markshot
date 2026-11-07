@@ -576,7 +576,7 @@ public partial class AnnotationToolbar : UserControl
         // The custom button always previews the current colour at the current opacity.
         var custom = !Palette.Contains(_color);
         CustomColorInner.Fill = new SolidColorBrush(Color.FromArgb((byte)Math.Round(_opacity * 255), _color.R, _color.G, _color.B));
-        var percent = (int)Math.Round(_opacity * 100);
+        var percent = (int)Math.Round((WatermarkActive ? _watermarkOpacity : _opacity) * 100);
         OpacityHint.Text = $"{percent}%";
         OpacityHint.Visibility = percent < 100 ? Visibility.Visible : Visibility.Collapsed;
         CustomColorButton.ToolTip = $"自定义颜色 #{_color.R:X2}{_color.G:X2}{_color.B:X2} · 透明度 {percent}%（Ctrl+滚轮）";
@@ -701,8 +701,7 @@ public partial class AnnotationToolbar : UserControl
                 WidthSlider.Minimum = 10;
                 WidthSlider.Maximum = 120;
                 AngleGroup.Visibility = Visibility.Visible;
-                OpacityGroup.Visibility = Visibility.Visible;
-                break;
+                break; // (its opacity: Ctrl + wheel or the colour window; shown beside the colour below 100 %)
 
             case ToolFamily.Mosaic:
                 MosaicVariants.Visibility = Visibility.Visible;
@@ -1089,6 +1088,8 @@ public partial class AnnotationToolbar : UserControl
     /// <summary>The ▾ buttons are hidden (the setting); hovering a tool shows its styles.</summary>
     public bool HideChevrons { get; private set; }
 
+    private readonly Dictionary<ButtonBase, object> _listToolTips = new();
+
     private (string, bool, Action)[] Variants(params (string Label, AnnotationTool Tool)[] items) =>
         items.Select(i => (i.Label, _tool == i.Tool, (Action)(() => PickVariant(i.Tool)))).ToArray();
 
@@ -1141,9 +1142,16 @@ public partial class AnnotationToolbar : UserControl
         }
 
         HideChevrons = hidden;
-        foreach (var (_, chevron, _) in _variantTools)
+        foreach (var (tool, chevron, _) in _variantTools)
         {
             chevron.Visibility = hidden ? Visibility.Collapsed : Visibility.Visible;
+            // The list opens under the button: its tooltip would only cover it. Buttons without a list keep theirs.
+            if (tool.ToolTip != null)
+            {
+                _listToolTips[tool] = tool.ToolTip;
+            }
+
+            tool.ToolTip = hidden ? null : _listToolTips.GetValueOrDefault(tool);
         }
 
         if (!hidden)
@@ -1542,6 +1550,7 @@ public partial class AnnotationToolbar : UserControl
         else
         {
             _watermarkOpacity = Math.Clamp(e.NewValue / 100, 0.05, 1);
+            UpdateSwatches(); // the value beside the colour
         }
 
         OpacityValue.Text = $"{Math.Round(e.NewValue)}%";

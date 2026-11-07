@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.58`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.59`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,17 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.59 0.8.59 变更
+
+- Alt / Shift（同 Photoshop）：截图选区 `CreatingRect(start, end, shift, alt)`，按键变化立即刷新（`RefreshCreating`）；画选区或画图形时 Alt 不算辅助线单击（`CaptureKeyDown`）。
+  批注：`CreationGesture.Move(..., alt)`，`_centered` 时矩形 / 椭圆 / 马赛克框以按下点为中心，直线 / 箭头向两边长；贴图里画图时 Alt 不出辅助线、不进菜单模式。Win + 鼠标划区域没有加。
+- 选择模式按内容：`Annotation.HitContent`（空心矩形 / 椭圆只算线条，图片按 alpha，其余同 HitTest）；`AnnotationOps.HitTest(byContent)`，`HitAnnotation` 在 None / Select 时用它，拿着工具时仍是原判定。
+- 长截图：`ScrollStitcher.Outcome`（First / Same / Placed / TooFar / Animating / Gap / Full）+ `PlacedFrames` / `LostFrames`；`ChangedShare` ≥ 50 % 且没有位移 = 滚太快，否则 = 局部动画；
+  页面没动的小变化（光标闪烁）算 Same。`ReportState` 每帧更新预览窗；跟丢后停下来，提示一直留到重新对上。
+- 编辑器：`Section` 标题左侧折叠按钮（`EditorFoldedSections` 记标题，默认全展开），card.Tag = 内容；元素样式常驻（没选图片时内容禁用变淡），删掉 SlideSection；顺序：画布与尺寸 / 裁切与变形 / 旋转与镜像 / 元素样式 / 调色 / 抠色。
+- 其它：选区外光标 = 箭头；有列表的工具按钮不显示 ToolTip（`_listToolTips`，关掉隐藏收纳时恢复）；`Motion.Bar` 70 ms；关闭贴图时批注栏 PopOut；水印去掉透明度滑条（Ctrl+滚轮仍可调，低于 100 % 显示在颜色旁）；
+  悬浮按钮右键加「禁用所有快捷键」，托盘加「添加贴图…」；贴图历史右键「编辑图片」（`EditPinEntry`，本次运行关闭的带批注）；咖啡图标下移，提示文字垂直居中。
 
 ## 8.1.58 0.8.58 变更
 

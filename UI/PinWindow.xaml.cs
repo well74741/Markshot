@@ -173,7 +173,7 @@ public partial class PinWindow : Window
         {
             _crosshair = new PinCrosshair(ImageHost) // the editor uses Alt for Alt + wheel
             {
-                Paused = () => _editMode && PenEyedropper.IsPen(_tool)
+                Paused = () => _editMode && (PenEyedropper.IsPen(_tool) || _gesture != null) // (drawing: Alt = from the middle)
             };
         }
 
@@ -193,7 +193,7 @@ public partial class PinWindow : Window
             System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle)?.AddHook(
                 (IntPtr _, int message, IntPtr wParam, IntPtr _, ref bool handled) =>
                 {
-                    if (message == 0x0112 && (wParam.ToInt64() & 0xFFF0) == 0xF100 && _editMode && PenEyedropper.IsPen(_tool))
+                    if (message == 0x0112 && (wParam.ToInt64() & 0xFFF0) == 0xF100 && _editMode && (PenEyedropper.IsPen(_tool) || _gesture != null))
                     {
                         handled = true;
                     }
@@ -222,6 +222,11 @@ public partial class PinWindow : Window
                 {
                     _fadingOut = true;
                     IsHitTestVisible = false;
+                    if (_editMode && Toolbar.IsVisible)
+                    {
+                        Motion.PopOut(Toolbar, duration: Motion.Bar); // the bar (its own window) goes along
+                    }
+
                     BeginAnimation(OpacityProperty, new DoubleAnimation(0, Motion.Fast) { EasingFunction = Motion.Ease });
                     // …and shrinks quickly towards a point a little below its middle while it fades (it seems to sink
                     // away from the viewer).
@@ -1361,7 +1366,7 @@ public partial class PinWindow : Window
             }
             else if (AnnotationOps.IsModifier(key))
             {
-                _gesture.Move(_gesture.LastPointer, IsShiftDown, IsCtrlDown);
+                _gesture.Move(_gesture.LastPointer, IsShiftDown, IsCtrlDown, CreationGesture.AltHeld);
                 Editor.InvalidateVisual();
             }
 

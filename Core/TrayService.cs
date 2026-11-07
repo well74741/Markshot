@@ -25,7 +25,8 @@ public sealed class TrayService : IDisposable
         Action? pinHistory = null,
         Action? imageEditor = null,
         Action? toggleHotkeys = null,
-        Func<IEnumerable<(string Header, Action Action, bool? Checked)>>? floatItems = null)
+        Func<IEnumerable<(string Header, Action Action, bool? Checked)>>? floatItems = null,
+        Action? addPin = null)
     {
         // The tray menu is a WPF menu in the app's dark rounded style (not the system one),
         // rebuilt on each open so it only lists what applies right now.
@@ -41,6 +42,11 @@ public sealed class TrayService : IDisposable
 
             Add("截图", capture, App.Config?.CaptureHotkey);
             Add("贴图剪贴板", pin, App.Config?.PinHotkey);
+            if (addPin != null)
+            {
+                Add("添加贴图…", addPin);
+            }
+
             if (recorderItems != null)
             {
                 var first = true;

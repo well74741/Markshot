@@ -51,6 +51,56 @@ public sealed class ScrollStitcher
 
     public bool Full => Height >= _maxHeight;
 
+    /// <summary>What happened to a frame (the preview tells the user).</summary>
+    public enum Outcome
+    {
+        /// <summary>The first frame, nothing to compare with yet.</summary>
+        First,
+
+        /// <summary>Nothing moved.</summary>
+        Same,
+
+        /// <summary>Placed (rows added, or scrolled back over what is there).</summary>
+        Placed,
+
+        /// <summary>Most of the picture changed and no overlap with the last frame: scrolled too far between two frames.</summary>
+        TooFar,
+
+        /// <summary>Only a part changed, nothing moved as a whole: an animation, a video, a hover effect.</summary>
+        Animating,
+
+        /// <summary>Found, but it would leave a gap in the image.</summary>
+        Gap,
+
+        /// <summary>The maximum length is reached.</summary>
+        Full
+    }
+
+    public Outcome LastOutcome { get; private set; } = Outcome.First;
+
+    /// <summary>Frames placed / frames that changed but could not be placed.</summary>
+    public int PlacedFrames { get; private set; }
+
+    public int LostFrames { get; private set; }
+
+    /// <summary>The body rows one frame shows: a step close to this leaves almost no overlap.</summary>
+    public int ViewHeight => _top < 0 ? _height : BodyHeight;
+
+    /// <summary>The share of the picture that differs between two frames (0–1).</summary>
+    private static double ChangedShare(Cells a, Cells b)
+    {
+        var changed = 0;
+        for (var i = 0; i < a.Hash.Length; i++)
+        {
+            if (a.Hash[i] != b.Hash[i])
+            {
+                changed++;
+            }
+        }
+
+        return changed / (double)Math.Max(1, a.Hash.Length);
+    }
+
     /// <summary>The scroll distance of the last frame (content moved up by this many rows; 0 = not placed).</summary>
     public int LastShift { get; private set; }
 
@@ -73,6 +123,7 @@ public sealed class ScrollStitcher
         if (cells.Hash.AsSpan().SequenceEqual(_last.Hash))
         {
             LastShift = 0;
+            LastOutcome = Outcome.Same;
             return 0;
         }
 
@@ -98,6 +149,8 @@ public sealed class ScrollStitcher
         {
             // Only something animating, or a jump that cannot be placed: wait for a frame that can.
             LastShift = 0;
+            LastOutcome = ChangedShare(_last, cells) >= 0.5 ? Outcome.TooFar : Outcome.Animating;
+            LostFrames++;
             return 0;
         }
 
@@ -105,6 +158,8 @@ public sealed class ScrollStitcher
         if (position > _bodyRows.Count || position < -body)
         {
             LastShift = 0; // it would leave a gap
+            LastOutcome = Outcome.Gap;
+            LostFrames++;
             return 0;
         }
 
@@ -117,6 +172,7 @@ public sealed class ScrollStitcher
             if (Height + fresh > _maxHeight)
             {
                 LastShift = 0;
+                LastOutcome = Outcome.Full;
                 return 0;
             }
 
@@ -146,6 +202,17 @@ public sealed class ScrollStitcher
 
         _lastFrame = frame;
         _last = cells;
+        // A blinking caret or a small animation with the page standing still: no move, nothing wrong either.
+        if (LastShift != 0 || added > 0)
+        {
+            PlacedFrames++;
+            LastOutcome = Full ? Outcome.Full : Outcome.Placed;
+        }
+        else
+        {
+            LastOutcome = Outcome.Same;
+        }
+
         return added;
     }
 

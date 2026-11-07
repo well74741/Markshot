@@ -139,7 +139,8 @@ public partial class App : Application
             ShowPinHistory,
             () => OpenEditor(),
             ToggleHotkeys,
-            FloatMenuItems);
+            FloatMenuItems,
+            PinFromFiles);
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -301,6 +302,9 @@ public partial class App : Application
                 break;
             case "CloseAllPins":
                 CloseAllPins();
+                break;
+            case "ToggleHotkeys":
+                ToggleHotkeys();
                 break;
             default:
                 StartCapture();
@@ -727,7 +731,7 @@ public partial class App : Application
             return;
         }
 
-        _pinHistoryWindow = new UI.PinHistoryWindow(PinHistoryEntries, RestorePinEntry, DeletePinEntry, ClearPinHistory);
+        _pinHistoryWindow = new UI.PinHistoryWindow(PinHistoryEntries, RestorePinEntry, DeletePinEntry, ClearPinHistory, EditPinEntry);
         _pinHistoryWindow.Closed += (_, _) => _pinHistoryWindow = null;
         _pinHistoryWindow.Show();
     }
@@ -751,6 +755,21 @@ public partial class App : Application
         if (entry.LoadImage() is { } image)
         {
             CreatePinAtCursor(image, sweep: true);
+        }
+    }
+
+    /// <summary>编辑图片: a history entry in the image editor (with its annotations when it was closed in this session); it stays in the history.</summary>
+    public void EditPinEntry(PinEntry entry)
+    {
+        var index = _closedPins.FindIndex(closed => ReferenceEquals(closed.Entry, entry));
+        if (index >= 0)
+        {
+            var (snapshot, _) = _closedPins[index];
+            OpenEditor(snapshot.BaseImage, annotations: snapshot.Annotations.Select(item => item.Clone()).ToList());
+        }
+        else if (entry.LoadImage() is { } image)
+        {
+            OpenEditor(image);
         }
     }
 

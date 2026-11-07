@@ -53,8 +53,6 @@ public sealed class ImageEditorWindow : PinWindow
     private Border? _styleSection;
     private Border? _resetAllFooter;
     private FrameworkElement? _panelStack;
-    private bool _styleShown;
-    private static readonly Thickness SectionMargin = new(0, 0, 0, 8);
     private FrameworkElement? _radiusRow;
     private readonly Dictionary<string, (Slider Slider, TextBlock Value)> _styleSliders = new();
     private readonly Border _borderSwatch = new() { Width = 22, Height = 14, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1) };
@@ -448,12 +446,69 @@ public sealed class ImageEditorWindow : PinWindow
         return button;
     }
 
+    /// <summary>A panel section: its title with a fold button on the left (remembered), its controls below; Tag = the controls.</summary>
     private static Border Section(string title, Button? reset, params UIElement[] children)
     {
         var stack = new StackPanel();
         var heading = new TextBlock { Text = title, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
         heading.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFE6E6E6));
         var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8), LastChildFill = true };
+        var body = new StackPanel();
+        var turn = new RotateTransform(0);
+        var fold = new Button
+        {
+            Style = (Style)Application.Current.FindResource("ChevronButton"),
+            Width = 18,
+            Height = 20,
+            Margin = new Thickness(-4, 0, 4, 0),
+            ToolTip = "收起 / 展开",
+            Content = new System.Windows.Shapes.Path
+            {
+                Style = (Style)Application.Current.FindResource("IconPath"),
+                Data = (Geometry)Application.Current.FindResource("IconChevron"),
+                Width = 10,
+                Height = 10,
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = turn
+            }
+        };
+        void Show(bool folded, bool animate)
+        {
+            body.Visibility = folded ? Visibility.Collapsed : Visibility.Visible;
+            header.Margin = new Thickness(0, 0, 0, folded ? 0 : 8);
+            var angle = folded ? -90.0 : 0.0;
+            if (animate)
+            {
+                turn.BeginAnimation(RotateTransform.AngleProperty, new System.Windows.Media.Animation.DoubleAnimation(angle, Motion.Bar));
+                if (!folded)
+                {
+                    body.Opacity = 0;
+                    Motion.PopIn(body, fromAbove: true, duration: Motion.Bar);
+                }
+            }
+            else
+            {
+                turn.Angle = angle;
+            }
+        }
+
+        var foldedNames = ToolbarCatalog.Set(App.Config?.EditorFoldedSections);
+        Show(foldedNames.Contains(title), animate: false);
+        fold.Click += (_, _) =>
+        {
+            var names = ToolbarCatalog.Set(App.Config.EditorFoldedSections);
+            var folded = !names.Remove(title);
+            if (folded)
+            {
+                names.Add(title);
+            }
+
+            App.Config.EditorFoldedSections = string.Join(",", names);
+            App.Config.Save();
+            Show(folded, animate: true);
+        };
+        DockPanel.SetDock(fold, Dock.Left);
+        header.Children.Add(fold);
         if (reset != null)
         {
             reset.Height = 24;
@@ -467,10 +522,11 @@ public sealed class ImageEditorWindow : PinWindow
         stack.Children.Add(header);
         foreach (var child in children)
         {
-            stack.Children.Add(child);
+            body.Children.Add(child);
         }
 
-        var card = new Border { Padding = new Thickness(12, 10, 12, 10), Margin = new Thickness(0, 0, 0, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Child = stack };
+        stack.Children.Add(body);
+        var card = new Border { Padding = new Thickness(12, 10, 12, 10), Margin = new Thickness(0, 0, 0, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Child = stack, Tag = body };
         card.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF222222));
         card.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x14FFFFFF));
         return card;
@@ -583,13 +639,14 @@ public sealed class ImageEditorWindow : PinWindow
         fitRow.Children.Add(marginLabel);
         fitRow.Children.Add(_fitMargin);
         fitRow.Children.Add(Label(" px"));
-        stack.Children.Add(Section("画布尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _keepRatio, _snapMoves } }, fitRow, BackgroundRow()));
+        stack.Children.Add(Section("画布与尺寸", Reset(EditGroup.Size, "回到改尺寸之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), sizeRow, new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _keepRatio, _snapMoves } }, fitRow, BackgroundRow()));
         _radiusRow = StyleSlider("圆角", "Radius", 0, 120);
         _styleSection = Section("元素样式", null, _radiusRow, StyleSlider("阴影", "Shadow", 0, 60), StyleSlider("描边", "Border", 0, 24), BorderColorRow());
-        _styleSection.Visibility = Visibility.Collapsed;
-        stack.Children.Add(_styleSection);
-        stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow));
+        // Always there (it rests while no picture is selected); 裁切与变形 takes its old place at the top.
+        ((UIElement)_styleSection.Tag).IsEnabled = false;
         stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
+        stack.Children.Add(Section("旋转与镜像", Reset(EditGroup.Turn, "回到旋转 / 镜像之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), turnRow));
+        stack.Children.Add(_styleSection);
         stack.Children.Add(Section("调色", TextButton("重置", "调色恢复默认", ResetAdjust), colour));
         stack.Children.Add(Section("抠色与替换颜色", null, KeyColorRows()));
         var resetAll = TextButton("重置所有修改", "回到打开时的样子（图片和批注；可用 Ctrl+Z 撤销）", ResetAll);
@@ -1147,15 +1204,17 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         var first = StyledPictures.FirstOrDefault();
+        var controls = (UIElement)_styleSection.Tag;
+        controls.IsEnabled = first != null; // always shown; it rests without a selected picture
+        controls.Opacity = first != null ? 1 : 0.5;
         if (first == null)
         {
-            SlideSection(_styleSection, false);
+            _radiusRow!.Visibility = Visibility.Visible;
             return;
         }
 
         // A free shape has no corners to round; its shadow and outline follow the shape.
         _radiusRow!.Visibility = StyledPictures.All(picture => picture.IsShaped) ? Visibility.Collapsed : Visibility.Visible;
-        SlideSection(_styleSection, true);
 
         var syncing = _syncingControls;
         _syncingControls = true;
@@ -1164,71 +1223,6 @@ public sealed class ImageEditorWindow : PinWindow
         _styleSliders["Border"].Slider.Value = first.BorderWidth;
         _borderSwatch.Background = new SolidColorBrush(first.BorderColor);
         _syncingControls = syncing;
-    }
-
-    /// <summary>
-    /// 元素样式 opens and closes with a slide: its height grows from nothing (pushing the sections below down) and
-    /// shrinks back, fading at the same time.
-    /// </summary>
-    private void SlideSection(FrameworkElement section, bool show)
-    {
-        if (show == _styleShown)
-        {
-            return;
-        }
-
-        _styleShown = show;
-        var animate = IsLoaded && section.Parent is FrameworkElement { ActualWidth: > 0 };
-        if (!animate)
-        {
-            section.BeginAnimation(HeightProperty, null);
-            section.BeginAnimation(MarginProperty, null);
-            section.BeginAnimation(OpacityProperty, null);
-            section.Height = double.NaN;
-            section.Margin = SectionMargin;
-            section.Opacity = 1;
-            section.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-            return;
-        }
-
-        var from = section.Visibility == Visibility.Visible ? section.ActualHeight : 0;
-        var fromOpacity = section.Visibility == Visibility.Visible ? section.Opacity : 0;
-        var fromMargin = section.Visibility == Visibility.Visible ? section.Margin : new Thickness(0);
-        double to = 0;
-        if (show)
-        {
-            section.Visibility = Visibility.Visible;
-            section.BeginAnimation(HeightProperty, null);
-            section.Height = double.NaN;
-            section.Measure(new Size(((FrameworkElement)section.Parent).ActualWidth, double.PositiveInfinity));
-            to = Math.Max(0, section.DesiredSize.Height - section.Margin.Top - section.Margin.Bottom);
-        }
-
-        section.ClipToBounds = true;
-        var duration = Motion.Base;
-        var height = new DoubleAnimation(from, to, duration) { EasingFunction = Motion.Ease };
-        height.Completed += (_, _) =>
-        {
-            if (_styleShown != show)
-            {
-                return; // turned around meanwhile
-            }
-
-            section.BeginAnimation(HeightProperty, null);
-            section.BeginAnimation(MarginProperty, null);
-            section.BeginAnimation(OpacityProperty, null);
-            section.Height = double.NaN;
-            section.Margin = SectionMargin;
-            section.Opacity = 1;
-            section.ClipToBounds = false;
-            if (!show)
-            {
-                section.Visibility = Visibility.Collapsed;
-            }
-        };
-        section.BeginAnimation(HeightProperty, height);
-        section.BeginAnimation(MarginProperty, new ThicknessAnimation(fromMargin, show ? SectionMargin : new Thickness(0), duration) { EasingFunction = Motion.Ease });
-        section.BeginAnimation(OpacityProperty, new DoubleAnimation(fromOpacity, show ? 1 : 0, duration) { EasingFunction = Motion.Ease });
     }
 
     /// <summary>一键增强: the brightness stretched over the full range (through the curve), a touch more colour.</summary>

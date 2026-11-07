@@ -278,7 +278,8 @@ internal static class AnnotationOps
     /// Topmost element under the point. Freehand strokes and the watermark are
     /// not selectable this way; erased parts of an element do not hit.
     /// </summary>
-    public static Annotation? HitTest(IReadOnlyList<Annotation> items, Point point, double tolerance)
+    /// <param name="byContent">选择: by what is really at the point (see <see cref="Annotation.HitContent"/>), not the element's whole box.</param>
+    public static Annotation? HitTest(IReadOnlyList<Annotation> items, Point point, double tolerance, bool byContent = false)
     {
         for (var i = items.Count - 1; i >= 0; i--)
         {
@@ -296,7 +297,7 @@ internal static class AnnotationOps
                 testPoint = AnnotationEditor.RotatePoint(point, center, -annotation.Rotation);
             }
 
-            if (annotation.HitTest(testPoint, tolerance) && !annotation.IsErasedAt(point))
+            if ((byContent ? annotation.HitContent(testPoint, tolerance) : annotation.HitTest(testPoint, tolerance)) && !annotation.IsErasedAt(point))
             {
                 return annotation;
             }
