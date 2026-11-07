@@ -122,7 +122,7 @@ public partial class OverlayWindow
         }
         else
         {
-            HideCode();
+            HideCodeNow();
         }
 
         if (_autoTranslate && !SelectionDragging && SnapRect(_selection) != _translatedRect &&

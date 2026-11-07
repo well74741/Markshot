@@ -141,9 +141,12 @@ static class Round48Test
         Pump(150);
         pin.RestoreView(1, 0.5);
         var shadow = (Border)pin.FindName("ImageShadowLayer");
-        Check(shadow.Background is SolidColorBrush { Color.A: 0 } && shadow.BorderThickness.Left > 0, "a see-through pin: its shadow is a ring outside, no colour behind the picture");
+        var shadowHost = (FrameworkElement)pin.FindName("ShadowHost");
+        Check(shadowHost.Clip is CombinedGeometry clip && !clip.FillContains(new Point(30, 20)) && clip.FillContains(new Point(-5, 20)) &&
+              shadow.Margin == new Thickness(0) && shadow.BorderThickness == new Thickness(0),
+            "a see-through pin: no shadow colour under the picture, the shadow outside as wide as before");
         pin.RestoreView(1, 1);
-        Check(shadow.BorderThickness.Left == 0, "… opaque again: the plain shadow");
+        Check(shadowHost.Clip == null, "… opaque again: the plain shadow");
         typeof(PinWindow).GetMethod("DeleteWithGroup", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(pin, null);
         Pump(300);
         Check(pin.SkipHistory, "Delete: the pin goes and is not kept in the history");
@@ -202,7 +205,7 @@ static class Round48Test
             shadowPin.Show();
             Pump(150);
             var layer = (Border)shadowPin.FindName("ImageShadowLayer");
-            byte Alpha() => ((SolidColorBrush)(layer.Background is SolidColorBrush { Color.A: > 0 } b ? b : layer.BorderBrush)).Color.A;
+            byte Alpha() => ((SolidColorBrush)layer.Background).Color.A;
             var full = Alpha();
             shadowPin.RestoreView(1, 0.4);
             var faint = Alpha();
@@ -218,9 +221,16 @@ static class Round48Test
             Pump(200);
             var other = new Window { Left = -3600, Top = -4000, Width = 50, Height = 50, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
             other.Show();
-            other.Activate();
+            other.Activate(); // a pin taking the keyboard back: no click
             Pump(300);
-            Check(!picker.IsVisible && !picker.Accepted, "colour panel: clicking outside closes it, nothing chosen");
+            Check(picker.IsVisible, "colour panel: another window taking the focus (the pin) does not close it");
+            var click = typeof(ColorPickerWindow).GetMethod("SimulateClick", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            var inside = picker.PointToScreen(new Point(20, 20));
+            click.Invoke(picker, new object[] { inside });
+            Check(picker.IsVisible, "… a click on it keeps it");
+            click.Invoke(picker, new object[] { new Point(inside.X + 2000, inside.Y + 2000) });
+            Pump(450); // its closing fade
+            Check(!picker.IsVisible && !picker.Accepted, "… a click outside closes it, nothing chosen");
             other.Close();
         }
 
@@ -256,24 +266,57 @@ static class Round48Test
             var a = found.FirstOrDefault(c => c.Text.EndsWith("/a"));
             Check(found.Count == 2 && a?.Area is { } boxA && boxA.Contains(new Point(130, 150)) && !boxA.Contains(new Point(470, 150)) &&
                   boxA.Left > 20 && boxA.Right < 250, $"two codes in the area, each where it is ({string.Join(" | ", found.Select(c => c.Text + " " + c.Area))})");
-            var onCode = (bool)typeof(OverlayWindow).GetMethod("UpdateCodeHover", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, new object[] { new Point(130, 150) })!;
+            var hover = typeof(OverlayWindow).GetMethod("UpdateCodeHover", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            var onCode = (bool)hover.Invoke(overlay, new object[] { new Point(130, 150) })!;
             var card = (Border?)typeof(OverlayWindow).GetField("_codeCard", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(overlay);
             var frame = (Border?)typeof(OverlayWindow).GetField("_codeFrame", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(overlay);
             var cardLink = card == null ? null : FindLink(card);
-            Check(onCode && frame?.Visibility == Visibility.Visible && card?.Visibility == Visibility.Visible && cardLink?.NavigateUri?.Host == "example.com",
-                "pointer on the first code: its box and a card with the clickable link");
-            typeof(OverlayWindow).GetMethod("UpdateCodeHover", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, new object[] { new Point(470, 150) });
+            Check(onCode && frame?.Visibility == Visibility.Visible && frame.Child is Canvas { Children.Count: 1 } && frame.BorderThickness == new Thickness(0) &&
+                  card?.Visibility == Visibility.Visible && cardLink?.NavigateUri?.Host == "example.com",
+                "pointer on the first code: four corner marks and a card with the clickable link");
+            hover.Invoke(overlay, new object[] { new Point(240, 150) }); // off the code, on the way to the card
+            Pump(150);
+            Check(card?.Visibility == Visibility.Visible, "… leaving the code towards the card: the card waits for the pointer");
+            hover.Invoke(overlay, new object[] { new Point(470, 150) });
             Check(card?.Visibility == Visibility.Visible && card is not null && FindLink(card) == null, "on the second code: its own card (plain text, no link)");
-            typeof(OverlayWindow).GetMethod("UpdateCodeHover", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, new object[] { new Point(320, 20) });
-            Check(frame?.Visibility != Visibility.Visible, "off the codes: box and card go");
+            hover.Invoke(overlay, new object[] { new Point(320, 20) });
+            Pump(600);
+            Check(frame?.Visibility != Visibility.Visible && card?.Visibility != Visibility.Visible, "off the codes (and not on the card): marks and card go after a moment");
             overlay.Close();
+        }
+
+        // 二维码 reading: many codes, low contrast (the second reader), barcodes
+        {
+            var many = new byte[1200 * 800 * 4];
+            for (var i = 0; i < many.Length; i++) many[i] = 255;
+            for (var k = 0; k < 6; k++)
+            {
+                var code = writer.Write("https://example.com/code" + k);
+                for (var y = 0; y < code.Height; y++)
+                    Array.Copy(code.Pixels, y * code.Width * 4, many, ((60 + (k / 3) * 380 + y) * 1200 + 60 + (k % 3) * 380) * 4, code.Width * 4);
+            }
+
+            var sixWatch = System.Diagnostics.Stopwatch.StartNew();
+            var six = CodeReader.Read(BitmapSource.Create(1200, 800, 96, 96, PixelFormats.Bgra32, null, many, 1200 * 4));
+            Check(six.Count == 6 && six.All(c => c.Area != null), $"six codes in one area: all six, each with its place ({six.Count}, {sixWatch.ElapsedMilliseconds} ms)");
+            var low = writer.Write("https://low.example/a");
+            for (var i = 0; i < low.Pixels.Length; i += 4)
+            {
+                var v = (byte)(low.Pixels[i] < 128 ? 120 : 200);
+                low.Pixels[i] = low.Pixels[i + 1] = low.Pixels[i + 2] = v;
+            }
+
+            Check(CodeReader.Read(BitmapSource.Create(low.Width, low.Height, 96, 96, PixelFormats.Bgra32, null, low.Pixels, low.Width * 4)).Count == 1, "a low-contrast code is read too");
+            var ean = new ZXing.BarcodeWriterPixelData { Format = ZXing.BarcodeFormat.EAN_13, Options = new ZXing.Common.EncodingOptions { Width = 300, Height = 100, Margin = 10 } }.Write("6901234567892");
+            var eanCodes = CodeReader.Read(BitmapSource.Create(ean.Width, ean.Height, 96, 96, PixelFormats.Bgra32, null, ean.Pixels, ean.Width * 4));
+            Check(eanCodes.Count == 1 && eanCodes[0].Kind == "条形码" && eanCodes[0].Text == "6901234567892", "a barcode (EAN-13)");
         }
 
         // 序号: dragging out the arrow shows the plain cross, not the badge over it
         {
             var source = System.IO.File.ReadAllText(Repo.File("UI/OverlayWindow.Input.cs")) + System.IO.File.ReadAllText(Repo.File("UI/PinWindow.Editing.cs"));
-            Check(System.Text.RegularExpressions.Regex.Matches(source, @"NumberAnnotation \{ Tail: not null \} && InputLayer.Cursor != Cursors.Cross").Count == 2,
-                "序号 drag: the cursor turns into a plain cross (capture and pins)");
+            Check(System.Text.RegularExpressions.Regex.Matches(source, @"NumberAnnotation \{ Tail: not null \} && InputLayer.Cursor != Cursors.None").Count == 2,
+                "序号 drag: no cursor over the arrow (its head is the pointer; capture and pins)");
         }
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");

@@ -161,6 +161,7 @@ public partial class PinWindow : Window
         _top = screenY;
 
         Loaded += OnLoaded;
+        ImageHost.SizeChanged += (_, _) => UpdateFrame(); // the see-through shadow's clip follows the size
         Closed += (_, _) => LeaveGroup();
         LocationChanged += (_, _) => PlaceToolbar(); // the toolbar window follows the pin
         // Alt over the pin: 辅助线 through the pointer across the screen (as in the capture).
@@ -552,25 +553,31 @@ public partial class PinWindow : Window
             {
                 ShadowBlur.Radius = size;
                 ImageShadowLayer.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-                var shadowBrush = new SolidColorBrush(Color.FromArgb((byte)Math.Round(opacity * 255), shadow.R, shadow.G, shadow.B));
-                if (_opacity < 0.999)
-                {
-                    // A see-through pin: the shadow is a ring around the picture, not a plate behind it
-                    // (the plate's colour, blue while active, showed through the picture).
-                    var ring = Math.Max(6, size);
-                    ImageShadowLayer.Background = Brushes.Transparent;
-                    ImageShadowLayer.BorderBrush = shadowBrush;
-                    ImageShadowLayer.BorderThickness = new Thickness(ring);
-                    ImageShadowLayer.Margin = new Thickness(-ring);
-                }
-                else
-                {
-                    ImageShadowLayer.Background = shadowBrush;
-                    ImageShadowLayer.BorderThickness = new Thickness(0);
-                    ImageShadowLayer.Margin = new Thickness(0);
-                }
+                ImageShadowLayer.Background = new SolidColorBrush(Color.FromArgb((byte)Math.Round(opacity * 255), shadow.R, shadow.G, shadow.B));
+                UpdateShadowClip(size);
             }
         }
+    }
+
+    /// <summary>
+    /// A see-through pin: the same shadow (same size), only not under the picture itself — the plate's colour (blue
+    /// while active) showed through it. The clip is on the host, so the blurred edge outside stays whole.
+    /// </summary>
+    private void UpdateShadowClip(double size)
+    {
+        var width = ImageHost.ActualWidth;
+        var height = ImageHost.ActualHeight;
+        if (_opacity >= 0.999 || width < 1 || height < 1)
+        {
+            ShadowHost.Clip = null;
+            return;
+        }
+
+        var reach = size * 3 + 8;
+        var radius = CornerRadius * _zoom;
+        ShadowHost.Clip = new CombinedGeometry(GeometryCombineMode.Exclude,
+            new RectangleGeometry(new Rect(-reach, -reach, width + reach * 2, height + reach * 2)),
+            new RectangleGeometry(new Rect(0, 0, width, height), radius, radius));
     }
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

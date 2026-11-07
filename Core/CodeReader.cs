@@ -1,9 +1,9 @@
-using ZXing;
-using ZXing.Common;
-
 namespace Markshot.Core;
 
-/// <summary>二维码 / 条形码: everything that can be read in a picture (several codes at once), offline.</summary>
+/// <summary>
+/// 二维码 / 条形码: everything that can be read in a picture (several codes at once), offline. zxing-cpp (native, all common
+/// formats, finds many codes in one image and reads damaged / small / rotated / inverted ones); ZXing.Net as a second try.
+/// </summary>
 public static class CodeReader
 {
     /// <summary>One code found: what it says, its kind and whether it is a web address.</summary>
@@ -18,42 +18,29 @@ public static class CodeReader
         try
         {
             var (pixels, width, height) = ImageOps.ReadPixels(image);
-            // Transparent parts read as white (a cut-out pin).
-            for (var i = 0; i < pixels.Length; i += 4)
+            var gray = Gray(pixels, width, height);
+            var found = ReadNative(gray, width, height, 1);
+            if (found.Count == 0 && Math.Max(width, height) <= 1400)
             {
-                var a = pixels[i + 3];
-                if (a < 255)
+                // Tiny codes in a screenshot: once more at twice the size.
+                var (big, bw, bh) = Upscale(gray, width, height);
+                found = ReadNative(big, bw, bh, 0.5);
+            }
+
+            // ZXing.Net as well (it reads some low-contrast codes zxing-cpp gives up on); unless the picture is huge.
+            if (found.Count == 0 || (long)width * height <= 2_500_000)
+            {
+                foreach (var code in ReadManaged(pixels, width, height))
                 {
-                    pixels[i] = (byte)(pixels[i] * a / 255 + 255 - a);
-                    pixels[i + 1] = (byte)(pixels[i + 1] * a / 255 + 255 - a);
-                    pixels[i + 2] = (byte)(pixels[i + 2] * a / 255 + 255 - a);
+                    if (!found.Any(f => f.Text == code.Text && Near(f.Area, code.Area)))
+                    {
+                        found.Add(code);
+                    }
                 }
             }
 
-            var source = new RGBLuminanceSource(pixels, width, height, RGBLuminanceSource.BitmapFormat.BGRA32);
-            var reader = new BarcodeReaderGeneric
-            {
-                AutoRotate = true,
-                Options = new DecodingOptions { TryHarder = true, TryInverted = true }
-            };
-            var results = reader.DecodeMultiple(source);
-            var factor = 1.0;
-            if (results == null || results.Length == 0)
-            {
-                // Small codes in a big screenshot: once more, twice the size.
-                if (Math.Max(width, height) <= 1600)
-                {
-                    var big = ImageOps.Resize(image, width * 2, height * 2);
-                    var (bp, bw, bh) = ImageOps.ReadPixels(big);
-                    results = reader.DecodeMultiple(new RGBLuminanceSource(bp, bw, bh, RGBLuminanceSource.BitmapFormat.BGRA32));
-                    factor = 0.5;
-                }
-            }
-
-            return (results ?? Array.Empty<Result>())
-                .Where(r => !string.IsNullOrWhiteSpace(r.Text))
-                .GroupBy(r => r.Text)
-                .Select(g => new Code(g.Key, KindOf(g.First().BarcodeFormat), AreaOf(g.First(), factor, width, height)))
+            return found
+                .Where(c => !string.IsNullOrWhiteSpace(c.Text))
                 .ToList();
         }
         catch (Exception ex)
@@ -63,11 +50,100 @@ public static class CodeReader
         }
     }
 
-    /// <summary>
-    /// The code's box from the points the reader reports (a QR code: the centres of its three corner squares, which
-    /// lie about 3.5 modules inside the edge; a barcode: two points on its scan line).
-    /// </summary>
-    private static Rect? AreaOf(Result result, double factor, int width, int height)
+    /// <summary>The same code found twice (by the two readers): its boxes overlap, or one of them is unknown.</summary>
+    private static bool Near(Rect? a, Rect? b) => a is not { } x || b is not { } y || x.IntersectsWith(y);
+
+    /// <summary>Loads the native reader ahead of the first use (the capture opens: the first read is quick).</summary>
+    public static void WarmUp() => Task.Run(() =>
+    {
+        try
+        {
+            ReadNative(new byte[64 * 64], 64, 64, 1);
+        }
+        catch (Exception)
+        {
+            // logged when it is really used
+        }
+    });
+
+    /// <summary>Luminance; transparent parts count as white (a cut-out pin).</summary>
+    private static byte[] Gray(byte[] bgra, int width, int height)
+    {
+        var gray = new byte[width * height];
+        for (int i = 0, j = 0; j < gray.Length; i += 4, j++)
+        {
+            var a = bgra[i + 3];
+            var l = (bgra[i + 2] * 77 + bgra[i + 1] * 150 + bgra[i] * 29) >> 8;
+            gray[j] = (byte)(a == 255 ? l : (l * a + 255 * (255 - a)) / 255);
+        }
+
+        return gray;
+    }
+
+    private static (byte[] Pixels, int Width, int Height) Upscale(byte[] gray, int width, int height)
+    {
+        var w = width * 2;
+        var h = height * 2;
+        var big = new byte[w * h];
+        for (var y = 0; y < h; y++)
+        {
+            var row = (y >> 1) * width;
+            for (var x = 0; x < w; x++)
+            {
+                big[y * w + x] = gray[row + (x >> 1)];
+            }
+        }
+
+        return (big, w, h);
+    }
+
+    private static List<Code> ReadNative(byte[] gray, int width, int height, double factor)
+    {
+        try
+        {
+            var reader = new ZXingCpp.BarcodeReader
+            {
+                Formats = ZXingCpp.BarcodeFormat.All,
+                TryHarder = true,
+                TryRotate = true,
+                TryInvert = true,
+                TryDownscale = true,
+                MaxNumberOfSymbols = 32
+            };
+            var view = new ZXingCpp.ImageView(gray, width, height, ZXingCpp.ImageFormat.Lum);
+            return reader.From(view)
+                .Select(b =>
+                {
+                    var p = b.Position;
+                    var xs = new[] { p.TopLeft.X, p.TopRight.X, p.BottomRight.X, p.BottomLeft.X };
+                    var ys = new[] { p.TopLeft.Y, p.TopRight.Y, p.BottomRight.Y, p.BottomLeft.Y };
+                    var area = new Rect(xs.Min() * factor, ys.Min() * factor, Math.Max(1, (xs.Max() - xs.Min()) * factor), Math.Max(1, (ys.Max() - ys.Min()) * factor));
+                    return new Code(b.Text, KindOf(b.Format.ToString()), area);
+                })
+                .ToList();
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or TypeInitializationException)
+        {
+            Log.Error("zxing-cpp 不可用，改用 ZXing.Net", ex);
+            return new List<Code>();
+        }
+    }
+
+    /// <summary>ZXing.Net (managed) when the native reader finds nothing or is missing.</summary>
+    private static List<Code> ReadManaged(byte[] bgra, int width, int height)
+    {
+        var reader = new ZXing.BarcodeReaderGeneric
+        {
+            AutoRotate = true,
+            Options = new ZXing.Common.DecodingOptions { TryHarder = true, TryInverted = true }
+        };
+        var results = reader.DecodeMultiple(new ZXing.RGBLuminanceSource(bgra, width, height, ZXing.RGBLuminanceSource.BitmapFormat.BGRA32));
+        return (results ?? Array.Empty<ZXing.Result>())
+            .Select(r => new Code(r.Text, KindOf(r.BarcodeFormat.ToString()), ManagedArea(r, width, height)))
+            .ToList();
+    }
+
+    private static Rect? ManagedArea(ZXing.Result result, int width, int height)
     {
         var points = result.ResultPoints?.Where(p => p != null).ToList();
         if (points is not { Count: >= 2 })
@@ -75,36 +151,30 @@ public static class CodeReader
             return null;
         }
 
-        var left = points.Min(p => p.X) * factor;
-        var right = points.Max(p => p.X) * factor;
-        var top = points.Min(p => p.Y) * factor;
-        var bottom = points.Max(p => p.Y) * factor;
-        double padX, padY;
-        if (result.BarcodeFormat == BarcodeFormat.QR_CODE && points.Count >= 3)
-        {
-            // Finder centres to the edge: 3.5 of the (size − 7) modules between them, plus a little quiet zone.
-            var span = Math.Max(right - left, bottom - top);
-            // The module count is not reported; the smallest code (21 modules, 14 between the centres) gives the
-            // widest margin, bigger codes a little less — 0.27 of the span covers them all with a small quiet zone.
-            padX = padY = span * 0.27;
-        }
-        else
-        {
-            // A barcode's points lie on one line: give it the height of a usual barcode.
-            padX = Math.Max(6, (right - left) * 0.05);
-            padY = Math.Max(20, (right - left) * 0.25);
-        }
-
+        var left = points.Min(p => p.X);
+        var right = points.Max(p => p.X);
+        var top = points.Min(p => p.Y);
+        var bottom = points.Max(p => p.Y);
+        var qr = result.BarcodeFormat == ZXing.BarcodeFormat.QR_CODE && points.Count >= 3;
+        var span = Math.Max(right - left, bottom - top);
+        var padX = qr ? span * 0.27 : Math.Max(6, (right - left) * 0.05);
+        var padY = qr ? span * 0.27 : Math.Max(20, (right - left) * 0.25);
         var area = new Rect(left - padX, top - padY, right - left + padX * 2, bottom - top + padY * 2);
         return Rect.Intersect(area, new Rect(0, 0, width, height)) is { IsEmpty: false } inside ? inside : null;
     }
 
-    private static string KindOf(BarcodeFormat format) => format switch
+    private static string KindOf(string format)
     {
-        BarcodeFormat.QR_CODE => "二维码",
-        BarcodeFormat.DATA_MATRIX => "Data Matrix",
-        BarcodeFormat.PDF_417 => "PDF417",
-        BarcodeFormat.AZTEC => "Aztec",
-        _ => "条形码"
-    };
+        // ZXing.Net says QR_CODE, zxing-cpp "QR Code" / "Micro QR Code".
+        var f = format.Replace("_", "").Replace(" ", "").Replace("-", "").ToUpperInvariant();
+        return f switch
+        {
+            "QRCODE" or "MICROQRCODE" or "RMQRCODE" => "二维码",
+            "DATAMATRIX" => "Data Matrix",
+            "PDF417" => "PDF417",
+            "AZTEC" => "Aztec",
+            "MAXICODE" => "MaxiCode",
+            _ => "条形码"
+        };
+    }
 }

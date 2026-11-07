@@ -8,6 +8,54 @@ public partial class ColorPickerWindow : Window
 {
     private bool _updating;
     private bool _closing;
+    private bool _wasDown;
+    private readonly DispatcherTimer _outsideWatch = new() { Interval = TimeSpan.FromMilliseconds(30) };
+
+    /// <summary>For tests: where the pointer is (screen pixels).</summary>
+    internal static Func<Point>? PointerOverride;
+
+    private bool PointerInside()
+    {
+        Point at;
+        if (PointerOverride is { } over)
+        {
+            at = over();
+        }
+        else
+        {
+            GetCursorPos(out var p);
+            at = new Point(p.X, p.Y);
+        }
+
+        if (PresentationSource.FromVisual(this) == null)
+        {
+            return true;
+        }
+
+        var local = PointFromScreen(at);
+        return local.X >= 0 && local.Y >= 0 && local.X < ActualWidth && local.Y < ActualHeight;
+    }
+
+    /// <summary>For tests: a click (outside or not) as the watch sees it.</summary>
+    internal void SimulateClick(Point screen)
+    {
+        PointerOverride = () => screen;
+        _wasDown = false;
+        try
+        {
+            if (!PointerInside() && _shield == null && OwnedWindows.Count == 0)
+            {
+                Cancel_Click(this, new RoutedEventArgs());
+            }
+        }
+        finally
+        {
+            PointerOverride = null;
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
     private bool _draggingSv;
     private double _hue;
     private double _saturation;
@@ -52,19 +100,29 @@ public partial class ColorPickerWindow : Window
         // Clicking the panel itself while picking ends it, keeping the live colour.
         PreviewMouseDown += (_, _) => _shield?.End(true);
         // A click anywhere else closes it (as 取消) — unless the screen colour is being picked, or a dialog of its own is up.
-        Deactivated += (_, _) =>
+        // Watched by polling the buttons: losing the focus alone is no reason (the pin it came from takes the keyboard
+        // back right after opening it).
+        _outsideWatch.Tick += (_, _) =>
         {
-            if (_shield == null && !_closing && IsLoaded && OwnedWindows.Count == 0)
+            if (_shield != null || _closing || OwnedWindows.Count > 0 || !IsVisible)
             {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (_shield == null && !_closing && !IsActive)
-                    {
-                        Cancel_Click(this, new RoutedEventArgs());
-                    }
-                }), DispatcherPriority.Input);
+                return;
             }
+
+            var down = (GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0 || (GetAsyncKeyState(0x04) & 0x8000) != 0;
+            if (down && !_wasDown && !PointerInside())
+            {
+                Cancel_Click(this, new RoutedEventArgs());
+            }
+
+            _wasDown = down;
         };
+        Loaded += (_, _) =>
+        {
+            _wasDown = true; // the press that opened it is not "outside"
+            _outsideWatch.Start();
+        };
+        Closed += (_, _) => _outsideWatch.Stop();
         Closing += (_, _) => _closing = true;
         Loaded += (_, _) =>
         {
@@ -451,9 +509,6 @@ public partial class ColorPickerWindow : Window
             (byte)((colorRef >> 16) & 0xFF));
         return true;
     }
-
-    [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int key);
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out NativePoint point);

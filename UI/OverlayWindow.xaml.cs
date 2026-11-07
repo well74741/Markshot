@@ -486,6 +486,7 @@ public partial class OverlayWindow : Window
 
             UpdateSelectionVisuals();
             WarmUpDetection();
+            CodeReader.WarmUp();
         }), DispatcherPriority.Loaded);
     }
 

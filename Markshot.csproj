@@ -16,16 +16,16 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Patch releases count in two digits from 0.8.01 on (display version);
          the numeric Windows version fields carry 0.8.1.0. -->
-    <Version>0.8.49</Version>
-    <InformationalVersion>0.8.49</InformationalVersion>
+    <Version>0.8.50</Version>
+    <InformationalVersion>0.8.50</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>Markshot</Product>
     <Company>well74741</Company>
     <Authors>well74741</Authors>
     <Copyright>Copyright © 2026 well74741</Copyright>
     <Description>Markshot — 截图、批注、贴图、本地 OCR 与原位翻译</Description>
-    <AssemblyVersion>0.8.49.0</AssemblyVersion>
-    <FileVersion>0.8.49.0</FileVersion>
+    <AssemblyVersion>0.8.50.0</AssemblyVersion>
+    <FileVersion>0.8.50.0</FileVersion>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
@@ -52,6 +52,7 @@
     <!-- 录屏: system sound (WASAPI loopback) and microphone capture (MIT). -->
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <PackageReference Include="ZXingCpp" Version="0.5.3" />
   </ItemGroup>
 
   <ItemGroup>

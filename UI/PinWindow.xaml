@@ -22,11 +22,14 @@
     <Grid x:Name="RootGrid" Margin="16">
         <Grid x:Name="ImageHost" HorizontalAlignment="Left" VerticalAlignment="Top"
               ClipToBounds="False">
-            <Border x:Name="ImageShadowLayer" Background="#48000000" IsHitTestVisible="False">
-                <Border.Effect>
-                    <BlurEffect x:Name="ShadowBlur" Radius="12" KernelType="Gaussian" />
-                </Border.Effect>
-            </Border>
+            <!-- The shadow host clips out the picture's own area when the pin is see-through (the shadow must not show through it). -->
+            <Grid x:Name="ShadowHost" IsHitTestVisible="False">
+                <Border x:Name="ImageShadowLayer" Background="#48000000" IsHitTestVisible="False">
+                    <Border.Effect>
+                        <BlurEffect x:Name="ShadowBlur" Radius="12" KernelType="Gaussian" />
+                    </Border.Effect>
+                </Border>
+            </Grid>
             <Image x:Name="Img" Stretch="Fill" SnapsToDevicePixels="True" />
             <ui:PinTextLayer x:Name="TextLayer" />
             <annotations:AnnotationEditor x:Name="Editor" Visibility="Collapsed" IsHitTestVisible="False" />

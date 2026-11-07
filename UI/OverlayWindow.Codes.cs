@@ -35,11 +35,12 @@ public partial class OverlayWindow
             return;
         }
 
-        HideCode();
+        HideCodeNow();
         _codes = Array.Empty<CodeReader.Code>();
+        _codesFor = Rect.Empty;
         if (_codeTimer == null)
         {
-            _codeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _codeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
             _codeTimer.Tick += (_, _) =>
             {
                 _codeTimer.Stop();
@@ -70,9 +71,9 @@ public partial class OverlayWindow
         var request = ++_codesRequest;
         Task.Run(() => CodeReader.Read(picture)).ContinueWith(task => Dispatcher.BeginInvoke(() =>
         {
-            if (_closed || request != _codesRequest || task.IsFaulted)
+            if (_closed || request != _codesRequest || task.IsFaulted || !_hasSelection || SnapRect(_selection) != area)
             {
-                return;
+                return; // the area changed meanwhile: its own read follows
             }
 
             // In the capture's pixels.
@@ -96,7 +97,7 @@ public partial class OverlayWindow
         _codesRequest++;
         _codes = Array.Empty<CodeReader.Code>();
         _codesFor = Rect.Empty;
-        HideCode();
+        HideCodeNow();
     }
 
     /// <summary>The pointer moved (capture pixels): the code under it shows its box and card. True when it is on one.</summary>
@@ -104,23 +105,18 @@ public partial class OverlayWindow
     {
         if (_codes.Count == 0 || _dragging || !_hasSelection)
         {
-            HideCode();
+            HideCodeNow();
             return false;
         }
 
-        var code = _codes.FirstOrDefault(c => c.Area is { } a && a.Contains(point));
+        var code = _codes.FirstOrDefault(c => c.Area is { } a && Grown(a).Contains(point));
         if (code == null)
         {
-            // Over the card itself it stays (to click the link).
-            if (_codeCard is { IsVisible: true, IsMouseOver: true })
-            {
-                return false;
-            }
-
-            HideCode();
+            HideCode(); // after a moment: the pointer may be on its way to the card
             return false;
         }
 
+        _codeHideTimer?.Stop();
         if (!ReferenceEquals(code, _shownCode))
         {
             ShowCode(code);
@@ -135,10 +131,11 @@ public partial class OverlayWindow
         _shownCode = code;
         var area = code.Area!.Value;
         var dip = new Rect(area.X / _scale, area.Y / _scale, area.Width / _scale, area.Height / _scale);
-        _codeFrame!.Width = dip.Width + 6;
-        _codeFrame.Height = dip.Height + 6;
-        Canvas.SetLeft(_codeFrame, dip.X - 3);
-        Canvas.SetTop(_codeFrame, dip.Y - 3);
+        _codeFrame!.Width = dip.Width + 8;
+        _codeFrame.Height = dip.Height + 8;
+        Canvas.SetLeft(_codeFrame, dip.X - 4);
+        Canvas.SetTop(_codeFrame, dip.Y - 4);
+        _codeFrame.Child = CornerMarks(dip.Width + 8, dip.Height + 8);
         _codeFrame.Visibility = Visibility.Visible;
 
         _codeCardText!.Inlines.Clear();
@@ -162,11 +159,11 @@ public partial class OverlayWindow
         _codeCard!.Visibility = Visibility.Visible;
         _codeCard.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         var size = _codeCard.DesiredSize;
-        // Right of the code, else left of it; never off the screen.
-        var left = dip.Right + 10;
+        // Right next to the code (touching the marks, so the pointer goes straight onto it), else on its left.
+        var left = dip.Right + 4;
         if (left + size.Width > ActualWidth - 6)
         {
-            left = dip.Left - size.Width - 10;
+            left = dip.Left - size.Width - 4;
         }
 
         Canvas.SetLeft(_codeCard, Math.Clamp(left, 6, Math.Max(6, ActualWidth - size.Width - 6)));
@@ -174,8 +171,48 @@ public partial class OverlayWindow
         Motion.PopIn(_codeCard, fromAbove: false);
     }
 
+    private DispatcherTimer? _codeHideTimer;
+
+    /// <summary>A few pixels round the code count as on it (the marks sit just outside).</summary>
+    private Rect Grown(Rect area)
+    {
+        var grown = area;
+        grown.Inflate(6 * _scale, 6 * _scale);
+        return grown;
+    }
+
+    /// <summary>Hides the box and card 0.4 s after the pointer left the code — unless it reaches the card or the code again.</summary>
     private void HideCode()
     {
+        if (_shownCode == null)
+        {
+            return;
+        }
+
+        if (_codeHideTimer == null)
+        {
+            _codeHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+            _codeHideTimer.Tick += (_, _) =>
+            {
+                _codeHideTimer.Stop();
+                if (_codeCard is { IsMouseOver: true })
+                {
+                    return; // on the card: it stays (leaving the card hides it)
+                }
+
+                HideCodeNow();
+            };
+        }
+
+        if (!_codeHideTimer.IsEnabled)
+        {
+            _codeHideTimer.Start();
+        }
+    }
+
+    private void HideCodeNow()
+    {
+        _codeHideTimer?.Stop();
         _shownCode = null;
         if (_codeFrame != null)
         {
@@ -195,16 +232,8 @@ public partial class OverlayWindow
             return;
         }
 
-        // The box: corner brackets in the accent colour, like a scanner's frame.
-        _codeFrame = new Border
-        {
-            IsHitTestVisible = false,
-            BorderThickness = new Thickness(2),
-            CornerRadius = new CornerRadius(4),
-            BorderBrush = (Brush)FindResource("Accent"),
-            Background = new SolidColorBrush(Color.FromArgb(0x22, 0x4C, 0x8D, 0xFF)),
-            Visibility = Visibility.Collapsed
-        };
+        // Just the four corner marks, like a scanner's frame.
+        _codeFrame = new Border { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         _codeCardText = new TextBlock { FontSize = 12.5, TextWrapping = TextWrapping.Wrap, MaxWidth = 320 };
         _codeCardText.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFF0F0F0));
         var copy = new Button { Content = "复制", Style = (Style)FindResource("ToolButton"), Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -232,15 +261,50 @@ public partial class OverlayWindow
         _codeCard.SetResourceReference(Border.BackgroundProperty, "PanelBackground");
         _codeCard.SetResourceReference(Border.BorderBrushProperty, "PanelBorder");
         UiScale.Attach(_codeCard);
+        _codeCard.MouseEnter += (_, _) => _codeHideTimer?.Stop();
         _codeCard.MouseLeave += (_, _) =>
         {
-            if (_shownCode?.Area is { } a && !a.Contains(ToPixels(Mouse.GetPosition(InputLayer))))
+            if (_shownCode?.Area is { } a && !Grown(a).Contains(ToPixels(Mouse.GetPosition(InputLayer))))
             {
                 HideCode();
             }
         };
         UiLayer.Children.Add(_codeFrame);
         UiLayer.Children.Add(_codeCard);
+    }
+
+    /// <summary>Four L-shaped marks at the corners of a w × h box.</summary>
+    private static UIElement CornerMarks(double w, double h)
+    {
+        var arm = Math.Clamp(Math.Min(w, h) * 0.22, 8, 22);
+        var geometry = new StreamGeometry();
+        using (var c = geometry.Open())
+        {
+            void L(Point a, Point corner, Point b)
+            {
+                c.BeginFigure(a, false, false);
+                c.LineTo(corner, true, true);
+                c.LineTo(b, true, true);
+            }
+
+            L(new Point(0, arm), new Point(0, 0), new Point(arm, 0));
+            L(new Point(w - arm, 0), new Point(w, 0), new Point(w, arm));
+            L(new Point(w, h - arm), new Point(w, h), new Point(w - arm, h));
+            L(new Point(arm, h), new Point(0, h), new Point(0, h - arm));
+        }
+
+        geometry.Freeze();
+        var marks = new System.Windows.Shapes.Path
+        {
+            Data = geometry,
+            Stroke = (Brush)Application.Current.FindResource("Accent"),
+            StrokeThickness = 3,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 4, ShadowDepth = 0, Opacity = 0.7 }
+        };
+        return new Canvas { Width = w, Height = h, Children = { marks } };
     }
 
     private void OpenLink(Uri uri)
