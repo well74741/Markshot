@@ -106,6 +106,8 @@ public partial class SettingsWindow : Window
         AddHandler(System.Windows.Controls.Primitives.RangeBase.ValueChangedEvent, new RoutedPropertyChangedEventHandler<double>((s, e) => OnSettingEdited(s, e)));
         AddHandler(PasswordBox.PasswordChangedEvent, new RoutedEventHandler(OnSettingEdited));
         Closing += OnClosingAsk;
+        PreviewKeyDown += OnEscape;
+        Activated += (_, _) => _activatedAt = Environment.TickCount64;
         _ready = true;
     }
 
@@ -155,6 +157,25 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        if (_closingNow)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        _closingNow = true;
+        try
+        {
+            AskBeforeClosing(e);
+        }
+        finally
+        {
+            _closingNow = false;
+        }
+    }
+
+    private void AskBeforeClosing(System.ComponentModel.CancelEventArgs e)
+    {
         var answer = AskOverride?.Invoke() ?? AskAll?.Invoke() ??
                      ThemedMessage.Show(this, "设置未保存", "修改的设置还没有保存，关闭后不会生效。要保存吗？", "保存", "不保存", "取消");
         if (answer == 0)
@@ -945,7 +966,83 @@ public partial class SettingsWindow : Window
     /// <summary>The footer line (tests).</summary>
     public string StatusLine => StatusText.Text;
 
-    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
+    private void Cancel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_closingNow)
+        {
+            return; // already closing (its question is open): a second Close threw
+        }
+
+        Close();
+    }
+
+    private bool _closingNow;
+    private long _activatedAt;
+
+    /// <summary>
+    /// Esc closes the window only when it was pressed here: not held / repeated, and not right after the window came to
+    /// the front — the Esc that ended a capture (or the question box) went on to the settings behind it and closed them.
+    /// </summary>
+    private void OnEscape(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || Keyboard.FocusedElement is TextBox { Name: var name } && name.EndsWith("HotkeyBox", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        if (e.IsRepeat || _closingNow || Environment.TickCount64 - _activatedAt < 400)
+        {
+            return;
+        }
+
+        Close();
+    }
+
+    /// <summary>恢复默认设置: every setting back to its default (the translation key is kept); asked first.</summary>
+    private void ResetDefaults_Click(object sender, RoutedEventArgs e)
+    {
+        var answer = ResetAnswer?.Invoke() ??
+                     ThemedMessage.Show(this, "恢复默认设置", "所有设置（快捷键、工具栏、样式、悬浮按钮等）都恢复为默认值，翻译 API Key 保留。确定恢复？", "恢复默认", "取消");
+        if (answer != 0)
+        {
+            return;
+        }
+
+        var fresh = new AppConfig();
+        fresh.Translation.ApiKey = _config.Translation.ApiKey;
+        fresh.Translation.BaseUrl = _config.Translation.BaseUrl;
+        fresh.Translation.Model = _config.Translation.Model;
+        fresh.LastVersion = _config.LastVersion;
+        fresh.RecentRegions = _config.RecentRegions;
+        foreach (var property in typeof(AppConfig).GetProperties())
+        {
+            if (property.CanRead && property.CanWrite && property.GetIndexParameters().Length == 0 &&
+                property.Name is not ("LegacySensitivity" or "DetectRangeStored"))
+            {
+                property.SetValue(_config, property.GetValue(fresh));
+            }
+        }
+
+        _config.UiSizeVersion = 2;
+        _config.Save(); // kept whatever happens next
+        FloatIcon.CleanUp(_config);
+        _dirty = false;
+        _asked = true;
+        Saved = true;
+        SavedChanges?.Invoke(); // saved and applied (hotkeys, the floating button, pins' shadows …)
+        RunningApp?.ApplyFloatButton();
+        RunningApp?.RefreshFloatLook();
+        RunningApp?.ApplyOpenWith();
+        ResetDone?.Invoke(); // the app opens the settings again with the defaults shown
+        Close();
+    }
+
+    /// <summary>Tests: the answer to 恢复默认设置's question.</summary>
+    internal Func<int>? ResetAnswer;
+
+    /// <summary>恢复默认设置 is done (the app reopens the window).</summary>
+    public event Action? ResetDone;
 
     /// <summary>True when the window was closed with “保存”.</summary>
     public bool Saved { get; private set; }

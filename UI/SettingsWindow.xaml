@@ -878,7 +878,9 @@
         <Border Grid.Column="1" Grid.Row="1" BorderBrush="{DynamicResource T_14FFFFFF}" BorderThickness="0,1,0,0" Padding="24,12,20,14">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button Content="关闭" ToolTip="关闭设置（没保存的修改不生效）" Style="{StaticResource FooterButton}" Click="Cancel_Click" IsCancel="True" />
+                    <Button x:Name="ResetDefaultsButton" Content="恢复默认设置" ToolTip="所有设置恢复为默认值（翻译 API Key 保留）"
+                            Style="{StaticResource FooterButton}" Click="ResetDefaults_Click" Margin="0,0,8,0" />
+                    <Button Content="关闭" ToolTip="关闭设置（没保存的修改会询问）" Style="{StaticResource FooterButton}" Click="Cancel_Click" />
                     <Button Content="保存" Style="{StaticResource PrimaryButton}" Click="Save_Click" Margin="8,0,0,0"
                             IsDefault="True" />
                 </StackPanel>

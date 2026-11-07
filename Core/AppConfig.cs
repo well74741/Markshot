@@ -260,7 +260,7 @@ public sealed class AppConfig
     public int FloatButtonY { get; set; } = int.MinValue;
 
     /// <summary>The floating button's row: Capture (截屏), Record (录屏), Ocr (文字识别), Editor (图片编辑器).</summary>
-    public string FloatActionOrder { get; set; } = "Capture,Record,Ocr,Editor,History";
+    public string FloatActionOrder { get; set; } = "Capture,Record,Ocr,Editor,History,AddPin";
 
     public string FloatActionHidden { get; set; } = "";
 

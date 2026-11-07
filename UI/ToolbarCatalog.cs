@@ -36,6 +36,7 @@ internal static class ToolbarCatalog
         "Editor" => "图片编辑器",
         "Capture" => "截屏",
         "History" => "贴图历史",
+        "AddPin" => "添加贴图",
         _ => key
     };
 
@@ -66,6 +67,7 @@ internal static class ToolbarCatalog
             "Editor" => "IconEditMask",
             "Capture" => "IconCaptureMask",
             "History" => "IconHistoryMask",
+            "AddPin" => "IconAddImageMask",
             _ => "IconTranslateMask"
         };
         return new Border { Style = (Style)Application.Current.FindResource(mask) };

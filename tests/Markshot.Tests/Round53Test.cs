@@ -145,7 +145,7 @@ static class Round53Test
             Check(settings.FindName("FloatCard") is Border && settings.FindName("FloatEnabledCheck") is CheckBox && settings.FindName("FloatOpacitySlider") is Slider,
                 "样式 has the floating button's settings");
             var row = (Panel)settings.FindName("FloatActionsRow");
-            Check(row.Children.Count == 5, "the floating button's row: 截屏, 录屏, 文字识别, 图片编辑器, 贴图历史");
+            Check(row.Children.Count == 6, "the floating button's row: 截屏, 录屏, 文字识别, 图片编辑器, 贴图历史");
             var gif = MakeGif(Path.Combine(dir, "spin.gif"));
             Check((bool)Call(settings, "UseFloatIcon", gif)! && FloatIcon.IsCustom(config) && File.Exists(FloatIcon.CustomPath(config)!), "a picture file becomes the icon (copied beside the settings)");
             var preview = (Image)settings.FindName("FloatIconImage");
@@ -189,7 +189,7 @@ static class Round53Test
             Check(floatSource.Contains("DwmFlush();"), "the floating button is off the screen before a screenshot is taken");
             Check(button.Center.X <= work.Right && button.Center.Y <= work.Bottom && button.PanelOnLeft, "on the right of the screen, the row opens to the left");
             GetWindowRect(handle, out var before);
-            Check(button.ShownActions.SequenceEqual(new[] { "Capture", "Record", "Ocr", "Editor", "History" }), "the row: 截屏, 录屏, 文字识别, 图片编辑器");
+            Check(button.ShownActions.SequenceEqual(new[] { "Capture", "Record", "Ocr", "Editor", "History", "AddPin" }), "the row: 截屏, 录屏, 文字识别, 图片编辑器");
             Call(button, "Hover", true);
             Pump(150);
             Check(button.IsExpanded, "the pointer on it opens the row at once");
@@ -203,14 +203,14 @@ static class Round53Test
             config.FloatActionHidden = "Record";
             config.FloatActionOrder = "Editor,Capture,Ocr,Record";
             button.BuildItems();
-            Check(button.ShownActions.SequenceEqual(new[] { "Editor", "History", "Capture", "Ocr" }), "the row follows the settings (order, hidden ones out)");
+            Check(button.ShownActions.SequenceEqual(new[] { "Editor", "History", "AddPin", "Capture", "Ocr" }), "the row follows the settings (order, hidden ones out)");
             Call(button, "DragBy", 100000.0, 100000.0);
             Pump(100);
             var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)button.Center.X, (int)button.Center.Y)).WorkingArea;
             Check(button.Center.X < screen.Right && button.Center.Y < screen.Bottom && config.FloatButtonX == (int)Math.Round(button.Center.X),
                 "dropped beyond the edge it stays on a screen (and the place is remembered)");
             var headers = (IReadOnlyList<string>)Call(button, "MenuHeaders")!;
-            Check(headers.SequenceEqual(new[] { "设置…", "全屏时自动隐藏", "关闭悬浮按钮" }), "the right-click menu: 设置, 全屏时自动隐藏, 关闭");
+            Check(headers.SequenceEqual(new[] { "添加贴图…", "粘贴剪贴板", "关闭所有贴图", "设置…", "全屏时自动隐藏", "关闭悬浮按钮" }), "the right-click menu: 设置, 全屏时自动隐藏, 关闭");
             button.FullscreenOverride = () => true;
             button.CheckFullscreen();
             Pump(300); // after its fade

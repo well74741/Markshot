@@ -21,7 +21,7 @@ public sealed class FloatButtonWindow : Window
     private const double ItemSize = 34;
     private const double Gap = 8;
 
-    public static readonly string[] Actions = { "Capture", "Record", "Ocr", "Editor", "History" };
+    public static readonly string[] Actions = { "Capture", "Record", "Ocr", "Editor", "History", "AddPin" };
 
     private readonly AppConfig _config;
     private readonly Action<string> _run;
@@ -256,6 +256,7 @@ public sealed class FloatButtonWindow : Window
         "Ocr" => "文字识别",
         "Editor" => "图片编辑器",
         "History" => "贴图历史",
+        "AddPin" => "添加贴图",
         _ => key
     };
 
@@ -265,6 +266,7 @@ public sealed class FloatButtonWindow : Window
         "Record" => "IconRecordMask",
         "Ocr" => "IconOcrMask",
         "History" => "IconHistoryMask",
+        "AddPin" => "IconAddImageMask",
         _ => "IconEditMask"
     };
 
@@ -742,6 +744,17 @@ public sealed class FloatButtonWindow : Window
     private ContextMenu BuildMenu()
     {
         var menu = new ContextMenu();
+        void Add(string header, string key)
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += (_, _) => Run(key);
+            menu.Items.Add(item);
+        }
+
+        Add("添加贴图…", "AddPin");
+        Add("粘贴剪贴板", "PasteClipboard");
+        Add("关闭所有贴图", "CloseAllPins");
+        menu.Items.Add(new Separator());
         var settings = new MenuItem { Header = "设置…" };
         settings.Click += (_, _) => _openSettings();
         menu.Items.Add(settings);

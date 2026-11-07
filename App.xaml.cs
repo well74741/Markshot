@@ -293,6 +293,15 @@ public partial class App : Application
             case "History":
                 ShowPinHistory();
                 break;
+            case "AddPin":
+                PinFromFiles();
+                break;
+            case "PasteClipboard":
+                PinFromClipboard();
+                break;
+            case "CloseAllPins":
+                CloseAllPins();
+                break;
             default:
                 StartCapture();
                 break;
@@ -596,6 +605,25 @@ public partial class App : Application
     }
 
     /// <summary>A picture file for a pin: a GIF / WebP / APNG that moves plays; null when it does not open.</summary>
+    /// <summary>添加贴图: pictures (moving ones too) chosen in a file dialog, pinned in the middle of the screen.</summary>
+    public void PinFromFiles()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "添加贴图", Filter = ImageFile.OpenFilter, Multiselect = true };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var index = 0;
+        foreach (var file in dialog.FileNames.Take(20))
+        {
+            if (PinFile(file, index++ % 8) == null)
+            {
+                _tray?.ShowBalloon("无法贴图", System.IO.Path.GetFileName(file) + " 不是能打开的图片");
+            }
+        }
+    }
+
     public PinWindow? PinFile(string path, int offset = 0)
     {
         var moving = AnimatedImage.Load(path, maxSide: 2400);
@@ -845,9 +873,16 @@ public partial class App : Application
                 ApplyHotkeys();
             }
         };
+        var reopen = false;
+        _settings.ResetDone += () => reopen = true;
         _settings.Closed += (_, _) =>
         {
             _settings = null;
+            if (reopen && !_shuttingDown)
+            {
+                Dispatcher.BeginInvoke(() => ShowSettings(page), DispatcherPriority.Background); // the defaults shown
+            }
+
             PreviewPinShadow(null); // drop an unsaved preview
             // Back to the saved look (the 样式 page previews at once).
             Theme.Apply(Config.Theme);

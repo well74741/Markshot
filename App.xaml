@@ -411,6 +411,11 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/refresh.png" /></Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="IconAddImageMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/add_image.png" /></Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="IconHistoryMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/history.png" /></Setter.Value>

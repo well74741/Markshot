@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.56`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.57`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,17 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.57 0.8.57 变更
+
+- 连续按 F1 时右下角报错（诊断日志：`SettingsWindow.Cancel_Click` → `InvalidOperationException` 在窗口关闭期间调用 Close）：
+  设置窗口开着时，截图里的 Esc（或按住不放的 Esc）落到设置窗口上，「关闭」按钮是 IsCancel，Esc = 关闭；有未保存修改时关闭会弹询问，
+  询问期间又一个 Esc 再次 Close → 异常。现在：关闭按钮不再 IsCancel，Esc 由 `OnEscape` 处理（重复按键、窗口刚激活 400 ms 内、关闭中都忽略）；
+  `OnClosingAsk` 防重入（`_closingNow`），`Cancel_Click` 关闭中直接返回。
+- 设置底部「恢复默认设置」：确认后用 `new AppConfig()` 的值覆盖所有属性（保留翻译 Key / 地址 / 模型、LastVersion、最近区域），立即保存应用，
+  关闭窗口后 App 重新打开（`ResetDone`）显示默认值。
+- 悬浮按钮：浮窗加 `AddPin`（添加贴图，图标库「添加图片.png」→ `add_image.png`，`App.PinFromFiles` 多选，动图照常播放）；
+  右键菜单前三项 添加贴图… / 粘贴剪贴板（`PinFromClipboard`）/ 关闭所有贴图（`CloseAllPins`）。
 
 ## 8.1.56 0.8.56 变更
 

@@ -7,6 +7,11 @@ public static class ReleaseNotes
 {
     public static readonly (string Version, string[] Lines)[] All =
     {
+        ("0.8.57", new[]
+        {
+            "悬浮按钮：添加贴图（图片、动图）；右键菜单加 粘贴剪贴板、关闭所有贴图",
+            "设置窗口：恢复默认设置；修复连续按 F1 时右下角弹出的错误",
+        }),
         ("0.8.56", new[]
         {
             "动图贴图旋转、翻转后照常播放（动图只贴图，不进入批注）",
