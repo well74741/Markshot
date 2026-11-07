@@ -287,7 +287,7 @@ public partial class OverlayWindow
             }
             else if (Motion.IsHiding(Toolbar))
             {
-                Motion.PopIn(Toolbar);
+                Motion.PopIn(Toolbar, duration: Motion.Bar);
             }
 
             return;
@@ -295,7 +295,7 @@ public partial class OverlayWindow
 
         if (Toolbar.Visibility == Visibility.Visible && !Motion.IsHiding(Toolbar))
         {
-            Motion.PopOut(Toolbar);
+            Motion.PopOut(Toolbar, duration: Motion.Bar);
         }
     }
 

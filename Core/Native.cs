@@ -4,6 +4,21 @@ namespace Markshot.Core;
 
 internal static class Native
 {
+    /// <summary>
+    /// A window as big as the screen makes Explorer treat it as a full-screen program: the taskbar drops behind it and
+    /// comes back (repainting the clock / tray, a visible flash) when it closes. This property opts the window out.
+    /// </summary>
+    public static void NotFullscreenApp(IntPtr window)
+    {
+        if (window != IntPtr.Zero)
+        {
+            SetProp(window, "NonRudeHWND", new IntPtr(1));
+        }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool SetProp(IntPtr window, string name, IntPtr data);
+
     public const int SM_XVIRTUALSCREEN = 76;
     public const int SM_YVIRTUALSCREEN = 77;
     public const int SM_CXVIRTUALSCREEN = 78;

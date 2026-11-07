@@ -502,8 +502,15 @@ public partial class AnnotationToolbar : UserControl
         UndoButton.IsEnabled = canUndo;
     }
 
+    /// <summary>The inner shade is clipped to the bar's rounded outline.</summary>
+    private void ClipBarShade()
+    {
+        BarShadeClip.Clip = new RectangleGeometry(new Rect(0, 0, BarShadeClip.ActualWidth, BarShadeClip.ActualHeight), 9, 9);
+    }
+
     private void InitPalette()
     {
+        BarShadeClip.SizeChanged += (_, _) => ClipBarShade();
         foreach (var color in Palette)
         {
             var swatch = new System.Windows.Shapes.Ellipse
@@ -1107,7 +1114,8 @@ public partial class AnnotationToolbar : UserControl
             {
                 tool.MouseEnter += (_, _) =>
                 {
-                    if (HideChevrons && !(ReferenceEquals(_hoverAnchor, tool) && IsHoverMenuOpen) && !ReferenceEquals(_hoverSuppressed, tool))
+                    if (HideChevrons && !(ReferenceEquals(_hoverAnchor, tool) && IsHoverMenuOpen) && !ReferenceEquals(_hoverSuppressed, tool) &&
+                        !(tool is ToggleButton { IsChecked: true } && SettingsHost.IsOpen))
                     {
                         OpenHoverMenu(tool); // at once
                     }

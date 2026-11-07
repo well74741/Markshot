@@ -29,6 +29,9 @@ public sealed class StandardEase : EasingFunctionBase
 public static class Motion
 {
     public static readonly Duration Fast = new(TimeSpan.FromMilliseconds(160));
+
+    /// <summary>The annotation bar showing / hiding (snappier than other pop-ins).</summary>
+    public static readonly Duration Bar = new(TimeSpan.FromMilliseconds(100));
     public static readonly Duration Base = new(TimeSpan.FromMilliseconds(240));
     public static readonly Duration Slow = new(TimeSpan.FromMilliseconds(320));
     public static readonly Duration Slide = new(TimeSpan.FromMilliseconds(220));
@@ -116,8 +119,9 @@ public static class Motion
     /// Shows an element with the pop-in: opacity 0→1, offset ±6 DIP→0, scale 0.97→1 (160 ms).
     /// <paramref name="fromAbove"/> = it drops down from above (menus, bars under an anchor).
     /// </summary>
-    public static void PopIn(FrameworkElement element, bool fromAbove = true)
+    public static void PopIn(FrameworkElement element, bool fromAbove = true, Duration? duration = null)
     {
+        var length = duration ?? Fast;
         element.SetValue(HideTokenProperty, null);
         element.Visibility = Visibility.Visible;
         var (scale, translate) = EnsureTransforms(element);
@@ -125,16 +129,17 @@ public static class Motion
         var startOffset = startOpacity > 0 ? translate.Y : (fromAbove ? -PopOffset : PopOffset);
         var startScale = startOpacity > 0 ? scale.ScaleX : PopScale;
 
-        element.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(startOpacity, 1, Fast) { EasingFunction = Ease });
-        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(startOffset, 0, Fast) { EasingFunction = Ease });
-        var scaleAnimation = new DoubleAnimation(startScale, 1, Fast) { EasingFunction = Ease };
+        element.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(startOpacity, 1, length) { EasingFunction = Ease });
+        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(startOffset, 0, length) { EasingFunction = Ease });
+        var scaleAnimation = new DoubleAnimation(startScale, 1, length) { EasingFunction = Ease };
         scale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleAnimation);
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleAnimation);
     }
 
     /// <summary>Plays the pop-out, then collapses the element (unless it was shown again meanwhile).</summary>
-    public static void PopOut(FrameworkElement element, bool towardsAbove = true, Action? completed = null)
+    public static void PopOut(FrameworkElement element, bool towardsAbove = true, Action? completed = null, Duration? duration = null)
     {
+        var length = duration ?? Fast;
         if (element.Visibility != Visibility.Visible || !element.IsLoaded)
         {
             element.Visibility = Visibility.Collapsed;
@@ -145,7 +150,7 @@ public static class Motion
         var token = new object();
         element.SetValue(HideTokenProperty, token);
         var (scale, translate) = EnsureTransforms(element);
-        var opacity = new DoubleAnimation(0, Fast) { EasingFunction = Ease };
+        var opacity = new DoubleAnimation(0, length) { EasingFunction = Ease };
         opacity.Completed += (_, _) =>
         {
             if (!ReferenceEquals(element.GetValue(HideTokenProperty), token))
@@ -160,8 +165,8 @@ public static class Motion
         };
         element.BeginAnimation(UIElement.OpacityProperty, opacity);
         translate.BeginAnimation(TranslateTransform.YProperty,
-            new DoubleAnimation(towardsAbove ? -PopOffset : PopOffset, Fast) { EasingFunction = Ease });
-        var scaleAnimation = new DoubleAnimation(PopScale, Fast) { EasingFunction = Ease };
+            new DoubleAnimation(towardsAbove ? -PopOffset : PopOffset, length) { EasingFunction = Ease });
+        var scaleAnimation = new DoubleAnimation(PopScale, length) { EasingFunction = Ease };
         scale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleAnimation);
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleAnimation);
     }
@@ -202,14 +207,14 @@ public static class Motion
     }
 
     /// <summary>Pops the element in every time it becomes visible (visibility itself stays instant, so layout never waits).</summary>
-    public static void PopOnShow(FrameworkElement element, bool fromAbove = true)
+    public static void PopOnShow(FrameworkElement element, bool fromAbove = true, Duration? duration = null)
     {
         element.IsVisibleChanged += (_, e) =>
         {
             if ((bool)e.NewValue)
             {
                 element.Opacity = 0;
-                PopIn(element, fromAbove);
+                PopIn(element, fromAbove, duration);
             }
         };
     }

@@ -32,6 +32,7 @@ internal sealed class RecordDimWindow : Window
         SourceInitialized += (_, _) =>
         {
             var handle = new WindowInteropHelper(this).Handle;
+            Native.NotFullscreenApp(handle); // covers the screens: not a full-screen program for the taskbar
             var style = GetWindowLong(handle, Native.GWL_EXSTYLE);
             SetWindowLong(handle, Native.GWL_EXSTYLE, style | WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW | Native.WS_EX_TRANSPARENT);
             Native.SetWindowPos(handle, Native.HWND_TOPMOST, union.X, union.Y, union.Width, union.Height, Native.SWP_NOACTIVATE);

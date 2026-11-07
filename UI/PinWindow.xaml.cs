@@ -175,7 +175,7 @@ public partial class PinWindow : Window
 
         _eyedropper = new PenEyedropper(Editor, point => PenEyedropper.Sample(EyedropSource, point));
 
-        Motion.PopOnShow(Toolbar, fromAbove: true);
+        Motion.PopOnShow(Toolbar, fromAbove: true, duration: Motion.Bar);
         Motion.FadeOnShow(PinStatus);
         SourceInitialized += (_, _) =>
         {

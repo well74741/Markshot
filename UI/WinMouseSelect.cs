@@ -38,34 +38,118 @@ public sealed class WinMouseSelect
 
     public bool IsRunning => _hook != IntPtr.Zero;
 
+    // The hooks live on a thread of their own with its own message loop: every mouse move and key press in the whole
+    // system waits for a low-level hook, so on the UI thread (busy now and then: an animation, a layout) the pointer
+    // stalled — "the mouse is held until the toolbar has opened".
+    private Thread? _thread;
+    private uint _threadId;
+
     public void Start()
     {
-        if (_hook == IntPtr.Zero)
+        if (_thread != null)
         {
+            return;
+        }
+
+        using var ready = new ManualResetEventSlim();
+        _thread = new Thread(() =>
+        {
+            _threadId = GetCurrentThreadId();
             _hook = SetWindowsHookEx(WhMouseLl, _proc, GetModuleHandle(null), 0);
+            ready.Set();
             if (_hook == IntPtr.Zero)
             {
                 Log.Error("Win + 鼠标：无法安装鼠标钩子");
+                return;
             }
-        }
+
+            while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                if (msg.Message == WmInstallKeyHook)
+                {
+                    if (_keyHook == IntPtr.Zero)
+                    {
+                        _keyHook = SetWindowsHookEx(WhKeyboardLl, _keyProc, GetModuleHandle(null), 0);
+                    }
+
+                    continue;
+                }
+
+                if (msg.Message == WmRemoveKeyHook)
+                {
+                    if (_keyHook != IntPtr.Zero)
+                    {
+                        UnhookWindowsHookEx(_keyHook);
+                        _keyHook = IntPtr.Zero;
+                    }
+
+                    continue;
+                }
+
+                TranslateMessage(ref msg);
+                DispatchMessage(ref msg);
+            }
+
+            if (_keyHook != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_keyHook);
+                _keyHook = IntPtr.Zero;
+            }
+
+            UnhookWindowsHookEx(_hook);
+            _hook = IntPtr.Zero;
+        })
+        { IsBackground = true, Name = "Markshot Win + mouse" };
+        _thread.Start();
+        ready.Wait(2000);
     }
 
     public void Stop()
     {
-        if (_hook != IntPtr.Zero)
+        if (_thread != null)
         {
-            UnhookWindowsHookEx(_hook);
-            _hook = IntPtr.Zero;
+            PostThreadMessage(_threadId, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+            _thread.Join(1000);
+            _thread = null;
         }
 
-        if (_keyHook != IntPtr.Zero)
-        {
-            UnhookWindowsHookEx(_keyHook);
-            _keyHook = IntPtr.Zero;
-        }
-
-        Cancel();
+        Application.Current?.Dispatcher.Invoke(Cancel);
     }
+
+    private const int WmInstallKeyHook = 0x0400 + 1; // WM_USER + n: handled by the hook thread's loop
+    private const int WmRemoveKeyHook = 0x0400 + 2;
+
+    /// <summary>The keyboard hook (Space, the masked Win release) is installed / removed on the hook thread.</summary>
+    private void InstallKeyHook() => PostThreadMessage(_threadId, WmInstallKeyHook, IntPtr.Zero, IntPtr.Zero);
+
+    private void RemoveKeyHook() => PostThreadMessage(_threadId, WmRemoveKeyHook, IntPtr.Zero, IntPtr.Zero);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Msg
+    {
+        public IntPtr Hwnd;
+        public int Message;
+        public IntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern int GetMessage(out Msg msg, IntPtr hwnd, uint min, uint max);
+
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref Msg msg);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref Msg msg);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostThreadMessage(uint thread, int message, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
 
     private IntPtr Hook(int code, IntPtr wParam, IntPtr lParam)
     {
@@ -105,6 +189,7 @@ public sealed class WinMouseSelect
         {
             _button = pressed;
             _start = _end = point;
+            _spaceHeld = false;
             SuppressStartMenu();
             Application.Current?.Dispatcher.BeginInvoke(ShowFrame);
             return true;
@@ -117,7 +202,19 @@ public sealed class WinMouseSelect
 
         if (message == WmMouseMove)
         {
-            _end = point;
+            if (_spaceHeld)
+            {
+                // Space held (as in the capture): the whole area moves with the pointer.
+                var delta = point - _spaceAnchor;
+                _start += delta;
+                _end += delta;
+                _spaceAnchor = point;
+            }
+            else
+            {
+                _end = point;
+            }
+
             Application.Current?.Dispatcher.BeginInvoke(PlaceFrame);
             return false; // the pointer itself moves on
         }
@@ -125,10 +222,19 @@ public sealed class WinMouseSelect
         if (up == _button)
         {
             Tap(); // once more at the end: Win may have been held for a while
-            _end = point;
+            if (!_spaceHeld)
+            {
+                _end = point;
+            }
+
+            _spaceHeld = false;
             var button = _button.Value;
             var area = Area;
             _button = null;
+            if (!_swallowWin)
+            {
+                RemoveKeyHook(); // Win already released
+            }
             Application.Current?.Dispatcher.BeginInvoke(() =>
             {
                 HideFrame();
@@ -158,8 +264,63 @@ public sealed class WinMouseSelect
         }
     }
 
+    private bool _spaceHeld;
+    private Point _spaceAnchor;
+
+    /// <summary>Space while drawing (Win may already be released): down = the area follows the pointer, up = drawing goes on.</summary>
+    internal bool HandleSpace(bool down)
+    {
+        if (_button == null)
+        {
+            return false;
+        }
+
+        if (down && !_spaceHeld)
+        {
+            _spaceHeld = true;
+            GetCursorPos(out var p);
+            _spaceAnchor = new Point(p.X, p.Y);
+        }
+        else if (!down && _spaceHeld)
+        {
+            _spaceHeld = false;
+            GetCursorPos(out var p);
+            _spaceAnchor = new Point(p.X, p.Y);
+            _end = _spaceAnchor; // the far corner is under the pointer again
+        }
+
+        return true; // the program in front never gets the Space
+    }
+
+    /// <summary>For tests: Space held at a pointer position.</summary>
+    internal void SpaceAt(bool down, Point pointer)
+    {
+        if (_button == null)
+        {
+            return;
+        }
+
+        _spaceHeld = down;
+        _spaceAnchor = pointer;
+        if (!down)
+        {
+            _end = pointer;
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out NativePoint point);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
     private void Cancel()
     {
+        _spaceHeld = false;
         _button = null;
         HideFrame();
     }
@@ -231,10 +392,7 @@ public sealed class WinMouseSelect
     {
         _swallowWin = true;
         Tap();
-        if (_keyHook == IntPtr.Zero)
-        {
-            _keyHook = SetWindowsHookEx(WhKeyboardLl, _keyProc, GetModuleHandle(null), 0);
-        }
+        InstallKeyHook();
     }
 
     private static void Tap()
@@ -251,6 +409,16 @@ public sealed class WinMouseSelect
 
     private IntPtr KeyHook(int code, IntPtr wParam, IntPtr lParam)
     {
+        if (code >= 0 && _button != null)
+        {
+            var message = wParam.ToInt32();
+            var vk = Marshal.ReadInt32(lParam);
+            if (vk == 0x20 /* SPACE */ && HandleSpace(message is 0x0100 or 0x0104))
+            {
+                return new IntPtr(1);
+            }
+        }
+
         if (code >= 0 && _swallowWin)
         {
             var message = wParam.ToInt32();
@@ -262,9 +430,11 @@ public sealed class WinMouseSelect
                 _swallowWin = false;
                 Tap();
                 keybd_event((byte)vk, 0, 2 /* KEYUP */ | 1 /* EXTENDED */, UIntPtr.Zero);
-                var hook = _keyHook;
-                _keyHook = IntPtr.Zero;
-                Application.Current?.Dispatcher.BeginInvoke(() => UnhookWindowsHookEx(hook));
+                if (_button == null)
+                {
+                    RemoveKeyHook();
+                }
+
                 return new IntPtr(1);
             }
         }

@@ -591,12 +591,8 @@ public sealed class AnnotationEditor : FrameworkElement
 
         dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
 
-        // Two-tone dashes stay visible on light and dark screenshots.
-        dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)), 1.4 * unit), frame);
-        dc.DrawRectangle(null, new Pen(Accent, 1.4 * unit)
-        {
-            DashStyle = new DashStyle(new[] { 4.0, 3.0 }, 0)
-        }, frame);
+        // The same line as the hover preview (solid, 3 DIP); the selection only adds the handles and grips.
+        dc.DrawRectangle(null, new Pen(Accent, 3 * unit) { LineJoin = PenLineJoin.Miter }, frame);
 
         var handle = (editing ? 6 : 7) * unit;
         var handlePen = new Pen(Brushes.White, unit);

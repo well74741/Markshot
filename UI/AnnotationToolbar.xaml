@@ -4,7 +4,9 @@
              xmlns:core="clr-namespace:Markshot.Core"
              Focusable="False">
 
-    <Border Background="{DynamicResource T_F21E1E1E}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" CornerRadius="9" Padding="5,3">
+    <!-- No outline (it looked flat); a narrow inner shade along the edge gives the bar some depth. -->
+    <Grid>
+    <Border x:Name="BarPlate" Background="{DynamicResource T_F21E1E1E}" CornerRadius="9" Padding="5,3">
         <StackPanel>
             <StackPanel x:Name="MainRow" Orientation="Horizontal" VerticalAlignment="Center">
                 <Border x:Name="DragHandle" Width="20" Height="28" Background="Transparent"
@@ -392,4 +394,13 @@
             </core:SizeTransitionHost>
         </StackPanel>
     </Border>
+    <!-- The shade: a blurred line along the edge, clipped to the bar's rounded shape (so only its inner half shows). -->
+    <Grid x:Name="BarShadeClip" IsHitTestVisible="False">
+        <Border CornerRadius="9" BorderThickness="3" BorderBrush="#2E000000">
+            <Border.Effect>
+                <BlurEffect Radius="4" KernelType="Gaussian" />
+            </Border.Effect>
+        </Border>
+    </Grid>
+    </Grid>
 </UserControl>

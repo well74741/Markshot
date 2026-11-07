@@ -134,6 +134,7 @@ internal sealed class PinCrosshair
         _window.SourceInitialized += (_, _) =>
         {
             var handle = new WindowInteropHelper(_window).Handle;
+            Native.NotFullscreenApp(handle); // as big as the monitor: not a full-screen program for the taskbar
             var style = GetWindowLong(handle, Native.GWL_EXSTYLE);
             SetWindowLong(handle, Native.GWL_EXSTYLE, style | WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW | Native.WS_EX_TRANSPARENT);
         };

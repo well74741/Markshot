@@ -134,7 +134,7 @@ public sealed class SizeTransitionHost : Decorator
 
     private void OnFrame(object? sender, EventArgs e)
     {
-        var t = (DateTime.UtcNow - _start).TotalMilliseconds / Motion.Base.TimeSpan.TotalMilliseconds;
+        var t = (DateTime.UtcNow - _start).TotalMilliseconds / 150.0; // quicker than Motion.Base: the bar is a tool
         if (t >= 1)
         {
             _progress = 1;

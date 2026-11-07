@@ -401,7 +401,7 @@ public partial class PinWindow
         Toolbar.SetSelection(null);
         if (Motion.IsHiding(Toolbar))
         {
-            Motion.PopIn(Toolbar); // still fading out: turn around from where it is
+            Motion.PopIn(Toolbar, duration: Motion.Bar); // still fading out: turn around from where it is
         }
 
         Toolbar.Visibility = Visibility.Visible;
@@ -463,7 +463,7 @@ public partial class PinWindow
         Editor.Selected = null;
         Editor.Visibility = Visibility.Collapsed;
         InputLayer.Visibility = Visibility.Collapsed;
-        Motion.PopOut(Toolbar, completed: () =>
+        Motion.PopOut(Toolbar, duration: Motion.Bar, completed: () =>
         {
             if (!_editMode)
             {
@@ -1169,7 +1169,7 @@ public partial class PinWindow
             return;
         }
 
-        if (InputLayer.Cursor == Cursors.None)
+        if (InputLayer.Cursor == Cursors.None && _gesture?.Target is not NumberAnnotation)
         {
             InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale, _number);
         }
@@ -1196,7 +1196,7 @@ public partial class PinWindow
         {
             _gesture.Pressure = PenEyedropper.Pressure(e, InputLayer); // tablet pen: the width follows the pressure
             _gesture.Move(point, IsShiftDown, IsCtrlDown);
-            if (_gesture.Target is NumberAnnotation { Tail: not null } && InputLayer.Cursor != Cursors.None)
+            if (_gesture.Target is NumberAnnotation && InputLayer.Cursor != Cursors.None)
             {
                 InputLayer.Cursor = Cursors.None; // dragging out the arrow: its head is the pointer (a cursor would hide it)
             }

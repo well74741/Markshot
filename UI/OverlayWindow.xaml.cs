@@ -184,7 +184,7 @@ public partial class OverlayWindow : Window
     public OverlayWindow(BitmapSource screen, Int32Rect bounds, bool demo = false)
     {
         InitializeComponent();
-        Motion.PopOnShow(Toolbar);
+        Motion.PopOnShow(Toolbar, duration: Motion.Bar);
         // A click on the toolbar must not leave the keyboard focus somewhere that swallows Tab / Esc.
         Toolbar.PreviewMouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
         {
@@ -448,6 +448,7 @@ public partial class OverlayWindow : Window
         });
         var style = Native.GetWindowLongPtr(handle, Native.GWL_EXSTYLE).ToInt64();
         Native.SetWindowLongPtr(handle, Native.GWL_EXSTYLE, new IntPtr(style | 0x00000080));
+        Native.NotFullscreenApp(handle); // the taskbar stays as it is (no flash of the clock when the capture closes)
         ApplyPhysicalBounds();
     }
 

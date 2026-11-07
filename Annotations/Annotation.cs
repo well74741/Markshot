@@ -1311,7 +1311,7 @@ public sealed class NumberAnnotation : Annotation
     {
         var ink = new SolidColorBrush(Color);
         var outline = Outlined ? new Pen(Brushes.White, Math.Max(1.2, Radius * 0.1)) : null;
-        if (Tail is { } tail && (tail - Center).Length > Radius + 2)
+        if (Tail is { } tail && (tail - Center).Length > Radius * 1.3 + 8)
         {
             DrawTail(dc, ink, tail, outline);
         }
@@ -1351,7 +1351,7 @@ public sealed class NumberAnnotation : Annotation
     {
         var direction = tail - Center;
         direction.Normalize();
-        var from = Center + direction * Radius * 0.9;
+        var from = Center + direction * (Radius + Math.Max(3, Radius * 0.3)); // a little gap after the badge
         var width = Math.Max(2, Radius * 0.2);
         var head = Math.Max(8, width * 3.2);
         var shaftEnd = tail - direction * head * 0.8;

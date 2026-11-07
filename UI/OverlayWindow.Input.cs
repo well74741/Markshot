@@ -366,9 +366,9 @@ public partial class OverlayWindow
             return;
         }
 
-        if (InputLayer.Cursor == Cursors.None)
+        if (InputLayer.Cursor == Cursors.None && _gesture?.Target is not NumberAnnotation)
         {
-            UpdateCursorToPointer();
+            UpdateCursorToPointer(); // (dragging out a number's arrow keeps the pointer hidden: no flashing badge)
         }
 
         if (ShouldShowMagnifier(point))
@@ -411,7 +411,7 @@ public partial class OverlayWindow
         {
             _gesture.Pressure = PenEyedropper.Pressure(e, InputLayer); // tablet pen: the width follows the pressure
             _gesture.Move(point, IsShiftDown, IsCtrlDown);
-            if (_gesture.Target is NumberAnnotation { Tail: not null } && InputLayer.Cursor != Cursors.None)
+            if (_gesture.Target is NumberAnnotation && InputLayer.Cursor != Cursors.None)
             {
                 InputLayer.Cursor = Cursors.None; // dragging out the arrow: its head is the pointer (a cursor would hide it)
             }

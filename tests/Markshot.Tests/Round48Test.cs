@@ -319,12 +319,80 @@ static class Round48Test
         // 序号: dragging out the arrow shows the plain cross, not the badge over it
         {
             var source = System.IO.File.ReadAllText(Repo.File("UI/OverlayWindow.Input.cs")) + System.IO.File.ReadAllText(Repo.File("UI/PinWindow.Editing.cs"));
-            Check(System.Text.RegularExpressions.Regex.Matches(source, @"NumberAnnotation \{ Tail: not null \} && InputLayer.Cursor != Cursors.None").Count == 2,
+            Check(System.Text.RegularExpressions.Regex.Matches(source, @"_gesture.Target is NumberAnnotation && InputLayer.Cursor != Cursors.None").Count == 2 &&
+                  System.Text.RegularExpressions.Regex.Matches(source, @"InputLayer.Cursor == Cursors.None && _gesture\?.Target is not NumberAnnotation").Count == 2,
                 "序号 drag: no cursor over the arrow (its head is the pointer; capture and pins)");
+        }
+
+        // ==== 0.8.52
+        // Win + mouse: Space moves the whole area, releasing it draws on from there
+        {
+            var moved = new List<Int32Rect>();
+            var mover = new WinMouseSelect((_, r) => moved.Add(r));
+            var winField = typeof(WinMouseSelect).GetField("WinDown", BindingFlags.NonPublic | BindingFlags.Static)!;
+            var real = winField.GetValue(null);
+            winField.SetValue(null, new Func<bool>(() => true));
+            bool Msg(int m, int x, int y) => (bool)typeof(WinMouseSelect).GetMethod("Handle", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(mover, new object[] { m, new Point(x, y) })!;
+            void Space(bool down, int x, int y) => typeof(WinMouseSelect).GetMethod("SpaceAt", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(mover, new object[] { down, new Point(x, y) });
+            Msg(0x0201, -3900, -3900);       // Win + left down
+            Msg(0x0200, -3800, -3850);       // drawn to 100 × 50
+            Space(true, -3800, -3850);
+            Msg(0x0200, -3700, -3800);       // Space held: the area moves by (100, 50)
+            Space(false, -3700, -3800);
+            Msg(0x0200, -3650, -3780);       // drawing again: the far corner follows
+            Msg(0x0202, -3650, -3780);
+            for (var i = 0; i < 20 && moved.Count == 0; i++) Pump(50);
+            winField.SetValue(null, real);
+            Check(moved.Count == 1 && moved[0] == new Int32Rect(-3800, -3850, 150, 70), $"Win + mouse: Space moves the area, then drawing goes on ({(moved.Count > 0 ? moved[0].ToString() : "-")})");
+        }
+
+        // 序号: the arrow starts a little away from the badge
+        {
+            var badge = new NumberAnnotation { Center = new Point(40, 40), Radius = 16, Number = 1, Color = Color.FromRgb(255, 30, 30), Outlined = false, Tail = new Point(140, 40) };
+            var shot = Draw(badge, 160, 80);
+            Check(At(shot, 57, 40).R < 60 && At(shot, 75, 40).R > 200, "序号 arrow: a gap between the badge and the arrow");
+        }
+
+        // the selection frame: the hover preview's solid line (3 DIP), handles added
+        {
+            var source = System.IO.File.ReadAllText(Repo.File("Annotations/AnnotationEditor.cs"));
+            var frame = source[source.IndexOf("private void DrawFrame", StringComparison.Ordinal)..];
+            frame = frame[..frame.IndexOf("var handle =", StringComparison.Ordinal)];
+            Check(frame.Contains("new Pen(Accent, 3 * unit)") && !frame.Contains("DashStyle"), "selection frame: the same solid line as the hover preview");
+        }
+
+        // the clipboard is written in one short opening (a bitmap with alpha + PNG), not through WPF's flush
+        {
+            var bitmap = BitmapSource.Create(3, 2, 96, 96, PixelFormats.Bgra32, null, Enumerable.Range(0, 24).Select(i => (byte)(i * 10)).ToArray(), 12);
+            var dib = (byte[])typeof(ClipboardService).GetMethod("ToDib", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, new object[] { bitmap })!;
+            Check(BitConverter.ToInt32(dib, 0) == 124 && BitConverter.ToInt32(dib, 4) == 3 && BitConverter.ToInt32(dib, 8) == -2 && BitConverter.ToUInt32(dib, 52) == 0xFF000000 &&
+                  dib.Length == 124 + 24 && dib[124 + 23] == 230, "clipboard bitmap: a top-down 32-bit DIB with its alpha channel");
+            var copySource = System.IO.File.ReadAllText(Repo.File("Core/ClipboardService.cs"));
+            Check(!copySource.Contains("Clipboard.SetDataObject") && copySource.Contains("OpenClipboard"), "copying uses the raw clipboard (no OLE flush that kept it open)");
+        }
+
+        // full-screen windows are not taken for full-screen programs (the taskbar does not flash)
+        {
+            var overlay = new OverlayWindow(BitmapSource.Create(4, 4, 96, 96, PixelFormats.Bgra32, null, new byte[64], 16), new Int32Rect(-4000, -4000, 4, 4));
+            overlay.Show();
+            Pump(100);
+            var handle = new System.Windows.Interop.WindowInteropHelper(overlay).Handle;
+            Check(GetProp(handle, "NonRudeHWND") == new IntPtr(1), "the capture window is marked NonRudeHWND");
+            overlay.Close();
+        }
+
+        // the toolbar: no outline, a soft inner shade; the tool in use shows no style list on hover
+        {
+            var plainBar = new AnnotationToolbar();
+            var plate = (Border)plainBar.FindName("BarPlate");
+            Check(plate.BorderThickness == new Thickness(0) && plainBar.FindName("BarShadeClip") is Grid, "toolbar: no edge line, an inner shade instead");
         }
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern IntPtr GetProp(IntPtr window, string name);
 
     static System.Windows.Documents.Hyperlink? FindLink(DependencyObject root)
     {
