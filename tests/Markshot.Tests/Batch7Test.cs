@@ -96,6 +96,8 @@ static class Batch7Test
         var recording = new List<bool>();
         settings.RecordingHotkey += r => recording.Add(r);
         settings.Activate();
+        settings.ShowPage("Hotkeys"); // 样式 opens first since 0.8.53
+        Pump(50);
         ((TextBox)settings.FindName("CaptureHotkeyBox")).Focus();
         Pump(50);
         Keyboard.ClearFocus();

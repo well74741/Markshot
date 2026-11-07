@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.52`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.53`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,38 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.53 0.8.53 变更
+
+- 通知：`TrayService.ShowBalloon` 不再用 Windows 气泡（大卡片 + 提示音），改为 `UI/Toast.cs`：右下角（鼠标所在屏幕的工作区）一个小气泡，
+  主题色、`WS_EX_NOACTIVATE`、一次只一个（新的替换旧的），约 2～4.5 s 后自己收起，鼠标停在上面时不走，单击收起。
+- 设置不丢：
+  - `AppConfig.Load` 整体读不了时（某一项类型不对）不再回到全部默认值（下次保存会覆盖整个文件）：原文件另存 `config.broken-时间.json`，
+    再 `Salvage` 逐项读取，读不了的那一项用默认值。
+  - `LastVersion`：新版本第一次启动时把旧配置复制成 `config.before-update.json`，记下版本；不是首次安装时弹 `UI/WhatsNewWindow`（`ReleaseNotes.All` 里每版几句话，
+    从上次的版本之后的都列出；旧版没有 LastVersion 时只列当前版）。点窗外（也轮询全局鼠标，后台启动拿不到焦点时也能关）/ Esc 关闭。
+  - 主题、界面大小选了就保存（以前要点保存，关窗口或更新后就回去了——用户说的“升级后主题色被重置”多半是这个）；设置里点「更新」先执行一次保存。
+  - 测试：`AppConfig.PathOverride` 指向测试自己的临时 config（`tests/Markshot.Tests/Program.cs`），测试再也碰不到用户的配置。
+- 悬浮按钮 `UI/FloatButtonWindow.cs`（`FloatButtonEnabled` 等配置项，App 的 `ApplyFloatButton / RefreshFloatLook / SetFloatButton / FloatAction`）：
+  - 窗口大小固定（行的位置用 `Visibility.Hidden` 占着），展开不挪窗口；行开在屏幕中间那一侧（按钮在屏幕右半边就往左开）；展开 90 ms 横向拉开，离开立即隐藏；
+    展开时整行背景 #01 让间隙也算在里面。
+  - 拖动：自己算（物理像素 + `SetWindowPos`），松手 `Inside` 夹回所在屏幕工作区并记住中心点（`FloatButtonX/Y`）；显示器变化 / 启动时也夹回。
+  - 单击 = 截图（`Run("Capture")`）；行按钮 `ReorderBehavior` 长按排序（存 `FloatActionOrder`）；右键菜单 设置…（`ShowSettings("Float")` 滚到卡片）/ 全屏时自动隐藏 / 关闭。
+  - 截图前 `Suspend` 隐藏并 `DwmFlush` 两次再截屏：透明（layered）窗口不能用 `WDA_EXCLUDEFROMCAPTURE`（实测 SetWindowDisplayAffinity 返回错误 8）。
+  - 全屏隐藏：700 ms 查前台窗口是否盖满按钮所在显示器（排除自己进程、桌面、任务栏）。
+  - 阴影 = 贴图阴影设置（`DropShadowEffect`，透明度乘图标透明度）。
+  - 文字识别：`StartCapture(ocr: true)` → `OverlayWindow.OcrOnSelect`，选好区域（松开左键后）直接 `OcrAndClose`。
+  - 图标：`Core/AnimatedImage.cs`（SkiaSharp `SKCodec` 逐帧解码 GIF / WebP / APNG，按帧时长用 `ObjectAnimationUsingKeyFrames` 播放；0 / 10 ms 帧按 100 ms），
+    `FloatIcon` 把选的图片复制到配置目录（`float_icon_时间.扩展名`），粘贴的存 PNG；托盘图标用第一帧（`TrayService.SetIcon`）。
+  - 设置 → 样式「悬浮按钮」卡片：开关、全屏隐藏、浮窗按钮行（`FillToolbarRow` 复用，现在返回 ReorderBehavior）、预览框（拖入 / Ctrl+V / 选择图片 / 重置）、透明度；都是改了就保存。
+  - 托盘菜单：「悬浮按钮」（勾选）和开着时的「悬浮按钮回中」（鼠标所在屏幕中心）。
+- 批注：
+  - 选中一个元素时换到别的工具（不同类），工具栏先丢掉选中再配置，工具用自己的大小（以前选中序号再点画笔，画笔拿了序号的大小）。
+  - 拿着工具右键：截图里第一次右键 `SetTool(Select)`，贴图 / 编辑器里 `Toolbar.DeactivateTools()`；再右键才是 Esc / 右键菜单。
+  - 清空批注后序号计数回 1（贴图 `_number`，截图本来就有），序号光标同时变回 1。
+- 图标：录屏 = 图标库「录屏.png」（`screen_record.png`），文字识别 = 「识别文字.png」（`ocr.png`，原来用路径画的大一圈），检查更新按钮 = 「刷新.png」，
+  浮窗的截屏 = 「截屏.png」（`capture.png`）；都裁边后缩到 200 px 画布的 162 px，和其它图标一样大。
+- 设置导航：「样式」排第一并默认打开。
 
 ## 8.1.52 0.8.52 变更
 

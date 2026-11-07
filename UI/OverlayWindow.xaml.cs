@@ -166,6 +166,9 @@ public partial class OverlayWindow : Window
     /// <summary>Start with this area selected (screen pixels).</summary>
     public Int32Rect? InitialSelection { get; init; }
 
+    /// <summary>文字识别 from the floating button: once an area is chosen it is recognised (no toolbar step).</summary>
+    public bool OcrOnSelect { get; init; }
+
     /// <summary>For pins: the selection without annotations (translation included).</summary>
     public BitmapSource? PinBaseImage { get; private set; }
 
@@ -284,10 +287,18 @@ public partial class OverlayWindow : Window
             }
             else if (_rightReset)
             {
-                // A right click is an Esc: out at once, or a step back (the same setting).
                 _rightReset = false;
-                HandleEscape();
                 e.Handled = true;
+                if (_tool is not AnnotationTool.None and not AnnotationTool.Select)
+                {
+                    // With a tool in hand the first right click puts it down (选择, its settings row closes).
+                    SetTool(AnnotationTool.Select);
+                    UpdateCursorToPointer();
+                    return;
+                }
+
+                // Otherwise a right click is an Esc: out at once, or a step back (the same setting).
+                HandleEscape();
             }
         };
         PreviewMouseDown += (_, e) =>
@@ -326,6 +337,22 @@ public partial class OverlayWindow : Window
         Magnifier.Source = screen;
 
         InitToolbar();
+        PreviewMouseLeftButtonUp += (_, _) =>
+        {
+            if (!OcrOnSelect || _hasSelection)
+            {
+                return;
+            }
+
+            // After the release is handled: an area chosen by this click / drag goes to 识别文字 right away.
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (!_closed && !_finishing && _hasSelection)
+                {
+                    OcrAndClose();
+                }
+            }, DispatcherPriority.Input);
+        };
         ContextMenuOpening += (_, args) =>
         {
             if (_suppressContextMenu)

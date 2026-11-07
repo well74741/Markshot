@@ -239,22 +239,24 @@
                 <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
                     <TextBlock x:Name="VersionText" Foreground="{DynamicResource T_FF6E6E6E}" FontSize="11" VerticalAlignment="Center" />
                     <Button x:Name="CheckUpdateButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="4,0,0,0"
-                            Foreground="{DynamicResource T_FF8A8A8A}" FontSize="12" Content="↻" ToolTip="检查更新"
-                            Click="CheckUpdate_Click" VerticalAlignment="Center" />
+                            Foreground="{DynamicResource T_FF8A8A8A}" ToolTip="检查更新"
+                            Click="CheckUpdate_Click" VerticalAlignment="Center">
+                        <Border Style="{StaticResource IconRefreshMask}" Width="12" Height="12" Margin="0,2" />
+                    </Button>
                 </StackPanel>
                 <!-- Own line so it is never cut off by the narrow column. -->
                 <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButton}" MinWidth="0" Height="24"
                         Padding="10,0" FontSize="11.5" Margin="8,6,0,0" Visibility="Collapsed" HorizontalAlignment="Left"
                         Click="Update_Click" />
                 <Border Height="18" />
+                <RadioButton x:Name="NavStyle" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Style"
+                             Content="样式" IsChecked="True" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavHotkeys" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Hotkeys"
-                             Content="快捷键" IsChecked="True" Checked="Nav_Checked" />
+                             Content="快捷键" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavTranslate" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Translate"
                              Content="翻译" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavToolbar" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Toolbar"
                              Content="批注栏" Checked="Nav_Checked" />
-                <RadioButton x:Name="NavStyle" Style="{StaticResource NavItem}" GroupName="Nav" Tag="Style"
-                             Content="样式" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavGeneral" Style="{StaticResource NavItem}" GroupName="Nav" Tag="General"
                              Content="保存与识别" Checked="Nav_Checked" />
             </StackPanel>
@@ -300,7 +302,8 @@
         <Grid Grid.Column="1" Grid.Row="0">
 
             <!-- ===== Hotkeys ===== -->
-            <ScrollViewer x:Name="PageHotkeys" VerticalScrollBarVisibility="Auto" Padding="24,18,20,6">
+            <ScrollViewer x:Name="PageHotkeys" VerticalScrollBarVisibility="Auto" Padding="24,18,20,6"
+                          Visibility="Collapsed">
                 <StackPanel>
                     <TextBlock Text="快捷键" Style="{StaticResource PageTitle}" />
 
@@ -619,8 +622,7 @@
             </ScrollViewer>
 
             <!-- ===== Style ===== -->
-            <ScrollViewer x:Name="PageStyle" VerticalScrollBarVisibility="Auto" Padding="24,18,20,6"
-                          Visibility="Collapsed">
+            <ScrollViewer x:Name="PageStyle" VerticalScrollBarVisibility="Auto" Padding="24,18,20,6">
                 <StackPanel>
                     <TextBlock Text="样式" Style="{StaticResource PageTitle}" />
 
@@ -661,7 +663,59 @@
                                 </Border>
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="选择后立即预览，点“保存”后保留。浅色：所有界面换成浅色；跟随系统：随 Windows 的应用主题切换。界面大小：中、大让按钮、文字等界面元素整体大一号、两号（设置窗口本身保持不变）。" />
+                                       Text="选择后立即生效并保存。浅色：所有界面换成浅色；跟随系统：随 Windows 的应用主题切换。界面大小：中、大让按钮、文字等界面元素整体大一号、两号（设置窗口本身保持不变）。" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="FloatCard" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="悬浮按钮" Style="{StaticResource CardTitle}" />
+                            <CheckBox x:Name="FloatEnabledCheck" Margin="84,0,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                      Content="显示悬浮按钮（单击截图，鼠标移上去展开更多）" Click="FloatEnabled_Click" />
+                            <CheckBox x:Name="FloatFullscreenCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                      Content="全屏程序（视频、游戏等）在前面时自动隐藏" Click="FloatFullscreen_Click" />
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="12" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="浮窗按钮" Style="{StaticResource RowLabel}" />
+                                <Border Grid.Column="1" Background="{DynamicResource T_FF1B1B1B}" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
+                                    <StackPanel x:Name="FloatActionsRow" Orientation="Horizontal" />
+                                </Border>
+                                <TextBlock Grid.Row="2" Text="图标" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,4,0,0" />
+                                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                    <!-- Preview: drop a picture here, or Ctrl+V a copied one. -->
+                                    <Border x:Name="FloatIconPreview" Width="76" Height="76" CornerRadius="8" AllowDrop="True" Focusable="True"
+                                            Background="{DynamicResource T_FF1B1B1B}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"
+                                            ToolTip="拖入图片或按 Ctrl+V 粘贴来替换" Cursor="Hand"
+                                            DragEnter="FloatIcon_DragOver" DragOver="FloatIcon_DragOver" Drop="FloatIcon_Drop"
+                                            MouseLeftButtonUp="FloatIconPreview_Click">
+                                        <Image x:Name="FloatIconImage" Width="46" Height="46" Stretch="Uniform"
+                                               RenderOptions.BitmapScalingMode="HighQuality" />
+                                    </Border>
+                                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="FloatIconPick" Style="{StaticResource FooterButton}" Content="选择图片…" Click="FloatIconPick_Click" />
+                                            <Button x:Name="FloatIconReset" Style="{StaticResource FooterButton}" Content="重置" Margin="8,0,0,0" Click="FloatIconReset_Click" />
+                                        </StackPanel>
+                                        <DockPanel Margin="0,10,0,0" Width="230" HorizontalAlignment="Left">
+                                            <TextBlock Text="透明度" DockPanel.Dock="Left" Style="{StaticResource RowLabel}" Margin="0,0,10,0" />
+                                            <TextBlock x:Name="FloatOpacityValue" DockPanel.Dock="Right" Width="38" TextAlignment="Right"
+                                                       Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
+                                            <Slider x:Name="FloatOpacitySlider" Minimum="20" Maximum="100" IsMoveToPointEnabled="True"
+                                                    VerticalAlignment="Center" ValueChanged="FloatOpacity_Changed" />
+                                        </DockPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
+                                       Text="浮窗按钮：单击开关，长按拖动排序（悬浮按钮上同样可长按排序）。图标可选 PNG / JPG / GIF / WebP 等，动图按原速播放；也可把图片拖到预览框，或复制后按 Ctrl+V。托盘图标跟着一起换，阴影与贴图阴影相同。" />
                         </StackPanel>
                     </Border>
 

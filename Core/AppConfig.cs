@@ -240,6 +240,31 @@ public sealed class AppConfig
 
     public List<CaptureRegion> RecentRegions { get; set; } = new();
 
+    /// <summary>The version that wrote this file last (empty before 0.8.53): an update shows what is new once.</summary>
+    public string LastVersion { get; set; } = "";
+
+    /// <summary>悬浮按钮: a round button on the desktop (click = capture, hover = a row of actions).</summary>
+    public bool FloatButtonEnabled { get; set; }
+
+    /// <summary>Where the floating button was left (physical screen pixels); int.MinValue = the default, bottom right.</summary>
+    public int FloatButtonX { get; set; } = int.MinValue;
+
+    public int FloatButtonY { get; set; } = int.MinValue;
+
+    /// <summary>The floating button's row: Capture (截屏), Record (录屏), Ocr (文字识别), Editor (图片编辑器).</summary>
+    public string FloatActionOrder { get; set; } = "Capture,Record,Ocr,Editor";
+
+    public string FloatActionHidden { get; set; } = "";
+
+    /// <summary>The floating button hides while a full-screen program (video, game) is in front.</summary>
+    public bool FloatHideFullscreen { get; set; } = true;
+
+    /// <summary>The floating button's own picture (a file in the config folder; empty = the Markshot logo). Also the tray icon.</summary>
+    public string FloatIcon { get; set; } = "";
+
+    /// <summary>The floating button's opacity (0.2–1).</summary>
+    public double FloatIconOpacity { get; set; } = 1;
+
     public void EnsureDefaults()
     {
         if (UiSizeVersion < 2)
@@ -298,10 +323,18 @@ public sealed class AppConfig
     public static string ConfigDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Markshot");
 
+    /// <summary>Tests point the config somewhere of their own (never the user's file).</summary>
+    public static string? PathOverride { get; set; }
+
     public static string ConfigPath
     {
         get
         {
+            if (PathOverride != null)
+            {
+                return PathOverride;
+            }
+
             if (File.Exists(PortableConfigPath))
             {
                 return PortableConfigPath;
@@ -342,13 +375,18 @@ public sealed class AppConfig
             Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Markshot");
     }
 
+    /// <summary>True when Load found a settings file (a first start has none).</summary>
+    public static bool LoadedExisting { get; private set; }
+
     public static AppConfig Load()
     {
+        string? json = null;
         try
         {
             if (File.Exists(ConfigPath))
             {
-                var json = File.ReadAllText(ConfigPath, Encoding.UTF8);
+                json = File.ReadAllText(ConfigPath, Encoding.UTF8);
+                LoadedExisting = true;
                 var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
                 if (config != null)
                 {
@@ -361,9 +399,79 @@ public sealed class AppConfig
         catch (Exception ex)
         {
             Log.Error("加载配置失败", ex);
+            if (json != null)
+            {
+                // Never start over from the defaults because one value does not read (it was saved over the
+                // whole file at the next save): keep a copy and take every setting that still reads.
+                try
+                {
+                    File.Copy(ConfigPath, Path.Combine(Path.GetDirectoryName(ConfigPath) ?? ".", $"config.broken-{DateTime.Now:yyyyMMdd-HHmmss}.json"), true);
+                }
+                catch (Exception copyError)
+                {
+                    Log.Error("备份配置失败", copyError);
+                }
+
+                var salvaged = Salvage(json);
+                salvaged.Translation ??= new TranslationConfig();
+                salvaged.EnsureDefaults();
+                return salvaged;
+            }
         }
 
         return new AppConfig();
+    }
+
+    /// <summary>A settings file that does not read as a whole: each setting on its own, the ones that fail keep their default.</summary>
+    public static AppConfig Salvage(string json)
+    {
+        var config = new AppConfig();
+        System.Text.Json.Nodes.JsonObject? root;
+        try
+        {
+            root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+        }
+        catch (JsonException)
+        {
+            return config;
+        }
+
+        if (root == null)
+        {
+            return config;
+        }
+
+        foreach (var property in typeof(AppConfig).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        {
+            if (!property.CanWrite || property.GetIndexParameters().Length > 0)
+            {
+                continue;
+            }
+
+            var ignore = (JsonIgnoreAttribute?)Attribute.GetCustomAttribute(property, typeof(JsonIgnoreAttribute));
+            if (ignore is { Condition: JsonIgnoreCondition.Always })
+            {
+                continue;
+            }
+
+            var name = ((JsonPropertyNameAttribute?)Attribute.GetCustomAttribute(property, typeof(JsonPropertyNameAttribute)))?.Name ?? property.Name;
+            var node = root.FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
+            if (node == null)
+            {
+                continue;
+            }
+
+            try
+            {
+                property.SetValue(config, node.Deserialize(property.PropertyType, JsonOptions));
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException or NotSupportedException or ArgumentException)
+            {
+                Log.Error($"配置项 {name} 无法读取，已用默认值");
+            }
+        }
+
+        return config;
     }
 
     public void Save()

@@ -186,7 +186,7 @@ static class Batch9Test
             hoverWin.Close();
 
             var ocrIcon = typeof(PinWindow).Assembly.GetType("Markshot.UI.ToolbarCatalog")!.GetMethod("Icon")!.Invoke(null, new object[] { "Ocr" });
-            Check(ocrIcon is Border { OpacityMask: DrawingBrush }, "文字识别's icon is a mask like the others (it shook as a stretched path while the bar popped in)");
+            Check(ocrIcon is Border { OpacityMask: ImageBrush }, "文字识别's icon is a mask like the others (it shook as a stretched path while the bar popped in)");
             var palette = (Color[])typeof(AnnotationToolbar).GetField("Palette", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
             var red = palette[0];
             var saturation = (Math.Max(red.R, Math.Max(red.G, red.B)) - Math.Min(red.R, Math.Min(red.G, red.B))) / (double)Math.Max(red.R, Math.Max(red.G, red.B));

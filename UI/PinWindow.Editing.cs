@@ -1355,6 +1355,16 @@ public partial class PinWindow
 
         if (_active == null && !_erasing)
         {
+            if (_tool is not AnnotationTool.None and not AnnotationTool.Select && e.LeftButton != MouseButtonState.Pressed)
+            {
+                // A right click with a tool in hand: put the tool down (选择, its settings row closes); the next
+                // right click opens the menu.
+                _textEditor.Commit();
+                Toolbar.DeactivateTools();
+                _suppressContextMenu = true;
+                e.Handled = true;
+            }
+
             return;
         }
 
@@ -2012,6 +2022,12 @@ public partial class PinWindow
         }
 
         Editor.Items.RemoveAll(item => item is not ImageAnnotation);
+        _number = 1; // 序号 start from 1 again
+        if (_tool == AnnotationTool.Number)
+        {
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, CursorScale, _number);
+        }
+
         ClearSelection();
         UpdateUndoButtons();
         Editor.InvalidateVisual();

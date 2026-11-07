@@ -70,6 +70,7 @@ public partial class SettingsWindow : Window
         FillToolbarRow(PinActionsRow, ToolbarCatalog.PinActions, config.PinActionOrder, config.PinActionHidden);
         FillToolbarRow(EditorToolsRow, ToolbarCatalog.Tools, config.EditorToolOrder, config.EditorToolHidden);
         FillToolbarRow(EditorActionsRow, ToolbarCatalog.EditorActions, config.EditorActionOrder, config.EditorActionHidden);
+        InitFloat();
         AskOpenFolderCheck.IsChecked = config.AskOpenFolderAfterSave;
         EscExitsCheck.IsChecked = config.EscExitsCapture;
         QuickDoubleClickCheck.IsChecked = config.QuickDoubleClickCopy;
@@ -91,6 +92,199 @@ public partial class SettingsWindow : Window
         {
             StatusText.Text = "提示：还没有填写翻译 API Key，原位翻译和文字翻译需要它（见“翻译”页）。";
         }
+
+        PreviewKeyDown += OnPreviewKeyDownFloat;
+        _ready = true;
+    }
+
+    private bool _ready; // the constructor has filled everything in: changes from here on are the user's
+    private int _saves;
+
+    // ---- 悬浮按钮: every change applies and is saved at once ----------------------------------
+
+    private void InitFloat()
+    {
+        FloatEnabledCheck.IsChecked = _config.FloatButtonEnabled;
+        FloatFullscreenCheck.IsChecked = _config.FloatHideFullscreen;
+        var reorder = FillToolbarRow(FloatActionsRow, FloatButtonWindow.Actions, _config.FloatActionOrder, _config.FloatActionHidden);
+        reorder.Reordered += _ => ApplyFloatRow();
+        FloatActionsRow.MouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(ApplyFloatRow, DispatcherPriority.Input);
+        FloatOpacitySlider.Value = Math.Round(Math.Clamp(_config.FloatIconOpacity, 0.2, 1) * 100);
+        FloatOpacityValue.Text = $"{FloatOpacitySlider.Value:0}%";
+        ShowFloatIcon();
+    }
+
+    private static App? RunningApp => Application.Current as App;
+
+    private void ApplyFloatRow()
+    {
+        var (order, hidden) = ReadToolbarRow(FloatActionsRow);
+        if (order == _config.FloatActionOrder && hidden == _config.FloatActionHidden)
+        {
+            return;
+        }
+
+        _config.FloatActionOrder = order;
+        _config.FloatActionHidden = hidden;
+        _config.Save();
+        RunningApp?.RefreshFloatLook();
+    }
+
+    /// <summary>The switch follows the floating button's own menu / the tray.</summary>
+    public void SyncFloatSwitch() => FloatEnabledCheck.IsChecked = _config.FloatButtonEnabled;
+
+    private void FloatEnabled_Click(object sender, RoutedEventArgs e)
+    {
+        _config.FloatButtonEnabled = FloatEnabledCheck.IsChecked == true;
+        _config.Save();
+        RunningApp?.ApplyFloatButton();
+    }
+
+    private void FloatFullscreen_Click(object sender, RoutedEventArgs e)
+    {
+        _config.FloatHideFullscreen = FloatFullscreenCheck.IsChecked == true;
+        _config.Save();
+        RunningApp?.FloatButton?.CheckFullscreen();
+    }
+
+    private void FloatOpacity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (FloatOpacityValue == null)
+        {
+            return;
+        }
+
+        FloatOpacityValue.Text = $"{e.NewValue:0}%";
+        FloatIconImage.Opacity = e.NewValue / 100;
+        if (!_ready)
+        {
+            return;
+        }
+
+        _config.FloatIconOpacity = Math.Round(e.NewValue) / 100;
+        _opacitySave ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _opacitySave.Stop();
+        _opacitySave.Tick -= SaveOpacity;
+        _opacitySave.Tick += SaveOpacity;
+        _opacitySave.Start();
+        RunningApp?.FloatButton?.ApplyLook();
+    }
+
+    private DispatcherTimer? _opacitySave;
+
+    private void SaveOpacity(object? sender, EventArgs e)
+    {
+        _opacitySave?.Stop();
+        _config.Save();
+    }
+
+    private void ShowFloatIcon()
+    {
+        FloatIcon.Load(_config).Play(FloatIconImage);
+        FloatIconImage.Opacity = FloatOpacitySlider.Value / 100;
+        FloatIconReset.IsEnabled = FloatIcon.IsCustom(_config);
+    }
+
+    /// <summary>A new picture was taken (or reset): preview, the floating button and the tray icon follow.</summary>
+    private void FloatIconChanged()
+    {
+        _config.Save();
+        ShowFloatIcon();
+        RunningApp?.RefreshFloatLook();
+    }
+
+    /// <summary>Takes a picture file for the floating button (tests call it too).</summary>
+    internal bool UseFloatIcon(string path)
+    {
+        if (!FloatIcon.SetFile(_config, path))
+        {
+            ThemedMessage.Show(this, "提示", "这个文件不是能打开的图片。", "确定");
+            return false;
+        }
+
+        FloatIconChanged();
+        return true;
+    }
+
+    internal void UseFloatIcon(BitmapSource image)
+    {
+        FloatIcon.SetImage(_config, image);
+        FloatIconChanged();
+    }
+
+    private void FloatIconPick_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择悬浮按钮图标",
+            Filter = "图片|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.ico;*.apng|所有文件|*.*"
+        };
+        if (dialog.ShowDialog(this) == true)
+        {
+            UseFloatIcon(dialog.FileName);
+        }
+    }
+
+    private void FloatIconReset_Click(object sender, RoutedEventArgs e)
+    {
+        FloatIcon.Reset(_config);
+        FloatIconChanged();
+    }
+
+    private void FloatIconPreview_Click(object sender, MouseButtonEventArgs e) => FloatIconPreview.Focus(); // then Ctrl+V pastes here
+
+    private void FloatIcon_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.Bitmap) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void FloatIcon_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files)
+        {
+            UseFloatIcon(files[0]);
+        }
+        else if (e.Data.GetData(DataFormats.Bitmap) is BitmapSource image)
+        {
+            UseFloatIcon(image);
+        }
+    }
+
+    /// <summary>Ctrl+V on the 样式 page (not in a text box): the copied picture (or picture file) becomes the icon.</summary>
+    private void OnPreviewKeyDownFloat(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.V || (Keyboard.Modifiers & ModifierKeys.Control) == 0 || PageStyle.Visibility != Visibility.Visible ||
+            Keyboard.FocusedElement is TextBox or PasswordBox)
+        {
+            return;
+        }
+
+        e.Handled = PasteFloatIcon();
+    }
+
+    internal bool PasteFloatIcon()
+    {
+        try
+        {
+            if (Clipboard.ContainsFileDropList() && Clipboard.GetFileDropList() is { Count: > 0 } files && files[0] is { } file)
+            {
+                return UseFloatIcon(file);
+            }
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // Busy clipboard: try the picture below.
+        }
+
+        if (ClipboardService.TryGetImage() is { } image)
+        {
+            UseFloatIcon(image);
+            return true;
+        }
+
+        return false;
     }
 
     private void Nav_Checked(object sender, RoutedEventArgs e)
@@ -131,6 +325,10 @@ public partial class SettingsWindow : Window
                 break;
             case "Style":
                 NavStyle.IsChecked = true;
+                break;
+            case "Float":
+                NavStyle.IsChecked = true;
+                Dispatcher.BeginInvoke(() => FloatCard.BringIntoView(), DispatcherPriority.Loaded);
                 break;
             default:
                 NavHotkeys.IsChecked = true;
@@ -573,6 +771,7 @@ public partial class SettingsWindow : Window
                 : 60;
 
         Saved = true;
+        _saves++;
         SavedChanges?.Invoke(); // applied now; the window stays open
         ShowSavedNotice();
     }
@@ -725,7 +924,7 @@ public partial class SettingsWindow : Window
     // ---- annotation bar buttons: click = show / hide, long-press drag = order ----------------
     private readonly HashSet<string> _hiddenButtons = new();
 
-    private void FillToolbarRow(Panel row, string[] defaults, string order, string hidden)
+    private ReorderBehavior FillToolbarRow(Panel row, string[] defaults, string order, string hidden)
     {
         var hiddenSet = ToolbarCatalog.Set(hidden);
         var reorder = new ReorderBehavior(row);
@@ -781,6 +980,8 @@ public partial class SettingsWindow : Window
             };
             row.Children.Add(button);
         }
+
+        return reorder;
     }
 
     private (string Order, string Hidden) ReadToolbarRow(Panel row)
@@ -801,6 +1002,12 @@ public partial class SettingsWindow : Window
         {
             _theme = mode;
             Theme.Apply(mode);
+            if (_ready && _config.Theme != mode)
+            {
+                // Chosen = kept (it used to wait for 保存, and was lost when the window closed or Markshot updated).
+                _config.Theme = mode;
+                _config.Save();
+            }
         }
     }
 
@@ -845,6 +1052,11 @@ public partial class SettingsWindow : Window
         {
             _uiSize = size;
             UiScale.Apply(size);
+            if (_ready && _config.UiSize != size)
+            {
+                _config.UiSize = size;
+                _config.Save();
+            }
         }
     }
 
@@ -1014,6 +1226,14 @@ public partial class SettingsWindow : Window
         if (_update == null)
         {
             return;
+        }
+
+        // What was changed here and not saved yet is saved first: the update restarts Markshot.
+        var saves = _saves;
+        Save_Click(this, e);
+        if (_saves == saves)
+        {
+            return; // a setting is not valid (the message said which)
         }
 
         await Task.Yield();

@@ -13,6 +13,10 @@ static class Program
     {
         // A plain Application: constructing Markshot.App would queue its real
         // OnStartup (tray icon, global hotkeys, user config) on the dispatcher.
+        // Never the user's settings: a config file of the test run's own.
+        var configDir = Path.Combine(Path.GetTempPath(), "markshot-tests-" + Environment.ProcessId);
+        Directory.CreateDirectory(configDir);
+        Markshot.Core.AppConfig.PathOverride = Path.Combine(configDir, "config.json");
         var app = new Application();
         var xaml = File.ReadAllText(Repo.File("App.xaml"));
         var start = xaml.IndexOf("<Application.Resources>") + "<Application.Resources>".Length;
@@ -42,6 +46,7 @@ static class Program
         if (mode == "picker") PickerProbe.Run();
         if (mode == "theme") ThemeShot.Run();
         if (mode == "round48") Round48Test.Run();
+        if (mode == "round53") Round53Test.Run();
         if (mode == "menu") MenuProbe.Run();
         if (mode == "support") SupportTest.Run();
         if (mode == "history") HistoryTest.Run();

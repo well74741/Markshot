@@ -389,6 +389,13 @@ public partial class AnnotationToolbar : UserControl
     {
         _configuring = true;
         _tool = tool;
+        if (_selection != null && tool is not AnnotationTool.None and not AnnotationTool.Select && FamilyOf(tool) != FamilyOf(_selection))
+        {
+            // Another tool while an element is selected: the window drops the selection; the tool shows its own size
+            // (it took the selected 序号's size, and the pen then drew — and remembered — that).
+            _selection = null;
+        }
+
         ShowChoice(tool);
         CheckMainButton(tool);
         ConfigureForTool(tool, _selection);

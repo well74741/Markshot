@@ -327,7 +327,7 @@
         </Style>
         <Style x:Key="IconRecordMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
-                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/record.png" /></Setter.Value>
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/screen_record.png" /></Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="IconPauseMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
@@ -400,21 +400,20 @@
                 <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/folder_open.png" /></Setter.Value>
             </Setter>
         </Style>
-        <!-- 文字识别: drawn from its outline, but as a mask like the other icons (a stretched Path snaps to pixels on
-             every frame of the bar's pop-in scale and looked as if it shook). -->
+        <!-- 文字识别 / 刷新 / 截屏: from the icon library, scaled like the other icons. -->
         <Style x:Key="IconOcrMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
             <Setter Property="OpacityMask">
-                <Setter.Value>
-                    <DrawingBrush Stretch="Uniform" Viewbox="2,2,16,16" ViewboxUnits="Absolute">
-                        <DrawingBrush.Drawing>
-                            <GeometryDrawing Geometry="{StaticResource IconOcr}">
-                                <GeometryDrawing.Pen>
-                                    <Pen Brush="Black" Thickness="1.5" StartLineCap="Round" EndLineCap="Round" LineJoin="Round" />
-                                </GeometryDrawing.Pen>
-                            </GeometryDrawing>
-                        </DrawingBrush.Drawing>
-                    </DrawingBrush>
-                </Setter.Value>
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/ocr.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconRefreshMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/refresh.png" /></Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="IconCaptureMask" TargetType="Border" BasedOn="{StaticResource IconMask}">
+            <Setter Property="OpacityMask">
+                <Setter.Value><ImageBrush ImageSource="pack://application:,,,/Markshot;component/Assets/Icons/capture.png" /></Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="IconSelectMask" TargetType="Border" BasedOn="{StaticResource IconMask}">

@@ -33,6 +33,8 @@ internal static class ToolbarCatalog
         "Record" => "录屏",
         "Scroll" => "长截图",
         "Edit" => "图片编辑器",
+        "Editor" => "图片编辑器",
+        "Capture" => "截屏",
         _ => key
     };
 
@@ -60,6 +62,8 @@ internal static class ToolbarCatalog
             "Scroll" => "IconScrollMask",
             "Edit" => "IconEditMask",
             "Ocr" => "IconOcrMask",
+            "Editor" => "IconEditMask",
+            "Capture" => "IconCaptureMask",
             _ => "IconTranslateMask"
         };
         return new Border { Style = (Style)Application.Current.FindResource(mask) };

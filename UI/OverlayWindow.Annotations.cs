@@ -684,6 +684,11 @@ public partial class OverlayWindow
         ClearAnnotationSelection();
         Editor.Items.Clear();
         _numberCounter = 1;
+        if (_tool == AnnotationTool.Number)
+        {
+            InputLayer.Cursor = ToolCursors.Get(_tool, _thickness, _color, 1, _numberCounter); // shows 1 again
+        }
+
         UpdateUndoButtons();
         Editor.InvalidateVisual();
         FocusWindow();

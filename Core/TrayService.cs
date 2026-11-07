@@ -24,7 +24,8 @@ public sealed class TrayService : IDisposable
         Action? diagnostics = null,
         Action? pinHistory = null,
         Action? imageEditor = null,
-        Action? toggleHotkeys = null)
+        Action? toggleHotkeys = null,
+        Func<IEnumerable<(string Header, Action Action, bool? Checked)>>? floatItems = null)
     {
         // The tray menu is a WPF menu in the app's dark rounded style (not the system one),
         // rebuilt on each open so it only lists what applies right now.
@@ -71,6 +72,17 @@ public sealed class TrayService : IDisposable
             }
 
             menu.Items.Add(new System.Windows.Controls.Separator());
+            if (floatItems != null)
+            {
+                // 悬浮按钮 on / off, and 悬浮按钮回中 while it is on.
+                foreach (var (header, action, isChecked) in floatItems())
+                {
+                    var item = new System.Windows.Controls.MenuItem { Header = header, IsChecked = isChecked == true };
+                    item.Click += (_, _) => action();
+                    menu.Items.Add(item);
+                }
+            }
+
             if (toggleHotkeys != null)
             {
                 var disabled = App.Config?.HotkeysDisabled == true;
@@ -152,15 +164,22 @@ public sealed class TrayService : IDisposable
 
     public void ShowBalloon(string title, string text)
     {
+        // Not the Windows notification (a big card with a sound): Markshot's own small bubble.
+        Markshot.UI.Toast.Notify(title, text);
+    }
+
+    /// <summary>The floating button's picture is the tray icon too (null = the Markshot logo).</summary>
+    public void SetIcon(AnimatedImage? picture)
+    {
         try
         {
-            _notifyIcon.BalloonTipTitle = title;
-            _notifyIcon.BalloonTipText = text;
-            _notifyIcon.ShowBalloonTip(3000);
+            var old = _notifyIcon.Icon;
+            _notifyIcon.Icon = picture == null ? CreateIcon() : picture.ToIcon(Math.Max(16, Forms.SystemInformation.SmallIconSize.Width));
+            old?.Dispose();
         }
         catch (Exception ex)
         {
-            Log.Error("显示托盘消息失败", ex);
+            Log.Error("更换托盘图标失败", ex);
         }
     }
 

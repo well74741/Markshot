@@ -68,6 +68,7 @@ public partial class App : Application
         }
 
         Config = AppConfig.Load();
+        _updatedFrom = NoteVersion();
         ImageFile.Quality = Math.Clamp(Config.SaveQuality, 10, 100);
         _savedCorner = Config.CaptureCornerRadius;
         _savedSoftness = Config.PenSoftness;
@@ -132,7 +133,8 @@ public partial class App : Application
             ExportDiagnostics,
             ShowPinHistory,
             () => OpenEditor(),
-            ToggleHotkeys);
+            ToggleHotkeys,
+            FloatMenuItems);
 
         ApplyHotkeys();
         StartUpdateChecks();
@@ -140,9 +142,27 @@ public partial class App : Application
         OpenRequests.Listen(Dispatcher, OpenFileInEditor);
         ApplyOpenWith();
 
-        _tray.ShowBalloon(
-            "Markshot 已启动",
-            $"截图 {Config.CaptureHotkey} · {PinHotkeyLabel}\n右键托盘图标打开设置");
+        ApplyFloatButton();
+        if (FloatIcon.IsCustom(Config))
+        {
+            _tray.SetIcon(FloatIcon.Load(Config));
+        }
+
+        if (_updatedFrom != null)
+        {
+            // Just updated: what is new, in short (instead of the "started" bubble).
+            var notes = UI.ReleaseNotes.Since(_updatedFrom, AppVersion.Display);
+            if (notes.Count > 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() => new UI.WhatsNewWindow(AppVersion.Display, notes).Show()), DispatcherPriority.ApplicationIdle);
+            }
+        }
+        else
+        {
+            _tray.ShowBalloon(
+                "Markshot 已启动",
+                $"截图 {Config.CaptureHotkey} · {PinHotkeyLabel}，右键托盘图标打开设置");
+        }
 
         Log.Info($"Markshot 启动，截图键 {Config.CaptureHotkey}，{PinHotkeyLabel}");
 
@@ -160,6 +180,120 @@ public partial class App : Application
         {
             var demo = arguments.Contains("--demo");
             Dispatcher.BeginInvoke(new Action(() => StartCapture(demo)), DispatcherPriority.ApplicationIdle);
+        }
+    }
+
+    private string? _updatedFrom;
+
+    /// <summary>
+    /// The first start of a new version: the settings file of the old one is kept as a copy beside it, and the
+    /// version is noted. Returns the version updated from ("" = older than 0.8.53), null when not an update.
+    /// </summary>
+    private static string? NoteVersion()
+    {
+        var current = AppVersion.Display.Split('+')[0];
+        if (string.Equals(Config.LastVersion, current, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var previous = AppConfig.LoadedExisting ? Config.LastVersion : null;
+        if (previous != null)
+        {
+            try
+            {
+                var path = AppConfig.ConfigPath;
+                File.Copy(path, Path.Combine(Path.GetDirectoryName(path) ?? ".", "config.before-update.json"), true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Error("备份更新前的配置失败", ex);
+            }
+
+            Log.Info($"已从 {(previous.Length > 0 ? previous : "旧版本")} 更新到 {current}，设置已保留");
+        }
+
+        Config.LastVersion = current;
+        Config.Save();
+        return previous;
+    }
+
+    private UI.FloatButtonWindow? _float;
+
+    /// <summary>悬浮按钮 on / off from the settings.</summary>
+    public void ApplyFloatButton()
+    {
+        if (_shuttingDown)
+        {
+            return;
+        }
+
+        if (!Config.FloatButtonEnabled)
+        {
+            _float?.Close();
+            _float = null;
+            return;
+        }
+
+        if (_float == null)
+        {
+            _float = new UI.FloatButtonWindow(Config, FloatAction, () => ShowSettings("Float"), () => SetFloatButton(false));
+            _float.Closed += (_, _) => _float = null;
+            _float.Show();
+            if (_capturing)
+            {
+                _float.Suspend();
+            }
+        }
+    }
+
+    public UI.FloatButtonWindow? FloatButton => _float;
+
+    /// <summary>The floating button's picture / opacity / shadow / row changed: the button and the tray icon follow.</summary>
+    public void RefreshFloatLook()
+    {
+        if (_float != null)
+        {
+            _float.BuildItems();
+            _float.ApplyLook();
+        }
+
+        _tray?.SetIcon(FloatIcon.IsCustom(Config) ? FloatIcon.Load(Config) : null);
+    }
+
+    public void SetFloatButton(bool on)
+    {
+        Config.FloatButtonEnabled = on;
+        Config.Save();
+        ApplyFloatButton();
+        _settings?.SyncFloatSwitch();
+    }
+
+    private void FloatAction(string key)
+    {
+        switch (key)
+        {
+            case "Record":
+                OpenRecorder();
+                break;
+            case "Ocr":
+                StartCapture(ocr: true);
+                break;
+            case "Editor":
+                OpenEditor();
+                break;
+            default:
+                StartCapture();
+                break;
+        }
+    }
+
+    private IEnumerable<(string Header, Action Action, bool? Checked)> FloatMenuItems()
+    {
+        yield return ("悬浮按钮", () => SetFloatButton(!Config.FloatButtonEnabled), Config.FloatButtonEnabled);
+        if (Config.FloatButtonEnabled)
+        {
+            yield return ("悬浮按钮回中", () => _float?.Recenter(), null);
         }
     }
 
@@ -238,7 +372,8 @@ public partial class App : Application
         }
     }
 
-    public void StartCapture(bool demo = false, Int32Rect? selection = null)
+    /// <param name="ocr">文字识别 from the floating button: the area is recognised as soon as it is chosen.</param>
+    public void StartCapture(bool demo = false, Int32Rect? selection = null, bool ocr = false)
     {
         if (_capturing || _shuttingDown)
         {
@@ -247,6 +382,7 @@ public partial class App : Application
 
         _capturing = true;
         _hotkeys?.UnregisterAll();
+        _float?.Suspend(); // left out of the screenshot anyway; out of the way of the capture too
 
         try
         {
@@ -257,6 +393,7 @@ public partial class App : Application
                 ActiveWindow = WindowDetector.ActiveProgram(), // the program in use: its elements are offered first
                 // The pin is created while the capture is still on screen (no gap, no flicker).
                 InitialSelection = selection,
+                OcrOnSelect = ocr,
                 CursorShot = cursor,
                 PinNow = (source, output) => WithHistory(CreatePin(output, (int)source.SelectionScreenRect.X, (int)source.SelectionScreenRect.Y,
                     source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow), source)
@@ -339,6 +476,7 @@ public partial class App : Application
         finally
         {
             _capturing = false;
+            _float?.Resume();
             if (!_shuttingDown)
             {
                 ApplyHotkeys();
@@ -598,10 +736,18 @@ public partial class App : Application
     /// Opens settings as an ordinary window (not modal), so pins stay usable
     /// while it is open. A second request just brings it to the front.
     /// </summary>
-    public void ShowSettings()
+    public void ShowSettings() => ShowSettings(null);
+
+    /// <param name="page">"Float": straight to the floating button's settings.</param>
+    public void ShowSettings(string? page)
     {
         if (_settings != null)
         {
+            if (page != null)
+            {
+                _settings.ShowPage(page);
+            }
+
             _settings.Activate();
             return;
         }
@@ -635,6 +781,8 @@ public partial class App : Application
                 editor.ApplyToolbarOrder();
             }
 
+            _float?.ApplyLook(); // the pins' shadow is its shadow too
+
             _tray?.SetTooltip($"Markshot · {Config.CaptureHotkey} 截图 / {PinHotkeyLabel}");
             if (!_shuttingDown)
             {
@@ -659,6 +807,11 @@ public partial class App : Application
             }
         };
         _settings.Show();
+        if (page != null)
+        {
+            _settings.ShowPage(page);
+        }
+
         // In front once when opened (from the tray); after that like any window, other programs can cover it.
         _settings.Topmost = true;
         _settings.Activate();
@@ -944,7 +1097,7 @@ public partial class App : Application
             default:
                 if (ClipboardService.CopyImage(image))
                 {
-                    _tray?.ShowBalloon("已复制", $"{area.Width} × {area.Height} 的区域已复制到剪贴板。");
+                    _tray?.ShowBalloon("已复制到剪贴板", $"{area.Width} × {area.Height}");
                 }
 
                 break;
@@ -1019,6 +1172,7 @@ public partial class App : Application
 
         _shuttingDown = true;
         Log.Info("Markshot 退出");
+        _float?.Close();
         _recorder?.Close();
 
         foreach (var pin in _pins.ToArray())
