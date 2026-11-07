@@ -30,6 +30,7 @@ public sealed class WinMouseSelect
     {
         _done = done;
         _proc = Hook;
+        _keyProc = KeyHook;
     }
 
     /// <summary>For tests: Win counts as held (the real key is not touched).</summary>
@@ -55,6 +56,12 @@ public sealed class WinMouseSelect
         {
             UnhookWindowsHookEx(_hook);
             _hook = IntPtr.Zero;
+        }
+
+        if (_keyHook != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(_keyHook);
+            _keyHook = IntPtr.Zero;
         }
 
         Cancel();
@@ -117,6 +124,7 @@ public sealed class WinMouseSelect
 
         if (up == _button)
         {
+            Tap(); // once more at the end: Win may have been held for a while
             _end = point;
             var button = _button.Value;
             var area = Area;
@@ -214,12 +222,60 @@ public sealed class WinMouseSelect
 
     private void HideFrame() => _frame?.Hide();
 
-    /// <summary>A key nobody uses goes down and up while Win is held: Windows then does not open Start on its release.</summary>
-    private static void SuppressStartMenu()
+    /// <summary>
+    /// Win was used with the mouse: when it is released, Windows must not open Start (it opens only when nothing
+    /// came between Win down and Win up, and mouse clicks do not count). A keyboard hook holds the Win-up back and
+    /// replays it after a key nobody uses (0xE8), the way AutoHotkey masks Win.
+    /// </summary>
+    private void SuppressStartMenu()
+    {
+        _swallowWin = true;
+        Tap();
+        if (_keyHook == IntPtr.Zero)
+        {
+            _keyHook = SetWindowsHookEx(WhKeyboardLl, _keyProc, GetModuleHandle(null), 0);
+        }
+    }
+
+    private static void Tap()
     {
         keybd_event(0xE8, 0, 0, UIntPtr.Zero);
         keybd_event(0xE8, 0, 2 /* KEYUP */, UIntPtr.Zero);
     }
+
+    private const int WhKeyboardLl = 13;
+    private const int WmKeyUp = 0x0101, WmSysKeyUp = 0x0105;
+    private readonly KeyProc _keyProc;
+    private IntPtr _keyHook;
+    private volatile bool _swallowWin;
+
+    private IntPtr KeyHook(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0 && _swallowWin)
+        {
+            var message = wParam.ToInt32();
+            var vk = Marshal.ReadInt32(lParam);
+            if (message is WmKeyUp or WmSysKeyUp && vk is VkLWin or VkRWin)
+            {
+                // The real Win-up is held back; the unused key goes down / up first and then Win comes up again
+                // (keys sent from here queue after the event being handled, so sending only the extra key is too late).
+                _swallowWin = false;
+                Tap();
+                keybd_event((byte)vk, 0, 2 /* KEYUP */ | 1 /* EXTENDED */, UIntPtr.Zero);
+                var hook = _keyHook;
+                _keyHook = IntPtr.Zero;
+                Application.Current?.Dispatcher.BeginInvoke(() => UnhookWindowsHookEx(hook));
+                return new IntPtr(1);
+            }
+        }
+
+        return CallNextHookEx(_keyHook, code, wParam, lParam);
+    }
+
+    private delegate IntPtr KeyProc(int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowsHookEx")]
+    private static extern IntPtr SetWindowsHookEx(int hookType, KeyProc callback, IntPtr module, uint threadId);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct HookData

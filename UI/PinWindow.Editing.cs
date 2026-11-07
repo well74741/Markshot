@@ -1196,6 +1196,11 @@ public partial class PinWindow
         {
             _gesture.Pressure = PenEyedropper.Pressure(e, InputLayer); // tablet pen: the width follows the pressure
             _gesture.Move(point, IsShiftDown, IsCtrlDown);
+            if (_gesture.Target is NumberAnnotation { Tail: not null } && InputLayer.Cursor != Cursors.Cross)
+            {
+                InputLayer.Cursor = Cursors.Cross; // dragging out the arrow: the badge cursor would hide its head
+            }
+
             Editor.InvalidateVisual();
             return;
         }

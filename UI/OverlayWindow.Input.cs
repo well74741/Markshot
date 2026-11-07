@@ -411,6 +411,11 @@ public partial class OverlayWindow
         {
             _gesture.Pressure = PenEyedropper.Pressure(e, InputLayer); // tablet pen: the width follows the pressure
             _gesture.Move(point, IsShiftDown, IsCtrlDown);
+            if (_gesture.Target is NumberAnnotation { Tail: not null } && InputLayer.Cursor != Cursors.Cross)
+            {
+                InputLayer.Cursor = Cursors.Cross; // dragging out the arrow: the badge cursor would hide its head
+            }
+
             Editor.InvalidateVisual();
             return;
         }
@@ -540,6 +545,11 @@ public partial class OverlayWindow
 
             UpdateSizeBox(point);
             UpdateCursor(point);
+            if (_tool is AnnotationTool.None or AnnotationTool.Select && _selectedAnnotation == null && UpdateCodeHover(point))
+            {
+                InputLayer.Cursor = Cursors.Hand; // on a code: its box and card show
+                return;
+            }
 
             if (_hasSelection && _tool == AnnotationTool.Watermark)
             {

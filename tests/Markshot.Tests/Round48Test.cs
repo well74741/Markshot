@@ -195,6 +195,109 @@ static class Round48Test
         Check(settings.FindName("HotkeysDisabledCheck") is CheckBox && settings.FindName("CloseAllPinsHotkeyBox") is TextBox { Text: "Shift+Esc" }, "settings: 禁用所有快捷键, 关闭所有贴图");
         settings.Close();
 
+        // ==== 0.8.49
+        // the shadow of a see-through pin is lighter alike
+        {
+            var shadowPin = new PinWindow(picture, -4000, -4000) { Left = -4000, Top = -4000, ShowActivated = false };
+            shadowPin.Show();
+            Pump(150);
+            var layer = (Border)shadowPin.FindName("ImageShadowLayer");
+            byte Alpha() => ((SolidColorBrush)(layer.Background is SolidColorBrush { Color.A: > 0 } b ? b : layer.BorderBrush)).Color.A;
+            var full = Alpha();
+            shadowPin.RestoreView(1, 0.4);
+            var faint = Alpha();
+            Check(faint < full * 0.6 && faint > 0, $"a pin at 40 %: its shadow at about 40 % too ({full} -> {faint})");
+            shadowPin.CloseImmediately();
+        }
+
+        // the colour panel: a click elsewhere closes it (as 取消)
+        {
+            var picker = new ColorPickerWindow(Colors.Red) { Left = -4000, Top = -4000 };
+            picker.Show();
+            picker.Activate();
+            Pump(200);
+            var other = new Window { Left = -3600, Top = -4000, Width = 50, Height = 50, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
+            other.Show();
+            other.Activate();
+            Pump(300);
+            Check(!picker.IsVisible && !picker.Accepted, "colour panel: clicking outside closes it, nothing chosen");
+            other.Close();
+        }
+
+        // 二维码 in the capture area: found where they are; the pointer over one shows its box and card
+        {
+            var qrA = writer.Write("https://example.com/a");
+            var qrB = writer.Write("第二个二维码");
+            var screenPx = new byte[640 * 300 * 4];
+            for (var i = 0; i < screenPx.Length; i++) screenPx[i] = 255;
+            void Put(ZXing.Rendering.PixelData code, int ox, int oy)
+            {
+                for (var y = 0; y < code.Height; y++)
+                    Array.Copy(code.Pixels, y * code.Width * 4, screenPx, ((oy + y) * 640 + ox) * 4, code.Width * 4);
+            }
+
+            Put(qrA, 40, 60);
+            Put(qrB, 380, 60);
+            var screenShot = BitmapSource.Create(640, 300, 96, 96, PixelFormats.Bgra32, null, screenPx, 640 * 4);
+            screenShot.Freeze();
+            var overlay = new OverlayWindow(screenShot, new Int32Rect(-4000, -4000, 640, 300));
+            typeof(OverlayWindow).GetField("_hasSelection", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(overlay, true);
+            typeof(OverlayWindow).GetField("_selection", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(overlay, new Rect(10, 10, 620, 280));
+            overlay.Show();
+            Pump(150);
+            typeof(OverlayWindow).GetMethod("ReadCodesNow", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, null);
+            var found = (IReadOnlyList<CodeReader.Code>)typeof(OverlayWindow).GetProperty("CodesInArea", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(overlay)!;
+            for (var i = 0; i < 60 && found.Count < 2; i++)
+            {
+                Pump(50);
+                found = (IReadOnlyList<CodeReader.Code>)typeof(OverlayWindow).GetProperty("CodesInArea", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(overlay)!;
+            }
+
+            var a = found.FirstOrDefault(c => c.Text.EndsWith("/a"));
+            Check(found.Count == 2 && a?.Area is { } boxA && boxA.Contains(new Point(130, 150)) && !boxA.Contains(new Point(470, 150)) &&
+                  boxA.Left > 20 && boxA.Right < 250, $"two codes in the area, each where it is ({string.Join(" | ", found.Select(c => c.Text + " " + c.Area))})");
+            var onCode = (bool)typeof(OverlayWindow).GetMethod("UpdateCodeHover", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, new object[] { new Point(130, 150) })!;
+            var card = (Border?)typeof(OverlayWindow).GetField("_codeCard", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(overlay);
+            var frame = (Border?)typeof(OverlayWindow).GetField("_codeFrame", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(overlay);
+            var cardLink = card == null ? null : FindLink(card);
+            Check(onCode && frame?.Visibility == Visibility.Visible && card?.Visibility == Visibility.Visible && cardLink?.NavigateUri?.Host == "example.com",
+                "pointer on the first code: its box and a card with the clickable link");
+            typeof(OverlayWindow).GetMethod("UpdateCodeHover", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, new object[] { new Point(470, 150) });
+            Check(card?.Visibility == Visibility.Visible && card is not null && FindLink(card) == null, "on the second code: its own card (plain text, no link)");
+            typeof(OverlayWindow).GetMethod("UpdateCodeHover", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, new object[] { new Point(320, 20) });
+            Check(frame?.Visibility != Visibility.Visible, "off the codes: box and card go");
+            overlay.Close();
+        }
+
+        // 序号: dragging out the arrow shows the plain cross, not the badge over it
+        {
+            var source = System.IO.File.ReadAllText(Repo.File("UI/OverlayWindow.Input.cs")) + System.IO.File.ReadAllText(Repo.File("UI/PinWindow.Editing.cs"));
+            Check(System.Text.RegularExpressions.Regex.Matches(source, @"NumberAnnotation \{ Tail: not null \} && InputLayer.Cursor != Cursors.Cross").Count == 2,
+                "序号 drag: the cursor turns into a plain cross (capture and pins)");
+        }
+
         Console.WriteLine(_fail == 0 ? "ALL PASS" : $"{_fail} FAILED");
+    }
+
+    static System.Windows.Documents.Hyperlink? FindLink(DependencyObject root)
+    {
+        foreach (var block in Descendants(root).OfType<TextBlock>())
+        {
+            if (block.Inlines.OfType<System.Windows.Documents.Hyperlink>().FirstOrDefault() is { } link)
+            {
+                return link;
+            }
+        }
+
+        return null;
+    }
+
+    static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        yield return root;
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+        {
+            foreach (var d in Descendants(child)) yield return d;
+        }
     }
 }

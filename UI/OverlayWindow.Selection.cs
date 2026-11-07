@@ -70,6 +70,7 @@ public partial class OverlayWindow
 
         if (!_hasSelection || _selection.Width <= 0 || _selection.Height <= 0)
         {
+            ClearCodes();
             CancelTranslation();
             UpdateTranslationVisuals();
             BrightClip.Rect = new Rect(0, 0, 0, 0);
@@ -115,6 +116,15 @@ public partial class OverlayWindow
 
         Editor.InvalidateVisual();
         UpdateTranslationVisuals();
+        if (!SelectionDragging)
+        {
+            ScheduleCodes();
+        }
+        else
+        {
+            HideCode();
+        }
+
         if (_autoTranslate && !SelectionDragging && SnapRect(_selection) != _translatedRect &&
             SnapRect(_selection) != _translatingRect)
         {

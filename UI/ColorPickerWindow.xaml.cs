@@ -7,6 +7,7 @@ namespace Markshot.UI;
 public partial class ColorPickerWindow : Window
 {
     private bool _updating;
+    private bool _closing;
     private bool _draggingSv;
     private double _hue;
     private double _saturation;
@@ -50,6 +51,21 @@ public partial class ColorPickerWindow : Window
         };
         // Clicking the panel itself while picking ends it, keeping the live colour.
         PreviewMouseDown += (_, _) => _shield?.End(true);
+        // A click anywhere else closes it (as 取消) — unless the screen colour is being picked, or a dialog of its own is up.
+        Deactivated += (_, _) =>
+        {
+            if (_shield == null && !_closing && IsLoaded && OwnedWindows.Count == 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_shield == null && !_closing && !IsActive)
+                    {
+                        Cancel_Click(this, new RoutedEventArgs());
+                    }
+                }), DispatcherPriority.Input);
+            }
+        };
+        Closing += (_, _) => _closing = true;
         Loaded += (_, _) =>
         {
             if (Content is FrameworkElement root)

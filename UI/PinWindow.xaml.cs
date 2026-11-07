@@ -538,6 +538,7 @@ public partial class PinWindow : Window
                 opacity = Math.Min(1, opacity * 1.25);
             }
 
+            opacity *= Math.Clamp(_opacity, 0, 1); // a see-through pin has a lighter shadow alike
             var visible = size >= 0.5 && opacity >= 0.01;
             if (ShapedShadow || Cutouts.Any(Editor.Items))
             {
