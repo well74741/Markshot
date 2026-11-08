@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.60`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.61`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,22 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.61 0.8.61 变更
+
+- 设置「未保存」误报：滚动条（RangeBase.ValueChanged）也算了修改。现在 `HasUnsavedChanges` = 当前表单指纹（`Fingerprint`：带名字的文本框 / 密码 / 开关 / 滑条、
+  工具栏行的顺序与隐藏、阴影色、主题、Win+鼠标、悬浮按钮的即时项）与打开 / 上次保存时不同；改了再改回也不算。
+- 设置：咖啡图标 24 DIP；二维码拉出后点窗口别处收回（`PutDrawerAwayOnOutsideClick`）。更新窗口固定宽 360，立即更新点后变灰。
+- 聚焦暗度：一张图一个暗度，滑条通过 `SpotlightDarknessChanged` → `AnnotationOps.SetSpotlightDarkness` 改所有聚焦（不需选中，可撤销）；选聚焦工具时滑条显示图上现有的暗度。
+  以前组的暗度取最大值，又只改新画的 / 选中的，所以调低没效果。
+- 马赛克「模糊」0–30：`Blur` 属性，`MosaicBuilder.BuildCanvas(source, block, blur)` 把色块放大到原尺寸后三次盒式模糊（≈高斯）。
+- 抠除：以前整块画布按所有洞裁剪，之后画的元素也被挖掉。现在底图（截图 / 贴图图片 / 编辑器背景）按所有洞裁剪，
+  元素只被它上面（之后画的）洞裁剪：`AnnotationEditor.Layered` / `DrawLayers`（OnRender、贴图合成、截图合成共用）。
+- 编辑器：元素样式行增减的过渡以前不动——第二次 UpdateStylePanel 清掉了动画，且 Measure 拿到旧高度。现在行没变化就不碰动画，新高度用 UpdateLayout 取得；出现的行淡入。
+  标题后显示版本号。
+- 悬浮按钮「显示贴图」`TogglePins`（图标库「显示图片.png」→ `show_pins.png`）：默认在 FloatActionHidden 里（旧配置迁移时也加进隐藏）；
+  `App.TogglePinsShown` 隐藏 / 显示所有可见贴图，新贴图出现时全部恢复；全部隐藏时按钮 0.4 透明。
+- 长截图：进入时用 `FinishWithTransition`，从选区向外变亮后再开始。
 
 ## 8.1.60 0.8.60 变更
 

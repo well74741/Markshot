@@ -431,6 +431,7 @@ public partial class OverlayWindow : Window
         Toolbar.WatermarkToggled += OnWatermarkToggled;
         Toolbar.VariantChanged += OnToolbarVariantChanged;
         Toolbar.SettingsChanged += ApplyToolbarSettings;
+        Toolbar.SpotlightDarknessChanged += darkness => AnnotationOps.SetSpotlightDarkness(Editor, _history, darkness, UpdateUndoButtons);
         Toolbar.UndoRequested += Undo;
         Toolbar.RedoRequested += Redo;
         Toolbar.CopyRequested += CopyAndClose;

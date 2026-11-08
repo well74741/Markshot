@@ -54,7 +54,7 @@ public sealed class UpdateWindow : Window
         buttons.Children.Add(_install);
         buttons.Children.Add(_later);
 
-        var body = new StackPanel { MinWidth = 340 };
+        var body = new StackPanel { Width = 360 }; // one width: the changing status text must not resize the window
         body.Children.Add(heading);
         body.Children.Add(current);
         body.Children.Add(_status);
@@ -110,6 +110,7 @@ public sealed class UpdateWindow : Window
 
         _busy = true;
         _install.IsEnabled = false;
+        _install.Opacity = 0.45; // greyed while it downloads / installs
         _progress.Visibility = Visibility.Visible;
         _progress.IsIndeterminate = !_package.Remote;
         _status.Text = _package.Remote ? "正在下载更新…" : "正在准备安装…";
@@ -130,6 +131,8 @@ public sealed class UpdateWindow : Window
         catch (OperationCanceledException)
         {
             _busy = false;
+            _install.IsEnabled = true;
+            _install.Opacity = 1;
         }
         catch (Exception ex)
         {
@@ -139,6 +142,7 @@ public sealed class UpdateWindow : Window
             _status.Text = "更新失败：" + ex.Message;
             _install.Content = "重试";
             _install.IsEnabled = true;
+            _install.Opacity = 1;
             _later.IsEnabled = true;
         }
     }

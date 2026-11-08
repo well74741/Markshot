@@ -28,6 +28,7 @@ public partial class PinWindow
         Toolbar.WatermarkToggled += OnWatermarkToggled;
         Toolbar.VariantChanged += OnToolbarVariantChanged;
         Toolbar.SettingsChanged += ApplyToolbarSettings;
+        Toolbar.SpotlightDarknessChanged += darkness => AnnotationOps.SetSpotlightDarkness(Editor, _history, darkness, UpdateUndoButtons);
         Toolbar.UndoRequested += Undo;
         Toolbar.RedoRequested += Redo;
         Toolbar.CopyRequested += Copy;
@@ -62,6 +63,11 @@ public partial class PinWindow
 
     private void OnToolbarToolChanged(AnnotationTool tool)
     {
+        if (tool == AnnotationTool.Spotlight && Editor.Items.OfType<SpotlightAnnotation>().FirstOrDefault() is { } existingSpot)
+        {
+            Toolbar.ShowSpotlightDarkness(existingSpot.Darkness); // one darkness for the picture
+        }
+
         _textEditor.Commit();
         _watermarkOff = false; // choosing the watermark tool means: show one
         _tool = tool;
@@ -616,15 +622,14 @@ public partial class PinWindow
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
-            // Rounded pins keep their corners transparent, annotations included.
-            dc.PushClip(Cutouts.Exclude(Editor.Items,
-                new RectangleGeometry(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight), CornerRadius, CornerRadius)));
+            // Rounded pins keep their corners transparent, annotations included. 抠除 holes cut the picture and the
+            // elements under them (not those drawn later).
+            var canvas = new RectangleGeometry(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight), CornerRadius, CornerRadius);
+            dc.PushClip(canvas);
+            dc.PushClip(Cutouts.Exclude(Editor.Items, canvas));
             dc.DrawImage(_baseImage, new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight));
-            foreach (var annotation in AnnotationEditor.DrawOrder(Editor.Items))
-            {
-                AnnotationEditor.DrawItem(dc, annotation);
-            }
-
+            dc.Pop();
+            AnnotationEditor.DrawLayers(dc, Editor.Items);
             dc.Pop();
         }
 

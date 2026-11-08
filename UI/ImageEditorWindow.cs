@@ -1374,7 +1374,7 @@ public sealed class ImageEditorWindow : PinWindow
         return new Border { Child = stack, Background = Brushes.Transparent };
     }
 
-    private void UpdateTitle() => Title = (_path != null ? Path.GetFileName(_path) + " - " : "") + "Markshot 图片编辑器";
+    private void UpdateTitle() => Title = (_path != null ? Path.GetFileName(_path) + " - " : "") + "Markshot 图片编辑器  " + AppVersion.Display.Split('+')[0];
 
     /// <summary>Puts the current image's numbers into the controls.</summary>
     private void RefreshPanel()
@@ -2407,16 +2407,34 @@ public sealed class ImageEditorWindow : PinWindow
     private static void AnimateSectionHeight(FrameworkElement section, Action change)
     {
         var before = section.ActualHeight;
+        var rows = section.Tag is Panel body ? body.Children.Cast<UIElement>().ToList() : new List<UIElement>();
+        var shownBefore = rows.Select(row => row.Visibility).ToList();
         change();
+        if (rows.Select(row => row.Visibility).SequenceEqual(shownBefore))
+        {
+            return; // nothing came or went: a running slide goes on (it was cut short by a second call)
+        }
+
         if (before <= 0 || !section.IsLoaded)
         {
             return;
         }
 
+        // Rows that appear fade in while the section opens.
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (shownBefore[i] != Visibility.Visible && rows[i].Visibility == Visibility.Visible && rows[i] is FrameworkElement appeared)
+            {
+                appeared.Opacity = 0;
+                appeared.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, Motion.Fast));
+            }
+        }
+
         section.BeginAnimation(HeightProperty, null);
         section.Height = double.NaN;
-        section.Measure(new Size(section.ActualWidth, double.PositiveInfinity));
-        var after = section.DesiredSize.Height - section.Margin.Top - section.Margin.Bottom;
+        // Its new height (a layout pass now; nothing is drawn before the slide starts from the old height).
+        section.UpdateLayout();
+        var after = section.ActualHeight;
         if (Math.Abs(after - before) < 1)
         {
             return;

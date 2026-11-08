@@ -287,7 +287,7 @@ static class AnnotateTest
         var (patPx, _, _) = ImageOps.ReadPixels(pattern);
         Check(Math.Abs(patPx[0] - patPx[2]) < 30 && patPx[1] > 80, $"mosaic block = average colour ({patPx[2]},{patPx[1]},{patPx[0]})");
 
-        // ---- 抠除: a hole through the picture and every annotation, also those drawn later
+        // ---- 抠除: a hole through the picture and the annotations under it; what is drawn later covers it (0.8.61)
         var cutEditor = new ImageEditorWindow(Blank(200, 120)) { Left = 40, Top = 40, ShowActivated = false };
         cutEditor.Show();
         Pump(300);
@@ -300,7 +300,7 @@ static class AnnotateTest
         cutItems.Add(new RectAnnotation { Rect = new Rect(100, 30, 60, 40), Color = Colors.Blue, Thickness = 4, Fill = true }); // drawn after the hole
         var cut = cutEditor.Composite;
         byte A(int x, int y) { var (px, w, _) = ImageOps.ReadPixels(cut); return px[(y * w + x) * 4 + 3]; }
-        Check(A(80, 50) == 0 && A(120, 50) == 0 && A(10, 10) == 255 && A(80, 25) == 255, "抠除: transparent hole through the picture and annotations; the rest stays");
+        Check(A(80, 50) == 0 && A(120, 50) == 255 && A(10, 10) == 255 && A(80, 25) == 255, "抠除: a hole through the picture and the annotation under it; the one drawn later is not cut");
         Check(cutItems.OfType<CutoutAnnotation>().Count() == 1 && AnnotationOps_HitNothing(cutItems, new Point(150, 50)), "the hole is never selected");
         var toolbarCut = (AnnotationToolbar)Get(cutEditor, "Toolbar");
         toolbarCut.SetTool(AnnotationTool.Eraser);

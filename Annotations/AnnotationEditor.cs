@@ -169,9 +169,11 @@ public sealed class AnnotationEditor : FrameworkElement
         }
 
         var visible = area == null ? null : Cutouts.Exclude(Items, area);
-        if (visible != null)
+        if (area != null)
         {
-            dc.PushClip(visible);
+            // 抠除 cuts the picture under everything (CutoutTarget) and the elements below the hole only; what is
+            // drawn after it lies on top, uncut.
+            dc.PushClip(area);
         }
 
         UpdateCutoutTarget(visible != null && !ReferenceEquals(visible, area) ? visible : null);
@@ -184,26 +186,26 @@ public sealed class AnnotationEditor : FrameworkElement
 
         var live = LiveEraser is { Count: > 0 } ? EraseStroke.Widen(LiveEraser, LiveEraserWidth) : null;
         ImageAnnotation.Scaling = PictureScaling;
-        foreach (var annotation in DrawOrder(Items))
+        foreach (var (annotation, above) in Layered(Items, Preview as SpotlightAnnotation))
         {
+            if (above != null)
+            {
+                dc.PushClip(above);
+            }
+
             DrawItem(dc, annotation, live, ReferenceEquals(annotation, HoverWatermark) ? Accent : null, LiveEraserStrength,
                 LiveEraser, LiveEraserWidth, LiveEraserSoftness);
+            if (above != null)
+            {
+                dc.Pop();
+            }
         }
 
         ImageAnnotation.Scaling = BitmapScalingMode.HighQuality; // saved / copied pictures always are
 
         if (Preview != null)
         {
-            if (Preview is SpotlightAnnotation)
-            {
-                Spotlights.Prepare(Items.Append(Preview)); // the one being drawn joins the others (no double darkening)
-                foreach (var spot in Items.OfType<SpotlightAnnotation>())
-                {
-                    DrawItem(dc, spot);
-                }
-            }
-
-            DrawItem(dc, Preview);
+            DrawItem(dc, Preview); // a spotlight being drawn joined the others' group above (drawn by its first one)
         }
 
         if (!hasSelection && Source != null)
@@ -454,6 +456,59 @@ public sealed class AnnotationEditor : FrameworkElement
         clip.Freeze();
         _ownTargetClip = clip;
         CutoutTarget.Clip = clip;
+    }
+
+    /// <summary>
+    /// The elements in paint order, each with the clip of the 抠除 holes made after it (above it): a hole cuts what lay
+    /// there, not what is drawn later. Null when nothing above it cuts.
+    /// </summary>
+    public static IEnumerable<(Annotation Item, Geometry? Above)> Layered(IReadOnlyList<Annotation> items, SpotlightAnnotation? drawing = null)
+    {
+        var ordered = DrawOrder(items).ToList();
+        if (drawing != null)
+        {
+            Spotlights.Prepare(items.Append(drawing)); // the spotlight being drawn darkens together with the others
+        }
+
+        var clips = new Geometry?[ordered.Count];
+        var holes = new GeometryGroup { FillRule = FillRule.Nonzero };
+        Geometry? current = null;
+        for (var i = ordered.Count - 1; i >= 0; i--)
+        {
+            clips[i] = current;
+            if (ordered[i] is CutoutAnnotation cutout)
+            {
+                holes.Children.Add(cutout.Shape());
+                var copy = holes.Clone();
+                copy.Freeze();
+                var outside = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(-100000, -100000, 200000, 200000)), copy);
+                outside.Freeze();
+                current = outside;
+            }
+        }
+
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            yield return (ordered[i], clips[i]);
+        }
+    }
+
+    /// <summary>Draws the elements (in paint order, cut by the holes above each).</summary>
+    public static void DrawLayers(DrawingContext dc, IReadOnlyList<Annotation> items)
+    {
+        foreach (var (annotation, above) in Layered(items))
+        {
+            if (above != null)
+            {
+                dc.PushClip(above);
+            }
+
+            DrawItem(dc, annotation);
+            if (above != null)
+            {
+                dc.Pop();
+            }
+        }
     }
 
     public static IEnumerable<Annotation> DrawOrder(IReadOnlyList<Annotation> items)

@@ -263,9 +263,10 @@ public sealed class AppConfig
     public int FloatButtonY { get; set; } = int.MinValue;
 
     /// <summary>The floating button's row: Capture (截屏), Record (录屏), Ocr (文字识别), Editor (图片编辑器).</summary>
-    public string FloatActionOrder { get; set; } = "Capture,Record,Ocr,Editor,History,AddPin";
+    public string FloatActionOrder { get; set; } = "Capture,Record,Ocr,Editor,History,AddPin,TogglePins";
 
-    public string FloatActionHidden { get; set; } = "";
+    /// <summary>显示贴图 is offered but off until the user turns it on.</summary>
+    public string FloatActionHidden { get; set; } = "TogglePins";
 
     /// <summary>The floating button hides while a full-screen program (video, game) is in front.</summary>
     public bool FloatHideFullscreen { get; set; } = true;
@@ -290,6 +291,12 @@ public sealed class AppConfig
 
         RecentRegions ??= new List<CaptureRegion>();
         Recorder ??= new RecorderConfig();
+        if (!FloatActionOrder.Contains("TogglePins", StringComparison.Ordinal))
+        {
+            // 显示贴图 came in 0.8.61: there, but off until turned on.
+            FloatActionOrder += ",TogglePins";
+            FloatActionHidden = string.IsNullOrWhiteSpace(FloatActionHidden) ? "TogglePins" : FloatActionHidden + ",TogglePins";
+        }
 
         // An order that is still an old default (never rearranged) takes the new default: 复制 on the far right.
         var fresh = new AppConfig();

@@ -246,6 +246,7 @@ public partial class App : Application
         {
             _float = new UI.FloatButtonWindow(Config, FloatAction, () => ShowSettings("Float"), () => SetFloatButton(false));
             _float.Closed += (_, _) => _float = null;
+            _float.PinsShown = () => !_pinsHidden;
             _float.PinRequested += image => PinCentered(image);
             _float.PinFileRequested += (file, index) => PinFile(file, index % 8);
             _float.Show();
@@ -305,6 +306,10 @@ public partial class App : Application
                 break;
             case "ToggleHotkeys":
                 ToggleHotkeys();
+                break;
+            case "TogglePins":
+                TogglePinsShown();
+                _float?.RefreshPinsButton();
                 break;
             default:
                 StartCapture();
@@ -558,12 +563,49 @@ public partial class App : Application
             pin.RestoreView(shown.Zoom, shown.Opacity); // before it shows: it opens at its size (no jump from 100 %)
         }
 
+        if (_pinsHidden)
+        {
+            TogglePinsShown(); // a new pin while they are hidden: they all come back
+            _float?.RefreshPinsButton();
+        }
+
         _pins.Add(pin);
         pin.Show();
         return pin;
     }
 
     public int PinCount => _pins.Count;
+
+    private bool _pinsHidden;
+    private readonly List<PinWindow> _hiddenPins = new();
+
+    /// <summary>显示贴图: every pin off the screen, or back.</summary>
+    public void TogglePinsShown()
+    {
+        if (!_pinsHidden)
+        {
+            _hiddenPins.Clear();
+            foreach (var pin in _pins.Where(pin => pin.IsVisible))
+            {
+                _hiddenPins.Add(pin);
+                pin.Hide();
+            }
+
+            _pinsHidden = _hiddenPins.Count > 0;
+            return;
+        }
+
+        foreach (var pin in _hiddenPins.Where(_pins.Contains))
+        {
+            pin.Show();
+        }
+
+        _hiddenPins.Clear();
+        _pinsHidden = false;
+    }
+
+    /// <summary>The pins are hidden by 显示贴图 (tests).</summary>
+    public bool PinsHidden => _pinsHidden;
 
     private static long SnapshotBytes(PinSnapshot snapshot) =>
         (long)snapshot.Image.PixelWidth * snapshot.Image.PixelHeight * 4 +

@@ -43,7 +43,7 @@ internal static class AnnotationStyler
                 break;
 
             case MosaicAnnotation box:
-                SetLevel(box, toolbar.MosaicLevel, mosaicSource);
+                SetLevel(box, toolbar.MosaicLevel, mosaicSource, toolbar.MosaicBlur);
                 break;
 
             case SpotlightAnnotation spotlight:
@@ -54,7 +54,7 @@ internal static class AnnotationStyler
 
             case MosaicBrushAnnotation brush:
                 brush.Thickness = Math.Max(2, toolbar.Thickness);
-                SetLevel(brush, toolbar.MosaicLevel, mosaicSource);
+                SetLevel(brush, toolbar.MosaicLevel, mosaicSource, toolbar.MosaicBlur);
                 break;
 
             case RectAnnotation:
@@ -89,17 +89,17 @@ internal static class AnnotationStyler
         }
     }
 
-    private static void SetLevel(Annotation mosaic, double level, BitmapSource? source)
+    private static void SetLevel(Annotation mosaic, double level, BitmapSource? source, double blur = 0)
     {
         var block = Math.Clamp(Math.Round(level), 3, 64);
-        var current = mosaic switch
+        var (current, currentBlur) = mosaic switch
         {
-            MosaicAnnotation box => box.BlockSize,
-            MosaicBrushAnnotation brush => brush.BlockSize,
-            _ => block
+            MosaicAnnotation box => (box.BlockSize, box.Blur),
+            MosaicBrushAnnotation brush => (brush.BlockSize, brush.Blur),
+            _ => (block, blur)
         };
 
-        if (Math.Abs(current - block) < 0.01 && HasPattern(mosaic))
+        if (Math.Abs(current - block) < 0.01 && Math.Abs(currentBlur - blur) < 0.01 && HasPattern(mosaic))
         {
             return;
         }
@@ -108,9 +108,11 @@ internal static class AnnotationStyler
         {
             case MosaicAnnotation box:
                 box.BlockSize = block;
+                box.Blur = blur;
                 break;
             case MosaicBrushAnnotation brush:
                 brush.BlockSize = block;
+                brush.Blur = blur;
                 break;
         }
 

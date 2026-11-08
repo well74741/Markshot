@@ -37,6 +37,7 @@ internal static class ToolbarCatalog
         "Capture" => "截屏",
         "History" => "贴图历史",
         "AddPin" => "添加贴图",
+        "TogglePins" => "显示贴图",
         _ => key
     };
 
@@ -68,6 +69,7 @@ internal static class ToolbarCatalog
             "Capture" => "IconCaptureMask",
             "History" => "IconHistoryMask",
             "AddPin" => "IconAddImageMask",
+            "TogglePins" => "IconShowPinsMask",
             _ => "IconTranslateMask"
         };
         return new Border { Style = (Style)Application.Current.FindResource(mask) };

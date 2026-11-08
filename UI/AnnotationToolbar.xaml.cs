@@ -222,6 +222,37 @@ public partial class AnnotationToolbar : UserControl
     /// <summary>Mosaic block size (strength).</summary>
     public double MosaicLevel => _mosaicLevel;
 
+    private double _mosaicBlur;
+
+    /// <summary>马赛克 高斯模糊 (pixels).</summary>
+    public double MosaicBlur => _mosaicBlur;
+
+    private void Blur_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (BlurValue == null)
+        {
+            return;
+        }
+
+        BlurValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
+        if (_configuring)
+        {
+            return;
+        }
+
+        _mosaicBlur = Math.Round(e.NewValue);
+        SettingsChanged?.Invoke();
+    }
+
+    private void ShowBlur()
+    {
+        var was = _configuring;
+        _configuring = true;
+        BlurSlider.Value = _mosaicBlur;
+        BlurValue.Text = ((int)_mosaicBlur).ToString(CultureInfo.InvariantCulture);
+        _configuring = was;
+    }
+
     public double WatermarkOpacity => _watermarkOpacity;
 
     public double WatermarkAngle => _watermarkAngle;
@@ -619,6 +650,7 @@ public partial class AnnotationToolbar : UserControl
         StrokeGroup.Visibility = Visibility.Collapsed;
         TextStyleGroup.Visibility = Visibility.Collapsed;
         LevelGroup.Visibility = Visibility.Collapsed;
+        BlurGroup.Visibility = Visibility.Collapsed;
         OpacityGroup.Visibility = Visibility.Collapsed;
         AngleGroup.Visibility = Visibility.Collapsed;
         FillToggle.Visibility = Visibility.Collapsed;
@@ -712,12 +744,14 @@ public partial class AnnotationToolbar : UserControl
                     WidthSlider.Minimum = 4;
                     WidthSlider.Maximum = 80;
                     LevelGroup.Visibility = Visibility.Visible;
+                    BlurGroup.Visibility = Visibility.Visible;
                     ColorSection.Visibility = Visibility.Collapsed;
                 }
                 else
                 {
                     WidthGroup.Visibility = Visibility.Collapsed;
                     LevelGroup.Visibility = Visibility.Visible;
+                    BlurGroup.Visibility = Visibility.Visible;
                     ColorSection.Visibility = Visibility.Collapsed;
                 }
                 break;
@@ -772,6 +806,7 @@ public partial class AnnotationToolbar : UserControl
             BackgroundToggle.IsChecked = _textBackground;
             LevelSlider.Value = Math.Clamp(_mosaicLevel, LevelSlider.Minimum, LevelSlider.Maximum);
             LevelValue.Text = ((int)Math.Round(_mosaicLevel)).ToString(CultureInfo.InvariantCulture);
+            ShowBlur();
             var shownOpacity = tool is AnnotationTool.Eraser or AnnotationTool.Cutout ? _eraserOpacity : _watermarkOpacity;
             OpacitySlider.Value = Math.Round(shownOpacity * 100);
             OpacityValue.Text = $"{Math.Round(shownOpacity * 100)}%";
@@ -871,10 +906,14 @@ public partial class AnnotationToolbar : UserControl
         if (annotation is MosaicAnnotation box)
         {
             _mosaicLevel = box.BlockSize;
+            _mosaicBlur = box.Blur;
+            ShowBlur();
         }
         else if (annotation is MosaicBrushAnnotation brush)
         {
             _mosaicLevel = brush.BlockSize;
+            _mosaicBlur = brush.Blur;
+            ShowBlur();
         }
         else if (annotation is WatermarkAnnotation mark)
         {
@@ -1122,6 +1161,16 @@ public partial class AnnotationToolbar : UserControl
 
     public bool SpotlightEllipse => _spotlightEllipse;
 
+    /// <summary>The darkness is one for the whole picture: the window darkens all its spotlights alike (selected or not).</summary>
+    public event Action<double>? SpotlightDarknessChanged;
+
+    /// <summary>The window's spotlights have this darkness (shown when the tool is picked).</summary>
+    public void ShowSpotlightDarkness(double darkness)
+    {
+        _spotlightDarkness = Math.Clamp(darkness, 0.05, 1);
+        ShowSpotlight();
+    }
+
     public double SpotlightDarkness => _spotlightDarkness;
 
     public double SpotlightFeather => _spotlightFeather;
@@ -1162,6 +1211,7 @@ public partial class AnnotationToolbar : UserControl
         }
 
         _spotlightDarkness = Math.Clamp(e.NewValue / 100, 0.05, 1);
+        SpotlightDarknessChanged?.Invoke(_spotlightDarkness);
         SettingsChanged?.Invoke();
     }
 

@@ -20,7 +20,10 @@ public sealed class FloatButtonWindow : Window
     private double MainSize => BaseSize * Math.Clamp(_config.FloatIconSize, 1, 2);
     private const double Gap = 8;
 
-    public static readonly string[] Actions = { "Capture", "Record", "Ocr", "Editor", "History", "AddPin" };
+    public static readonly string[] Actions = { "Capture", "Record", "Ocr", "Editor", "History", "AddPin", "TogglePins" };
+
+    /// <summary>Whether the pins show (显示贴图 dims while they are all hidden).</summary>
+    public Func<bool>? PinsShown { get; set; }
 
     private readonly AppConfig _config;
     private readonly Action<string> _run;
@@ -275,6 +278,7 @@ public sealed class FloatButtonWindow : Window
         "Editor" => "图片编辑器",
         "History" => "贴图历史",
         "AddPin" => "添加贴图",
+        "TogglePins" => "显示 / 隐藏贴图",
         _ => key
     };
 
@@ -285,6 +289,7 @@ public sealed class FloatButtonWindow : Window
         "Ocr" => "IconOcrMask",
         "History" => "IconHistoryMask",
         "AddPin" => "IconAddImageMask",
+        "TogglePins" => "IconShowPinsMask",
         _ => "IconEditMask"
     };
 
@@ -391,6 +396,7 @@ public sealed class FloatButtonWindow : Window
         }
 
         _expanded = true;
+        RefreshPinsButton();
         _plate.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)); // the gap to the button keeps the mouse too
         _plate.Visibility = Visibility.Visible;
         var duration = new Duration(TimeSpan.FromMilliseconds(90));
@@ -422,6 +428,15 @@ public sealed class FloatButtonWindow : Window
         else
         {
             Collapse();
+        }
+    }
+
+    /// <summary>显示贴图 is dimmed while every pin is hidden.</summary>
+    public void RefreshPinsButton()
+    {
+        foreach (var item in _items.Children.OfType<FrameworkElement>().Where(item => (string)item.Tag == "TogglePins"))
+        {
+            item.Opacity = PinsShown?.Invoke() == false ? 0.4 : 1;
         }
     }
 

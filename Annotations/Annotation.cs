@@ -1058,6 +1058,9 @@ public sealed class MosaicAnnotation : Annotation
     /// <summary>Block size of the mosaic (its strength).</summary>
     public double BlockSize { get; set; } = 12;
 
+    /// <summary>高斯模糊 over the blocks (pixels; 0 = hard blocks).</summary>
+    public double Blur { get; set; }
+
     public BitmapSource? Pattern { get; set; }
 
     /// <summary>Canvas area the <see cref="Pattern"/> is stretched over.</summary>
@@ -1554,6 +1557,9 @@ public sealed class MosaicBrushAnnotation : Annotation
     /// <summary>Block size of the mosaic (its strength).</summary>
     public double BlockSize { get; set; } = 12;
 
+    /// <summary>高斯模糊 over the blocks (pixels; 0 = hard blocks).</summary>
+    public double Blur { get; set; }
+
     public BitmapSource? Pattern { get; set; }
 
     /// <summary>Canvas area the <see cref="Pattern"/> is stretched over.</summary>
@@ -1839,10 +1845,10 @@ public static class MosaicBuilder
         switch (annotation)
         {
             case MosaicAnnotation box:
-                (box.Pattern, box.PatternRect) = BuildCanvas(source, box.BlockSize);
+                (box.Pattern, box.PatternRect) = BuildCanvas(source, box.BlockSize, box.Blur);
                 break;
             case MosaicBrushAnnotation brush:
-                (brush.Pattern, brush.PatternRect) = BuildCanvas(source, brush.BlockSize);
+                (brush.Pattern, brush.PatternRect) = BuildCanvas(source, brush.BlockSize, brush.Blur);
                 break;
         }
     }
@@ -1851,13 +1857,80 @@ public static class MosaicBuilder
     /// One sample per block for the whole canvas; the result is drawn stretched
     /// over (blocks × block size) so every block is exactly <paramref name="blockSize"/> px.
     /// </summary>
-    public static (BitmapSource? Pattern, Rect Area) BuildCanvas(BitmapSource source, double blockSize)
+    public static (BitmapSource? Pattern, Rect Area) BuildCanvas(BitmapSource source, double blockSize, double blur = 0)
     {
         var block = Math.Clamp((int)Math.Round(blockSize), 3, 64);
         var pattern = Build(source, new Rect(0, 0, source.PixelWidth, source.PixelHeight), block);
-        return pattern == null
-            ? (null, Rect.Empty)
-            : (pattern, new Rect(0, 0, pattern.PixelWidth * block, pattern.PixelHeight * block));
+        if (pattern == null)
+        {
+            return (null, Rect.Empty);
+        }
+
+        var area = new Rect(0, 0, pattern.PixelWidth * block, pattern.PixelHeight * block);
+        var radius = (int)Math.Round(Math.Clamp(blur, 0, 60));
+        if (radius < 1)
+        {
+            return (pattern, area);
+        }
+
+        // 高斯模糊: the blocks at full size, softened (three box passes ≈ a Gaussian).
+        var width = (int)area.Width;
+        var height = (int)area.Height;
+        var small = new byte[pattern.PixelWidth * pattern.PixelHeight * 4];
+        pattern.CopyPixels(small, pattern.PixelWidth * 4, 0);
+        var full = new byte[width * height * 4];
+        for (var y = 0; y < height; y++)
+        {
+            var sy = y / block;
+            for (var x = 0; x < width; x++)
+            {
+                Buffer.BlockCopy(small, (sy * pattern.PixelWidth + x / block) * 4, full, (y * width + x) * 4, 4);
+            }
+        }
+
+        var pass = Math.Max(1, (int)Math.Round(radius / 1.7));
+        for (var i = 0; i < 3; i++)
+        {
+            BoxBlur(full, width, height, pass, horizontal: true);
+            BoxBlur(full, width, height, pass, horizontal: false);
+        }
+
+        var soft = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, full, width * 4);
+        soft.Freeze();
+        return (soft, area);
+    }
+
+    /// <summary>A running-sum box blur along rows or columns (BGRA, edges clamped).</summary>
+    private static void BoxBlur(byte[] data, int width, int height, int r, bool horizontal)
+    {
+        var lines = horizontal ? height : width;
+        var length = horizontal ? width : height;
+        var step = horizontal ? 4 : width * 4;
+        System.Threading.Tasks.Parallel.For(0, lines, line =>
+        {
+            var start = horizontal ? line * width * 4 : line * 4;
+            var copy = new byte[length * 4];
+            for (var i = 0; i < length; i++)
+            {
+                Buffer.BlockCopy(data, start + i * step, copy, i * 4, 4);
+            }
+
+            var window = 2 * r + 1;
+            for (var c = 0; c < 4; c++)
+            {
+                var sum = 0;
+                for (var i = -r; i <= r; i++)
+                {
+                    sum += copy[Math.Clamp(i, 0, length - 1) * 4 + c];
+                }
+
+                for (var i = 0; i < length; i++)
+                {
+                    data[start + i * step + c] = (byte)(sum / window);
+                    sum += copy[Math.Clamp(i + r + 1, 0, length - 1) * 4 + c] - copy[Math.Clamp(i - r, 0, length - 1) * 4 + c];
+                }
+            }
+        });
     }
 
     /// <summary>Draws a mosaic pattern with hard block edges (no smoothing) in any drawing context.</summary>

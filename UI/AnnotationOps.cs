@@ -40,14 +40,14 @@ internal static class AnnotationOps
             AnnotationTool.Line => new LineAnnotation { Start = point, End = point, Color = color, Thickness = thickness },
             AnnotationTool.Pen => new PenAnnotation { Color = color, Thickness = thickness, Softness = toolbar.Softness },
             AnnotationTool.Highlighter => new PenAnnotation { Color = color, Thickness = thickness, Highlight = true, Softness = toolbar.Softness },
-            AnnotationTool.Mosaic => new MosaicAnnotation { Rect = new Rect(point, point), BlockSize = toolbar.MosaicLevel },
+            AnnotationTool.Mosaic => new MosaicAnnotation { Rect = new Rect(point, point), BlockSize = toolbar.MosaicLevel, Blur = toolbar.MosaicBlur },
             AnnotationTool.Spotlight => new SpotlightAnnotation
             {
                 Rect = new Rect(point, point), Ellipse = toolbar.SpotlightEllipse, Darkness = toolbar.SpotlightDarkness, Feather = toolbar.SpotlightFeather
             },
             AnnotationTool.MosaicBrush => new MosaicBrushAnnotation
             {
-                Thickness = Math.Max(2, thickness), BlockSize = toolbar.MosaicLevel
+                Thickness = Math.Max(2, thickness), BlockSize = toolbar.MosaicLevel, Blur = toolbar.MosaicBlur
             },
             AnnotationTool.Number => new NumberAnnotation
             {
@@ -313,6 +313,25 @@ internal static class AnnotationOps
         }
 
         return null;
+    }
+
+    /// <summary>聚焦's darkness for every spotlight of the canvas, at once (one undo step while the slider moves).</summary>
+    public static void SetSpotlightDarkness(AnnotationEditor editor, AnnotationHistory history, double darkness, Action updateUndo)
+    {
+        var spots = editor.Items.OfType<SpotlightAnnotation>().ToList();
+        if (spots.Count == 0 || spots.All(spot => Math.Abs(spot.Darkness - darkness) < 0.001))
+        {
+            return;
+        }
+
+        history.CheckpointCoalesced(editor.Items, "spotlight-darkness");
+        foreach (var spot in spots)
+        {
+            spot.Darkness = darkness;
+        }
+
+        updateUndo();
+        editor.InvalidateVisual();
     }
 
     public static WatermarkAnnotation? FindWatermark(IReadOnlyList<Annotation> items) =>

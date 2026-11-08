@@ -36,7 +36,7 @@ static class Round58Test
             Check(popup is { IsOpen: true }, "the version shows the latest release notes on hover");
             var reset = (Button)settings.FindName("ResetDefaultsButton");
             Check(DockPanel.GetDock(reset) == Dock.Left && reset.Parent is DockPanel, "恢复默认设置 sits on the far left of the footer");
-            Check(((FrameworkElement)settings.FindName("DrawerCoffee")).Width == 32, "the coffee cup is twice as big");
+            Check(((FrameworkElement)settings.FindName("DrawerCoffee")).Width == 24, "the coffee cup is 24 DIP (0.8.61)");
             settings.Close();
         }
 

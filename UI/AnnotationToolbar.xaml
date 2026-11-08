@@ -344,6 +344,15 @@
                                    TextAlignment="Center" VerticalAlignment="Center" />
                     </StackPanel>
 
+                    <StackPanel x:Name="BlurGroup" Orientation="Horizontal" Visibility="Collapsed" ToolTip="高斯模糊：让马赛克的色块变得柔和">
+                        <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
+                        <TextBlock Text="模糊" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />
+                        <Slider x:Name="BlurSlider" Focusable="False" IsMoveToPointEnabled="True" Width="70" Minimum="0" Maximum="30" Value="0"
+                                ValueChanged="Blur_Changed" VerticalAlignment="Center" Margin="5,0,2,0" />
+                        <TextBlock x:Name="BlurValue" Text="0" Foreground="{DynamicResource T_FFC8C8C8}" FontSize="11" Width="20"
+                                   TextAlignment="Center" VerticalAlignment="Center" />
+                    </StackPanel>
+
                     <StackPanel x:Name="AngleGroup" Orientation="Horizontal" Visibility="Collapsed">
                         <Border Width="1" Height="18" Background="{DynamicResource T_33FFFFFF}" Margin="6,0" />
                         <TextBlock Text="倾斜" Foreground="{DynamicResource T_FFA8A8A8}" FontSize="11" VerticalAlignment="Center" />

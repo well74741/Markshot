@@ -115,6 +115,8 @@ public partial class SettingsWindow : Window
             }
         };
         PreviewKeyDown += OnEscape;
+        PreviewMouseDown += PutDrawerAwayOnOutsideClick;
+        _savedPrint = Fingerprint(); // what "nothing changed" looks like
         Activated += (_, _) => _activatedAt = Environment.TickCount64;
         _ready = true;
     }
@@ -129,9 +131,59 @@ public partial class SettingsWindow : Window
     private readonly Dictionary<string, object?> _liveSaved = new();
     private bool _dirty;
     private bool _asked;
+    private string _savedPrint = "";
 
-    /// <summary>There are changes that 保存 has not kept yet (tests).</summary>
-    public bool HasUnsavedChanges => _dirty;
+    /// <summary>
+    /// There are changes that 保存 has not kept yet: what the window shows now differs from what it showed when opened
+    /// (or last saved). Scrolling, moving between pages, changing something and back again change nothing.
+    /// </summary>
+    public bool HasUnsavedChanges => _dirty = _ready && Fingerprint() != _savedPrint;
+
+    /// <summary>Every value the window can change, in one string.</summary>
+    private string Fingerprint()
+    {
+        var text = new StringBuilder();
+        void Walk(object node)
+        {
+            switch (node)
+            {
+                case System.Windows.Controls.Primitives.ScrollBar:
+                    return;
+                case TextBox { Name.Length: > 0 } box:
+                    text.Append(box.Name).Append('=').Append(box.Text).Append('\n');
+                    break;
+                case PasswordBox { Name.Length: > 0 } password:
+                    text.Append(password.Name).Append('=').Append(password.Password.GetHashCode()).Append('\n');
+                    break;
+                case System.Windows.Controls.Primitives.ToggleButton { Name.Length: > 0 } toggle when toggle is not RadioButton { GroupName: "Nav" }:
+                    text.Append(toggle.Name).Append('=').Append(toggle.IsChecked).Append('\n');
+                    break;
+                case Slider { Name.Length: > 0 } slider when slider.Name != "DrawerQrSlider":
+                    text.Append(slider.Name).Append('=').Append(Math.Round(slider.Value, 2)).Append('\n');
+                    break;
+            }
+
+            if (node is DependencyObject element)
+            {
+                foreach (var child in LogicalTreeHelper.GetChildren(element))
+                {
+                    Walk(child);
+                }
+            }
+        }
+
+        Walk(this);
+        foreach (var row in new Panel[] { CaptureToolsRow, CaptureActionsRow, PinToolsRow, PinActionsRow, EditorToolsRow, EditorActionsRow, FloatActionsRow })
+        {
+            var (order, hidden) = ReadToolbarRow(row);
+            text.Append(row.Name).Append('=').Append(order).Append('|').Append(hidden).Append('\n');
+        }
+
+        text.Append(_shadowColor).Append('|').Append(_theme).Append('|').Append(_uiSize).Append('|')
+            .Append(string.Join(",", _winMouse.Select(pair => pair.Key + ":" + pair.Value))).Append('|')
+            .Append(string.Join(",", LiveSettings.Select(name => typeof(AppConfig).GetProperty(name)!.GetValue(_config))));
+        return text.ToString();
+    }
 
     /// <summary>Tests: the answer the close question gets (0 保存, 1 不保存, 2 取消).</summary>
     internal Func<int>? AskOverride;
@@ -139,12 +191,9 @@ public partial class SettingsWindow : Window
     /// <summary>Tests: the answer for every settings window (no question box that would wait for a click).</summary>
     internal static Func<int>? AskAll;
 
+    // (Kept for the places that change something: whether it is a change is decided by comparing, see HasUnsavedChanges.)
     private void MarkDirty()
     {
-        if (_ready)
-        {
-            _dirty = true;
-        }
     }
 
     private void OnSettingEdited(object sender, RoutedEventArgs e)
@@ -160,7 +209,7 @@ public partial class SettingsWindow : Window
 
     private void OnClosingAsk(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (!_dirty || _asked)
+        if (_asked || !HasUnsavedChanges)
         {
             return;
         }
@@ -268,9 +317,12 @@ public partial class SettingsWindow : Window
     {
         // Switched (and saved) outside the window: that is the saved state now, not a change made here.
         _liveSaved["FloatButtonEnabled"] = _config.FloatButtonEnabled;
-        var dirty = _dirty;
+        var wasSaved = !HasUnsavedChanges;
         FloatEnabledCheck.IsChecked = _config.FloatButtonEnabled;
-        _dirty = dirty;
+        if (wasSaved)
+        {
+            _savedPrint = Fingerprint(); // still nothing to save
+        }
     }
 
     private void FloatEnabled_Click(object sender, RoutedEventArgs e)
@@ -942,6 +994,7 @@ public partial class SettingsWindow : Window
         Saved = true;
         _saves++;
         _dirty = false;
+        _savedPrint = Fingerprint();
         foreach (var name in LiveSettings)
         {
             _liveSaved[name] = typeof(AppConfig).GetProperty(name)!.GetValue(_config);
@@ -1255,6 +1308,38 @@ public partial class SettingsWindow : Window
         });
         ShowDrawerHint(target < 1 && ((UIElement)sender).IsMouseOver, target);
         e.Handled = true;
+    }
+
+    /// <summary>The QR code is out and the click is elsewhere: it goes back in.</summary>
+    private void PutDrawerAwayOnOutsideClick(object sender, MouseButtonEventArgs e)
+    {
+        if (DrawerHeight < 1 || _drawerDragging || e.OriginalSource is not DependencyObject source)
+        {
+            return;
+        }
+
+        for (var node = source; node != null; node = node is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, DrawerPanel) || ReferenceEquals(node, DrawerHandle) || ReferenceEquals(node, DrawerBar))
+            {
+                return; // on the code or its bar: they handle it
+            }
+        }
+
+        PutDrawerAway();
+    }
+
+    /// <summary>The QR code slides back in.</summary>
+    internal void PutDrawerAway()
+    {
+        var height = DrawerHeight;
+        if (height < 1)
+        {
+            return;
+        }
+
+        DrawerPanel.BeginAnimation(HeightProperty, new System.Windows.Media.Animation.DoubleAnimation(height, 0, Motion.Base) { EasingFunction = Motion.Ease });
+        ShowDrawerHint(false, 0);
     }
 
     // ---- annotation bar buttons: click = show / hide, long-press drag = order ----------------

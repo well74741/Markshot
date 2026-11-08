@@ -269,7 +269,7 @@
                       MouseEnter="DrawerHandle_MouseEnter" MouseLeave="DrawerHandle_MouseLeave"
                       MouseLeftButtonDown="DrawerHandle_MouseLeftButtonDown" MouseMove="DrawerHandle_MouseMove"
                       MouseLeftButtonUp="DrawerHandle_MouseLeftButtonUp">
-                    <Border x:Name="DrawerCoffee" Style="{StaticResource IconCoffeeMask}" Width="32" Height="32"
+                    <Border x:Name="DrawerCoffee" Style="{StaticResource IconCoffeeMask}" Width="24" Height="24"
                             Background="{DynamicResource T_FF8A8A8A}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     <TextBlock x:Name="DrawerHint" Text="往上拉，请杯咖~" Foreground="{DynamicResource T_FF8A8A8A}" FontSize="12"
                                HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0" />

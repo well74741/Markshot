@@ -33,19 +33,18 @@ public partial class OverlayWindow
         {
             dc.PushTransform(new TranslateTransform(-x, -y));
             var area = lassoClip ?? new RectangleGeometry(new Rect(x, y, width, height), _cornerRadius, _cornerRadius);
-            dc.PushClip(includeAnnotations ? Cutouts.Exclude(Editor.Items, area) : area);
+            dc.PushClip(area);
+            dc.PushClip(includeAnnotations ? Cutouts.Exclude(Editor.Items, area) : area); // 抠除: the screen under the holes
             dc.DrawImage(_screen, new Rect(0, 0, _screen.PixelWidth, _screen.PixelHeight));
             if (translation != null)
             {
                 dc.DrawImage(translation, _translatedRect);
             }
 
+            dc.Pop();
             if (includeAnnotations)
             {
-                foreach (var annotation in AnnotationEditor.DrawOrder(Editor.Items))
-                {
-                    AnnotationEditor.DrawItem(dc, annotation);
-                }
+                AnnotationEditor.DrawLayers(dc, Editor.Items); // each element cut only by the holes above it
             }
 
             dc.Pop();
@@ -355,7 +354,9 @@ public partial class OverlayWindow
             return;
         }
 
-        CloseWith(CaptureAction.Scroll, _screen);
+        // Like making a pin: the dimming clears from the area outwards, then the long screenshot starts.
+        var area = new Rect(_selection.X / _scale, _selection.Y / _scale, _selection.Width / _scale, _selection.Height / _scale);
+        FinishWithTransition(() => CloseWith(CaptureAction.Scroll, _screen), area, keepAnnotations: false);
     }
 
     /// <summary>编辑: the selection goes to the image editor, its annotations stay editable there.</summary>

@@ -110,12 +110,12 @@ public partial class PinWindow
         }
 
         // One pattern per mosaic strength: the stored undo steps share it with the live elements.
-        var patterns = new Dictionary<double, (BitmapSource? Pattern, Rect Area)>();
-        (BitmapSource? Pattern, Rect Area) PatternFor(double block)
+        var patterns = new Dictionary<(double, double), (BitmapSource? Pattern, Rect Area)>();
+        (BitmapSource? Pattern, Rect Area) PatternFor(double block, double blur)
         {
-            if (!patterns.TryGetValue(block, out var built))
+            if (!patterns.TryGetValue((block, blur), out var built))
             {
-                patterns[block] = built = MosaicBuilder.BuildCanvas(transformed, block);
+                patterns[(block, blur)] = built = MosaicBuilder.BuildCanvas(transformed, block, blur);
             }
 
             return built;
@@ -126,10 +126,10 @@ public partial class PinWindow
             switch (mosaic)
             {
                 case MosaicAnnotation box:
-                    (box.Pattern, box.PatternRect) = PatternFor(block);
+                    (box.Pattern, box.PatternRect) = PatternFor(block, box.Blur);
                     break;
                 case MosaicBrushAnnotation brush:
-                    (brush.Pattern, brush.PatternRect) = PatternFor(block);
+                    (brush.Pattern, brush.PatternRect) = PatternFor(block, brush.Blur);
                     break;
             }
         }

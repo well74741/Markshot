@@ -10,6 +10,11 @@ public partial class OverlayWindow
 {
     private void OnToolbarToolChanged(AnnotationTool tool)
     {
+        if (tool == AnnotationTool.Spotlight && Editor.Items.OfType<SpotlightAnnotation>().FirstOrDefault() is { } existingSpot)
+        {
+            Toolbar.ShowSpotlightDarkness(existingSpot.Darkness); // one darkness for the picture
+        }
+
         _textEditor.Commit();
         _watermarkOff = false; // choosing the watermark tool means: show one
         _tool = tool;
