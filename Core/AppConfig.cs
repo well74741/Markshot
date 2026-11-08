@@ -255,7 +255,13 @@ public sealed class AppConfig
     public string LastVersion { get; set; } = "";
 
     /// <summary>悬浮按钮: a round button on the desktop (click = capture, hover = a row of actions).</summary>
-    public bool FloatButtonEnabled { get; set; }
+    public bool FloatButtonEnabled { get; set; } = true;
+
+    /// <summary>The user has switched the floating button on / off once (until then it is on).</summary>
+    public bool FloatButtonChosen { get; set; }
+
+    /// <summary>What a click on the floating button does: one of its row's actions.</summary>
+    public string FloatClickAction { get; set; } = "Capture";
 
     /// <summary>Where the floating button was left (physical screen pixels); int.MinValue = the default, bottom right.</summary>
     public int FloatButtonX { get; set; } = int.MinValue;
@@ -291,6 +297,11 @@ public sealed class AppConfig
 
         RecentRegions ??= new List<CaptureRegion>();
         Recorder ??= new RecorderConfig();
+        if (!FloatButtonChosen)
+        {
+            FloatButtonEnabled = true; // on until the user turns it off
+        }
+
         if (!FloatActionOrder.Contains("TogglePins", StringComparison.Ordinal))
         {
             // 显示贴图 came in 0.8.61: there, but off until turned on.

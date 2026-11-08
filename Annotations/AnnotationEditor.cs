@@ -428,6 +428,9 @@ public sealed class AnnotationEditor : FrameworkElement
     /// (so a mosaic never pixelates it) instead of under everything.
     /// </summary>
     /// <summary>The picture element gets the holes too (in its own DIPs); put back as it was when there are none.</summary>
+    /// <summary>Editing is over: the picture is the composed one (holes and all); the clip on it goes.</summary>
+    public void ReleaseCutoutTarget() => UpdateCutoutTarget(null);
+
     private void UpdateCutoutTarget(Geometry? visible)
     {
         if (CutoutTarget == null)

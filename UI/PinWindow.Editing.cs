@@ -494,6 +494,9 @@ public partial class PinWindow
         }
 
         UpdateAnimation(); // nothing drawn on it: it moves again
+        // The holes are in the picture now: no clip on it (it cut the shadow away), the shadow traces the shape.
+        Editor.ReleaseCutoutTarget();
+        UpdateFrame();
     }
 
     /// <summary>The active pin always has somewhere for the keys to go (with nothing focused WPF drops them).</summary>

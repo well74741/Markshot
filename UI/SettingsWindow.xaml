@@ -717,6 +717,8 @@
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="6" />
+                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="12" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
@@ -724,8 +726,13 @@
                                 <Border Grid.Column="1" Background="{DynamicResource T_FF1B1B1B}" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
                                     <StackPanel x:Name="FloatActionsRow" Orientation="Horizontal" />
                                 </Border>
-                                <TextBlock Grid.Row="2" Text="图标" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,4,0,0" />
-                                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                <!-- 点击行为: a slider under the row; its knob snaps under a button, that button is what a click does. -->
+                                <TextBlock Grid.Row="2" Text="点击行为" Style="{StaticResource RowLabel}" />
+                                <Canvas Grid.Row="2" Grid.Column="1" x:Name="FloatClickTrack" Height="18" HorizontalAlignment="Left" Margin="5,0,0,0"
+                                        Background="Transparent" Cursor="Hand" ToolTip="左右拖动，对准哪个按钮，单击悬浮按钮就执行哪个功能"
+                                        MouseLeftButtonDown="FloatClick_MouseDown" MouseMove="FloatClick_MouseMove" MouseLeftButtonUp="FloatClick_MouseUp" />
+                                <TextBlock Grid.Row="4" Text="图标" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,4,0,0" />
+                                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
                                     <!-- Preview: drop a picture here, or Ctrl+V a copied one. -->
                                     <Border x:Name="FloatIconPreview" Width="76" Height="76" CornerRadius="8" AllowDrop="True" Focusable="True"
                                             Background="{DynamicResource T_FF1B1B1B}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"

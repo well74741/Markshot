@@ -180,7 +180,7 @@ public partial class SettingsWindow : Window
         }
 
         text.Append(_shadowColor).Append('|').Append(_theme).Append('|').Append(_uiSize).Append('|')
-            .Append(string.Join(",", _winMouse.Select(pair => pair.Key + ":" + pair.Value))).Append('|')
+            .Append(string.Join(",", _winMouse.Select(pair => pair.Key + ":" + pair.Value))).Append('|').Append(_floatClick).Append('|')
             .Append(string.Join(",", LiveSettings.Select(name => typeof(AppConfig).GetProperty(name)!.GetValue(_config))));
         return text.ToString();
     }
@@ -287,8 +287,14 @@ public partial class SettingsWindow : Window
         FloatEnabledCheck.IsChecked = _config.FloatButtonEnabled;
         FloatFullscreenCheck.IsChecked = _config.FloatHideFullscreen;
         var reorder = FillToolbarRow(FloatActionsRow, FloatButtonWindow.Actions, _config.FloatActionOrder, _config.FloatActionHidden);
-        reorder.Reordered += _ => ApplyFloatRow();
+        reorder.Reordered += _ =>
+        {
+            ApplyFloatRow();
+            Dispatcher.BeginInvoke(() => PlaceClickKnob(animate: false), DispatcherPriority.Loaded); // the knob stays on its button
+        };
         FloatActionsRow.MouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(ApplyFloatRow, DispatcherPriority.Input);
+        _floatClick = FloatButtonWindow.Actions.Contains(_config.FloatClickAction) ? _config.FloatClickAction : "Capture";
+        BuildClickTrack();
         FloatSizeSlider.Value = Math.Round(Math.Clamp(_config.FloatIconSize, 1, 2) * 100);
         FloatSizeValue.Text = $"{FloatSizeSlider.Value:0}%";
         FloatOpacitySlider.Value = Math.Round(Math.Clamp(_config.FloatIconOpacity, 0.2, 1) * 100);
@@ -297,6 +303,151 @@ public partial class SettingsWindow : Window
     }
 
     private static App? RunningApp => Application.Current as App;
+
+    // ---- 点击行为: a knob on a track as long as the row, snapping under a button --------------------------------
+    private const double Tile = 28;
+    private string _floatClick = "Capture";
+    private readonly System.Windows.Shapes.Ellipse _clickKnob = new() { Width = 14, Height = 14, IsHitTestVisible = false };
+    private bool _clickDragging;
+
+    /// <summary>The action a click on the floating button runs (tests).</summary>
+    internal string FloatClickChoice => _floatClick;
+
+    private List<string> FloatKeys => FloatActionsRow.Children.OfType<FrameworkElement>().Select(tile => (string)tile.Tag).ToList();
+
+    private void BuildClickTrack()
+    {
+        FloatClickTrack.Children.Clear();
+        var count = FloatButtonWindow.Actions.Length;
+        FloatClickTrack.Width = count * Tile;
+        var line = new Border { Width = (count - 1) * Tile, Height = 3, CornerRadius = new CornerRadius(1.5), IsHitTestVisible = false };
+        line.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF3A3A3A));
+        Canvas.SetLeft(line, Tile / 2);
+        Canvas.SetTop(line, 7.5);
+        FloatClickTrack.Children.Add(line);
+        _clickKnob.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "Accent");
+        _clickKnob.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, Theme.Key(0xFFFFFFFF));
+        _clickKnob.StrokeThickness = 1.5;
+        Canvas.SetTop(_clickKnob, 2);
+        FloatClickTrack.Children.Add(_clickKnob);
+        PlaceClickKnob(animate: false);
+    }
+
+    /// <summary>The knob under the chosen button, which gets a coloured plate.</summary>
+    private void PlaceClickKnob(bool animate)
+    {
+        var index = Math.Max(0, FloatKeys.IndexOf(_floatClick));
+        var left = index * Tile + Tile / 2 - _clickKnob.Width / 2;
+        if (animate)
+        {
+            _clickKnob.BeginAnimation(Canvas.LeftProperty, new System.Windows.Media.Animation.DoubleAnimation(left, Motion.Bar) { EasingFunction = Motion.Ease });
+        }
+        else
+        {
+            _clickKnob.BeginAnimation(Canvas.LeftProperty, null);
+            Canvas.SetLeft(_clickKnob, left);
+        }
+
+        foreach (var tile in FloatActionsRow.Children.OfType<Border>())
+        {
+            tile.Background = RestPlate(FloatActionsRow, (string)tile.Tag);
+        }
+    }
+
+    /// <summary>A tile's plate when the pointer is not on it: the accent tint under the click's button, else none.</summary>
+    private Brush RestPlate(Panel row, string key)
+    {
+        if (row != FloatActionsRow || key != _floatClick)
+        {
+            return Brushes.Transparent;
+        }
+
+        var accent = (TryFindResource("Accent") as SolidColorBrush)?.Color ?? Color.FromRgb(0x4C, 0x8D, 0xFF);
+        var tint = new SolidColorBrush(Color.FromArgb(0x59, accent.R, accent.G, accent.B));
+        tint.Freeze();
+        return tint;
+    }
+
+    /// <summary>The button the pointer is over on the track (any button: a hidden one may be chosen too).</summary>
+    internal void ChooseClickAt(double x)
+    {
+        var keys = FloatKeys;
+        var index = Math.Clamp((int)Math.Round((x - Tile / 2) / Tile), 0, keys.Count - 1);
+        if (keys.Count == 0 || keys[index] == _floatClick)
+        {
+            PlaceClickKnob(animate: true);
+            return;
+        }
+
+        _floatClick = keys[index];
+        PlaceClickKnob(animate: true);
+    }
+
+    private void FloatClick_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _clickDragging = FloatClickTrack.CaptureMouse();
+        _clickKnob.BeginAnimation(Canvas.LeftProperty, null);
+        Canvas.SetLeft(_clickKnob, Math.Clamp(e.GetPosition(FloatClickTrack).X - _clickKnob.Width / 2, 0, FloatClickTrack.Width - _clickKnob.Width));
+        e.Handled = true;
+    }
+
+    private void FloatClick_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_clickDragging)
+        {
+            // Follows the pointer; snaps when let go.
+            Canvas.SetLeft(_clickKnob, Math.Clamp(e.GetPosition(FloatClickTrack).X - _clickKnob.Width / 2, 0, FloatClickTrack.Width - _clickKnob.Width));
+        }
+    }
+
+    private void FloatClick_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_clickDragging)
+        {
+            return;
+        }
+
+        _clickDragging = false;
+        FloatClickTrack.ReleaseMouseCapture();
+        ChooseClickAt(e.GetPosition(FloatClickTrack).X);
+        e.Handled = true;
+    }
+
+    /// <summary>The floating button's row was reordered there: this row takes the order, its buttons sliding to their places.</summary>
+    public void SyncFloatOrder()
+    {
+        var wasSaved = !HasUnsavedChanges;
+        var order = ToolbarCatalog.Order(_config.FloatActionOrder, FloatButtonWindow.Actions);
+        var tiles = FloatActionsRow.Children.OfType<FrameworkElement>().ToList();
+        var before = tiles.ToDictionary(tile => (string)tile.Tag, tile => tile.TranslatePoint(new Point(0, 0), FloatActionsRow).X);
+        FloatActionsRow.Children.Clear();
+        foreach (var key in order)
+        {
+            if (tiles.FirstOrDefault(tile => (string)tile.Tag == key) is { } tile)
+            {
+                FloatActionsRow.Children.Add(tile);
+            }
+        }
+
+        FloatActionsRow.UpdateLayout();
+        foreach (var tile in FloatActionsRow.Children.OfType<FrameworkElement>())
+        {
+            var now = tile.TranslatePoint(new Point(0, 0), FloatActionsRow).X;
+            if (before.TryGetValue((string)tile.Tag, out var was) && Math.Abs(was - now) > 0.5)
+            {
+                var shift = new TranslateTransform(was - now, 0);
+                tile.RenderTransform = shift;
+                shift.BeginAnimation(TranslateTransform.XProperty, new System.Windows.Media.Animation.DoubleAnimation(was - now, 0, Motion.Fast) { EasingFunction = Motion.Ease });
+            }
+        }
+
+        _liveSaved["FloatActionOrder"] = _config.FloatActionOrder;
+        PlaceClickKnob(animate: true);
+        if (wasSaved)
+        {
+            _savedPrint = Fingerprint(); // saved by the floating button already: nothing to save here
+        }
+    }
 
     private void ApplyFloatRow()
     {
@@ -328,6 +479,7 @@ public partial class SettingsWindow : Window
     private void FloatEnabled_Click(object sender, RoutedEventArgs e)
     {
         _config.FloatButtonEnabled = FloatEnabledCheck.IsChecked == true;
+        _config.FloatButtonChosen = true;
         RunningApp?.ApplyFloatButton(); // shown / hidden at once; kept only with 保存
     }
 
@@ -991,6 +1143,7 @@ public partial class SettingsWindow : Window
                 ? Math.Clamp(timeout, 10, 300)
                 : 60;
 
+        _config.FloatClickAction = _floatClick;
         Saved = true;
         _saves++;
         _dirty = false;
@@ -1381,7 +1534,7 @@ public partial class SettingsWindow : Window
             }
 
             button.MouseEnter += (_, _) => Theme.Bind(button, Border.BackgroundProperty, 0x26FFFFFF);
-            button.MouseLeave += (_, _) => button.Background = Brushes.Transparent;
+            button.MouseLeave += (_, _) => button.Background = RestPlate(row, key);
             var id = RowId(row, key);
             if (hiddenSet.Contains(key))
             {

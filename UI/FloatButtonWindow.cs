@@ -22,6 +22,9 @@ public sealed class FloatButtonWindow : Window
 
     public static readonly string[] Actions = { "Capture", "Record", "Ocr", "Editor", "History", "AddPin", "TogglePins" };
 
+    /// <summary>The row was reordered here (long-press drag).</summary>
+    public event Action? OrderChanged;
+
     /// <summary>Whether the pins show (显示贴图 dims while they are all hidden).</summary>
     public Func<bool>? PinsShown { get; set; }
 
@@ -128,6 +131,7 @@ public sealed class FloatButtonWindow : Window
         {
             _config.FloatActionOrder = string.Join(",", keys);
             _config.Save();
+            OrderChanged?.Invoke(); // the settings' row follows
         };
 
         BuildItems();
@@ -442,7 +446,11 @@ public sealed class FloatButtonWindow : Window
 
     private void Run(string key)
     {
-        Collapse();
+        if (key != "TogglePins")
+        {
+            Collapse(); // (显示贴图 keeps the row open: the pointer is still on it)
+        }
+
         Dispatcher.BeginInvoke(() => _run(key), DispatcherPriority.Background);
     }
 
@@ -508,7 +516,7 @@ public sealed class FloatButtonWindow : Window
         }
         else if (click)
         {
-            Run("Capture");
+            Run(Actions.Contains(_config.FloatClickAction) ? _config.FloatClickAction : "Capture"); // the click's action (设置 → 悬浮按钮)
         }
     }
 

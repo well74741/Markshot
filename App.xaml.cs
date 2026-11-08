@@ -247,6 +247,7 @@ public partial class App : Application
             _float = new UI.FloatButtonWindow(Config, FloatAction, () => ShowSettings("Float"), () => SetFloatButton(false));
             _float.Closed += (_, _) => _float = null;
             _float.PinsShown = () => !_pinsHidden;
+            _float.OrderChanged += () => _settings?.SyncFloatOrder();
             _float.PinRequested += image => PinCentered(image);
             _float.PinFileRequested += (file, index) => PinFile(file, index % 8);
             _float.Show();
@@ -274,6 +275,7 @@ public partial class App : Application
     public void SetFloatButton(bool on)
     {
         Config.FloatButtonEnabled = on;
+        Config.FloatButtonChosen = true;
         Config.Save();
         ApplyFloatButton();
         _settings?.SyncFloatSwitch();
@@ -588,7 +590,7 @@ public partial class App : Application
             foreach (var pin in _pins.Where(pin => pin.IsVisible))
             {
                 _hiddenPins.Add(pin);
-                pin.Hide();
+                pin.FadeHide();
             }
 
             _pinsHidden = _hiddenPins.Count > 0;
@@ -597,7 +599,7 @@ public partial class App : Application
 
         foreach (var pin in _hiddenPins.Where(_pins.Contains))
         {
-            pin.Show();
+            pin.FadeShow();
         }
 
         _hiddenPins.Clear();

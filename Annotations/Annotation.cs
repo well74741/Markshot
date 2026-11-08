@@ -1073,7 +1073,15 @@ public sealed class MosaicAnnotation : Annotation
             return;
         }
 
-        dc.PushClip(new RectangleGeometry(Rect));
+        if (Blur >= 1)
+        {
+            dc.PushOpacityMask(MosaicBuilder.SoftMask(grow => { var r = Rect; r.Inflate(grow, grow); return new RectangleGeometry(r); }, Blur));
+        }
+        else
+        {
+            dc.PushClip(new RectangleGeometry(Rect));
+        }
+
         if (Pattern != null)
         {
             // Undo the element rotation for the pattern so it stays aligned with the canvas.
@@ -1581,7 +1589,15 @@ public sealed class MosaicBrushAnnotation : Annotation
         }
 
         var area = EraseStroke.Widen(Points, Thickness);
-        dc.PushClip(area);
+        if (Blur >= 1)
+        {
+            dc.PushOpacityMask(MosaicBuilder.SoftMask(grow => EraseStroke.Widen(Points, Math.Max(1, Thickness + grow * 2)), Blur));
+        }
+        else
+        {
+            dc.PushClip(area);
+        }
+
         if (Pattern != null)
         {
             var bounds = Bounds;
@@ -1931,6 +1947,43 @@ public static class MosaicBuilder
                 }
             }
         });
+    }
+
+    /// <summary>
+    /// A soft-edged mask of a shape (a blurred mosaic fades out at its edge instead of being cut): the shape grown /
+    /// shrunk in steps by half the blur either way, each ring a little more see-through.
+    /// </summary>
+    public static Brush SoftMask(Func<double, Geometry> shapeAt, double blur)
+    {
+        const int steps = 10;
+        var reach = Math.Max(1, blur * 1.5);
+        var group = new DrawingGroup();
+        var inner = shapeAt(-reach / 2);
+        group.Children.Add(new GeometryDrawing(Brushes.Black, null, inner));
+        for (var i = 0; i < steps; i++)
+        {
+            var outer = shapeAt(-reach / 2 + reach * (i + 1) / steps);
+            var alpha = (byte)Math.Round(255 * (1 - (i + 0.5) / steps));
+            var ring = new SolidColorBrush(Color.FromArgb(alpha, 0, 0, 0));
+            ring.Freeze();
+            group.Children.Add(new GeometryDrawing(ring, null, new CombinedGeometry(GeometryCombineMode.Exclude, outer, inner)));
+            inner = outer;
+        }
+
+        group.Freeze();
+        var bounds = group.Bounds;
+        var brush = new DrawingBrush(group)
+        {
+            Stretch = Stretch.None,
+            ViewboxUnits = BrushMappingMode.Absolute,
+            Viewbox = bounds,
+            ViewportUnits = BrushMappingMode.Absolute,
+            Viewport = bounds,
+            AlignmentX = AlignmentX.Left,
+            AlignmentY = AlignmentY.Top
+        };
+        brush.Freeze();
+        return brush;
     }
 
     /// <summary>Draws a mosaic pattern with hard block edges (no smoothing) in any drawing context.</summary>

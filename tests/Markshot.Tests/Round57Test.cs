@@ -57,14 +57,14 @@ static class Round57Test
 
             // ---- 恢复默认设置
             config.CaptureHotkey = "F2";
-            config.FloatButtonEnabled = true;
+            config.FloatButtonEnabled = false; // (0.8.62: on by default, so the reset turns it back on)
             config.Translation.ApiKey = "test-key";
             settings.GetType().GetField("AskOverride", Any)!.SetValue(settings, new Func<int>(() => 1));
             settings.GetType().GetField("ResetAnswer", Any)!.SetValue(settings, new Func<int>(() => 0));
             Check(settings.FindName("ResetDefaultsButton") is Button { Content: "恢复默认设置" }, "the footer has 恢复默认设置");
             settings.GetType().GetMethod("ResetDefaults_Click", Any)!.Invoke(settings, new object[] { settings, new RoutedEventArgs() });
             Pump(100);
-            Check(config.CaptureHotkey == "F1" && !config.FloatButtonEnabled && config.Translation.ApiKey == "test-key" && Math.Abs(config.FloatIconOpacity - 1) < 0.001,
+            Check(config.CaptureHotkey == "F1" && config.FloatButtonEnabled && config.Translation.ApiKey == "test-key" && Math.Abs(config.FloatIconOpacity - 1) < 0.001,
                 "恢复默认设置: everything back to the defaults, the API key kept");
             Check(!settings.IsVisible && File.ReadAllText(AppConfig.ConfigPath).Contains("\"CaptureHotkey\": \"F1\""), "saved, and the window closes (the app reopens it)");
         }

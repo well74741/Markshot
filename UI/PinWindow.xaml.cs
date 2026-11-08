@@ -330,6 +330,35 @@ public partial class PinWindow : Window
     /// <summary>The shadow follows the image's own shape (a lasso capture with transparent surroundings).</summary>
     public bool ShapedShadow { get; init; }
 
+    /// <summary>显示贴图 off: the pin fades out (and its bar), then hides.</summary>
+    public void FadeHide()
+    {
+        var fade = new DoubleAnimation(0, Motion.Fast) { EasingFunction = Motion.Ease };
+        fade.Completed += (_, _) =>
+        {
+            if (Opacity < 0.01)
+            {
+                Hide();
+                _toolbarWindow?.Hide();
+            }
+        };
+        BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>显示贴图 on: back, fading in.</summary>
+    public void FadeShow()
+    {
+        BeginAnimation(OpacityProperty, null);
+        Opacity = 0;
+        Show();
+        if (_editMode)
+        {
+            _toolbarWindow?.Show();
+        }
+
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Motion.Fast) { EasingFunction = Motion.Ease });
+    }
+
     /// <summary>Closed: work still running for it (in-place translation, text recognition) stops and is dropped.</summary>
     private void StopBackgroundWork()
     {
