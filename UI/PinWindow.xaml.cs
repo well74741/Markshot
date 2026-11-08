@@ -24,6 +24,7 @@ public partial class PinWindow : Window
     private Point _watermarkLast;
     private Point _transformPress;
     private Vector _resizeGrab;
+    private (bool X, bool Y) _resizeFlip; // what a resize drag has turned over so far
     private bool _transformStarted;
 
     /// <summary>Closes right away, skipping the fade-out (pin limit, app exit).</summary>
@@ -90,6 +91,10 @@ public partial class PinWindow : Window
 
     // In-place translation: the base image before translating, null when showing the original.
     private BitmapSource? _untranslatedBase;
+    private BitmapSource? _translatedBase; // 原位翻译: both kept, [原文 | 译文] switches
+    private string? _pinSourceLabel;
+    private string? _pinTargetLabel;
+    private bool _pinShowsOriginal;
     private CancellationTokenSource? _translateCts;
     private DispatcherTimer? _statusTimer;
     private protected bool _suppressContextMenu;

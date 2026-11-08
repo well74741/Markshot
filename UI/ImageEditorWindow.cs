@@ -2761,7 +2761,7 @@ public sealed class ImageEditorWindow : PinWindow
     }
 
     /// <summary>调节框 of a selection: each element moves, scales and turns with the box (they stay editable).</summary>
-    public void TransformItems(IReadOnlyList<Annotation> items, Rect from, Rect to, double angle)
+    public void TransformItems(IReadOnlyList<Annotation> items, Rect from, Rect to, double angle, bool mirrorX = false, bool mirrorY = false)
     {
         if (from.Width < 0.5 || from.Height < 0.5)
         {
@@ -2777,6 +2777,21 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 var b = item.Bounds;
                 var centre = new Point(b.X + b.Width / 2, b.Y + b.Height / 2);
+                // Turned over: each element mirrored, and its place within the box too.
+                if (mirrorX)
+                {
+                    AnnotationOps.Mirror(item, horizontal: true);
+                    centre.X = from.X + from.Right - centre.X;
+                    item.Rotation = -item.Rotation;
+                }
+
+                if (mirrorY)
+                {
+                    AnnotationOps.Mirror(item, horizontal: false);
+                    centre.Y = from.Y + from.Bottom - centre.Y;
+                    item.Rotation = -item.Rotation;
+                }
+
                 var placed = AnnotationEditor.RotatePoint(new Point(to.X + (centre.X - from.X) * sx, to.Y + (centre.Y - from.Y) * sy), pivot, angle);
                 if (Math.Abs(sx - 1) > 0.001 || Math.Abs(sy - 1) > 0.001)
                 {
@@ -3139,7 +3154,7 @@ public sealed class ImageEditorWindow : PinWindow
         _sessionMerged = merged;
         if (items != null && overlay.Mode == EditorOverlayMode.Transform)
         {
-            TransformItems(items, overlay.TransformStart, overlay.TransformRect, overlay.TransformAngle);
+            TransformItems(items, overlay.TransformStart, overlay.TransformRect, overlay.TransformAngle, overlay.TransformMirrorX, overlay.TransformMirrorY);
             _sessionPicture = null;
             _sessionItems = null;
             _sessionMerged = null;
@@ -3170,7 +3185,7 @@ public sealed class ImageEditorWindow : PinWindow
                 WarpTo(overlay.Warp);
                 break;
             case EditorOverlayMode.Transform:
-                TransformTo(overlay.TransformRect, overlay.TransformAngle);
+                TransformTo(overlay.TransformRect, overlay.TransformAngle, overlay.TransformMirrorX, overlay.TransformMirrorY);
                 break;
             default:
                 KeystoneTo(overlay.Quad);
@@ -3842,18 +3857,27 @@ public sealed class ImageEditorWindow : PinWindow
     // ------------------------------------------------------------------ 调节框, crop size, reset all, checkerboard
 
     /// <summary>调节框 applied: the picture element gets that place, size and angle (one undo step; the canvas stays as it is).</summary>
-    public void TransformTo(Rect rect, double angle)
+    public void TransformTo(Rect rect, double angle, bool mirrorX = false, bool mirrorY = false)
     {
         if (Target is not { } picture)
         {
             return;
         }
 
-        var turned = Math.Abs(angle - picture.Rotation) > 0.05;
+        var turned = Math.Abs(angle - picture.Rotation) > 0.05 || mirrorX || mirrorY;
         GeometryStep(turned ? EditGroup.Turn : EditGroup.Cut, () =>
         {
             picture.Rect = new Rect(rect.X, rect.Y, Math.Clamp(rect.Width, 1, 30000), Math.Clamp(rect.Height, 1, 30000));
             picture.Rotation = angle;
+            if (mirrorX)
+            {
+                AnnotationOps.Mirror(picture, horizontal: true); // pulled through the box: turned over
+            }
+
+            if (mirrorY)
+            {
+                AnnotationOps.Mirror(picture, horizontal: false);
+            }
         });
     }
 

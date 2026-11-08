@@ -179,6 +179,18 @@ public partial class OverlayWindow
         }
         else
         {
+            // Switched off and on again (the translation kept): the bar with its [原文 | 译文] comes back at once,
+            // not only after the frame is moved.
+            if (TranslateStatus.Visibility != Visibility.Visible && _translated != null && _translateCts == null)
+            {
+                TranslateStatusText.Text = string.Empty;
+                TranslateStatusText.Visibility = Visibility.Collapsed;
+                TranslateRetry.Visibility = Visibility.Collapsed;
+                TranslateDot.Fill = new SolidColorBrush(Color.FromRgb(0x4C, 0xC3, 0x8A));
+                TranslateStatus.Visibility = Visibility.Visible;
+            }
+
+            UpdateLanguageSwitch();
             PositionTranslateStatus();
         }
     }

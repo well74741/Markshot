@@ -87,14 +87,14 @@ public sealed class AppConfig
     public string ToolShapeHotkey { get; set; } = "M";
 
     /// <summary>Interface colours: Dark (default), Light or System (follow Windows).</summary>
-    public string Theme { get; set; } = "Dark";
+    public string Theme { get; set; } = "Light"; // (0.8.63: a first start is light; a choice is kept)
 
     /// <summary>Interface size: Medium (default) or Large (everything one step larger).</summary>
     /// <summary>界面大小: Small (as designed, default) / Medium / Large. Stored before 0.8.48: "Medium" = 小, "Large" = 中.</summary>
-    public string UiSize { get; set; } = "Small";
+    public string UiSize { get; set; } = "Medium"; // (0.8.63: a first start is 中)
 
     /// <summary>The meaning of <see cref="UiSize"/> moved in 0.8.48 (old 中 → 小, old 大 → 中); set once that is done.</summary>
-    public int UiSizeVersion { get; set; }
+    public int UiSizeVersion { get; set; } = 2;
 
     /// <summary>Pin shadow: blur size (DIP, 0 = none), colour (#RRGGBB) and opacity (0–1).</summary>
     public double PinShadowSize { get; set; } = 12;

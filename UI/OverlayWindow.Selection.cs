@@ -367,12 +367,9 @@ public partial class OverlayWindow
             _selection.Width / _scale,
             _selection.Height / _scale);
 
-        var left = selection.Right - size.Width;
-        if (left < 8)
-        {
-            left = selection.Left;
-        }
-
+        // Under the capture's left edge: a wider settings row grows to the right and the tool buttons stay put;
+        // only when the screen ends does the bar move left.
+        var left = selection.Left;
         left = Math.Max(8, Math.Min(left, ActualWidth - size.Width - 8));
 
         var top = selection.Bottom + 8;

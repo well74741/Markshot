@@ -49,9 +49,9 @@ public partial class PinWindow
         {
             menu.Items.Add(new MenuItem { Header = "正在原位翻译…", IsEnabled = false });
         }
-        else if (_untranslatedBase != null)
+        else if (_untranslatedBase != null && _translatedBase != null)
         {
-            Add("显示原文", ShowOriginal);
+            Add(_pinShowsOriginal ? "显示译文" : "显示原文", () => ShowPinLanguage(!_pinShowsOriginal));
         }
         else
         {

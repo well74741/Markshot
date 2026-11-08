@@ -684,11 +684,10 @@ public partial class PinWindow
 
         if (_resizingAnnotation)
         {
-            var target = AnnotationOps.ResizeFromHandle(
-                _annotationStartBounds, _selected.Rotation, _annotationHandle, point + _resizeGrab,
+            // Past the opposite side it turns over (mirrored).
+            AnnotationOps.ResizeThrough(_selected, _annotationStartBounds, _annotationHandle, point + _resizeGrab,
                 // A picture's corners keep its ratio (Shift frees them), like the 调节框.
-                _selected is ImageAnnotation ? (_annotationHandle % 2 == 0) != IsShiftDown : IsShiftDown);
-            AnnotationOps.Resize(_selected, target, _annotationHandle);
+                _selected is ImageAnnotation ? (_annotationHandle % 2 == 0) != IsShiftDown : IsShiftDown, ref _resizeFlip);
             Editor.InvalidateVisual();
             return true;
         }
@@ -1446,8 +1445,10 @@ public partial class PinWindow
             _erasing = false;
             _gesture = null;
             Editor.LiveEraser = null;
-            if (_eraserPath is CutoutAnnotation)
+            if (_eraserPath is CutoutAnnotation cutout)
             {
+                // The hole goes into every element below it (it moves with them from now on).
+                Cutouts.Bake(Editor.Items, cutout);
                 UpdateUndoButtons(); // the hole was cut while drawing; its undo step exists
             }
             else if (_eraserPath != null)
@@ -1832,6 +1833,7 @@ public partial class PinWindow
         if (hit.IsHandle)
         {
             _resizingAnnotation = true;
+            _resizeFlip = (false, false);
             _annotationHandle = hit.Handle;
             _resizeGrab = AnnotationOps.ResizeGrab(bounds, _selected.Rotation, hit.Handle, point);
             return true;

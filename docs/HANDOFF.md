@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.62`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.63`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,23 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.63 0.8.63 变更
+
+- 马赛克类型：`Gaussian`（高斯模糊）/ 色块。`MosaicBuilder.BuildCanvas(source, block, blur, gaussian)`：高斯时整幅原图三次盒式模糊（`Gaussian`），不再给色块叠模糊。
+  `Feather`（柔边）只对高斯生效：`SoftMask(shapeAt, feather)` 边界内外各半。工具栏：马赛克变体后「色块 / 模糊」两个 PlateToggle（`MosaicKind_Click`）；
+  色块显示 LevelGroup，模糊显示 BlurGroup（程度 1–40 + 柔边 0–60）。选中元素时先按元素的类型决定显示哪组。
+- 截图工具栏：`PositionToolbar` 改为左对齐选区左边，变宽向右伸，只在屏幕右边不够时左移。贴图工具栏：`PlaceToolbar` 按所在屏幕右边界夹住，宿主窗口 SizeChanged 时重新放置。编辑器仍居中。
+- 拉过对边镜像：`AnnotationOps.CrossedSides` / `ResizeThrough(…, ref flipped)` / `Mirror(annotation, horizontal)`（点集、线、箭头镜像；图片 TransformedBitmap 翻转 Image/Origin；
+  擦除蒙版 ReorientMasks；文字与对称图形不变）。贴图/编辑器（`_resizeFlip`）和截图都用。编辑器调节框：`EditorOverlay.TransformMirrorX/Y`（预览镜像），
+  `TransformTo` / `TransformItems(…, mirrorX, mirrorY)` 应用（组内位置也镜像，旋转取反）。
+- 抠除贯穿：抬笔时 `Cutouts.Bake(items, cutout)`——下方每个能带蒙版的元素（`Carries`：非 抠除/水印/聚焦）`AddEraseStroke`，`cutout.Baked = true`。
+  `Layered`：已烘焙的洞只裁不能带蒙版的元素（水印、聚焦），未烘焙（正在画）的照旧裁下方一切；底图仍由 `Cutouts.Exclude` 裁全部洞。移动/缩放元素，洞跟着走。
+- 默认：`Theme = "Light"`、`UiSize = "Medium"`、`UiSizeVersion = 2`（新配置不再走旧尺寸迁移）。已有配置保持原选择。
+- 设置：快速双击复制移到 快捷键 → 贴图窗口 卡片。点击行为：按钮行底下一块 `FloatClickPlate`（Canvas 内 28×28），与滑块同步（`KnobAt` 拖动时即时，吸附时同一动画）。
+- 悬浮按钮：`Collapse(animate: true)`（110ms 收窄+淡出，拖动开始和鼠标离开用；截图/执行仍即时）；`Press(down)` 按下缩到 0.86。
+- 原位翻译：截图里关了再开，缓存译文时 `UpdateTranslationVisuals` 直接把状态条连同语言切换显示出来。贴图：`PinLanguageSwitch`（右上角 [原文|译文]），
+  `_untranslatedBase` / `_translatedBase` 都保留，`ShowPinLanguage`；菜单「显示原文 / 显示译文」。截图翻译中贴图：`PinOriginalBase` + `PinLanguages` → `pin.AdoptTranslation`。
 
 ## 8.1.62 0.8.62 变更
 

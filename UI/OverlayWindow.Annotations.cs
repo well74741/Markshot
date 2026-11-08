@@ -312,6 +312,7 @@ public partial class OverlayWindow
         if (hit.IsHandle)
         {
             _resizingAnnotation = true;
+            _resizeFlip = (false, false);
             _annotationHandle = hit.Handle;
             _resizeGrab = AnnotationOps.ResizeGrab(bounds, _selectedAnnotation.Rotation, hit.Handle, point);
             return true;

@@ -52,7 +52,7 @@ static class Round62Test
             var pattern = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 90, 90, 90, 255 }, 4);
             pattern.Freeze();
             var hard = new MosaicAnnotation { Rect = new Rect(20, 20, 60, 60), Pattern = pattern, PatternRect = new Rect(0, 0, 100, 100) };
-            var soft = new MosaicAnnotation { Rect = new Rect(20, 20, 60, 60), Pattern = pattern, PatternRect = new Rect(0, 0, 100, 100), Blur = 12 };
+            var soft = new MosaicAnnotation { Rect = new Rect(20, 20, 60, 60), Pattern = pattern, PatternRect = new Rect(0, 0, 100, 100), Blur = 12, Gaussian = true, Feather = 18 }; // (0.8.63: the soft edge is 高斯模糊's 柔边)
             var h = Render(hard, 100, 100);
             var s = Render(soft, 100, 100);
             Check(Alpha(h, 100, 84, 50) == 0 && Alpha(h, 100, 78, 50) == 255, "without blur the mosaic box keeps its hard edge");
@@ -61,7 +61,7 @@ static class Round62Test
             var outside = Alpha(s, 100, 84, 50);
             Check(inside < 250 && inside > 60 && outside > 5 && outside < inside, $"… and its edge fades out across the box line (in {inside}, out {outside})");
 
-            var brush = new MosaicBrushAnnotation { Thickness = 20, Pattern = pattern, PatternRect = new Rect(0, 0, 100, 100), Blur = 10 };
+            var brush = new MosaicBrushAnnotation { Thickness = 20, Pattern = pattern, PatternRect = new Rect(0, 0, 100, 100), Blur = 10, Gaussian = true, Feather = 15 };
             brush.Points.Add(new Point(10, 50));
             brush.Points.Add(new Point(90, 50));
             var b = Render(brush, 100, 100);
@@ -119,8 +119,8 @@ static class Round62Test
             var row = (StackPanel)settings.FindName("FloatActionsRow");
             Check(Math.Abs(track.Width - row.Children.Count * 28) < 0.5, "the track is as long as the row");
             Check((string)settings.GetType().GetProperty("FloatClickChoice", Any)!.GetValue(settings)! == "Capture", "it starts on 截屏");
-            var plate = ((Border)row.Children[0]).Background as SolidColorBrush;
-            Check(plate != null && plate.Color.A > 0, "the chosen button has a coloured plate");
+            var plate = (Border)settings.FindName("FloatClickPlate");
+            Check(plate.Background is SolidColorBrush { Color.A: > 0 } && Math.Abs(Canvas.GetLeft(plate)) < 0.5, "the chosen button has a coloured plate (0.8.63: one plate under the row)");
             settings.GetType().GetMethod("ChooseClickAt", Any)!.Invoke(settings, new object[] { 6 * 28 + 10.0 });
             Pump(50);
             Check((string)settings.GetType().GetProperty("FloatClickChoice", Any)!.GetValue(settings)! == "TogglePins", "a hidden (grey) button can be chosen");
@@ -133,8 +133,8 @@ static class Round62Test
             var keys = row.Children.OfType<FrameworkElement>().Select(t => (string)t.Tag).ToList();
             Check(keys[0] == "TogglePins" && keys[1] == "Capture", "the settings row takes the floating button's order");
             Check(row.Children.OfType<FrameworkElement>().Any(t => t.RenderTransform is TranslateTransform { HasAnimatedProperties: true }), "… with the swap slide");
-            Check(((Border)row.Children[0]).Background is SolidColorBrush { Color.A: > 0 } && ((Border)row.Children[1]).Background is SolidColorBrush { Color.A: 0 },
-                "the plate moved with the chosen button");
+            Pump(400);
+            Check(Math.Abs(Canvas.GetLeft((Border)settings.FindName("FloatClickPlate"))) < 0.5, "the plate moved with the chosen button");
             settings.GetType().GetMethod("Save_Click", Any)?.Invoke(settings, new object?[] { settings, new RoutedEventArgs() });
             Pump(100);
             Check(config.FloatClickAction == "TogglePins", "保存 keeps the click action");

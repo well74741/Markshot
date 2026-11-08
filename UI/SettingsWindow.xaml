@@ -467,6 +467,8 @@
                                     <TextBox x:Name="TextBypassBox" Style="{StaticResource Field}" MaxLength="12" />
                                 </StackPanel>
                             </Grid>
+                            <CheckBox x:Name="QuickDoubleClickCheck" Margin="0,12,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                      Content="快速双击复制并关闭：无论是否拿着批注工具，双击截图或贴图立刻复制并关闭" />
 
                         </StackPanel>
                     </Border>
@@ -724,7 +726,13 @@
                                 </Grid.RowDefinitions>
                                 <TextBlock Text="浮窗按钮" Style="{StaticResource RowLabel}" />
                                 <Border Grid.Column="1" Background="{DynamicResource T_FF1B1B1B}" CornerRadius="7" Padding="5,3" HorizontalAlignment="Left">
-                                    <StackPanel x:Name="FloatActionsRow" Orientation="Horizontal" />
+                                    <Grid>
+                                        <!-- 点击行为: the coloured plate under the chosen button; slides with the knob below. -->
+                                        <Canvas IsHitTestVisible="False" ClipToBounds="False">
+                                            <Border x:Name="FloatClickPlate" Width="28" Height="28" CornerRadius="5" />
+                                        </Canvas>
+                                        <StackPanel x:Name="FloatActionsRow" Orientation="Horizontal" />
+                                    </Grid>
                                 </Border>
                                 <!-- 点击行为: a slider under the row; its knob snaps under a button, that button is what a click does. -->
                                 <TextBlock Grid.Row="2" Text="点击行为" Style="{StaticResource RowLabel}" />
@@ -838,8 +846,6 @@
                                       Content="复制图片文件：复制截图或贴图时同时复制 PNG 文件，可直接在文件管理器里粘贴" />
                             <CheckBox x:Name="AskOpenFolderCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="保存图片后询问是否打开所在文件夹" />
-                            <CheckBox x:Name="QuickDoubleClickCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="快速双击复制并关闭：无论是否拿着批注工具，双击截图或贴图立刻复制并关闭" />
                             <CheckBox x:Name="AutoStartCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="开机自动启动 Markshot" />
                         </StackPanel>

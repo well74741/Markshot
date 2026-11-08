@@ -122,7 +122,7 @@ static class Round53Test
 
         // ---- the settings: 样式 first; theme and size kept as soon as chosen; 更新 saves first
         {
-            var config = new AppConfig();
+            var config = new AppConfig { Theme = "Dark" }; // (a first start is light since 0.8.63)
             var settings = new SettingsWindow(config) { Left = -4000, Top = -4000, ShowActivated = false };
             settings.Show();
             Pump(300);

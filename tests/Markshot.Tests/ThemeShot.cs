@@ -54,7 +54,7 @@ static class ThemeShot
     {
         Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         Theme.Apply(ThemeMode.Dark);
-        var settings = new SettingsWindow(new AppConfig()) { Left = -4000, Top = -4000, ShowActivated = false, ShowInTaskbar = false };
+        var settings = new SettingsWindow(new AppConfig { Theme = "Dark" }) { Left = -4000, Top = -4000, ShowActivated = false, ShowInTaskbar = false };
         settings.Show();
         settings.ShowPage("Style");
         Pump(400);
@@ -80,7 +80,7 @@ static class ThemeShot
         oldMedium.EnsureDefaults();
         var oldLarge = new AppConfig { UiSize = "Large", UiSizeVersion = 0 };
         oldLarge.EnsureDefaults();
-        Check(new AppConfig().UiSize == "Small" && oldMedium.UiSize == "Small" && oldLarge.UiSize == "Medium", "old 中 → 小 (default), old 大 → 中");
+        Check(new AppConfig().UiSize == "Medium" && oldMedium.UiSize == "Small" && oldLarge.UiSize == "Medium", "old 中 → 小, a first start 中 (0.8.63), old 大 → 中");
 
         var bar = new AnnotationToolbar();
         var win = new Window { Content = bar, SizeToContent = SizeToContent.WidthAndHeight, Left = -4000, Top = -4000, ShowActivated = false, WindowStyle = WindowStyle.None, ShowInTaskbar = false, Background = Brushes.Gray };

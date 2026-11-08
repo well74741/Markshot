@@ -40,6 +40,7 @@ public sealed class FloatButtonWindow : Window
     private readonly Grid _plateHost;
     private readonly StackPanel _items;
     private readonly ScaleTransform _plateScale = new(1, 1);
+    private readonly ScaleTransform _pressScale = new(1, 1); // pressed: the button gives a little
     private readonly ReorderBehavior _reorder;
     private readonly DispatcherTimer _fullscreenWatch = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private IntPtr _handle;
@@ -88,7 +89,9 @@ public sealed class FloatButtonWindow : Window
             Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), // the whole round area takes the mouse
             Child = _icon,
             Cursor = Cursors.Hand,
-            ToolTip = "单击截图 · 拖动移动 · 右键更多"
+            ToolTip = "单击截图 · 拖动移动 · 右键更多",
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = _pressScale
         };
         ToolTipService.SetInitialShowDelay(_main, 900);
 
@@ -156,7 +159,7 @@ public sealed class FloatButtonWindow : Window
             _hoverBlocked = false;
             if (!_reorder.IsDragging && !_pressed)
             {
-                Collapse();
+                Collapse(animate: true);
             }
         };
         _main.MouseLeftButtonDown += OnMainDown;
@@ -408,7 +411,10 @@ public sealed class FloatButtonWindow : Window
         _plate.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration));
     }
 
-    private void Collapse()
+    private void Collapse() => Collapse(animate: false);
+
+    /// <summary>The row folds away: at once (a capture is coming), or quickly drawn in (dragged, pointer gone).</summary>
+    private void Collapse(bool animate)
     {
         if (!_expanded)
         {
@@ -417,10 +423,45 @@ public sealed class FloatButtonWindow : Window
 
         _expanded = false;
         _plate.Background = null;
-        _plateScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-        _plate.BeginAnimation(OpacityProperty, null);
-        _plate.Visibility = Visibility.Hidden; // at once
+        if (!animate || _plate.Visibility != Visibility.Visible)
+        {
+            _plateScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            _plate.BeginAnimation(OpacityProperty, null);
+            _plate.Visibility = Visibility.Hidden; // at once
+            return;
+        }
+
+        var duration = new Duration(TimeSpan.FromMilliseconds(110));
+        var fold = new DoubleAnimation(0.4, duration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+        var fade = new DoubleAnimation(0, duration);
+        fade.Completed += (_, _) =>
+        {
+            if (!_expanded)
+            {
+                _plate.Visibility = Visibility.Hidden;
+            }
+        };
+        _plateScale.BeginAnimation(ScaleTransform.ScaleXProperty, fold);
+        _plate.BeginAnimation(OpacityProperty, fade);
     }
+
+    /// <summary>Tests: the row is folding away right now.</summary>
+    internal bool Folding => _plate.Visibility == Visibility.Visible && !_expanded;
+
+    /// <summary>Pressed in a little (and back).</summary>
+    private void Press(bool down)
+    {
+        var to = down ? 0.86 : 1.0;
+        var motion = new DoubleAnimation(to, new Duration(TimeSpan.FromMilliseconds(down ? 70 : 120)))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        _pressScale.BeginAnimation(ScaleTransform.ScaleXProperty, motion);
+        _pressScale.BeginAnimation(ScaleTransform.ScaleYProperty, motion);
+    }
+
+    /// <summary>Tests: how far the button is pressed in.</summary>
+    internal double PressScale => _pressScale.ScaleX;
 
     /// <summary>Tests: the pointer on / off the button.</summary>
     internal void Hover(bool on)
@@ -463,6 +504,7 @@ public sealed class FloatButtonWindow : Window
         _pressPoint = Pointer();
         _pressCenter = (_centerX, _centerY);
         _main.CaptureMouse();
+        Press(down: true);
         e.Handled = true;
     }
 
@@ -484,7 +526,8 @@ public sealed class FloatButtonWindow : Window
         if (!_moving)
         {
             _moving = true;
-            Collapse();
+            Collapse(animate: true); // the row draws in quickly
+            Press(down: false);
         }
 
         MoveTo(_pressCenter.X + dx, _pressCenter.Y + dy, keepInside: false);
@@ -504,6 +547,7 @@ public sealed class FloatButtonWindow : Window
         var moved = _moving;
         _pressed = false;
         _moving = false;
+        Press(down: false);
         if (_main.IsMouseCaptured)
         {
             _main.ReleaseMouseCapture();

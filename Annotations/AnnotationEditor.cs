@@ -473,20 +473,33 @@ public sealed class AnnotationEditor : FrameworkElement
             Spotlights.Prepare(items.Append(drawing)); // the spotlight being drawn darkens together with the others
         }
 
+        // A finished (baked) hole lives in the elements below it; it still clips those that cannot carry it.
+        // One being drawn clips everything below it.
         var clips = new Geometry?[ordered.Count];
-        var holes = new GeometryGroup { FillRule = FillRule.Nonzero };
-        Geometry? current = null;
+        var all = new GeometryGroup { FillRule = FillRule.Nonzero };
+        var cutting = new GeometryGroup { FillRule = FillRule.Nonzero };
+        Geometry? allOutside = null, cuttingOutside = null;
+        static Geometry Outside(GeometryGroup holes)
+        {
+            var copy = holes.Clone();
+            copy.Freeze();
+            var outside = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(-100000, -100000, 200000, 200000)), copy);
+            outside.Freeze();
+            return outside;
+        }
+
         for (var i = ordered.Count - 1; i >= 0; i--)
         {
-            clips[i] = current;
+            clips[i] = Cutouts.Carries(ordered[i]) ? cuttingOutside : allOutside;
             if (ordered[i] is CutoutAnnotation cutout)
             {
-                holes.Children.Add(cutout.Shape());
-                var copy = holes.Clone();
-                copy.Freeze();
-                var outside = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(-100000, -100000, 200000, 200000)), copy);
-                outside.Freeze();
-                current = outside;
+                all.Children.Add(cutout.Shape());
+                allOutside = Outside(all);
+                if (!cutout.Baked)
+                {
+                    cutting.Children.Add(cutout.Shape());
+                    cuttingOutside = Outside(cutting);
+                }
             }
         }
 

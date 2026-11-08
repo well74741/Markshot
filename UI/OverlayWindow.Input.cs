@@ -504,9 +504,7 @@ public partial class OverlayWindow
 
         if (_resizingAnnotation && _selectedAnnotation != null)
         {
-            var target = AnnotationOps.ResizeFromHandle(
-                _annotationStartBounds, _selectedAnnotation.Rotation, _annotationHandle, point + _resizeGrab, IsShiftDown);
-            AnnotationOps.Resize(_selectedAnnotation, target, _annotationHandle);
+            AnnotationOps.ResizeThrough(_selectedAnnotation, _annotationStartBounds, _annotationHandle, point + _resizeGrab, IsShiftDown, ref _resizeFlip);
             Editor.InvalidateVisual();
             return;
         }
@@ -864,8 +862,10 @@ public partial class OverlayWindow
             _erasing = false;
             _gesture = null;
             Editor.LiveEraser = null;
-            if (_eraserPath is CutoutAnnotation)
+            if (_eraserPath is CutoutAnnotation cutout)
             {
+                // The hole goes into every element below it (it moves with them from now on).
+                Cutouts.Bake(Editor.Items, cutout);
                 UpdateUndoButtons(); // the hole was cut while drawing; its undo step exists
             }
             else if (_eraserPath != null)

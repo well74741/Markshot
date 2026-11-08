@@ -56,6 +56,17 @@
                     CornerRadius="6" Padding="7,2">
                 <TextBlock x:Name="PinZoomText" Foreground="{DynamicResource T_FFEDEDED}" FontSize="12" />
             </Border>
+            <!-- 原位翻译: [原文 | 译文], like the capture's. -->
+            <Border x:Name="PinLanguageSwitch" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
+                    Background="{DynamicResource T_F01C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"
+                    CornerRadius="7" Padding="4">
+                <Border Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2">
+                    <StackPanel Orientation="Horizontal">
+                        <ToggleButton x:Name="PinSourceButton" Style="{StaticResource LanguageSegment}" Click="PinSourceLanguage_Click" ToolTip="显示原文" />
+                        <ToggleButton x:Name="PinTargetButton" Style="{StaticResource LanguageSegment}" Click="PinTargetLanguage_Click" ToolTip="显示译文" />
+                    </StackPanel>
+                </Border>
+            </Border>
             <Border x:Name="PinStatus" Visibility="Collapsed" IsHitTestVisible="False"
                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
                     Background="{DynamicResource T_E61C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"

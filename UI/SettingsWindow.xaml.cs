@@ -338,35 +338,43 @@ public partial class SettingsWindow : Window
     {
         var index = Math.Max(0, FloatKeys.IndexOf(_floatClick));
         var left = index * Tile + Tile / 2 - _clickKnob.Width / 2;
+        PaintClickPlate();
         if (animate)
         {
-            _clickKnob.BeginAnimation(Canvas.LeftProperty, new System.Windows.Media.Animation.DoubleAnimation(left, Motion.Bar) { EasingFunction = Motion.Ease });
+            var ease = new System.Windows.Media.Animation.DoubleAnimation(left, Motion.Bar) { EasingFunction = Motion.Ease };
+            _clickKnob.BeginAnimation(Canvas.LeftProperty, ease);
+            FloatClickPlate.BeginAnimation(Canvas.LeftProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(PlateLeft(left), Motion.Bar) { EasingFunction = Motion.Ease });
         }
         else
         {
-            _clickKnob.BeginAnimation(Canvas.LeftProperty, null);
-            Canvas.SetLeft(_clickKnob, left);
-        }
-
-        foreach (var tile in FloatActionsRow.Children.OfType<Border>())
-        {
-            tile.Background = RestPlate(FloatActionsRow, (string)tile.Tag);
+            KnobAt(left);
         }
     }
 
-    /// <summary>A tile's plate when the pointer is not on it: the accent tint under the click's button, else none.</summary>
-    private Brush RestPlate(Panel row, string key)
+    /// <summary>The plate's place for a knob place: centred on the knob's centre (the row and the track start alike).</summary>
+    private double PlateLeft(double knobLeft) => knobLeft + _clickKnob.Width / 2 - Tile / 2;
+
+    /// <summary>Knob and plate there at once (dragging: the plate slides along under the buttons).</summary>
+    private void KnobAt(double left)
     {
-        if (row != FloatActionsRow || key != _floatClick)
-        {
-            return Brushes.Transparent;
-        }
-
-        var accent = (TryFindResource("Accent") as SolidColorBrush)?.Color ?? Color.FromRgb(0x4C, 0x8D, 0xFF);
-        var tint = new SolidColorBrush(Color.FromArgb(0x59, accent.R, accent.G, accent.B));
-        tint.Freeze();
-        return tint;
+        _clickKnob.BeginAnimation(Canvas.LeftProperty, null);
+        FloatClickPlate.BeginAnimation(Canvas.LeftProperty, null);
+        Canvas.SetLeft(_clickKnob, left);
+        Canvas.SetLeft(FloatClickPlate, PlateLeft(left));
     }
+
+    private void PaintClickPlate()
+    {
+        var accent = (TryFindResource("Accent") as SolidColorBrush)?.Color ?? Color.FromRgb(0x4C, 0x8D, 0xFF);
+        if (FloatClickPlate.Background is not SolidColorBrush { } now || now.Color != Color.FromArgb(0x59, accent.R, accent.G, accent.B))
+        {
+            FloatClickPlate.Background = new SolidColorBrush(Color.FromArgb(0x59, accent.R, accent.G, accent.B));
+        }
+    }
+
+    /// <summary>A tile's plate when the pointer is not on it (the chosen one's colour lies under the row, <see cref="FloatClickPlate"/>).</summary>
+    private static Brush RestPlate(Panel row, string key) => Brushes.Transparent;
 
     /// <summary>The button the pointer is over on the track (any button: a hidden one may be chosen too).</summary>
     internal void ChooseClickAt(double x)
@@ -386,8 +394,7 @@ public partial class SettingsWindow : Window
     private void FloatClick_MouseDown(object sender, MouseButtonEventArgs e)
     {
         _clickDragging = FloatClickTrack.CaptureMouse();
-        _clickKnob.BeginAnimation(Canvas.LeftProperty, null);
-        Canvas.SetLeft(_clickKnob, Math.Clamp(e.GetPosition(FloatClickTrack).X - _clickKnob.Width / 2, 0, FloatClickTrack.Width - _clickKnob.Width));
+        KnobAt(Math.Clamp(e.GetPosition(FloatClickTrack).X - _clickKnob.Width / 2, 0, FloatClickTrack.Width - _clickKnob.Width));
         e.Handled = true;
     }
 
@@ -396,7 +403,7 @@ public partial class SettingsWindow : Window
         if (_clickDragging)
         {
             // Follows the pointer; snaps when let go.
-            Canvas.SetLeft(_clickKnob, Math.Clamp(e.GetPosition(FloatClickTrack).X - _clickKnob.Width / 2, 0, FloatClickTrack.Width - _clickKnob.Width));
+            KnobAt(Math.Clamp(e.GetPosition(FloatClickTrack).X - _clickKnob.Width / 2, 0, FloatClickTrack.Width - _clickKnob.Width));
         }
     }
 

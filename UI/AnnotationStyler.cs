@@ -43,7 +43,8 @@ internal static class AnnotationStyler
                 break;
 
             case MosaicAnnotation box:
-                SetLevel(box, toolbar.MosaicLevel, mosaicSource, toolbar.MosaicBlur);
+                box.Feather = toolbar.MosaicFeather;
+                SetLevel(box, toolbar.MosaicLevel, mosaicSource, toolbar.MosaicBlur, toolbar.MosaicGaussian);
                 break;
 
             case SpotlightAnnotation spotlight:
@@ -54,7 +55,8 @@ internal static class AnnotationStyler
 
             case MosaicBrushAnnotation brush:
                 brush.Thickness = Math.Max(2, toolbar.Thickness);
-                SetLevel(brush, toolbar.MosaicLevel, mosaicSource, toolbar.MosaicBlur);
+                brush.Feather = toolbar.MosaicFeather;
+                SetLevel(brush, toolbar.MosaicLevel, mosaicSource, toolbar.MosaicBlur, toolbar.MosaicGaussian);
                 break;
 
             case RectAnnotation:
@@ -89,17 +91,17 @@ internal static class AnnotationStyler
         }
     }
 
-    private static void SetLevel(Annotation mosaic, double level, BitmapSource? source, double blur = 0)
+    private static void SetLevel(Annotation mosaic, double level, BitmapSource? source, double blur = 0, bool gaussian = false)
     {
         var block = Math.Clamp(Math.Round(level), 3, 64);
-        var (current, currentBlur) = mosaic switch
+        var (current, currentBlur, currentGaussian) = mosaic switch
         {
-            MosaicAnnotation box => (box.BlockSize, box.Blur),
-            MosaicBrushAnnotation brush => (brush.BlockSize, brush.Blur),
-            _ => (block, blur)
+            MosaicAnnotation box => (box.BlockSize, box.Blur, box.Gaussian),
+            MosaicBrushAnnotation brush => (brush.BlockSize, brush.Blur, brush.Gaussian),
+            _ => (block, blur, gaussian)
         };
 
-        if (Math.Abs(current - block) < 0.01 && Math.Abs(currentBlur - blur) < 0.01 && HasPattern(mosaic))
+        if (Math.Abs(current - block) < 0.01 && Math.Abs(currentBlur - blur) < 0.01 && currentGaussian == gaussian && HasPattern(mosaic))
         {
             return;
         }
@@ -109,10 +111,12 @@ internal static class AnnotationStyler
             case MosaicAnnotation box:
                 box.BlockSize = block;
                 box.Blur = blur;
+                box.Gaussian = gaussian;
                 break;
             case MosaicBrushAnnotation brush:
                 brush.BlockSize = block;
                 brush.Blur = blur;
+                brush.Gaussian = gaussian;
                 break;
         }
 

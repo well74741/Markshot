@@ -24,6 +24,7 @@ public partial class OverlayWindow : Window
     private Point _watermarkLast;
     private Point _transformPress;
     private Vector _resizeGrab;
+    private (bool X, bool Y) _resizeFlip; // what a resize drag has turned over so far
     private bool _transformStarted;
 
     private enum DragMode
@@ -171,6 +172,11 @@ public partial class OverlayWindow : Window
 
     /// <summary>For pins: the selection without annotations (translation included).</summary>
     public BitmapSource? PinBaseImage { get; private set; }
+
+    /// <summary>Pinned while translated in place: the picture without the translation, and the two languages.</summary>
+    public BitmapSource? PinOriginalBase { get; private set; }
+
+    public (string? Source, string? Target) PinLanguages { get; private set; }
 
     /// <summary>For pins: the annotations in pin coordinates, still editable there.</summary>
     public List<Annotation>? PinAnnotations { get; private set; }

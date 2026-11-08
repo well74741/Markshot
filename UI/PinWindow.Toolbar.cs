@@ -57,6 +57,10 @@ public partial class PinWindow
             }
         }
 
+        // A wider settings row grows to the right; at the screen's end the bar moves left to stay whole.
+        var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(image.Left, image.Bottom)).Bounds;
+        var width = bar.Right - bar.Left;
+        x = Math.Max(screen.Left, Math.Min(x, screen.Right - width));
         _placingToolbar = true;
         host.MoveTo(x, y);
         _placingToolbar = false;
@@ -72,6 +76,7 @@ public partial class PinWindow
         if (_toolbarWindow == null)
         {
             _toolbarWindow = new ToolbarHostWindow(Toolbar) { Owner = this };
+            _toolbarWindow.SizeChanged += (_, _) => PlaceToolbar(); // grown: still on the screen
             // Should it ever get the keys itself, they still belong to the pin.
             _toolbarWindow.PreviewKeyDown += (_, e) => OnPreviewKeyDown(this, e);
             Toolbar.PreviewMouseLeftButtonUp += (_, _) => Dispatcher.BeginInvoke(new Action(ReclaimKeyboard), DispatcherPriority.Input);

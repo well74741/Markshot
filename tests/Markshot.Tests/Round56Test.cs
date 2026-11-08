@@ -86,7 +86,7 @@ static class Round56Test
 
         // ---- settings: changes wait for 保存; closing asks; 不保存 puts everything back
         {
-            var config = new AppConfig();
+            var config = new AppConfig { Theme = "Dark" }; // (a first start is light since 0.8.63)
             File.WriteAllText(AppConfig.ConfigPath, "{}");
             var settings = new SettingsWindow(config) { Left = -4000, Top = -4000, ShowActivated = false };
             settings.Show();
@@ -143,6 +143,7 @@ static class Round56Test
         // ---- the pin history: columns fill the width, its size is remembered
         {
             var config = Markshot.App.Config;
+            UiScale.Apply("Small"); // (columns are counted at the designed size; a first start is 中 since 0.8.63)
             config.PinHistoryWidth = 900;
             config.PinHistoryHeight = 520;
             var history = new PinHistoryWindow(() => Array.Empty<PinEntry>(), _ => { }, _ => { }, () => { }) { Left = -4000, Top = -4000, ShowActivated = false };

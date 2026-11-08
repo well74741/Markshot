@@ -1036,6 +1036,11 @@ public partial class App : Application
             pin.AdoptHistory(source.PinHistory);
         }
 
+        if (source.PinOriginalBase is { } original)
+        {
+            pin.AdoptTranslation(original, source.PinLanguages.Source, source.PinLanguages.Target); // 原位翻译: [原文 | 译文] on the pin too
+        }
+
         return pin;
     }
 

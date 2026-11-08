@@ -866,6 +866,12 @@ public sealed class CutoutAnnotation : PenAnnotation
     private Geometry? _shape;
     private string? _shapeKey;
 
+    /// <summary>
+    /// Done: the hole went into every element below it (their own erase masks, so it moves, scales and turns
+    /// with them). From then on it cuts only the picture under everything and what cannot carry it.
+    /// </summary>
+    public bool Baked { get; set; }
+
     public override bool Erasable => false;
 
     public override void Draw(DrawingContext dc)
@@ -904,6 +910,41 @@ public sealed class CutoutAnnotation : PenAnnotation
 /// <summary>The holes cut by 抠除.</summary>
 public static class Cutouts
 {
+    /// <summary>Elements a finished hole goes into (the watermark covers the canvas, a 聚焦 darkens around itself).</summary>
+    public static bool Carries(Annotation item) => item is not (CutoutAnnotation or WatermarkAnnotation or SpotlightAnnotation);
+
+    /// <summary>
+    /// A finished 抠除 cuts through every layer below it: each element there gets the hole as its own (it moves
+    /// with the element); the cut-out itself stays for the picture under everything.
+    /// </summary>
+    public static void Bake(IList<Annotation> items, CutoutAnnotation cutout)
+    {
+        var index = items.IndexOf(cutout);
+        if (index < 0 || cutout.Baked || cutout.Points.Count == 0)
+        {
+            return;
+        }
+
+        var reach = cutout.Shape().Bounds;
+        for (var i = 0; i < index; i++)
+        {
+            var item = items[i];
+            if (!Carries(item) || item.Bounds.IsEmpty)
+            {
+                continue;
+            }
+
+            var area = Annotations.AnnotationEditor.RotatedBounds(item);
+            area.Inflate(item.Thickness * 2 + 2, item.Thickness * 2 + 2);
+            if (area.IntersectsWith(reach))
+            {
+                item.AddEraseStroke(cutout.Points, cutout.Thickness);
+            }
+        }
+
+        cutout.Baked = true;
+    }
+
     public static bool Any(IReadOnlyList<Annotation> items)
     {
         for (var i = 0; i < items.Count; i++)
@@ -1058,8 +1099,14 @@ public sealed class MosaicAnnotation : Annotation
     /// <summary>Block size of the mosaic (its strength).</summary>
     public double BlockSize { get; set; } = 12;
 
-    /// <summary>高斯模糊 over the blocks (pixels; 0 = hard blocks).</summary>
+    /// <summary>高斯模糊 strength (pixels) when <see cref="Gaussian"/>.</summary>
     public double Blur { get; set; }
+
+    /// <summary>高斯模糊 instead of blocks.</summary>
+    public bool Gaussian { get; set; }
+
+    /// <summary>The soft edge of a 高斯模糊 (pixels across its border; 0 = cut sharp).</summary>
+    public double Feather { get; set; }
 
     public BitmapSource? Pattern { get; set; }
 
@@ -1073,9 +1120,9 @@ public sealed class MosaicAnnotation : Annotation
             return;
         }
 
-        if (Blur >= 1)
+        if (Gaussian && Feather >= 1)
         {
-            dc.PushOpacityMask(MosaicBuilder.SoftMask(grow => { var r = Rect; r.Inflate(grow, grow); return new RectangleGeometry(r); }, Blur));
+            dc.PushOpacityMask(MosaicBuilder.SoftMask(grow => { var r = Rect; r.Inflate(grow, grow); return new RectangleGeometry(r); }, Feather));
         }
         else
         {
@@ -1565,8 +1612,14 @@ public sealed class MosaicBrushAnnotation : Annotation
     /// <summary>Block size of the mosaic (its strength).</summary>
     public double BlockSize { get; set; } = 12;
 
-    /// <summary>高斯模糊 over the blocks (pixels; 0 = hard blocks).</summary>
+    /// <summary>高斯模糊 strength (pixels) when <see cref="Gaussian"/>.</summary>
     public double Blur { get; set; }
+
+    /// <summary>高斯模糊 instead of blocks.</summary>
+    public bool Gaussian { get; set; }
+
+    /// <summary>The soft edge of a 高斯模糊 (pixels across its border; 0 = cut sharp).</summary>
+    public double Feather { get; set; }
 
     public BitmapSource? Pattern { get; set; }
 
@@ -1589,9 +1642,9 @@ public sealed class MosaicBrushAnnotation : Annotation
         }
 
         var area = EraseStroke.Widen(Points, Thickness);
-        if (Blur >= 1)
+        if (Gaussian && Feather >= 1)
         {
-            dc.PushOpacityMask(MosaicBuilder.SoftMask(grow => EraseStroke.Widen(Points, Math.Max(1, Thickness + grow * 2)), Blur));
+            dc.PushOpacityMask(MosaicBuilder.SoftMask(grow => EraseStroke.Widen(Points, Math.Max(1, Thickness + grow * 2)), Feather));
         }
         else
         {
@@ -1861,10 +1914,10 @@ public static class MosaicBuilder
         switch (annotation)
         {
             case MosaicAnnotation box:
-                (box.Pattern, box.PatternRect) = BuildCanvas(source, box.BlockSize, box.Blur);
+                (box.Pattern, box.PatternRect) = BuildCanvas(source, box.BlockSize, box.Blur, box.Gaussian);
                 break;
             case MosaicBrushAnnotation brush:
-                (brush.Pattern, brush.PatternRect) = BuildCanvas(source, brush.BlockSize, brush.Blur);
+                (brush.Pattern, brush.PatternRect) = BuildCanvas(source, brush.BlockSize, brush.Blur, brush.Gaussian);
                 break;
         }
     }
@@ -1873,8 +1926,13 @@ public static class MosaicBuilder
     /// One sample per block for the whole canvas; the result is drawn stretched
     /// over (blocks × block size) so every block is exactly <paramref name="blockSize"/> px.
     /// </summary>
-    public static (BitmapSource? Pattern, Rect Area) BuildCanvas(BitmapSource source, double blockSize, double blur = 0)
+    public static (BitmapSource? Pattern, Rect Area) BuildCanvas(BitmapSource source, double blockSize, double blur = 0, bool gaussian = false)
     {
+        if (gaussian)
+        {
+            return (Gaussian(source, blur), new Rect(0, 0, source.PixelWidth, source.PixelHeight));
+        }
+
         var block = Math.Clamp((int)Math.Round(blockSize), 3, 64);
         var pattern = Build(source, new Rect(0, 0, source.PixelWidth, source.PixelHeight), block);
         if (pattern == null)
@@ -1916,6 +1974,28 @@ public static class MosaicBuilder
         return (soft, area);
     }
 
+    /// <summary>高斯模糊 of the whole canvas (three box passes ≈ a Gaussian of <paramref name="radius"/> px).</summary>
+    public static BitmapSource Gaussian(BitmapSource source, double radius)
+    {
+        var converted = source.Format == PixelFormats.Bgra32 || source.Format == PixelFormats.Pbgra32
+            ? source
+            : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+        var width = converted.PixelWidth;
+        var height = converted.PixelHeight;
+        var data = new byte[width * height * 4];
+        converted.CopyPixels(data, width * 4, 0);
+        var pass = Math.Max(1, (int)Math.Round(Math.Clamp(radius, 1, 80) / 1.7));
+        for (var i = 0; i < 3; i++)
+        {
+            BoxBlur(data, width, height, pass, horizontal: true);
+            BoxBlur(data, width, height, pass, horizontal: false);
+        }
+
+        var result = BitmapSource.Create(width, height, 96, 96, converted.Format, null, data, width * 4);
+        result.Freeze();
+        return result;
+    }
+
     /// <summary>A running-sum box blur along rows or columns (BGRA, edges clamped).</summary>
     private static void BoxBlur(byte[] data, int width, int height, int r, bool horizontal)
     {
@@ -1950,13 +2030,13 @@ public static class MosaicBuilder
     }
 
     /// <summary>
-    /// A soft-edged mask of a shape (a blurred mosaic fades out at its edge instead of being cut): the shape grown /
-    /// shrunk in steps by half the blur either way, each ring a little more see-through.
+    /// A soft-edged mask of a shape (a 高斯模糊 fades out at its edge instead of being cut): from half the
+    /// <paramref name="feather"/> inside the border to half outside, in rings each a little more see-through.
     /// </summary>
-    public static Brush SoftMask(Func<double, Geometry> shapeAt, double blur)
+    public static Brush SoftMask(Func<double, Geometry> shapeAt, double feather)
     {
         const int steps = 10;
-        var reach = Math.Max(1, blur * 1.5);
+        var reach = Math.Max(1, feather);
         var group = new DrawingGroup();
         var inner = shapeAt(-reach / 2);
         group.Children.Add(new GeometryDrawing(Brushes.Black, null, inner));

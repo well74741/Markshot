@@ -222,10 +222,48 @@ public partial class AnnotationToolbar : UserControl
     /// <summary>Mosaic block size (strength).</summary>
     public double MosaicLevel => _mosaicLevel;
 
-    private double _mosaicBlur;
+    private double _mosaicBlur = 12;
+    private double _mosaicFeather = 10;
+    private bool _mosaicGaussian;
 
-    /// <summary>马赛克 高斯模糊 (pixels).</summary>
+    /// <summary>高斯模糊 strength (pixels).</summary>
     public double MosaicBlur => _mosaicBlur;
+
+    /// <summary>马赛克 type: 高斯模糊 (else 色块).</summary>
+    public bool MosaicGaussian => _mosaicGaussian;
+
+    /// <summary>The soft edge of a 高斯模糊 (pixels).</summary>
+    public double MosaicFeather => _mosaicFeather;
+
+    private void MosaicKind_Click(object sender, RoutedEventArgs e)
+    {
+        _mosaicGaussian = ReferenceEquals(sender, KindGaussianToggle);
+        var was = _configuring;
+        _configuring = true;
+        ConfigureForTool(_tool, _selection); // 程度 (blocks) or 程度 + 柔边 (blur)
+        _configuring = was;
+        if (!_configuring)
+        {
+            SettingsChanged?.Invoke();
+        }
+    }
+
+    private void MosaicFeather_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (MosaicFeatherValue == null)
+        {
+            return;
+        }
+
+        MosaicFeatherValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
+        if (_configuring)
+        {
+            return;
+        }
+
+        _mosaicFeather = Math.Round(e.NewValue);
+        SettingsChanged?.Invoke();
+    }
 
     private void Blur_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
@@ -248,8 +286,12 @@ public partial class AnnotationToolbar : UserControl
     {
         var was = _configuring;
         _configuring = true;
-        BlurSlider.Value = _mosaicBlur;
+        BlurSlider.Value = Math.Clamp(_mosaicBlur, BlurSlider.Minimum, BlurSlider.Maximum);
         BlurValue.Text = ((int)_mosaicBlur).ToString(CultureInfo.InvariantCulture);
+        MosaicFeatherSlider.Value = _mosaicFeather;
+        MosaicFeatherValue.Text = ((int)_mosaicFeather).ToString(CultureInfo.InvariantCulture);
+        KindPixelToggle.IsChecked = !_mosaicGaussian;
+        KindGaussianToggle.IsChecked = _mosaicGaussian;
         _configuring = was;
     }
 
@@ -743,17 +785,24 @@ public partial class AnnotationToolbar : UserControl
                     WidthLabel.Text = "粗细";
                     WidthSlider.Minimum = 4;
                     WidthSlider.Maximum = 80;
-                    LevelGroup.Visibility = Visibility.Visible;
-                    BlurGroup.Visibility = Visibility.Visible;
                     ColorSection.Visibility = Visibility.Collapsed;
                 }
                 else
                 {
                     WidthGroup.Visibility = Visibility.Collapsed;
-                    LevelGroup.Visibility = Visibility.Visible;
-                    BlurGroup.Visibility = Visibility.Visible;
                     ColorSection.Visibility = Visibility.Collapsed;
                 }
+
+                // 色块: their size; 高斯模糊: its strength and soft edge.
+                _mosaicGaussian = annotation switch
+                {
+                    MosaicAnnotation shownBox => shownBox.Gaussian,
+                    MosaicBrushAnnotation shownBrush => shownBrush.Gaussian,
+                    _ => _mosaicGaussian
+                };
+                LevelGroup.Visibility = _mosaicGaussian ? Visibility.Collapsed : Visibility.Visible;
+                BlurGroup.Visibility = _mosaicGaussian ? Visibility.Visible : Visibility.Collapsed;
+                ShowBlur();
                 break;
 
             case ToolFamily.Number:
@@ -906,13 +955,17 @@ public partial class AnnotationToolbar : UserControl
         if (annotation is MosaicAnnotation box)
         {
             _mosaicLevel = box.BlockSize;
-            _mosaicBlur = box.Blur;
+            _mosaicGaussian = box.Gaussian;
+            _mosaicBlur = box.Gaussian ? box.Blur : _mosaicBlur;
+            _mosaicFeather = box.Gaussian ? box.Feather : _mosaicFeather;
             ShowBlur();
         }
         else if (annotation is MosaicBrushAnnotation brush)
         {
             _mosaicLevel = brush.BlockSize;
-            _mosaicBlur = brush.Blur;
+            _mosaicGaussian = brush.Gaussian;
+            _mosaicBlur = brush.Gaussian ? brush.Blur : _mosaicBlur;
+            _mosaicFeather = brush.Gaussian ? brush.Feather : _mosaicFeather;
             ShowBlur();
         }
         else if (annotation is WatermarkAnnotation mark)

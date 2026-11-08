@@ -40,14 +40,14 @@ internal static class AnnotationOps
             AnnotationTool.Line => new LineAnnotation { Start = point, End = point, Color = color, Thickness = thickness },
             AnnotationTool.Pen => new PenAnnotation { Color = color, Thickness = thickness, Softness = toolbar.Softness },
             AnnotationTool.Highlighter => new PenAnnotation { Color = color, Thickness = thickness, Highlight = true, Softness = toolbar.Softness },
-            AnnotationTool.Mosaic => new MosaicAnnotation { Rect = new Rect(point, point), BlockSize = toolbar.MosaicLevel, Blur = toolbar.MosaicBlur },
+            AnnotationTool.Mosaic => new MosaicAnnotation { Rect = new Rect(point, point), BlockSize = toolbar.MosaicLevel, Blur = toolbar.MosaicBlur, Gaussian = toolbar.MosaicGaussian, Feather = toolbar.MosaicFeather },
             AnnotationTool.Spotlight => new SpotlightAnnotation
             {
                 Rect = new Rect(point, point), Ellipse = toolbar.SpotlightEllipse, Darkness = toolbar.SpotlightDarkness, Feather = toolbar.SpotlightFeather
             },
             AnnotationTool.MosaicBrush => new MosaicBrushAnnotation
             {
-                Thickness = Math.Max(2, thickness), BlockSize = toolbar.MosaicLevel, Blur = toolbar.MosaicBlur
+                Thickness = Math.Max(2, thickness), BlockSize = toolbar.MosaicLevel, Blur = toolbar.MosaicBlur, Gaussian = toolbar.MosaicGaussian, Feather = toolbar.MosaicFeather
             },
             AnnotationTool.Number => new NumberAnnotation
             {
@@ -473,9 +473,15 @@ internal static class AnnotationOps
             var k = Math.Max(width / start.Width, height / start.Height);
             width = start.Width * k;
             height = start.Height * k;
-            // Re-anchor at the fixed corner.
-            if (handle is 0 or 6) left = start.Right - width; else right = start.Left + width;
-            if (handle is 0 or 2) top = start.Bottom - height; else bottom = start.Top + height;
+            // Re-anchor at the fixed corner, on whichever side of it the pointer is (past it = mirrored).
+            var fixedX = handle is 0 or 6 ? start.Right : start.Left;
+            var fixedY = handle is 0 or 2 ? start.Bottom : start.Top;
+            var towardX = local.X >= fixedX ? 1 : -1;
+            var towardY = local.Y >= fixedY ? 1 : -1;
+            left = fixedX;
+            right = fixedX + towardX * width;
+            top = fixedY;
+            bottom = fixedY + towardY * height;
         }
 
         var localBox = new Rect(Math.Min(left, right), Math.Min(top, bottom), width, height);
@@ -483,6 +489,96 @@ internal static class AnnotationOps
         var localCenter = new Point(localBox.X + localBox.Width / 2, localBox.Y + localBox.Height / 2);
         var center = AnnotationEditor.RotatePoint(localCenter, c0, rotation);
         return new Rect(center.X - width / 2, center.Y - height / 2, width, height);
+    }
+
+    /// <summary>
+    /// A side dragged across the opposite one: (left-right, top-bottom) mirrored from how the drag started.
+    /// </summary>
+    public static (bool X, bool Y) CrossedSides(Rect start, double rotation, int handle, Point pointer)
+    {
+        var c0 = new Point(start.X + start.Width / 2, start.Y + start.Height / 2);
+        var local = AnnotationEditor.RotatePoint(pointer, c0, -rotation);
+        var x = handle switch
+        {
+            0 or 6 or 7 => local.X > start.Right,
+            2 or 3 or 4 => local.X < start.Left,
+            _ => false
+        };
+        var y = handle switch
+        {
+            0 or 1 or 2 => local.Y > start.Bottom,
+            4 or 5 or 6 => local.Y < start.Top,
+            _ => false
+        };
+        return (x, y);
+    }
+
+    /// <summary>
+    /// Resizes from a handle; dragged past the opposite side the element turns over (mirrored), as if pulled through.
+    /// <paramref name="flipped"/> is what has been mirrored so far in this drag.
+    /// </summary>
+    public static void ResizeThrough(Annotation annotation, Rect start, int handle, Point pointer, bool keepAspect, ref (bool X, bool Y) flipped)
+    {
+        var target = ResizeFromHandle(start, annotation.Rotation, handle, pointer, keepAspect);
+        Resize(annotation, target, handle);
+        var crossed = CrossedSides(start, annotation.Rotation, handle, pointer);
+        if (crossed.X != flipped.X)
+        {
+            Mirror(annotation, horizontal: true);
+        }
+
+        if (crossed.Y != flipped.Y)
+        {
+            Mirror(annotation, horizontal: false);
+        }
+
+        flipped = crossed;
+    }
+
+    /// <summary>Turns an element over within its own box (text stays readable; symmetric shapes need nothing).</summary>
+    public static void Mirror(Annotation annotation, bool horizontal)
+    {
+        var box = annotation.Bounds;
+        var cx = box.X + box.Width / 2;
+        var cy = box.Y + box.Height / 2;
+        Point Map(Point p) => horizontal ? new Point(2 * cx - p.X, p.Y) : new Point(p.X, 2 * cy - p.Y);
+        if (annotation is not TextAnnotation)
+        {
+            ReorientMasks(annotation, horizontal ? 'H' : 'V');
+        }
+
+        switch (annotation)
+        {
+            case LineAnnotation line:
+                line.Start = Map(line.Start);
+                line.End = Map(line.End);
+                break;
+            case ArrowAnnotation arrow:
+                arrow.Start = Map(arrow.Start);
+                arrow.End = Map(arrow.End);
+                break;
+            case PenAnnotation pen:
+                for (var i = 0; i < pen.Points.Count; i++)
+                {
+                    pen.Points[i] = Map(pen.Points[i]);
+                }
+
+                break;
+            case MosaicBrushAnnotation brush:
+                for (var i = 0; i < brush.Points.Count; i++)
+                {
+                    brush.Points[i] = Map(brush.Points[i]);
+                }
+
+                break;
+            case ImageAnnotation picture:
+            {
+                var turn = new ScaleTransform(horizontal ? -1 : 1, horizontal ? 1 : -1);
+                picture.Image = picture.Image == null ? null : ImageOps.Normalize(new TransformedBitmap(picture.Image, turn));
+                picture.Origin = picture.Origin == null ? null : ImageOps.Normalize(new TransformedBitmap(picture.Origin, turn));
+                break;
+            }
+        }
     }
 
     /// <summary>Keeps bound eraser holes in place when the pin image is flipped ('H', 'V') or turned ('R').</summary>

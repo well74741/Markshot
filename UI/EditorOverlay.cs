@@ -84,6 +84,13 @@ public sealed class EditorOverlay : FrameworkElement
 
     public double TransformStartAngle { get; set; }
 
+    /// <summary>The box was pulled through itself: what it holds is turned over (left-right / top-bottom).</summary>
+    public bool TransformMirrorX { get; set; }
+
+    public bool TransformMirrorY { get; set; }
+
+    private (bool X, bool Y) _mirrorOrigin; // as it was when this drag began
+
     /// <summary>The picture drawn in the box (a small copy is fine).</summary>
     public BitmapSource? TransformPreview { get; set; }
 
@@ -102,7 +109,7 @@ public sealed class EditorOverlay : FrameworkElement
         EditorOverlayMode.Path => !_drawing && PathPoints.Count >= 3,
         EditorOverlayMode.Crop => Crop.Width >= 2 && Crop.Height >= 2,
         EditorOverlayMode.Mesh => Warp.Changed,
-        EditorOverlayMode.Transform => Math.Abs(TransformAngle - TransformStartAngle) > 0.05 ||
+        EditorOverlayMode.Transform => TransformMirrorX || TransformMirrorY || Math.Abs(TransformAngle - TransformStartAngle) > 0.05 ||
                                        (TransformRect.TopLeft - TransformStart.TopLeft).Length >= 0.5 ||
                                        Math.Abs(TransformRect.Width - TransformStart.Width) >= 0.5 || Math.Abs(TransformRect.Height - TransformStart.Height) >= 0.5,
         _ => true
@@ -236,7 +243,9 @@ public sealed class EditorOverlay : FrameworkElement
         dc.PushTransform(new RotateTransform(TransformAngle, center.X, center.Y));
         if (TransformPreview != null)
         {
+            dc.PushTransform(new ScaleTransform(TransformMirrorX ? -1 : 1, TransformMirrorY ? -1 : 1, center.X, center.Y));
             dc.DrawImage(TransformPreview, box);
+            dc.Pop();
         }
 
         var accent = new Pen(Accent, 1.5);
@@ -323,6 +332,7 @@ public sealed class EditorOverlay : FrameworkElement
         _transformStart = pixel;
         _transformOrigin = TransformRect;
         _angleOrigin = TransformAngle;
+        _mirrorOrigin = (TransformMirrorX, TransformMirrorY);
         var center = new Point(TransformRect.X + TransformRect.Width / 2, TransformRect.Y + TransformRect.Height / 2);
         _angleStart = Math.Atan2(pixel.Y - center.Y, pixel.X - center.X) * 180 / Math.PI;
     }
@@ -351,9 +361,16 @@ public sealed class EditorOverlay : FrameworkElement
             }
 
             default:
-                TransformRect = UI.AnnotationOps.ResizeFromHandle(_transformOrigin, TransformAngle, int.Parse(_transformDrag, CultureInfo.InvariantCulture),
+            {
+                var handle = int.Parse(_transformDrag, CultureInfo.InvariantCulture);
+                TransformRect = UI.AnnotationOps.ResizeFromHandle(_transformOrigin, TransformAngle, handle,
                     pixel, (_transformDrag is "0" or "2" or "4" or "6") != ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)); // corners keep the ratio, Shift frees them
+                // Pulled past the opposite side: turned over, as if pulled through.
+                var crossed = UI.AnnotationOps.CrossedSides(_transformOrigin, TransformAngle, handle, pixel);
+                TransformMirrorX = _mirrorOrigin.X != crossed.X;
+                TransformMirrorY = _mirrorOrigin.Y != crossed.Y;
                 break;
+            }
         }
 
         InvalidateVisual();

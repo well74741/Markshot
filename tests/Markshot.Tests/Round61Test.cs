@@ -124,6 +124,8 @@ static class Round61Test
             Check(soft != null && area.Width >= 64 && Spread(soft) < Spread(Stripes(64, 64)) * 0.5, "the blur softens the mosaic");
             var bar = new AnnotationToolbar();
             bar.SetTool(AnnotationTool.Mosaic);
+            // (0.8.63: 高斯模糊 is a mosaic type of its own; its 程度 shows once it is chosen)
+            bar.GetType().GetMethod("MosaicKind_Click", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(bar, new object[] { bar.FindName("KindGaussianToggle"), new RoutedEventArgs() });
             Check(((FrameworkElement)bar.FindName("BlurGroup")).Visibility == Visibility.Visible, "the mosaic row has 模糊");
             ((Slider)bar.FindName("BlurSlider")).Value = 8;
             Check(Math.Abs(bar.MosaicBlur - 8) < 0.01, "… and it sets the blur");

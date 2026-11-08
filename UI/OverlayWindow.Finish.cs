@@ -10,7 +10,9 @@ public partial class OverlayWindow
 {
     private BitmapSource Compose() => Compose(includeAnnotations: true);
 
-    private BitmapSource Compose(bool includeAnnotations)
+    private BitmapSource Compose(bool includeAnnotations) => Compose(includeAnnotations, withTranslation: true);
+
+    private BitmapSource Compose(bool includeAnnotations, bool withTranslation)
     {
         var rect = ClampToScreen(_selection);
         var x = (int)Math.Round(rect.X);
@@ -18,7 +20,7 @@ public partial class OverlayWindow
         var width = Math.Max(1, (int)Math.Round(rect.Width));
         var height = Math.Max(1, (int)Math.Round(rect.Height));
 
-        var translation = VisibleTranslation();
+        var translation = withTranslation ? VisibleTranslation() : null;
         var lassoClip = LassoGeometry();
         if ((!includeAnnotations || Editor.Items.Count == 0) && translation == null && _cornerRadius < 0.5 && lassoClip == null)
         {
@@ -144,6 +146,11 @@ public partial class OverlayWindow
         PinCornerRadius = _cornerRadius;
         PinShapedShadow = _lasso != null;
         PinBaseImage = Compose(includeAnnotations: false);
+        if (VisibleTranslation() != null)
+        {
+            PinOriginalBase = Compose(includeAnnotations: false, withTranslation: false);
+            PinLanguages = (_sourceLabel, _targetLabel);
+        }
         PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, origin, PinBaseImage);
         var pinBase = PinBaseImage;
         PinHistory = _history.Convert(step => AnnotationOps.ToPinSpace(step, origin, pinBase));
