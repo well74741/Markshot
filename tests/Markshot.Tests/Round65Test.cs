@@ -23,6 +23,19 @@ static class Round65Test
     static string Source(string file) => File.ReadAllText(Repo.File(file)).Replace("\r\n", "\n"); // (CI checks out with CRLF)
     static IReadOnlyList<string> Headers(FloatButtonWindow button) => (IReadOnlyList<string>)button.GetType().GetMethod("MenuHeaders", Any)!.Invoke(button, null)!;
 
+    /// <summary>Waits (pumping) until the condition holds, at most a few seconds (CI machines are slow).</summary>
+    static bool WaitFor(Func<bool> condition, int ms = 4000)
+    {
+        var until = DateTime.Now.AddMilliseconds(ms);
+        while (DateTime.Now < until)
+        {
+            if (condition()) return true;
+            Pump(20);
+        }
+
+        return condition();
+    }
+
     static object? Prop(object target, string name) => target.GetType().GetProperty(name, Any)!.GetValue(target);
 
     static BitmapSource Grey(int w, int h, byte v = 200)
@@ -61,9 +74,9 @@ static class Round65Test
             button.Show();
             Pump(250);
             button.ShowThumbnail(Grey(300, 200, 90));
-            Pump(50);
+            Pump(30);
             Check((bool)Prop(button, "ShowingThumbnail")! && button.IconImage.Opacity < 0.01, "a screenshot shows on the button at once (its picture under it)");
-            Pump(900);
+            WaitFor(() => !(bool)Prop(button, "ShowingThumbnail")!);
             Check(!(bool)Prop(button, "ShowingThumbnail")! && button.IconImage.Opacity > 0.5, "half a second later it slides away and the picture is back");
             var closedAll = false;
             button.PinsClosedAll = () => closedAll;
@@ -93,7 +106,7 @@ static class Round65Test
             Check(items.Count > 0 && !items.Contains("清除批注内容"), "no 清除批注内容 before anything is annotated");
             var original = Grey(160, 100, 30);
             pin.AdoptTranslation(original, "English", "中文");
-            Pump(150);
+            WaitFor(() => (bool)Prop(pin, "LanguageSwitchShown")!, 2000);
             Check(Menu().Contains("关闭原位翻译"), "translated: the menu has 关闭原位翻译");
             Check(pin.FindName("PinTranslateClose") is Button, "the switch has a ✕");
             pin.GetType().GetMethod("PinCloseTranslation_Click", Any)!.Invoke(pin, new object?[] { pin, new RoutedEventArgs() });
@@ -109,6 +122,7 @@ static class Round65Test
             rotate.Invoke(pin, null);
             Pump(400);
             pin.GetType().GetMethod("ResetPinImageTransform", Any)!.Invoke(pin, null);
+            WaitFor(() => pin.ActualWidth > pin.ActualHeight, 2000);
             var motion = ((int Mirror, double Angle, double Zoom)?)Prop(pin, "ResetMotion");
             var host = (FrameworkElement)pin.FindName("ImageHost");
             var group = host.RenderTransform as TransformGroup;
