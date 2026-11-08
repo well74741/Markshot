@@ -584,6 +584,12 @@ public sealed class TranslationConfig{
 
     public string Model { get; set; } = "deepseek-chat";
 
+    /// <summary>翻译方式: Auto (the API; the offline pack when no key is set), Api, Offline (离线翻译包).</summary>
+    public string Engine { get; set; } = "Auto";
+
+    /// <summary>Where offline packs are downloaded from (<see cref="Services.OfflinePacks.Mirrors"/>).</summary>
+    public string OfflineMirror { get; set; } = "hf-mirror";
+
     public string TargetLanguage { get; set; } = "简体中文";
 
     /// <summary>Optional prompt override. {target} is replaced with the target language.</summary>

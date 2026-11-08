@@ -526,8 +526,7 @@ public sealed class FloatButtonWindow : Window
         if (!_moving)
         {
             _moving = true;
-            Collapse(animate: true); // the row draws in quickly
-            Press(down: false);
+            Collapse(animate: true); // the row draws in quickly (the button stays pressed in until let go)
         }
 
         MoveTo(_pressCenter.X + dx, _pressCenter.Y + dy, keepInside: false);

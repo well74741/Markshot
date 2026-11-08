@@ -83,6 +83,7 @@ public partial class SettingsWindow : Window
         ModelBox.Text = config.Translation.Model;
         TargetBox.Text = config.Translation.TargetLanguage;
         TimeoutBox.Text = config.Translation.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+        InitOffline();
         ImmersiveSwitch.IsChecked = config.ImmersiveTranslate;
 
         VersionText.Text = "版本 " + AppVersion.Display;
@@ -303,6 +304,140 @@ public partial class SettingsWindow : Window
     }
 
     private static App? RunningApp => Application.Current as App;
+
+    // ---- 离线翻译包 ------------------------------------------------------------------------------------------
+    private readonly Dictionary<string, CancellationTokenSource> _downloads = new();
+
+    private void InitOffline()
+    {
+        (_config.Translation.Engine switch { "Offline" => EngineOffline, "Api" => EngineApi, _ => EngineAuto }).IsChecked = true;
+        MirrorRow.Children.Clear();
+        foreach (var (id, label, _) in Services.OfflinePacks.Mirrors)
+        {
+            MirrorRow.Children.Add(new RadioButton
+            {
+                Name = "Mirror_" + id.Replace("-", "_"),
+                Style = (Style)FindResource("SegmentRadio"),
+                GroupName = "Mirror",
+                Tag = id,
+                Content = label,
+                IsChecked = id == _config.Translation.OfflineMirror
+            });
+        }
+
+        if (MirrorRow.Children.OfType<RadioButton>().All(radio => radio.IsChecked != true))
+        {
+            ((RadioButton)MirrorRow.Children[0]).IsChecked = true;
+        }
+
+        BuildPackRows();
+    }
+
+    /// <summary>One row per pack: what it is, its state, 下载 / 删除 (or 取消 with the progress while it downloads).</summary>
+    private void BuildPackRows()
+    {
+        OfflinePackRows.Children.Clear();
+        foreach (var pack in Services.OfflinePacks.All)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6), Tag = pack.Id };
+            var installed = Services.OfflinePacks.IsInstalled(pack);
+            var busy = _downloads.ContainsKey(pack.Id);
+            var action = new Button
+            {
+                Style = (Style)FindResource("FooterButton"),
+                Content = busy ? "取消" : installed ? "删除" : "下载",
+                MinWidth = 64,
+                Tag = pack.Id
+            };
+            action.Click += PackAction_Click;
+            DockPanel.SetDock(action, Dock.Right);
+            row.Children.Add(action);
+            var name = new TextBlock { Text = pack.Label, Width = 96, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 };
+            name.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFD8D8D8));
+            DockPanel.SetDock(name, Dock.Left);
+            row.Children.Add(name);
+            var state = new TextBlock
+            {
+                Text = busy ? "准备下载…" : installed ? $"已安装（{Services.OfflinePacks.SizeOnDisk(pack) / 1048576.0:0} MB）" : $"未下载，约 {pack.ApproxBytes / 1000000} MB",
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 12,
+                Margin = new Thickness(0, 0, 10, 0),
+                Tag = "state"
+            };
+            state.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(installed ? 0xFF4CC38A : 0xFF9A9A9A));
+            row.Children.Add(state);
+            OfflinePackRows.Children.Add(row);
+        }
+    }
+
+    private TextBlock? PackState(string id) => OfflinePackRows.Children.OfType<DockPanel>().FirstOrDefault(row => (string)row.Tag == id)?
+        .Children.OfType<TextBlock>().FirstOrDefault(text => (string?)text.Tag == "state");
+
+    private async void PackAction_Click(object sender, RoutedEventArgs e)
+    {
+        var id = (string)((Button)sender).Tag;
+        var pack = Services.OfflinePacks.Find(id)!;
+        if (_downloads.Remove(id, out var running))
+        {
+            running.Cancel();
+            return;
+        }
+
+        if (Services.OfflinePacks.IsInstalled(pack))
+        {
+            if (MessageBox.Show(this, $"删除离线翻译包「{pack.Label}」？", "Markshot", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
+            {
+                return;
+            }
+
+            Services.OfflinePacks.Delete(pack);
+            BuildPackRows();
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _downloads[id] = cts;
+        BuildPackRows();
+        var mirror = MirrorRow.Children.OfType<RadioButton>().FirstOrDefault(radio => radio.IsChecked == true)?.Tag as string ?? "hf-mirror";
+        var progress = new Progress<(long Done, long Total)>(p =>
+        {
+            if (PackState(id) is { } state)
+            {
+                state.Text = $"下载中 {p.Done / 1048576.0:0} / {p.Total / 1048576.0:0} MB";
+            }
+        });
+        string? failure = null;
+        try
+        {
+            await Services.OfflinePacks.DownloadAsync(pack, mirror, progress, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            failure = "已取消（下完的文件会保留，再点下载继续）";
+        }
+        catch (Exception ex)
+        {
+            Log.Error("下载离线翻译包失败", ex);
+            failure = "下载失败：" + ex.Message + "（可换个下载源再试）";
+        }
+        finally
+        {
+            _downloads.Remove(id);
+            cts.Dispose();
+        }
+
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        BuildPackRows();
+        if (failure != null && PackState(id) is { } failed)
+        {
+            failed.Text = failure;
+            failed.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFFF6B6B));
+        }
+    }
 
     // ---- 点击行为: a knob on a track as long as the row, snapping under a button --------------------------------
     private const double Tile = 28;
@@ -1140,6 +1275,8 @@ public partial class SettingsWindow : Window
         _config.OcrLanguage = OcrLanguageBox.Text.Trim();
 
         _config.Translation.BaseUrl = BaseUrlBox.Text.Trim();
+        _config.Translation.Engine = EngineOffline.IsChecked == true ? "Offline" : EngineApi.IsChecked == true ? "Api" : "Auto";
+        _config.Translation.OfflineMirror = MirrorRow.Children.OfType<RadioButton>().FirstOrDefault(radio => radio.IsChecked == true)?.Tag as string ?? "hf-mirror";
         _config.Translation.ApiKey = ApiKey.Trim();
         _config.Translation.Model = ModelBox.Text.Trim();
         _config.Translation.TargetLanguage = TargetBox.Text.Trim();
@@ -1845,7 +1982,8 @@ public partial class SettingsWindow : Window
                 ApiKey = ApiKey.Trim(),
                 TimeoutSeconds = int.TryParse(TimeoutBox.Text.Trim(), out var seconds) ? seconds : 30,
                 Model = ModelBox.Text.Trim(),
-                TargetLanguage = TargetBox.Text.Trim()
+                TargetLanguage = TargetBox.Text.Trim(),
+                Engine = "Api" // this button tests the API card
             };
 
             var provider = TranslationService.Create(testConfig);

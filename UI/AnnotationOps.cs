@@ -603,6 +603,7 @@ internal static class AnnotationOps
         }
 
         annotation.MaskCache = null;
+        annotation.ClipCache = null;
     }
 
     public static Rect ScaleAround(Rect rect, Point center, double factor)

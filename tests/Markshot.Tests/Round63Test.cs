@@ -95,7 +95,7 @@ static class Round63Test
             var source = Stripes(64, 64);
             var (blocks, _) = MosaicBuilder.BuildCanvas(source, 8);
             var (gauss, area) = MosaicBuilder.BuildCanvas(source, 8, 6, gaussian: true);
-            Check(gauss != null && area.Width == 64 && gauss.PixelWidth == 64, "高斯模糊 blurs the picture itself (no blocks)");
+            Check(gauss != null && area.Width == 64 && gauss.PixelWidth > 8, "高斯模糊 blurs the picture itself, not blocks (0.8.64: a strong blur on a smaller copy)");
             Check(blocks != null && blocks.PixelWidth == 8, "色块 stays blocks");
 
             var bar = new AnnotationToolbar();
@@ -228,9 +228,8 @@ static class Round63Test
             var original = LeftRed(120, 80);
             pin.AdoptTranslation(original, "English", "中文");
             Pump(50);
-            var bar = (FrameworkElement)pin.FindName("PinLanguageSwitch");
-            Check(bar.Visibility == Visibility.Visible && bar.HorizontalAlignment == HorizontalAlignment.Right && bar.VerticalAlignment == VerticalAlignment.Top,
-                "a translated pin shows [原文 | 译文] at its top right");
+            Check((bool)pin.GetType().GetProperty("LanguageSwitchShown", Any)!.GetValue(pin)!,
+                "a translated pin shows [原文 | 译文] (0.8.64: in its own window above the top right corner)");
             pin.GetType().GetMethod("PinSourceLanguage_Click", Any)!.Invoke(pin, new object?[] { pin, new RoutedEventArgs() });
             Pump(50);
             Check(ReferenceEquals(pin.GetType().GetField("_baseImage", Any)!.GetValue(pin), original) &&

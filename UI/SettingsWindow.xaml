@@ -564,6 +564,39 @@
                                        Text="支持 DeepSeek、OpenAI、Moonshot、SiliconFlow、Ollama、LM Studio 等提供 /chat/completions 的服务；本机地址可不填 Key。" />
                         </StackPanel>
                     </Border>
+
+                    <!-- 离线翻译包: a backup without any API; downloaded by hand, never part of the installer. -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="离线翻译包（备用）" Style="{StaticResource CardTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="10" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="10" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="翻译方式" Style="{StaticResource RowLabel}" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <RadioButton x:Name="EngineAuto" Style="{StaticResource SegmentRadio}" GroupName="Engine" Tag="Auto" Content="自动"
+                                                 ToolTip="用大模型 API；没有填 API Key 时用已下载的离线翻译包" />
+                                    <RadioButton x:Name="EngineApi" Style="{StaticResource SegmentRadio}" GroupName="Engine" Tag="Api" Content="大模型 API" />
+                                    <RadioButton x:Name="EngineOffline" Style="{StaticResource SegmentRadio}" GroupName="Engine" Tag="Offline" Content="离线翻译包" />
+                                </StackPanel>
+                                <TextBlock Grid.Row="2" Text="下载源" Style="{StaticResource RowLabel}" />
+                                <StackPanel Grid.Row="2" Grid.Column="1" x:Name="MirrorRow" Orientation="Horizontal" />
+                                <TextBlock Grid.Row="4" Text="翻译包" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,6,0,0" />
+                                <StackPanel Grid.Row="4" Grid.Column="1" x:Name="OfflinePackRows" />
+                            </Grid>
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,10,0,0" TextWrapping="Wrap"
+                                       Text="不需要网络和 API Key，在本机运行（opus-mt 模型）。每个方向约 120 MB，手动下载到 %LOCALAPPDATA%\Markshot\translate，不包含在安装包里。目前支持中文 ↔ 英文，译文质量不如大模型。" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 
@@ -747,7 +780,7 @@
                                             ToolTip="拖入图片或按 Ctrl+V 粘贴来替换" Cursor="Hand"
                                             DragEnter="FloatIcon_DragOver" DragOver="FloatIcon_DragOver" Drop="FloatIcon_Drop"
                                             MouseLeftButtonUp="FloatIconPreview_Click">
-                                        <Image x:Name="FloatIconImage" Width="46" Height="46" Stretch="Uniform"
+                                        <Image x:Name="FloatIconImage" Width="62" Height="62" Stretch="Uniform"
                                                RenderOptions.BitmapScalingMode="HighQuality" />
                                     </Border>
                                     <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">

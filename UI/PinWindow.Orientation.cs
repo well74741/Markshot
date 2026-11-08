@@ -126,10 +126,10 @@ public partial class PinWindow
             switch (mosaic)
             {
                 case MosaicAnnotation box:
-                    (box.Pattern, box.PatternRect) = PatternFor(block, box.Blur, box.Gaussian);
+                    (box.Pattern, box.PatternRect) = PatternFor(block, box.Gaussian ? box.Blur : 0, box.Gaussian);
                     break;
                 case MosaicBrushAnnotation brush:
-                    (brush.Pattern, brush.PatternRect) = PatternFor(block, brush.Blur, brush.Gaussian);
+                    (brush.Pattern, brush.PatternRect) = PatternFor(block, brush.Gaussian ? brush.Blur : 0, brush.Gaussian);
                     break;
             }
         }

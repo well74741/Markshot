@@ -66,11 +66,55 @@ public abstract class Annotation
         copy.EraseMasks = EraseMasks?.Select(m => m.Clone()).ToList();
         copy.MaskCache = null;
         copy.MaskCacheKey = null;
+        copy.ClipCache = null;
+        copy.ClipCacheKey = null;
         return copy;
     }
 
     internal Geometry? MaskCache;
     internal string? MaskCacheKey;
+    internal Geometry? ClipCache;
+    internal string? ClipCacheKey;
+
+    /// <summary>
+    /// What is left of the element after its erase strokes, to clip it with (null: nothing erased). Built once per size
+    /// in the element's own frame and only moved along when the element moves (moving no longer recomputes the holes).
+    /// </summary>
+    public Geometry? EraseClip()
+    {
+        if (EraseMasks is not { Count: > 0 } || !EraseMasks.Any(stroke => stroke.Full))
+        {
+            return null;
+        }
+
+        var bounds = Bounds;
+        if (bounds.IsEmpty)
+        {
+            return null;
+        }
+
+        var key = $"{bounds.Width:F2},{bounds.Height:F2},{EraseMasks.Count}";
+        if (ClipCache == null || ClipCacheKey != key)
+        {
+            var local = new Rect(0, 0, bounds.Width, bounds.Height);
+            var holes = new GeometryGroup { FillRule = FillRule.Nonzero };
+            foreach (var stroke in EraseMasks.Where(stroke => stroke.Full))
+            {
+                holes.Children.Add(StrokeGeometry(stroke, local));
+            }
+
+            var room = local;
+            room.Inflate(Math.Max(400, bounds.Width), Math.Max(400, bounds.Height));
+            var clip = Geometry.Combine(new RectangleGeometry(room), holes, GeometryCombineMode.Exclude, null);
+            clip.Freeze();
+            ClipCache = clip;
+            ClipCacheKey = key;
+        }
+
+        var placed = new GeometryGroup { Children = { ClipCache }, Transform = new TranslateTransform(bounds.X, bounds.Y) };
+        placed.Freeze();
+        return placed;
+    }
 
     /// <summary>The element's erased area in canvas coordinates (unrotated element frame), or null.</summary>
     public Geometry? MaskGeometry()
@@ -162,6 +206,7 @@ public abstract class Annotation
         EraseMasks ??= new List<EraseStroke>();
         EraseMasks.Add(new EraseStroke(local, width, new Size(Math.Max(1, bounds.Width), Math.Max(1, bounds.Height)), strength, softness));
         MaskCache = null;
+        ClipCache = null;
     }
 
     /// <summary>True when the canvas point lies in an erased part of the element.</summary>
@@ -958,12 +1003,28 @@ public static class Cutouts
         return false;
     }
 
+    private static string? _excludeKey;
+    private static Geometry? _excluded;
+
     /// <summary>The area without the holes (the area itself when there are none).</summary>
     public static Geometry Exclude(IReadOnlyList<Annotation> items, Geometry area)
     {
         if (!Any(items))
         {
             return area;
+        }
+
+        var key = new System.Text.StringBuilder().Append(area.Bounds).Append('|').Append(area.GetHashCode());
+        foreach (var cutout in items.OfType<CutoutAnnotation>())
+        {
+            key.Append(cutout.Points.Count).Append(',').Append(cutout.Thickness).Append(',')
+               .Append(cutout.Points.Count > 0 ? cutout.Points[^1] : default).Append(';');
+        }
+
+        var text = key.ToString();
+        if (_excluded != null && _excludeKey == text)
+        {
+            return _excluded;
         }
 
         var holes = new GeometryGroup { FillRule = FillRule.Nonzero };
@@ -974,6 +1035,8 @@ public static class Cutouts
 
         var result = new CombinedGeometry(GeometryCombineMode.Exclude, area, holes);
         result.Freeze();
+        _excludeKey = text;
+        _excluded = result;
         return result;
     }
 }
@@ -1122,7 +1185,14 @@ public sealed class MosaicAnnotation : Annotation
 
         if (Gaussian && Feather >= 1)
         {
-            dc.PushOpacityMask(MosaicBuilder.SoftMask(grow => { var r = Rect; r.Inflate(grow, grow); return new RectangleGeometry(r); }, Feather));
+            var key = $"{Rect}|{Feather}";
+            if (_mask == null || _maskKey != key)
+            {
+                _mask = MosaicBuilder.SoftMask(new RectangleGeometry(Rect), Feather);
+                _maskKey = key;
+            }
+
+            dc.PushOpacityMask(_mask);
         }
         else
         {
@@ -1134,7 +1204,7 @@ public sealed class MosaicAnnotation : Annotation
             // Undo the element rotation for the pattern so it stays aligned with the canvas.
             var center = new Point(Rect.X + Rect.Width / 2, Rect.Y + Rect.Height / 2);
             dc.PushTransform(new RotateTransform(-Rotation, center.X, center.Y));
-            MosaicBuilder.DrawPattern(dc, Pattern, PatternRect);
+            MosaicBuilder.DrawPattern(dc, Pattern, PatternRect, smooth: Gaussian);
             dc.Pop();
         }
         else
@@ -1146,6 +1216,9 @@ public sealed class MosaicAnnotation : Annotation
     }
 
     public override Rect Bounds => Rect;
+
+    private Brush? _mask; // the soft edge, made once per box / 柔边
+    private string? _maskKey;
 
     public override void Translate(double dx, double dy)
     {
@@ -1626,6 +1699,11 @@ public sealed class MosaicBrushAnnotation : Annotation
     /// <summary>Canvas area the <see cref="Pattern"/> is stretched over.</summary>
     public Rect PatternRect { get; set; }
 
+    private Geometry? _area;
+    private string? _areaKey;
+    private Brush? _mask;
+    private string? _maskKey;
+
     public override Annotation Clone()
     {
         var copy = (MosaicBrushAnnotation)base.Clone();
@@ -1641,10 +1719,38 @@ public sealed class MosaicBrushAnnotation : Annotation
             return;
         }
 
-        var area = EraseStroke.Widen(Points, Thickness);
+        // The stroke's outline (and its soft edge) are made once per stroke, not at every frame.
+        double sumX = 0, sumY = 0;
+        foreach (var p in Points)
+        {
+            sumX += p.X;
+            sumY += p.Y;
+        }
+
+        var shapeKey = $"{Points.Count}:{sumX:F1}:{sumY:F1}:{Thickness}";
+        if (_area == null || _areaKey != shapeKey)
+        {
+            _area = EraseStroke.Widen(Points, Thickness);
+            if (_area.CanFreeze)
+            {
+                _area.Freeze();
+            }
+
+            _areaKey = shapeKey;
+            _mask = null;
+        }
+
+        var area = _area;
         if (Gaussian && Feather >= 1)
         {
-            dc.PushOpacityMask(MosaicBuilder.SoftMask(grow => EraseStroke.Widen(Points, Math.Max(1, Thickness + grow * 2)), Feather));
+            var key = shapeKey + "|" + Feather;
+            if (_mask == null || _maskKey != key)
+            {
+                _mask = MosaicBuilder.SoftMask(area, Feather);
+                _maskKey = key;
+            }
+
+            dc.PushOpacityMask(_mask);
         }
         else
         {
@@ -1656,7 +1762,7 @@ public sealed class MosaicBrushAnnotation : Annotation
             var bounds = Bounds;
             var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
             dc.PushTransform(new RotateTransform(-Rotation, center.X, center.Y));
-            MosaicBuilder.DrawPattern(dc, Pattern, PatternRect);
+            MosaicBuilder.DrawPattern(dc, Pattern, PatternRect, smooth: Gaussian);
             dc.Pop();
         }
         else
@@ -1838,16 +1944,92 @@ public static class Spotlights
             return;
         }
 
-        // The soft edge in steps from clear (inside) to the full darkness (outside).
-        const int steps = 12;
-        dc.DrawGeometry(Dark(darkness), null, new CombinedGeometry(GeometryCombineMode.Exclude, everywhere, Holes(1)));
-        var inner = Holes(0);
-        for (var i = 0; i < steps; i++)
+        // The soft edge, smooth: around the spotlights a darkness image (each hole blurred by its own feather); the
+        // darkness itself everywhere else.
+        var (image, area) = SoftDarkness(shown, darkness);
+        dc.DrawGeometry(Dark(darkness), null, new CombinedGeometry(GeometryCombineMode.Exclude, everywhere, new RectangleGeometry(area)));
+        var layer = new DrawingGroup();
+        RenderOptions.SetBitmapScalingMode(layer, BitmapScalingMode.Linear);
+        layer.Children.Add(new ImageDrawing(image, area));
+        layer.Freeze();
+        dc.DrawDrawing(layer);
+    }
+
+    private static string? _softKey;
+    private static (BitmapSource Image, Rect Area) _soft;
+
+    private static (BitmapSource Image, Rect Area) SoftDarkness(IReadOnlyList<SpotlightAnnotation> shown, double darkness)
+    {
+        var key = string.Join(";", shown.Select(spot => $"{spot.Rect}|{spot.Rotation:F2}|{spot.Ellipse}|{spot.Feather:F1}")) + $"|{darkness:F3}";
+        if (_softKey == key)
         {
-            var outer = Holes((i + 1) / (double)steps);
-            dc.DrawGeometry(Dark(darkness * (i + 0.5) / steps), null, new CombinedGeometry(GeometryCombineMode.Exclude, outer, inner));
-            inner = outer;
+            return _soft;
         }
+
+        var area = Rect.Empty;
+        foreach (var spot in shown)
+        {
+            var b = spot.Shape(0).Bounds;
+            b.Inflate(Math.Max(1, spot.Feather) + 2, Math.Max(1, spot.Feather) + 2);
+            area.Union(b);
+        }
+
+        // Whole canvas units at the edge: the image and the darkness around it meet without a seam.
+        area = new Rect(Math.Floor(area.X), Math.Floor(area.Y), Math.Ceiling(area.Width) + 1, Math.Ceiling(area.Height) + 1);
+        var scale = Math.Min(1, 1400 / Math.Max(area.Width, area.Height));
+        var width = Math.Max(1, (int)Math.Ceiling(area.Width * scale));
+        var height = Math.Max(1, (int)Math.Ceiling(area.Height * scale));
+        var clear = new float[width * height]; // how clear (0..1) each pixel is
+        foreach (var spot in shown)
+        {
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+            {
+                dc.PushTransform(new MatrixTransform(scale, 0, 0, scale, -area.X * scale, -area.Y * scale));
+                dc.DrawGeometry(Brushes.Black, null, spot.Shape(0));
+                dc.Pop();
+            }
+
+            var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            target.Render(visual);
+            var pixels = new byte[width * height * 4];
+            target.CopyPixels(pixels, width * 4, 0);
+            var alpha = new byte[width * height];
+            for (var i = 0; i < alpha.Length; i++)
+            {
+                alpha[i] = pixels[i * 4 + 3];
+            }
+
+            if (spot.Feather >= 0.5)
+            {
+                // Centred on the edge, from clear inside to the full darkness outside over the feather.
+                var sigma = spot.Feather / 3.2 * scale;
+                var r = Math.Max(1, (int)Math.Round(Math.Sqrt(sigma * sigma + 0.25) - 0.5));
+                for (var pass = 0; pass < 3; pass++)
+                {
+                    MosaicBuilder.BlurChannel(alpha, width, height, r, horizontal: true);
+                    MosaicBuilder.BlurChannel(alpha, width, height, r, horizontal: false);
+                }
+            }
+
+            for (var i = 0; i < clear.Length; i++)
+            {
+                var a = alpha[i] / 255f;
+                clear[i] = 1 - (1 - clear[i]) * (1 - a); // several spotlights: clear where any is
+            }
+        }
+
+        var dark = new byte[width * height * 4];
+        for (var i = 0; i < clear.Length; i++)
+        {
+            dark[i * 4 + 3] = (byte)Math.Round(255 * darkness * (1 - clear[i])); // black, premultiplied
+        }
+
+        var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Pbgra32, null, dark, width * 4);
+        image.Freeze();
+        _softKey = key;
+        _soft = (image, area);
+        return _soft;
     }
 }
 
@@ -1914,10 +2096,11 @@ public static class MosaicBuilder
         switch (annotation)
         {
             case MosaicAnnotation box:
-                (box.Pattern, box.PatternRect) = BuildCanvas(source, box.BlockSize, box.Blur, box.Gaussian);
+                // 色块 are blocks only (a blur value left from 模糊 does not soften them).
+                (box.Pattern, box.PatternRect) = BuildCanvas(source, box.BlockSize, box.Gaussian ? box.Blur : 0, box.Gaussian);
                 break;
             case MosaicBrushAnnotation brush:
-                (brush.Pattern, brush.PatternRect) = BuildCanvas(source, brush.BlockSize, brush.Blur, brush.Gaussian);
+                (brush.Pattern, brush.PatternRect) = BuildCanvas(source, brush.BlockSize, brush.Gaussian ? brush.Blur : 0, brush.Gaussian);
                 break;
         }
     }
@@ -1974,17 +2157,34 @@ public static class MosaicBuilder
         return (soft, area);
     }
 
-    /// <summary>高斯模糊 of the whole canvas (three box passes ≈ a Gaussian of <paramref name="radius"/> px).</summary>
+    /// <summary>
+    /// 高斯模糊 of the whole canvas (three box passes ≈ a Gaussian of <paramref name="radius"/> px). A strong blur is
+    /// worked out on a smaller copy (it is smooth anyway) and drawn stretched with smooth scaling: much quicker.
+    /// </summary>
     public static BitmapSource Gaussian(BitmapSource source, double radius)
     {
-        var converted = source.Format == PixelFormats.Bgra32 || source.Format == PixelFormats.Pbgra32
-            ? source
-            : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+        radius = Math.Clamp(radius, 1, 80);
+        var factor = Math.Clamp((int)Math.Floor(radius / 3), 1, 8);
+        BitmapSource work = source;
+        if (factor > 1)
+        {
+            var w = Math.Max(1, source.PixelWidth / factor);
+            var h = Math.Max(1, source.PixelHeight / factor);
+            var shrink = new TransformedBitmap(source, new ScaleTransform(w / (double)source.PixelWidth, h / (double)source.PixelHeight));
+            shrink.Freeze();
+            work = shrink;
+            radius /= factor;
+        }
+
+        var converted = work.Format == PixelFormats.Bgra32 || work.Format == PixelFormats.Pbgra32
+            ? work
+            : new FormatConvertedBitmap(work, PixelFormats.Bgra32, null, 0);
         var width = converted.PixelWidth;
         var height = converted.PixelHeight;
         var data = new byte[width * height * 4];
         converted.CopyPixels(data, width * 4, 0);
-        var pass = Math.Max(1, (int)Math.Round(Math.Clamp(radius, 1, 80) / 1.7));
+        // Three box passes of radius r give a Gaussian of sigma ≈ sqrt(r (r + 1)); sigma ≈ radius / 2 as in the editor.
+        var pass = Math.Max(1, (int)Math.Round(Math.Sqrt(radius * radius / 4 + 0.25) - 0.5));
         for (var i = 0; i < 3; i++)
         {
             BoxBlur(data, width, height, pass, horizontal: true);
@@ -2030,47 +2230,106 @@ public static class MosaicBuilder
     }
 
     /// <summary>
-    /// A soft-edged mask of a shape (a 高斯模糊 fades out at its edge instead of being cut): from half the
-    /// <paramref name="feather"/> inside the border to half outside, in rings each a little more see-through.
+    /// The soft edge of a 高斯模糊: fully there inside the shape, fading out smoothly (no steps) over
+    /// <paramref name="feather"/> beyond its border. The shape grown by half the feather, blurred (a Gaussian), as a mask.
     /// </summary>
-    public static Brush SoftMask(Func<double, Geometry> shapeAt, double feather)
+    public static Brush SoftMask(Geometry shape, double feather)
     {
-        const int steps = 10;
-        var reach = Math.Max(1, feather);
-        var group = new DrawingGroup();
-        var inner = shapeAt(-reach / 2);
-        group.Children.Add(new GeometryDrawing(Brushes.Black, null, inner));
-        for (var i = 0; i < steps; i++)
+        feather = Math.Max(1, feather);
+        var bounds = shape.Bounds;
+        if (bounds.IsEmpty)
         {
-            var outer = shapeAt(-reach / 2 + reach * (i + 1) / steps);
-            var alpha = (byte)Math.Round(255 * (1 - (i + 0.5) / steps));
-            var ring = new SolidColorBrush(Color.FromArgb(alpha, 0, 0, 0));
-            ring.Freeze();
-            group.Children.Add(new GeometryDrawing(ring, null, new CombinedGeometry(GeometryCombineMode.Exclude, outer, inner)));
-            inner = outer;
+            return Brushes.Black;
         }
 
-        group.Freeze();
-        var bounds = group.Bounds;
-        var brush = new DrawingBrush(group)
+        bounds.Inflate(feather * 1.25, feather * 1.25);
+        var scale = Math.Min(1, 1200 / Math.Max(bounds.Width, bounds.Height));
+        var width = Math.Max(1, (int)Math.Ceiling(bounds.Width * scale));
+        var height = Math.Max(1, (int)Math.Ceiling(bounds.Height * scale));
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
         {
-            Stretch = Stretch.None,
-            ViewboxUnits = BrushMappingMode.Absolute,
-            Viewbox = bounds,
+            dc.PushTransform(new MatrixTransform(scale, 0, 0, scale, -bounds.X * scale, -bounds.Y * scale));
+            dc.DrawGeometry(Brushes.Black, new Pen(Brushes.Black, feather) { LineJoin = PenLineJoin.Round }, shape);
+            dc.Pop();
+        }
+
+        var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        target.Render(visual);
+        var pixels = new byte[width * height * 4];
+        target.CopyPixels(pixels, width * 4, 0);
+        var alpha = new byte[width * height];
+        for (var i = 0; i < alpha.Length; i++)
+        {
+            alpha[i] = pixels[i * 4 + 3];
+        }
+
+        // sigma = feather / 4: about 98 % at the border, about 2 % a full feather out.
+        var sigma = feather / 4 * scale;
+        var r = Math.Max(1, (int)Math.Round(Math.Sqrt(sigma * sigma + 0.25) - 0.5));
+        for (var pass = 0; pass < 3; pass++)
+        {
+            BlurChannel(alpha, width, height, r, horizontal: true);
+            BlurChannel(alpha, width, height, r, horizontal: false);
+        }
+
+        for (var i = 0; i < alpha.Length; i++)
+        {
+            pixels[i * 4] = pixels[i * 4 + 1] = pixels[i * 4 + 2] = 0;
+            pixels[i * 4 + 3] = alpha[i];
+        }
+
+        var mask = BitmapSource.Create(width, height, 96, 96, PixelFormats.Pbgra32, null, pixels, width * 4);
+        mask.Freeze();
+        var brush = new ImageBrush(mask)
+        {
+            Stretch = Stretch.Fill,
             ViewportUnits = BrushMappingMode.Absolute,
-            Viewport = bounds,
-            AlignmentX = AlignmentX.Left,
-            AlignmentY = AlignmentY.Top
+            Viewport = bounds
         };
         brush.Freeze();
         return brush;
     }
 
+    /// <summary>A running-sum box blur of one channel (edges clamped).</summary>
+    public static void BlurChannel(byte[] data, int width, int height, int r, bool horizontal)
+    {
+        var lines = horizontal ? height : width;
+        var length = horizontal ? width : height;
+        var step = horizontal ? 1 : width;
+        System.Threading.Tasks.Parallel.For(0, lines, line =>
+        {
+            var start = horizontal ? line * width : line;
+            var copy = new byte[length];
+            for (var i = 0; i < length; i++)
+            {
+                copy[i] = data[start + i * step];
+            }
+
+            var window = 2 * r + 1;
+            var sum = 0;
+            for (var i = -r; i <= r; i++)
+            {
+                sum += copy[Math.Clamp(i, 0, length - 1)];
+            }
+
+            for (var i = 0; i < length; i++)
+            {
+                data[start + i * step] = (byte)((sum + window / 2) / window);
+                sum += copy[Math.Min(i + r + 1, length - 1)] - copy[Math.Max(i - r, 0)];
+            }
+        });
+    }
+
+    /// <summary>The soft edge of a shape handed as a function of its growth (the shape itself is used).</summary>
+    public static Brush SoftMask(Func<double, Geometry> shapeAt, double feather) => SoftMask(shapeAt(0), feather);
+
     /// <summary>Draws a mosaic pattern with hard block edges (no smoothing) in any drawing context.</summary>
-    public static void DrawPattern(DrawingContext dc, BitmapSource pattern, Rect area)
+    public static void DrawPattern(DrawingContext dc, BitmapSource pattern, Rect area, bool smooth = false)
     {
         var group = new DrawingGroup();
-        RenderOptions.SetBitmapScalingMode(group, BitmapScalingMode.NearestNeighbor);
+        // Blocks stay hard; a (smaller) blurred picture is stretched smoothly.
+        RenderOptions.SetBitmapScalingMode(group, smooth ? BitmapScalingMode.Linear : BitmapScalingMode.NearestNeighbor);
         group.Children.Add(new ImageDrawing(pattern, area));
         group.Freeze();
         dc.DrawDrawing(group);

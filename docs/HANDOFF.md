@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.63`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.64`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,22 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.64 0.8.64 变更
+
+- 色块又糊了：工具栏的模糊默认 12 也传给了色块（`BuildCanvas` 非高斯时仍会给色块做盒式模糊）。现在 `Rebuild` / 贴图翻转的 `PatternFor` 只在 `Gaussian` 时传 Blur。
+- 高斯：强模糊在缩小的副本上算（factor = radius/3，最多 8 倍），`DrawPattern(..., smooth: true)` 线性放大；sigma ≈ radius/2。
+- 柔边：`MosaicBuilder.SoftMask(geometry, feather)` 把形状（填充 + feather 粗描边）画进位图，alpha 三次盒式模糊（sigma = feather/4），作 ImageBrush 不透明蒙版：
+  形状内完整，向外平滑淡出（不再是 10 圈台阶，也不再把画笔里面变半透明 → “盖了一层”）。蒙版和画笔轮廓（`_area`）按形状键缓存在元素里。
+- 聚焦柔边：`Spotlights.SoftDarkness` 在所有聚焦外接区域（取整）生成暗度位图（每个洞按自己的羽化模糊，多洞取并），区域外用几何画暗；按键缓存。
+- 卡顿：`Annotation.EraseClip()` 在元素自身坐标里缓存“去掉擦除部分”的裁剪（按尺寸 + 笔画数），移动只套平移；`DrawItem` 用它（以前每帧 Combine）。
+  `Layered` 没有水印 / 聚焦时不再为已烘焙的洞拼几何；`Cutouts.Exclude` 按洞的键缓存。编辑器：`PictureKey` 计入图片的擦除笔画数；按住左键移动时 `FollowMosaics`（70ms 节流）重建马赛克。
+- 离线翻译：`Services/OfflineTranslation.cs`。`OfflinePacks`（en-zh / zh-en，Xenova/opus-mt-*，下载 tokenizer.json + encoder/decoder_merged 量化 onnx 到 %LOCALAPPDATA%\Markshot\translate\<id>，
+  hf-mirror.com / huggingface.co，.part 后改名）；`OfflineTranslator`（自写 SentencePiece unigram Viterbi，ONNX Runtime 已随 RapidOcrNet 引入；贪心解码 + KV 缓存，en-zh 前缀 >>cmn_Hans<<，
+  中文结果去掉汉字旁的空格）；`OfflineProvider`。`TranslationConfig.Engine`（Auto / Api / Offline）、`OfflineMirror`；`TranslationService.UsesOffline`：自动 = 无 Key 且非本机/局域网地址且已有包。
+  设置 → 翻译：「离线翻译包（备用）」卡片（翻译方式、下载源、每个包 下载 / 取消 / 删除 + 进度）。测试连接固定测 API。手测：tests 的 `mtprobe`（MARKSHOT_MT_ROOT / MARKSHOT_MT_DOWNLOAD）。
+- 贴图语言切换：`PinLanguageSwitch` 移入自己的 `ToolbarHostWindow`，放在图片右上角上方（顶部没地方时放下方），随贴图移动 / 缩放，贴图隐藏时隐藏。
+- 悬浮按钮：拖动开始不再松开按压缩放（松手才回弹）。设置图标预览 62。
 
 ## 8.1.63 0.8.63 变更
 

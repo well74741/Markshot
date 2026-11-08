@@ -105,13 +105,17 @@ public partial class PinWindow
         UpdatePinLanguageSwitch();
     }
 
-    /// <summary>The switch shows while the pin has a translation; the lit half is what is shown.</summary>
+    /// <summary>
+    /// The switch shows while the pin has a translation; the lit half is what is shown. Like the capture's, it sits
+    /// outside the picture, above its top right corner (a small window of its own that follows the pin).
+    /// </summary>
     private void UpdatePinLanguageSwitch()
     {
         var translated = _untranslatedBase != null && _translatedBase != null;
         PinLanguageSwitch.Visibility = translated ? Visibility.Visible : Visibility.Collapsed;
         if (!translated)
         {
+            _languageHost?.Hide();
             return;
         }
 
@@ -119,6 +123,81 @@ public partial class PinWindow
         PinTargetButton.Content = _pinTargetLabel is { } target && target != _pinSourceLabel ? target : "译文";
         PinSourceButton.IsChecked = _pinShowsOriginal;
         PinTargetButton.IsChecked = !_pinShowsOriginal;
+        if (!IsLoaded || new WindowInteropHelper(this).Handle == IntPtr.Zero)
+        {
+            Loaded -= ShowLanguageSwitchLater;
+            Loaded += ShowLanguageSwitchLater;
+            return;
+        }
+
+        if (_languageHost == null)
+        {
+            if (PinLanguageSwitch.Parent is Panel panel)
+            {
+                panel.Children.Remove(PinLanguageSwitch);
+            }
+
+            PinLanguageSwitch.Margin = new Thickness(0);
+            _languageHost = new ToolbarHostWindow(PinLanguageSwitch) { Owner = this };
+            _languageHost.SizeChanged += (_, _) => PlaceLanguageSwitch();
+            LocationChanged += (_, _) => PlaceLanguageSwitch();
+            SizeChanged += (_, _) => PlaceLanguageSwitch();
+            IsVisibleChanged += (_, _) =>
+            {
+                if (!IsVisible)
+                {
+                    _languageHost?.Hide();
+                }
+                else if (_untranslatedBase != null && _translatedBase != null)
+                {
+                    _languageHost?.Show();
+                    PlaceLanguageSwitch();
+                }
+            };
+            Closed += (_, _) => _languageHost?.Close();
+        }
+
+        if (IsVisible)
+        {
+            _languageHost.Show();
+            PlaceLanguageSwitch();
+        }
+    }
+
+    private void ShowLanguageSwitchLater(object? sender, RoutedEventArgs e)
+    {
+        Loaded -= ShowLanguageSwitchLater;
+        Dispatcher.BeginInvoke(UpdatePinLanguageSwitch, DispatcherPriority.Loaded);
+    }
+
+    private ToolbarHostWindow? _languageHost;
+
+    /// <summary>The switch window: right-aligned with the picture, just above it (below it at the top of the screen).</summary>
+    internal bool LanguageSwitchShown => _languageHost is { IsVisible: true };
+
+    internal ToolbarHostWindow? LanguageHost => _languageHost;
+
+    private void PlaceLanguageSwitch()
+    {
+        if (_languageHost is not { IsVisible: true } host || host.Handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var image = ImageScreenRect();
+        var bar = host.PixelBounds;
+        var width = bar.Right - bar.Left;
+        var height = bar.Bottom - bar.Top;
+        var gap = (int)Math.Round(6 * VisualTreeHelper.GetDpi(this).DpiScaleY);
+        var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(image.Right, image.Top)).Bounds;
+        var x = Math.Max(screen.Left, Math.Min(image.Right - width, screen.Right - width));
+        var y = image.Top - gap - height;
+        if (y < screen.Top)
+        {
+            y = image.Bottom + gap; // no room above: just under the picture
+        }
+
+        host.MoveTo(x, y);
     }
 
     private void PinSourceLanguage_Click(object sender, RoutedEventArgs e) => ShowPinLanguage(original: true);

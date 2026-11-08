@@ -361,10 +361,10 @@ public sealed class AnnotationEditor : FrameworkElement
             pops++;
         }
 
-        var mask = annotation.MaskGeometry();
-        if (mask != null)
+        // Its erased parts: worked out once in the element's frame, moved along with it.
+        if (annotation.EraseClip() is { } clip)
         {
-            dc.PushClip(Geometry.Combine(new RectangleGeometry(Room(bounds)), mask, GeometryCombineMode.Exclude, null));
+            dc.PushClip(clip);
             pops++;
         }
 
@@ -488,13 +488,19 @@ public sealed class AnnotationEditor : FrameworkElement
             return outside;
         }
 
+        // (Only what is needed: with no watermark / 聚焦 the finished holes clip nothing here.)
+        var needAll = ordered.Any(item => item is not CutoutAnnotation && !Cutouts.Carries(item));
         for (var i = ordered.Count - 1; i >= 0; i--)
         {
             clips[i] = Cutouts.Carries(ordered[i]) ? cuttingOutside : allOutside;
             if (ordered[i] is CutoutAnnotation cutout)
             {
-                all.Children.Add(cutout.Shape());
-                allOutside = Outside(all);
+                if (needAll)
+                {
+                    all.Children.Add(cutout.Shape());
+                    allOutside = Outside(all);
+                }
+
                 if (!cutout.Baked)
                 {
                     cutting.Children.Add(cutout.Shape());

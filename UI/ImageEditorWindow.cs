@@ -1670,6 +1670,11 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void Stage_PreviewMouseMove(object sender, MouseEventArgs e)
     {
+        if (e.LeftButton == MouseButtonState.Pressed && Editor.Items.Any(item => item is MosaicAnnotation or MosaicBrushAnnotation))
+        {
+            FollowMosaics(); // a picture dragged under a mosaic: it shows what is under it now
+        }
+
         if (!_panning)
         {
             return;
@@ -1819,7 +1824,7 @@ public sealed class ImageEditorWindow : PinWindow
     private string? _mosaicKey;
 
     private string PictureKey() => string.Join(";", Editor.Items.OfType<ImageAnnotation>().Select(p =>
-        $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(p.Image)},{p.Rect},{p.Rotation},{p.Opacity},{p.Hidden},{p.Radius},{p.ShadowSize},{p.BorderWidth}")) + $"|{_baseImage.PixelWidth}x{_baseImage.PixelHeight}";
+        $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(p.Image)},{p.Rect},{p.Rotation},{p.Opacity},{p.Hidden},{p.Radius},{p.ShadowSize},{p.BorderWidth},{p.EraseMasks?.Count ?? 0}")) + $"|{_baseImage.PixelWidth}x{_baseImage.PixelHeight}";
 
     private protected override BitmapSource EyedropSource => MosaicSource;
 
@@ -1842,6 +1847,31 @@ public sealed class ImageEditorWindow : PinWindow
             }
 
             return _mosaicSource;
+        }
+    }
+
+    private DispatcherTimer? _mosaicFollow;
+
+    /// <summary>A picture is being dragged / resized under mosaics: they follow it a few times a second, not only at the end.</summary>
+    private void FollowMosaics()
+    {
+        if (_mosaicFollow == null)
+        {
+            _mosaicFollow = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(70) };
+            _mosaicFollow.Tick += (_, _) =>
+            {
+                _mosaicFollow.Stop();
+                if (_mosaicKey != PictureKey() && Editor.Items.Any(item => item is MosaicAnnotation or MosaicBrushAnnotation))
+                {
+                    RebuildMosaics();
+                    Editor.InvalidateVisual();
+                }
+            };
+        }
+
+        if (!_mosaicFollow.IsEnabled)
+        {
+            _mosaicFollow.Start();
         }
     }
 

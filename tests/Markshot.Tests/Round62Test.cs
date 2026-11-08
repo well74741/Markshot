@@ -59,7 +59,8 @@ static class Round62Test
             Check(Alpha(s, 100, 50, 50) > 245, "with blur its middle is solid");
             var inside = Alpha(s, 100, 78, 50);
             var outside = Alpha(s, 100, 84, 50);
-            Check(inside < 250 && inside > 60 && outside > 5 && outside < inside, $"… and its edge fades out across the box line (in {inside}, out {outside})");
+            // (0.8.64: whole up to the box line, fading out beyond it)
+            Check(inside > 245 && outside > 5 && outside < inside, $"… and its edge fades out past the box line (in {inside}, out {outside})");
 
             var brush = new MosaicBrushAnnotation { Thickness = 20, Pattern = pattern, PatternRect = new Rect(0, 0, 100, 100), Blur = 10, Gaussian = true, Feather = 15 };
             brush.Points.Add(new Point(10, 50));

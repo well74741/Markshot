@@ -11,10 +11,19 @@ public interface ITranslationProvider
 
 public static class TranslationService
 {
-    public static ITranslationProvider Create(TranslationConfig config)
+    public static ITranslationProvider Create(TranslationConfig config) => UsesOffline(config) ? new OfflineProvider() : new OpenAiCompatibleProvider(config);
+
+    /// <summary>离线翻译包 in use: chosen, or 自动 with no API key (a local server needs none) and a pack downloaded.</summary>
+    public static bool UsesOffline(TranslationConfig config) => config.Engine switch
     {
-        return new OpenAiCompatibleProvider(config);
-    }
+        "Offline" => true,
+        "Api" => false,
+        _ => string.IsNullOrWhiteSpace(config.ApiKey) && !IsLocal(config.BaseUrl) && OfflinePacks.AnyInstalled
+    };
+
+    private static bool IsLocal(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.IsLoopback || uri.Host.StartsWith("192.168.", StringComparison.Ordinal) ||
+                                                             uri.Host.StartsWith("10.", StringComparison.Ordinal));
 }
 
 /// <summary>
