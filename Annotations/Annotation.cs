@@ -85,6 +85,119 @@ public abstract class Annotation
     /// <summary>No adjust frame: only the point handles; a press on the element itself moves it.</summary>
     public virtual bool Frameless => false;
 
+    /// <summary>
+    /// A change of shape (a point handle moved) that keeps the erased gaps on the element: each gap point is taken by
+    /// where it is along <paramref name="path"/> and how far beside it, and put at the same place on the new path
+    /// (stored relative to the box, the gaps stayed where they were in the box while the line bent away).
+    /// </summary>
+    protected void ReshapeKeepingGaps(Func<IReadOnlyList<Point>> path, Action change)
+    {
+        if (EraseMasks is not { Count: > 0 } masks || Bounds.IsEmpty)
+        {
+            change();
+            return;
+        }
+
+        var oldBounds = Bounds;
+        var oldPath = path();
+        var placed = masks.Select(mask =>
+        {
+            var sx = Math.Max(1, oldBounds.Width) / Math.Max(1, mask.RecordedSize.Width);
+            var sy = Math.Max(1, oldBounds.Height) / Math.Max(1, mask.RecordedSize.Height);
+            // (the path and the gaps both in the element's own, unturned frame)
+            var along = mask.Points
+                .Select(p => new Point(oldBounds.X + p.X * sx, oldBounds.Y + p.Y * sy))
+                .Select(p => PathPlace(oldPath, p))
+                .ToList();
+            return (mask, along, width: mask.Width * Math.Sqrt(sx * sy));
+        }).ToList();
+
+        change();
+        var newBounds = Bounds;
+        var newPath = path();
+        for (var i = 0; i < placed.Count; i++)
+        {
+            var (mask, along, width) = placed[i];
+            var local = along.Select(place => PathPoint(newPath, place.Fraction, place.Side))
+                .Select(p => new Point(p.X - newBounds.X, p.Y - newBounds.Y))
+                .ToList();
+            masks[i] = new EraseStroke(local, width, new Size(Math.Max(1, newBounds.Width), Math.Max(1, newBounds.Height)), mask.Strength, mask.Softness);
+        }
+
+        MaskCache = null;
+        ClipCache = null;
+    }
+
+    /// <summary>Where a point lies by a path: how far along it (0–1) and how far to its left (negative: right).</summary>
+    private static (double Fraction, double Side) PathPlace(IReadOnlyList<Point> path, Point point)
+    {
+        if (path.Count < 2)
+        {
+            return (0, 0);
+        }
+
+        var total = 0.0;
+        for (var i = 1; i < path.Count; i++)
+        {
+            total += (path[i] - path[i - 1]).Length;
+        }
+
+        var best = double.MaxValue;
+        (double, double) result = (0, 0);
+        var walked = 0.0;
+        for (var i = 1; i < path.Count; i++)
+        {
+            var segment = path[i] - path[i - 1];
+            var length = segment.Length;
+            var t = length < 1e-6 ? 0 : Math.Clamp(Vector.Multiply(point - path[i - 1], segment) / (length * length), 0, 1);
+            var foot = path[i - 1] + segment * t;
+            var distance = (point - foot).Length;
+            if (distance < best)
+            {
+                best = distance;
+                var normal = length < 1e-6 ? new Vector(0, 0) : new Vector(-segment.Y / length, segment.X / length);
+                result = (total < 1e-6 ? 0 : (walked + length * t) / total, Vector.Multiply(point - foot, normal));
+            }
+
+            walked += length;
+        }
+
+        return result;
+    }
+
+    /// <summary>The point that far along a path, that far beside it.</summary>
+    private static Point PathPoint(IReadOnlyList<Point> path, double fraction, double side)
+    {
+        if (path.Count < 2)
+        {
+            return path.Count == 1 ? path[0] : default;
+        }
+
+        var total = 0.0;
+        for (var i = 1; i < path.Count; i++)
+        {
+            total += (path[i] - path[i - 1]).Length;
+        }
+
+        var goal = Math.Clamp(fraction, 0, 1) * total;
+        var walked = 0.0;
+        for (var i = 1; i < path.Count; i++)
+        {
+            var segment = path[i] - path[i - 1];
+            var length = segment.Length;
+            if (walked + length >= goal || i == path.Count - 1)
+            {
+                var t = length < 1e-6 ? 0 : Math.Clamp((goal - walked) / length, 0, 1);
+                var normal = length < 1e-6 ? new Vector(0, 0) : new Vector(-segment.Y / length, segment.X / length);
+                return path[i - 1] + segment * t + normal * side;
+            }
+
+            walked += length;
+        }
+
+        return path[^1];
+    }
+
     internal Geometry? MaskCache;
     internal string? MaskCacheKey;
     internal Geometry? ClipCache;
@@ -372,17 +485,19 @@ public sealed class ArrowAnnotation : Annotation
     public override IReadOnlyList<(Point At, bool Bend)> PointHandles =>
         new[] { (Start, false), (Curves.MidOf(Start, End, Bend), true), (End, false) };
 
-    public override void MovePointHandle(int index, Point to)
-    {
-        (Start, End, Bend) = Curves.Bake(Start, End, Bend, Rotation);
-        Rotation = 0;
-        switch (index)
+    public override void MovePointHandle(int index, Point to) => ReshapeKeepingGaps(
+        () => Curves.Sample(Start, Curves.Control(Start, End, Bend), End, 64),
+        () =>
         {
-            case 0: Start = to; break;
-            case 2: End = to; break;
-            default: Bend = to - Curves.Chord(Start, End); break;
-        }
-    }
+            (Start, End, Bend) = Curves.Bake(Start, End, Bend, Rotation);
+            Rotation = 0;
+            switch (index)
+            {
+                case 0: Start = to; break;
+                case 2: End = to; break;
+                default: Bend = to - Curves.Chord(Start, End); break;
+            }
+        });
 
     public override void Draw(DrawingContext dc)
     {
@@ -484,9 +599,72 @@ public sealed class ArrowAnnotation : Annotation
         }
     }
 
+    /// <summary>
+    /// The 尖头 arrow bent: the same shape as straight — a tail narrowing to a point at the start, swept-back barbs
+    /// (燕尾) at the head — its body following the curve, the head along the curve's end.
+    /// </summary>
+    private void DrawCurvedSharp(DrawingContext dc)
+    {
+        var control = Curves.Control(Start, End, Bend);
+        var headLength = Math.Max(18, Thickness * 5.5);
+        var headWidth = headLength * 0.78;
+        var tailHalf = Math.Max(Thickness * 0.9, 1.8);
+        var body = Curves.Trim(Curves.Sample(Start, control, End, 64), 0, headLength);
+        if (body.Count < 2)
+        {
+            return;
+        }
+
+        var headBase = body[^1];
+        var unit = Curves.Unit(End - headBase, End - Start);
+        var perpendicular = new Vector(-unit.Y, unit.X);
+        var barbCenter = headBase - unit * (headLength * 0.22);
+
+        // Both sides of the body: from nothing at the start to the full width at the head, along the curve's normals.
+        var length = 0.0;
+        var along = new double[body.Count];
+        for (var i = 1; i < body.Count; i++)
+        {
+            length += (body[i] - body[i - 1]).Length;
+            along[i] = length;
+        }
+
+        var left = new List<Point>(body.Count);
+        var right = new List<Point>(body.Count);
+        for (var i = 0; i < body.Count; i++)
+        {
+            var tangent = Curves.Unit(body[Math.Min(i + 1, body.Count - 1)] - body[Math.Max(i - 1, 0)], unit);
+            var normal = new Vector(-tangent.Y, tangent.X);
+            var half = tailHalf * (length > 0 ? along[i] / length : 1);
+            left.Add(body[i] + normal * half);
+            right.Add(body[i] - normal * half);
+        }
+
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            context.BeginFigure(Start, true, true);
+            context.PolyLineTo(left.Skip(1).ToList(), true, true);
+            context.LineTo(barbCenter + perpendicular * (headWidth / 2), true, false);
+            context.LineTo(End, true, false);
+            context.LineTo(barbCenter - perpendicular * (headWidth / 2), true, false);
+            right.Reverse();
+            context.PolyLineTo(right.Take(right.Count - 1).ToList(), true, true);
+        }
+
+        geometry.Freeze();
+        dc.DrawGeometry(new SolidColorBrush(Color), null, geometry);
+    }
+
     /// <summary>A bent arrow: the shaft follows the curve, each head points along it at its end.</summary>
     private void DrawCurved(DrawingContext dc)
     {
+        if (Style == ArrowStyle.Sharp)
+        {
+            DrawCurvedSharp(dc);
+            return;
+        }
+
         var control = Curves.Control(Start, End, Bend);
         var brush = new SolidColorBrush(Color);
         var endUnit = Curves.Unit(End - control, End - Start);
@@ -592,17 +770,19 @@ public sealed class LineAnnotation : Annotation
     public override IReadOnlyList<(Point At, bool Bend)> PointHandles =>
         new[] { (Start, false), (Curves.MidOf(Start, End, Bend), true), (End, false) };
 
-    public override void MovePointHandle(int index, Point to)
-    {
-        (Start, End, Bend) = Curves.Bake(Start, End, Bend, Rotation);
-        Rotation = 0;
-        switch (index)
+    public override void MovePointHandle(int index, Point to) => ReshapeKeepingGaps(
+        () => Curves.Sample(Start, Curves.Control(Start, End, Bend), End, 64),
+        () =>
         {
-            case 0: Start = to; break;
-            case 2: End = to; break;
-            default: Bend = to - Curves.Chord(Start, End); break;
-        }
-    }
+            (Start, End, Bend) = Curves.Bake(Start, End, Bend, Rotation);
+            Rotation = 0;
+            switch (index)
+            {
+                case 0: Start = to; break;
+                case 2: End = to; break;
+                default: Bend = to - Curves.Chord(Start, End); break;
+            }
+        });
 
     public override void Draw(DrawingContext dc)
     {
@@ -1322,7 +1502,9 @@ public sealed class PolylineAnnotation : PenAnnotation
         }
     }
 
-    public override void MovePointHandle(int index, Point to)
+    public override void MovePointHandle(int index, Point to) => ReshapeKeepingGaps(Path, () => MovePoint(index, to));
+
+    private void MovePoint(int index, Point to)
     {
         if (Math.Abs(Rotation) >= 0.01)
         {

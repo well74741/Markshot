@@ -627,8 +627,32 @@ public sealed class FloatButtonWindow : Window
             return; // the next move after the fold catches up
         }
 
-        MoveTo(_pressCenter.X + dx, _pressCenter.Y + dy, keepInside: false);
+        // At most one move per drawn frame, made just before WPF draws it: a see-through window moved between its
+        // frames was now and then shown once more at a place on its path.
+        _pendingMove = (_pressCenter.X + dx, _pressCenter.Y + dy);
+        if (!_moveQueued)
+        {
+            _moveQueued = true;
+            CompositionTarget.Rendering += ApplyPendingMove;
+        }
     }
+
+    private (double X, double Y)? _pendingMove;
+    private bool _moveQueued;
+
+    private void ApplyPendingMove(object? sender, EventArgs e)
+    {
+        CompositionTarget.Rendering -= ApplyPendingMove;
+        _moveQueued = false;
+        if (_pendingMove is { } target)
+        {
+            _pendingMove = null;
+            MoveTo(target.X, target.Y, keepInside: false);
+        }
+    }
+
+    /// <summary>Tests: a drag move waits for the next frame.</summary>
+    internal bool MoveWaiting => _pendingMove != null;
 
     private void OnMainUp(object sender, MouseButtonEventArgs e)
     {
@@ -645,6 +669,18 @@ public sealed class FloatButtonWindow : Window
         _pressed = false;
         _moving = false;
         Press(down: false);
+        if (_moveQueued)
+        {
+            CompositionTarget.Rendering -= ApplyPendingMove;
+            _moveQueued = false;
+        }
+
+        if (_pendingMove is { } last)
+        {
+            _pendingMove = null;
+            _centerX = last.X; // where it was let go (placed inside the screen just below)
+            _centerY = last.Y;
+        }
         if (_main.IsMouseCaptured)
         {
             _main.ReleaseMouseCapture();

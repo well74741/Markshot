@@ -208,15 +208,23 @@
         </Grid>
 
         <!-- Footer: status on the left, actions on the right. -->
+        <!-- Footer in the panes' columns: under 原文 the status and its 贴到屏幕; under 译文 its 贴到屏幕 and 关闭 (both on the right). -->
         <Grid Grid.Row="2" Margin="20,12,20,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="{DynamicResource T_FF5E5E5E}" VerticalAlignment="Center" />
                 <TextBlock x:Name="StatusText" Foreground="{DynamicResource T_FF9A9A9A}" FontSize="12" Margin="8,0,0,0"
-                           VerticalAlignment="Center" Text="准备就绪" />
+                           VerticalAlignment="Center" Text="准备就绪" TextTrimming="CharacterEllipsis" />
             </StackPanel>
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="贴到屏幕" Style="{StaticResource FooterButton}" Click="Pin_Click"
-                        ToolTip="把译文（没有译文时为原文）做成贴图" />
+            <Button x:Name="PinSourceButton" Content="贴到屏幕" Style="{StaticResource FooterButton}" Click="PinSource_Click"
+                    HorizontalAlignment="Right" ToolTip="把原文做成贴图" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="PinResultButton" Content="贴到屏幕" Style="{StaticResource FooterButton}" Click="Pin_Click"
+                        ToolTip="把译文做成贴图" />
                 <Button Content="关闭" Style="{StaticResource FooterButton}" Click="Close_Click" Margin="8,0,0,0" />
             </StackPanel>
         </Grid>

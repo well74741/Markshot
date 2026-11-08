@@ -309,21 +309,32 @@ public partial class TranslationWindow : Window
         }
     }
 
+    /// <summary>贴到屏幕 under 译文: the translation as a pin.</summary>
     private void Pin_Click(object sender, RoutedEventArgs e)
     {
-        // The translation when there is one, otherwise the recognised text.
-        var translated = !string.IsNullOrWhiteSpace(ResultBox.Text);
-        var text = translated ? ResultBox.Text : SourceBox.Text;
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(ResultBox.Text))
         {
-            SetStatus("没有可贴图的文字。", StatusKind.Idle);
+            SetStatus("还没有译文，先点“翻译”。", StatusKind.Idle);
             return;
         }
 
-        var target = ResolveTarget();
-        var card = TextCardRenderer.Render(translated ? $"译文 · {target}" : "识别文字", text);
+        var card = TextCardRenderer.Render($"译文 · {ResolveTarget()}", ResultBox.Text);
         ((App)Application.Current).CreatePinAtCursor(card);
-        SetStatus(translated ? "译文已贴到屏幕" : "原文已贴到屏幕", StatusKind.Done);
+        SetStatus("译文已贴到屏幕", StatusKind.Done);
+    }
+
+    /// <summary>贴到屏幕 under 原文: the recognised (edited) text as a pin.</summary>
+    private void PinSource_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(SourceBox.Text))
+        {
+            SetStatus("没有可贴图的原文。", StatusKind.Idle);
+            return;
+        }
+
+        var card = TextCardRenderer.Render("识别文字", SourceBox.Text);
+        ((App)Application.Current).CreatePinAtCursor(card);
+        SetStatus("原文已贴到屏幕", StatusKind.Done);
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
