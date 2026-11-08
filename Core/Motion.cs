@@ -241,8 +241,13 @@ public static class Motion
             page.RenderTransform = translate;
         }
 
+        // Drawn once into a bitmap for the move (a page of icon masks — 批注栏 — was drawn again at every frame,
+        // so it came in slowly and jerkily), back to live drawing when it has arrived.
+        page.CacheMode = new BitmapCache { SnapsToDevicePixels = true };
         page.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, Fast) { EasingFunction = Ease });
-        translate.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(8, 0, Base) { EasingFunction = Ease });
+        var slide = new DoubleAnimation(8, 0, Base) { EasingFunction = Ease };
+        slide.Completed += (_, _) => page.CacheMode = null;
+        translate.BeginAnimation(TranslateTransform.XProperty, slide);
     }
 
     /// <summary>Slides a translate transform to an X offset from where it is now.</summary>

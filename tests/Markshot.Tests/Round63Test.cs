@@ -214,7 +214,7 @@ static class Round63Test
             Check((bool)Prop(button, "Folding")!, "dragged / left: the row draws in (not gone in one frame)");
             Pump(300);
             Check(!(bool)Prop(button, "Folding")! && !button.IsExpanded, "… then it is gone");
-            Check(Source("UI/FloatButtonWindow.cs").Contains("_holdMoveUntil = Environment.TickCount64 + FoldMs") /* (0.8.65: folds first, then moves) */, "a drag folds it with the transition");
+            Check(Source("UI/FloatButtonWindow.cs").Contains("_holdMoveUntil = Environment.TickCount64 + DragFoldMs") /* (0.8.65: folds first, then moves) */, "a drag folds it with the transition");
             button.Close();
         }
 

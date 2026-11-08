@@ -9,11 +9,20 @@ public static class ClipboardService
     /// <summary>For tests: takes the picture instead of the clipboard (which is the user's).</summary>
     public static Func<BitmapSource, bool>? CopyOverride { get; set; }
 
+    /// <summary>A picture went to the clipboard (any copy: toolbar, menu, double-click, keys): the floating button shows it.</summary>
+    public static event Action<BitmapSource>? ImageCopied;
+
     public static bool CopyImage(BitmapSource image)
     {
         if (CopyOverride is { } copyOverride)
         {
-            return copyOverride(image);
+            var copied = copyOverride(image);
+            if (copied)
+            {
+                ImageCopied?.Invoke(image);
+            }
+
+            return copied;
         }
 
         var file = App.Config?.CopyImageAsFile == true ? SaveClipboardFile(image) : null; // Explorer pastes this as a .png file
@@ -31,6 +40,7 @@ public static class ClipboardService
             if (TrySetRaw(dib, png, file))
             {
                 Log.Info($"复制图片 {image.PixelWidth}x{image.PixelHeight}：成功{(attempt > 0 ? $"（第 {attempt + 1} 次）" : "")}");
+                ImageCopied?.Invoke(image);
                 return true;
             }
 

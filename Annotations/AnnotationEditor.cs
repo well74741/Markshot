@@ -703,6 +703,17 @@ public sealed class AnnotationEditor : FrameworkElement
     private void DrawHoverFrame(DrawingContext dc, Annotation annotation, string? label)
     {
         var unit = Scale;
+        if (annotation.Frameless)
+        {
+            DrawPointHandles(dc, annotation, unit, 0.7); // where its points will be
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                DrawHoverLabel(dc, annotation.Bounds, label!, unit);
+            }
+
+            return;
+        }
+
         var frame = SelectionFrame(annotation.Bounds, unit);
         var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
         dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
@@ -726,8 +737,18 @@ public sealed class AnnotationEditor : FrameworkElement
         }
 
         var unit = Scale; // canvas pixels per DIP
+        if (annotation.Frameless)
+        {
+            DrawPointHandles(dc, annotation, unit); // 箭头 / 直线 / 折线: their points only, no frame
+            return;
+        }
+
         var frame = SelectionFrame(annotation.Bounds, unit);
         var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
+        if (annotation.PointHandles.Count > 0)
+        {
+            DrawPointHandles(dc, annotation, unit); // (a 序号's arrow head, which does not turn with it)
+        }
 
         dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
 
@@ -842,6 +863,18 @@ public sealed class AnnotationEditor : FrameworkElement
             return FrameHit.None;
         }
 
+        // Point handles first (箭头 / 直线 / 折线 ends and bends, a 序号's arrow head).
+        if (HitPointHandle(annotation, point, unit) is var index and >= 0)
+        {
+            return new FrameHit(PointHandleBase + index, false, false);
+        }
+
+        if (annotation.Frameless)
+        {
+            // No frame: a press on the line itself moves it.
+            return !handlesOnly && annotation.HitTest(point, 4 * unit) ? new FrameHit(-1, false, true) : FrameHit.None;
+        }
+
         var frame = SelectionFrame(annotation.Bounds, unit);
         var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
         var local = RotatePoint(point, center, -annotation.Rotation);
@@ -894,9 +927,62 @@ public sealed class AnnotationEditor : FrameworkElement
         return FrameHit.None;
     }
 
+    /// <summary>Handles at or above this are an element's point handles (index = handle − this).</summary>
+    public const int PointHandleBase = 100;
+
+    /// <summary>The point handle under the pointer (the nearest), or −1.</summary>
+    public static int HitPointHandle(Annotation annotation, Point point, double unit)
+    {
+        var handles = annotation.PointHandles;
+        var best = -1;
+        var bestDistance = 8 * unit;
+        for (var i = 0; i < handles.Count; i++)
+        {
+            var distance = (point - handles[i].At).Length;
+            if (distance <= bestDistance)
+            {
+                best = i;
+                bestDistance = distance;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Round handles on the points (bends smaller and filled).</summary>
+    private void DrawPointHandles(DrawingContext dc, Annotation annotation, double unit, double opacity = 1)
+    {
+        if (opacity < 1)
+        {
+            dc.PushOpacity(opacity);
+        }
+
+        foreach (var (at, bend) in annotation.PointHandles)
+        {
+            if (bend)
+            {
+                dc.DrawEllipse(Accent, new Pen(Brushes.White, 1.5 * unit), at, 4.2 * unit, 4.2 * unit);
+            }
+            else
+            {
+                dc.DrawEllipse(Brushes.White, new Pen(Accent, 2.2 * unit), at, 5.2 * unit, 5.2 * unit);
+            }
+        }
+
+        if (opacity < 1)
+        {
+            dc.Pop();
+        }
+    }
+
     /// <summary>Double-arrow cursor for a resize handle, following the element's rotation.</summary>
     public static Cursor ResizeCursor(int handle, double rotation)
     {
+        if (handle >= PointHandleBase)
+        {
+            return Cursors.Cross; // a point handle
+        }
+
         // Direction the handle pulls in the element's own frame (y down).
         var baseAngle = handle switch
         {

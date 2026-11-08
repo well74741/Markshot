@@ -125,6 +125,8 @@ public partial class App : Application
         };
 
         _hotkeys = new HotkeyManager();
+        // Every picture copied (toolbar, menu, double-click, keys …) shows on the floating button.
+        ClipboardService.ImageCopied += image => Dispatcher.BeginInvoke(() => NoteScreenshot(image));
         _tray = new TrayService(
             () => StartCapture(),
             PinFromClipboard,
@@ -247,6 +249,7 @@ public partial class App : Application
             _float = new UI.FloatButtonWindow(Config, FloatAction, () => ShowSettings("Float"), () => SetFloatButton(false));
             _float.Closed += (_, _) => _float = null;
             _float.PinsShown = () => !_pinsHidden;
+            _float.PinsClickThrough = () => _pins.Count == 0 ? null : _pins.All(pin => pin.IsClickThrough);
             _float.PinsClosedAll = () => _pins.Count == 0 && _closedAll.Any(entry => _closedPins.Any(closed => ReferenceEquals(closed.Entry, entry)));
             _float.OrderChanged += () => _settings?.SyncFloatOrder();
             _float.PinRequested += image => PinCentered(image);
@@ -307,6 +310,16 @@ public partial class App : Application
             case "OpenAllPins":
                 OpenAllPins();
                 break;
+            case "ToggleClickThrough":
+            {
+                var on = !_pins.All(pin => pin.IsClickThrough);
+                foreach (var pin in _pins)
+                {
+                    pin.SetClickThrough(on);
+                }
+
+                break;
+            }
             case "CloseAllPins":
                 CloseAllPins();
                 break;
@@ -907,11 +920,15 @@ public partial class App : Application
     /// <summary>A screenshot was taken (any way): the floating button shows it for a moment.</summary>
     public void NoteScreenshot(BitmapSource? shot)
     {
-        if (shot != null && _float != null)
+        // One picture per action (a capture that copies reports twice: the copy and the capture's end).
+        if (shot != null && _float != null && Environment.TickCount64 - _lastShotNote > 700)
         {
+            _lastShotNote = Environment.TickCount64;
             _float.ShowThumbnail(shot);
         }
     }
+
+    private long _lastShotNote = -10000;
 
     public void ToggleMouseThrough()
     {
@@ -1204,8 +1221,7 @@ public partial class App : Application
                     OpenEditor(image);
                     break;
                 case UI.ScrollCaptureAction.Copy when image != null:
-                    ClipboardService.CopyImage(image);
-                    _tray?.ShowBalloon("长截图已复制", $"{image.PixelWidth} × {image.PixelHeight}");
+                    ClipboardService.CopyImage(image); // (no bubble: the floating button shows it)
                     break;
                 case UI.ScrollCaptureAction.Save when image != null:
                     SaveImageAs(image);
@@ -1302,10 +1318,7 @@ public partial class App : Application
                 CreatePin(image, area.X, area.Y, sweep: true);
                 break;
             default:
-                if (ClipboardService.CopyImage(image))
-                {
-                    _tray?.ShowBalloon("已复制到剪贴板", $"{area.Width} × {area.Height}");
-                }
+                ClipboardService.CopyImage(image); // (no bubble: the floating button shows it)
 
                 break;
         }

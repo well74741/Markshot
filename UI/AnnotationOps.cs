@@ -134,6 +134,11 @@ internal static class AnnotationOps
     /// </summary>
     public static FrameHit SelectionHit(Annotation selected, bool fresh, AnnotationTool tool, Point point, double unit)
     {
+        if (AnnotationEditor.HitPointHandle(selected, point, unit) is var index and >= 0)
+        {
+            return new FrameHit(AnnotationEditor.PointHandleBase + index, false, false); // its points, with any tool
+        }
+
         var drawing = tool is not AnnotationTool.None and not AnnotationTool.Select;
         if (!fresh || !drawing)
         {
@@ -156,6 +161,11 @@ internal static class AnnotationOps
     /// </summary>
     public static Vector ResizeGrab(Rect bounds, double rotation, int handle, Point press)
     {
+        if (handle >= AnnotationEditor.PointHandleBase)
+        {
+            return default; // a point handle follows the pointer
+        }
+
         var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         var grabbed = AnnotationEditor.RotatePoint(AnnotationEditor.HandleCenters(bounds)[handle], center, rotation);
         return grabbed - press;
@@ -552,10 +562,25 @@ internal static class AnnotationOps
             case LineAnnotation line:
                 line.Start = Map(line.Start);
                 line.End = Map(line.End);
+                line.Bend = horizontal ? new Vector(-line.Bend.X, line.Bend.Y) : new Vector(line.Bend.X, -line.Bend.Y);
                 break;
             case ArrowAnnotation arrow:
                 arrow.Start = Map(arrow.Start);
                 arrow.End = Map(arrow.End);
+                arrow.Bend = horizontal ? new Vector(-arrow.Bend.X, arrow.Bend.Y) : new Vector(arrow.Bend.X, -arrow.Bend.Y);
+                break;
+            case PolylineAnnotation polyline:
+                for (var i = 0; i < polyline.Points.Count; i++)
+                {
+                    polyline.Points[i] = Map(polyline.Points[i]);
+                }
+
+                foreach (var key in polyline.Bends.Keys.ToList())
+                {
+                    var b = polyline.Bends[key];
+                    polyline.Bends[key] = horizontal ? new Vector(-b.X, b.Y) : new Vector(b.X, -b.Y);
+                }
+
                 break;
             case PenAnnotation pen:
                 for (var i = 0; i < pen.Points.Count; i++)

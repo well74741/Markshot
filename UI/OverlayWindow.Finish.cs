@@ -231,6 +231,7 @@ public partial class OverlayWindow
         Hint.Visibility = Visibility.Collapsed;
         SizeBox.Visibility = Visibility.Collapsed;
         Motion.SetShown(TranslateStatus, false);
+        Motion.SetShown(TranslateProgress, false);
         Motion.PopOut(Toolbar);
 
         var duration = Motion.Base;

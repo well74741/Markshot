@@ -684,6 +684,14 @@ public partial class PinWindow
 
         if (_resizingAnnotation)
         {
+            if (_annotationHandle >= AnnotationEditor.PointHandleBase)
+            {
+                // A point handle: an end turns / stretches it, a bend bends it.
+                _selected.MovePointHandle(_annotationHandle - AnnotationEditor.PointHandleBase, point);
+                Editor.InvalidateVisual();
+                return true;
+            }
+
             // Past the opposite side it turns over (mirrored).
             AnnotationOps.ResizeThrough(_selected, _annotationStartBounds, _annotationHandle, point + _resizeGrab,
                 // A picture's corners keep its ratio (Shift frees them), like the 调节框.

@@ -31,17 +31,30 @@ public sealed class FloatButtonWindow : Window
     /// <summary>关闭所有贴图 was used and none is open now: the menu offers 打开所有贴图.</summary>
     public Func<bool>? PinsClosedAll { get; set; }
 
+    /// <summary>Whether the open pins let the mouse through (null: no pin is open, the menu leaves 鼠标穿透 out).</summary>
+    public Func<bool?>? PinsClickThrough { get; set; }
+
     /// <summary>
     /// A screenshot was taken: the button shows it at its own size for half a second, then it slides away to the
     /// right and the button's picture is there again. Hidden for the capture, it does this as it comes back.
     /// </summary>
     public void ShowThumbnail(BitmapSource shot)
     {
+        if (_suspended || _fullscreenHidden || !IsVisible)
+        {
+            _pendingThumb = shot; // hidden now: shown as the button comes back
+            return;
+        }
+
+        _pendingThumb = null;
         _thumbTimer?.Stop();
         _thumbSlide.BeginAnimation(TranslateTransform.XProperty, null);
         _thumbSlide.X = 0;
         _thumbImage.Source = shot;
-        _thumb.Width = _thumb.Height = MainSize * 0.86;
+        // The whole button (as big as its picture), rounded like it.
+        _thumb.Width = _thumb.Height = MainSize;
+        _thumb.CornerRadius = new CornerRadius(MainSize * 0.24);
+        _thumb.BorderThickness = new Thickness(0);
         _thumb.HorizontalAlignment = HorizontalAlignment.Center;
         _thumb.VerticalAlignment = VerticalAlignment.Center;
         _thumb.Visibility = Visibility.Visible;
@@ -90,6 +103,7 @@ public sealed class FloatButtonWindow : Window
     private readonly System.Windows.Controls.Image _thumbImage;
     private readonly TranslateTransform _thumbSlide = new();
     private DispatcherTimer? _thumbTimer;
+    private BitmapSource? _pendingThumb; // a screenshot taken while it was hidden
     private long _holdMoveUntil; // the row folding at the start of a drag: the window waits (no drawing while it moves)
     private readonly ReorderBehavior _reorder;
     private readonly DispatcherTimer _fullscreenWatch = new() { Interval = TimeSpan.FromMilliseconds(700) };
@@ -477,7 +491,9 @@ public sealed class FloatButtonWindow : Window
     private void Collapse() => Collapse(animate: false);
 
     /// <summary>The row folds away: at once (a capture is coming), or quickly drawn in (dragged, pointer gone).</summary>
-    private void Collapse(bool animate)
+    private void Collapse(bool animate) => Collapse(animate, FoldMs);
+
+    private void Collapse(bool animate, int milliseconds)
     {
         if (!_expanded)
         {
@@ -494,7 +510,7 @@ public sealed class FloatButtonWindow : Window
             return;
         }
 
-        var duration = new Duration(TimeSpan.FromMilliseconds(FoldMs));
+        var duration = new Duration(TimeSpan.FromMilliseconds(milliseconds));
         var fold = new DoubleAnimation(0.4, duration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
         var fade = new DoubleAnimation(0, duration);
         fade.Completed += (_, _) =>
@@ -512,6 +528,7 @@ public sealed class FloatButtonWindow : Window
     internal bool Folding => _plate.Visibility == Visibility.Visible && !_expanded;
 
     private const int FoldMs = 100;
+    private const int DragFoldMs = 45; // at the start of a drag: quick, the window waits only this long
     private const double PressedScale = 0.86;
 
     /// <summary>Pressed in a little (and back).</summary>
@@ -596,8 +613,8 @@ public sealed class FloatButtonWindow : Window
             // window then moves: a see-through window drawn and moved at once showed a frame on its path.
             if (_expanded)
             {
-                Collapse(animate: true);
-                _holdMoveUntil = Environment.TickCount64 + FoldMs + 15;
+                Collapse(animate: true, DragFoldMs);
+                _holdMoveUntil = Environment.TickCount64 + DragFoldMs;
             }
 
             _pressScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
@@ -790,6 +807,10 @@ public sealed class FloatButtonWindow : Window
     {
         _fadingOut = false;
         _root.BeginAnimation(OpacityProperty, new DoubleAnimation(1, FadeTime) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+        if (_pendingThumb is { } shot)
+        {
+            ShowThumbnail(shot); // coming back with the screenshot taken meanwhile
+        }
     }
 
     private void FadeOut(Action completed)
@@ -922,6 +943,13 @@ public sealed class FloatButtonWindow : Window
         {
             Add("关闭所有贴图", "CloseAllPins");
         }
+        if (PinsClickThrough?.Invoke() is { } through)
+        {
+            var clickThrough = new MenuItem { Header = "鼠标穿透", IsChecked = through, ToolTip = "所有贴图都让鼠标点击穿过（再点一次恢复）" };
+            clickThrough.Click += (_, _) => Run("ToggleClickThrough");
+            menu.Items.Add(clickThrough);
+        }
+
         menu.Items.Add(new Separator());
         var hotkeys = new MenuItem { Header = "禁用所有快捷键", IsChecked = _config.HotkeysDisabled };
         hotkeys.Click += (_, _) => Run("ToggleHotkeys");

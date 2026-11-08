@@ -66,7 +66,7 @@ static class Round65Test
         {
             var code = Source("UI/FloatButtonWindow.cs");
             var move = code[code.IndexOf("private void OnMainMove", StringComparison.Ordinal)..code.IndexOf("private void OnMainUp", StringComparison.Ordinal)];
-            Check(move.Contains("_holdMoveUntil = Environment.TickCount64 + FoldMs") && move.Contains("_pressScale.ScaleX = _pressScale.ScaleY = PressedScale"),
+            Check(move.Contains("_holdMoveUntil = Environment.TickCount64 + DragFoldMs") && move.Contains("_pressScale.ScaleX = _pressScale.ScaleY = PressedScale"),
                 "dragged: the row folds first and nothing animates while the window moves (no frame on its path)");
 
             var config = new AppConfig { FloatActionHidden = "" };

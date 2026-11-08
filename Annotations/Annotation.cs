@@ -71,6 +71,20 @@ public abstract class Annotation
         return copy;
     }
 
+    /// <summary>
+    /// Points the user moves directly (箭头 / 直线 / 折线 ends and bends, a 序号's arrow head). Bend points are drawn
+    /// differently. Canvas coordinates.
+    /// </summary>
+    public virtual IReadOnlyList<(Point At, bool Bend)> PointHandles => Array.Empty<(Point, bool)>();
+
+    /// <summary>A point handle moved to <paramref name="to"/> (canvas coordinates).</summary>
+    public virtual void MovePointHandle(int index, Point to)
+    {
+    }
+
+    /// <summary>No adjust frame: only the point handles; a press on the element itself moves it.</summary>
+    public virtual bool Frameless => false;
+
     internal Geometry? MaskCache;
     internal string? MaskCacheKey;
     internal Geometry? ClipCache;
@@ -348,12 +362,40 @@ public sealed class ArrowAnnotation : Annotation
 
     public ArrowStyle Style { get; set; }
 
+    /// <summary>弯曲: where the middle of the arrow lies, from the middle of the straight line (zero = straight).</summary>
+    public Vector Bend { get; set; }
+
+    public bool Curved => Bend.Length >= 0.5;
+
+    public override bool Frameless => true;
+
+    public override IReadOnlyList<(Point At, bool Bend)> PointHandles =>
+        new[] { (Start, false), (Curves.MidOf(Start, End, Bend), true), (End, false) };
+
+    public override void MovePointHandle(int index, Point to)
+    {
+        (Start, End, Bend) = Curves.Bake(Start, End, Bend, Rotation);
+        Rotation = 0;
+        switch (index)
+        {
+            case 0: Start = to; break;
+            case 2: End = to; break;
+            default: Bend = to - Curves.Chord(Start, End); break;
+        }
+    }
+
     public override void Draw(DrawingContext dc)
     {
         var direction = End - Start;
         var length = direction.Length;
         if (length < 1)
         {
+            return;
+        }
+
+        if (Curved)
+        {
+            DrawCurved(dc);
             return;
         }
 
@@ -442,6 +484,74 @@ public sealed class ArrowAnnotation : Annotation
         }
     }
 
+    /// <summary>A bent arrow: the shaft follows the curve, each head points along it at its end.</summary>
+    private void DrawCurved(DrawingContext dc)
+    {
+        var control = Curves.Control(Start, End, Bend);
+        var brush = new SolidColorBrush(Color);
+        var endUnit = Curves.Unit(End - control, End - Start);
+        var startUnit = Curves.Unit(Start - control, Start - End);
+        var both = Style == ArrowStyle.Double;
+        var headLength = Style switch
+        {
+            ArrowStyle.Sharp => Math.Max(18, Thickness * 5.5),
+            ArrowStyle.Open => Math.Max(12, Thickness * 4),
+            _ => Math.Max(14, Thickness * 4.5)
+        };
+        var width = Style == ArrowStyle.Sharp ? Math.Max(Thickness * 1.8, 3.6) : Thickness;
+        var cutEnd = Style == ArrowStyle.Open ? 0 : headLength * 0.85;
+        var cutStart = both ? headLength * 0.85 : 0;
+        var points = Curves.Sample(Start, control, End, 48);
+        var shaft = Curves.Trim(points, cutStart, cutEnd);
+        if (shaft.Count >= 2)
+        {
+            var path = new StreamGeometry();
+            using (var context = path.Open())
+            {
+                context.BeginFigure(shaft[0], false, false);
+                context.PolyLineTo(shaft.Skip(1).ToList(), true, true);
+            }
+
+            path.Freeze();
+            dc.DrawGeometry(null, new Pen(brush, width) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Flat, LineJoin = PenLineJoin.Round }, path);
+        }
+
+        void Head(Point tip, Vector unit)
+        {
+            var perpendicular = new Vector(-unit.Y, unit.X);
+            if (Style == ArrowStyle.Open)
+            {
+                var open = new StreamGeometry();
+                using (var context = open.Open())
+                {
+                    context.BeginFigure(tip - unit * headLength + perpendicular * (headLength * 0.55), false, false);
+                    context.LineTo(tip, true, true);
+                    context.LineTo(tip - unit * headLength - perpendicular * (headLength * 0.55), true, true);
+                }
+
+                open.Freeze();
+                dc.DrawGeometry(null, new Pen(brush, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round }, open);
+                return;
+            }
+
+            var half = Style == ArrowStyle.Sharp ? headLength * 0.39 : headLength * 0.5;
+            var head = new StreamGeometry();
+            using (var context = head.Open())
+            {
+                AddHead(context, tip, unit, perpendicular, headLength, half);
+            }
+
+            head.Freeze();
+            dc.DrawGeometry(brush, null, head);
+        }
+
+        Head(End, endUnit);
+        if (both)
+        {
+            Head(Start, startUnit);
+        }
+    }
+
     private static void AddHead(StreamGeometryContext context, Point tip, Vector unit, Vector perpendicular, double length, double halfWidth)
     {
         var headBase = tip - unit * length;
@@ -450,7 +560,7 @@ public sealed class ArrowAnnotation : Annotation
         context.LineTo(headBase - perpendicular * halfWidth, true, false);
     }
 
-    public override Rect Bounds => new(Start, End);
+    public override Rect Bounds => Curved ? Curves.BoundsOf(Start, End, Bend) : new(Start, End);
 
     public override void Translate(double dx, double dy)
     {
@@ -460,7 +570,9 @@ public sealed class ArrowAnnotation : Annotation
 
     public override bool HitTest(Point point, double tolerance)
     {
-        return GeometryUtil.DistanceToSegment(point, Start, End) <= tolerance + Thickness;
+        return Curved
+            ? GeometryUtil.DistanceToPolyline(point, Curves.Sample(Start, Curves.Control(Start, End, Bend), End, 32)) <= tolerance + Thickness
+            : GeometryUtil.DistanceToSegment(point, Start, End) <= tolerance + Thickness;
     }
 }
 
@@ -470,6 +582,28 @@ public sealed class LineAnnotation : Annotation
 
     public Point End { get; set; }
 
+    /// <summary>弯曲: where the middle of the line lies, from the middle of the straight line (zero = straight).</summary>
+    public Vector Bend { get; set; }
+
+    public bool Curved => Bend.Length >= 0.5;
+
+    public override bool Frameless => true;
+
+    public override IReadOnlyList<(Point At, bool Bend)> PointHandles =>
+        new[] { (Start, false), (Curves.MidOf(Start, End, Bend), true), (End, false) };
+
+    public override void MovePointHandle(int index, Point to)
+    {
+        (Start, End, Bend) = Curves.Bake(Start, End, Bend, Rotation);
+        Rotation = 0;
+        switch (index)
+        {
+            case 0: Start = to; break;
+            case 2: End = to; break;
+            default: Bend = to - Curves.Chord(Start, End); break;
+        }
+    }
+
     public override void Draw(DrawingContext dc)
     {
         var pen = new Pen(new SolidColorBrush(Color), Thickness)
@@ -478,10 +612,24 @@ public sealed class LineAnnotation : Annotation
             EndLineCap = PenLineCap.Round
         };
 
+        if (Curved)
+        {
+            var curve = new StreamGeometry();
+            using (var context = curve.Open())
+            {
+                context.BeginFigure(Start, false, false);
+                context.QuadraticBezierTo(Curves.Control(Start, End, Bend), End, true, true);
+            }
+
+            curve.Freeze();
+            dc.DrawGeometry(null, pen, curve);
+            return;
+        }
+
         dc.DrawLine(pen, Start, End);
     }
 
-    public override Rect Bounds => new(Start, End);
+    public override Rect Bounds => Curved ? Curves.BoundsOf(Start, End, Bend) : new(Start, End);
 
     public override void Translate(double dx, double dy)
     {
@@ -491,7 +639,105 @@ public sealed class LineAnnotation : Annotation
 
     public override bool HitTest(Point point, double tolerance)
     {
-        return GeometryUtil.DistanceToSegment(point, Start, End) <= tolerance + Thickness;
+        return Curved
+            ? GeometryUtil.DistanceToPolyline(point, Curves.Sample(Start, Curves.Control(Start, End, Bend), End, 32)) <= tolerance + Thickness
+            : GeometryUtil.DistanceToSegment(point, Start, End) <= tolerance + Thickness;
+    }
+}
+
+/// <summary>Bent lines: a quadratic curve whose middle lies <c>Bend</c> away from the middle of the straight line.</summary>
+public static class Curves
+{
+    public static Point Chord(Point start, Point end) => new((start.X + end.X) / 2, (start.Y + end.Y) / 2);
+
+    /// <summary>The curve's own middle (where its bend handle is).</summary>
+    public static Point MidOf(Point start, Point end, Vector bend) => Chord(start, end) + bend;
+
+    /// <summary>The control point that puts the curve's middle at <see cref="MidOf"/>.</summary>
+    public static Point Control(Point start, Point end, Vector bend) => Chord(start, end) + bend * 2;
+
+    public static Vector Unit(Vector direction, Vector fallback)
+    {
+        if (direction.Length < 0.01)
+        {
+            direction = fallback;
+        }
+
+        if (direction.Length < 0.01)
+        {
+            return new Vector(1, 0);
+        }
+
+        direction.Normalize();
+        return direction;
+    }
+
+    public static List<Point> Sample(Point start, Point control, Point end, int steps)
+    {
+        var points = new List<Point>(steps + 1);
+        for (var i = 0; i <= steps; i++)
+        {
+            var t = i / (double)steps;
+            var u = 1 - t;
+            points.Add(new Point(u * u * start.X + 2 * u * t * control.X + t * t * end.X, u * u * start.Y + 2 * u * t * control.Y + t * t * end.Y));
+        }
+
+        return points;
+    }
+
+    /// <summary>The polyline shortened by a length at either end (where the heads are).</summary>
+    public static List<Point> Trim(List<Point> points, double fromStart, double fromEnd)
+    {
+        var result = new List<Point>(points);
+        Cut(result, fromStart);
+        result.Reverse();
+        Cut(result, fromEnd);
+        result.Reverse();
+        return result;
+
+        static void Cut(List<Point> list, double length)
+        {
+            while (length > 0 && list.Count >= 2)
+            {
+                var step = (list[1] - list[0]).Length;
+                if (step > length)
+                {
+                    var unit = list[1] - list[0];
+                    unit.Normalize();
+                    list[0] += unit * length;
+                    return;
+                }
+
+                length -= step;
+                list.RemoveAt(0);
+            }
+        }
+    }
+
+    public static Rect BoundsOf(Point start, Point end, Vector bend)
+    {
+        var points = Sample(start, Control(start, end, bend), end, 16);
+        var rect = new Rect(points[0], points[0]);
+        foreach (var point in points)
+        {
+            rect.Union(point);
+        }
+
+        return rect;
+    }
+
+    /// <summary>A turned line becomes a straight one with its turn in its points (handles move the points themselves).</summary>
+    public static (Point Start, Point End, Vector Bend) Bake(Point start, Point end, Vector bend, double rotation)
+    {
+        if (Math.Abs(rotation) < 0.01)
+        {
+            return (start, end, bend);
+        }
+
+        var box = BoundsOf(start, end, bend);
+        var center = new Point(box.X + box.Width / 2, box.Y + box.Height / 2);
+        var turn = new RotateTransform(rotation).Value;
+        return (GeometryUtil.Rotate(start, center, rotation), GeometryUtil.Rotate(end, center, rotation), turn.Transform(bend));
     }
 }
 
@@ -1047,6 +1293,119 @@ public static class Cutouts
 /// </summary>
 public sealed class PolylineAnnotation : PenAnnotation
 {
+    /// <summary>弯曲 of each segment (by its index): where its middle lies, from the middle of the straight segment.</summary>
+    public Dictionary<int, Vector> Bends { get; private set; } = new();
+
+    public override Annotation Clone()
+    {
+        var copy = (PolylineAnnotation)base.Clone();
+        copy.Bends = new Dictionary<int, Vector>(Bends);
+        return copy;
+    }
+
+    private Vector BendOf(int segment) => Bends.TryGetValue(segment, out var bend) ? bend : default;
+
+    public override bool Frameless => true;
+
+    /// <summary>Every corner, then the middle of every segment.</summary>
+    public override IReadOnlyList<(Point At, bool Bend)> PointHandles
+    {
+        get
+        {
+            var handles = Points.Select(point => (point, false)).ToList();
+            for (var i = 0; i + 1 < Points.Count; i++)
+            {
+                handles.Add((Curves.MidOf(Points[i], Points[i + 1], BendOf(i)), true));
+            }
+
+            return handles;
+        }
+    }
+
+    public override void MovePointHandle(int index, Point to)
+    {
+        if (Math.Abs(Rotation) >= 0.01)
+        {
+            var box = Bounds;
+            var center = new Point(box.X + box.Width / 2, box.Y + box.Height / 2);
+            var turn = new RotateTransform(Rotation).Value;
+            for (var i = 0; i < Points.Count; i++)
+            {
+                Points[i] = GeometryUtil.Rotate(Points[i], center, Rotation);
+            }
+
+            foreach (var key in Bends.Keys.ToList())
+            {
+                Bends[key] = turn.Transform(Bends[key]);
+            }
+
+            Rotation = 0;
+        }
+
+        if (index < Points.Count)
+        {
+            Points[index] = to;
+            return;
+        }
+
+        var segment = index - Points.Count;
+        if (segment + 1 < Points.Count)
+        {
+            var bend = to - Curves.Chord(Points[segment], Points[segment + 1]);
+            if (bend.Length < 0.5)
+            {
+                Bends.Remove(segment);
+            }
+            else
+            {
+                Bends[segment] = bend;
+            }
+        }
+    }
+
+    /// <summary>The drawn path, bends included.</summary>
+    private List<Point> Path()
+    {
+        var path = new List<Point> { Points[0] };
+        for (var i = 0; i + 1 < Points.Count; i++)
+        {
+            var bend = BendOf(i);
+            if (bend.Length < 0.5)
+            {
+                path.Add(Points[i + 1]);
+            }
+            else
+            {
+                path.AddRange(Curves.Sample(Points[i], Curves.Control(Points[i], Points[i + 1], bend), Points[i + 1], 24).Skip(1));
+            }
+        }
+
+        return path;
+    }
+
+    public override Rect Bounds
+    {
+        get
+        {
+            if (Points.Count == 0 || Bends.Count == 0)
+            {
+                return base.Bounds;
+            }
+
+            var path = Path();
+            var rect = new Rect(path[0], path[0]);
+            foreach (var point in path)
+            {
+                rect.Union(point);
+            }
+
+            return rect;
+        }
+    }
+
+    public override bool HitTest(Point point, double tolerance) =>
+        Points.Count > 0 && GeometryUtil.DistanceToPolyline(point, Path()) <= tolerance + Thickness;
+
     public override void Draw(DrawingContext dc)
     {
         if (Points.Count < 2)
@@ -1058,7 +1417,18 @@ public sealed class PolylineAnnotation : PenAnnotation
         using (var context = geometry.Open())
         {
             context.BeginFigure(Points[0], false, false);
-            context.PolyLineTo(Points.Skip(1).ToList(), true, true);
+            for (var i = 0; i + 1 < Points.Count; i++)
+            {
+                var bend = BendOf(i);
+                if (bend.Length < 0.5)
+                {
+                    context.LineTo(Points[i + 1], true, true);
+                }
+                else
+                {
+                    context.QuadraticBezierTo(Curves.Control(Points[i], Points[i + 1], bend), Points[i + 1], true, true);
+                }
+            }
         }
 
         geometry.Freeze();
@@ -1515,6 +1885,12 @@ public sealed class NumberAnnotation : Annotation
 
     /// <summary>Where an arrow from the badge points (dragged out while placing it); null = no arrow.</summary>
     public Point? Tail { get; set; }
+
+    /// <summary>The arrow's head: moved, it points somewhere else.</summary>
+    public override IReadOnlyList<(Point At, bool Bend)> PointHandles =>
+        Tail is { } tail && (tail - Center).Length > Radius * 1.3 + 8 ? new[] { (tail, false) } : Array.Empty<(Point, bool)>();
+
+    public override void MovePointHandle(int index, Point to) => Tail = to;
 
     private double RingWidth => Math.Max(1.5, Radius * 0.16);
 

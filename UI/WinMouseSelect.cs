@@ -197,7 +197,36 @@ public sealed class WinMouseSelect
 
         if (_button == null)
         {
+            if (_swallowUntilUp is { } held && up == held)
+            {
+                _swallowUntilUp = null; // the right button that cancelled ends here, unseen
+                return true;
+            }
+
+            if (_swallowDrawingUp is { } drew && up == drew)
+            {
+                _swallowDrawingUp = null; // and the button that was drawing
+                return true;
+            }
+
             return false;
+        }
+
+        if (down == MouseButton.Right && _button != MouseButton.Right)
+        {
+            // Right click while the area is drawn: it is dropped (as an element being drawn is), nothing is taken.
+            var drawing = _button.Value;
+            _button = null;
+            _spaceHeld = false;
+            _swallowUntilUp = MouseButton.Right;
+            _swallowDrawingUp = drawing;
+            if (!_swallowWin)
+            {
+                RemoveKeyHook();
+            }
+
+            Application.Current?.Dispatcher.BeginInvoke(HideFrame);
+            return true;
         }
 
         if (message == WmMouseMove)
@@ -266,6 +295,11 @@ public sealed class WinMouseSelect
 
     private bool _spaceHeld;
     private Point _spaceAnchor;
+    private MouseButton? _swallowUntilUp; // a cancelling right click: its release is not passed on (no context menu)
+    private MouseButton? _swallowDrawingUp;
+
+    /// <summary>Tests: the drawing was dropped by a right click.</summary>
+    internal bool Drawing => _button != null;
 
     /// <summary>Space while drawing (Win may already be released): down = the area follows the pointer, up = drawing goes on.</summary>
     internal bool HandleSpace(bool down)

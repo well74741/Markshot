@@ -207,6 +207,7 @@ public partial class OverlayWindow : Window
         UiScale.Attach(Hint);
         UiScale.Attach(SizeBox);
         UiScale.Attach(TranslateStatus);
+        UiScale.Attach(TranslateProgress);
         PreviewMouseRightButtonDown += (_, e) =>
         {
             if (_finishing)

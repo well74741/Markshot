@@ -106,14 +106,20 @@
                                           Click="TargetLanguage_Click" ToolTip="显示译文" />
                         </StackPanel>
                     </Border>
+                    <Button x:Name="TranslateClose" Style="{StaticResource ToolButton}" Content="✕" FontSize="11" Padding="7,2" Margin="2,0,0,0"
+                            Click="TranslateClose_Click" ToolTip="关闭原位翻译" />
+                </StackPanel>
+            </Border>
+            <!-- 原位翻译's progress / errors: inside the area, so the bar above keeps its size and place. -->
+            <Border x:Name="TranslateProgress" Visibility="Collapsed" Background="{DynamicResource T_F01C1C1C}"
+                    BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1" CornerRadius="7" Padding="4,3">
+                <StackPanel Orientation="Horizontal">
                     <TextBlock x:Name="TranslateStatusText" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis" core:Marquee.Enabled="True"
                                Margin="6,0,6,0" />
                     <Button x:Name="TranslateRetry" Style="{StaticResource ToolButton}" Padding="8,2"
                             Foreground="{StaticResource Accent}" Visibility="Collapsed" Content="重试"
                             Click="TranslateRetry_Click" />
-                    <Button x:Name="TranslateClose" Style="{StaticResource ToolButton}" Content="✕" FontSize="11" Padding="7,2" Margin="2,0,0,0"
-                            Click="TranslateClose_Click" ToolTip="关闭原位翻译" />
                 </StackPanel>
             </Border>
         </Canvas>

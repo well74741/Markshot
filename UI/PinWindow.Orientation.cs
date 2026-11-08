@@ -93,23 +93,14 @@ public partial class PinWindow
         }
 
         var zoom = _zoom;
+        // The fewest steps back (at most a flip and three turns), whatever the history was.
+        var back = ShortestWayBack(a, b, c, d);
         _quietOrientation = true;
         try
         {
-            for (var i = _orientation.Count - 1; i >= 0; i--)
+            foreach (var op in back)
             {
-                switch (_orientation[i])
-                {
-                    case 'R':
-                        // Undo a 90° counter-clockwise turn with three more.
-                        ApplyOrientation('R', record: false);
-                        ApplyOrientation('R', record: false);
-                        ApplyOrientation('R', record: false);
-                        break;
-                    default:
-                        ApplyOrientation(_orientation[i], record: false); // flips undo themselves
-                        break;
-                }
+                ApplyOrientation(op, record: false);
             }
         }
         finally
@@ -118,6 +109,23 @@ public partial class PinWindow
         }
 
         _orientation.Clear();
+        if (back.Count > 0)
+        {
+            // Composed and shown once, at the end.
+            SourceImage = ComposeEditedImage();
+            Img.Source = _editMode ? _baseImage : SourceImage;
+            if (!_editMode)
+            {
+                RefreshTextLayer();
+            }
+
+            _selected = null;
+            Editor.Selected = null;
+            Toolbar.SetSelection(null);
+            Editor.InvalidateVisual();
+            UpdateAnimation();
+        }
+
         ResetView();
 
         // From the old look to the original: a mirror (scale -1), the turn, the size.
@@ -137,6 +145,38 @@ public partial class PinWindow
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(zoom, 1, duration) { EasingFunction = Motion.Ease });
         rotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(angle, 0, duration) { EasingFunction = Motion.Ease });
         ResetMotion = (mirror, angle, zoom);
+    }
+
+    /// <summary>The shortest list of steps whose sum undoes (a b; c d): [], R, R R, R R R, or a flip before them.</summary>
+    private static List<char> ShortestWayBack(int a, int b, int c, int d)
+    {
+        (int, int, int, int) Of(IEnumerable<char> ops)
+        {
+            int p = 1, q = 0, r = 0, s = 1;
+            foreach (var op in ops)
+            {
+                var (oa, ob, oc, od) = op switch { 'H' => (-1, 0, 0, 1), 'V' => (1, 0, 0, -1), _ => (0, 1, -1, 0) };
+                (p, q, r, s) = (oa * p + ob * r, oa * q + ob * s, oc * p + od * r, oc * q + od * s);
+            }
+
+            return (p, q, r, s);
+        }
+
+        foreach (var flip in new[] { "", "H" })
+        {
+            for (var turns = 0; turns < 4; turns++)
+            {
+                var ops = (flip + new string('R', turns)).ToList();
+                var (p, q, r, s) = Of(ops);
+                // ops after the history = nothing at all
+                if ((p * a + q * c, p * b + q * d, r * a + s * c, r * b + s * d) == (1, 0, 0, 1))
+                {
+                    return ops;
+                }
+            }
+        }
+
+        return new List<char>();
     }
 
     /// <summary>Tests: where the last F started its one move from (mirror, angle, size).</summary>
@@ -260,6 +300,11 @@ public partial class PinWindow
         _pixelWidth = newWidth;
         _pixelHeight = newHeight;
         Editor.Source = transformed;
+        if (_quietOrientation)
+        {
+            return; // F: undone in one go; composed, laid out and shown once at the end
+        }
+
         SourceImage = ComposeEditedImage();
         Img.Source = _editMode ? transformed : SourceImage;
         if (!_editMode)

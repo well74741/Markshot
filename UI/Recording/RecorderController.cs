@@ -428,7 +428,6 @@ public sealed class RecorderController
         ClipboardService.CopyImage(shot);
         _frame?.Flash();
         (Application.Current as App)?.NoteScreenshot(shot);
-        Toast.Notify("已复制录屏区域截图", $"{shot.PixelWidth} × {shot.PixelHeight}");
         return shot;
     }
 

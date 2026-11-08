@@ -61,7 +61,9 @@ static class Program
         if (mode == "round63") Round63Test.Run();
         if (mode == "round64") Round64Test.Run();
         if (mode == "round65") Round65Test.Run();
+        if (mode == "round66") Round66Test.Run();
         if (mode == "mtprobe") MtProbe.Run();
+        if (mode == "pageprobe") PageProbe.Run();
         if (mode == "menu") MenuProbe.Run();
         if (mode == "support") SupportTest.Run();
         if (mode == "history") HistoryTest.Run();

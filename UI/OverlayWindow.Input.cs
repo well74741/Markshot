@@ -504,7 +504,14 @@ public partial class OverlayWindow
 
         if (_resizingAnnotation && _selectedAnnotation != null)
         {
-            AnnotationOps.ResizeThrough(_selectedAnnotation, _annotationStartBounds, _annotationHandle, point + _resizeGrab, IsShiftDown, ref _resizeFlip);
+            if (_annotationHandle >= AnnotationEditor.PointHandleBase)
+            {
+                _selectedAnnotation.MovePointHandle(_annotationHandle - AnnotationEditor.PointHandleBase, point);
+            }
+            else
+            {
+                AnnotationOps.ResizeThrough(_selectedAnnotation, _annotationStartBounds, _annotationHandle, point + _resizeGrab, IsShiftDown, ref _resizeFlip);
+            }
             Editor.InvalidateVisual();
             return;
         }
@@ -633,6 +640,20 @@ public partial class OverlayWindow
     /// </summary>
     private bool CancelGesture()
     {
+        if (_dragging && _mode == DragMode.Creating)
+        {
+            // Right click while the area is being drawn: that area goes (as an element being drawn does); the capture stays.
+            _mode = DragMode.None;
+            _dragging = false;
+            _pendingWindow = Rect.Empty;
+            _selection = Rect.Empty;
+            _hasSelection = false;
+            InputLayer.ReleaseMouseCapture();
+            UpdateSelectionVisuals();
+            Editor.InvalidateVisual();
+            return true;
+        }
+
         if (_textEditor.IsFraming)
         {
             _textEditor.CancelFrameDrag();

@@ -176,6 +176,7 @@ public partial class OverlayWindow
         if (!_autoTranslate || !_hasSelection)
         {
             TranslateStatus.Visibility = Visibility.Collapsed;
+            TranslateProgress.Visibility = Visibility.Collapsed;
         }
         else
         {
@@ -207,22 +208,21 @@ public partial class OverlayWindow
                 : new SolidColorBrush(Color.FromRgb(0x4C, 0xC3, 0x8A));
         TranslateRetry.Visibility = retry ? Visibility.Visible : Visibility.Collapsed;
         UpdateLanguageSwitch();
-        TranslateStatus.Visibility = _autoTranslate && _hasSelection ? Visibility.Visible : Visibility.Collapsed;
+        var shown = _autoTranslate && _hasSelection;
+        TranslateStatus.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        // The progress / error goes in its own pill inside the area: the bar keeps its width (no jumping about).
+        TranslateProgress.Visibility = shown && (!string.IsNullOrEmpty(text) || retry) ? Visibility.Visible : Visibility.Collapsed;
         PositionTranslateStatus();
     }
 
     /// <summary>[source | target]: the highlighted half is the language currently shown.</summary>
     private void UpdateLanguageSwitch()
     {
+        // Always there (原文 | 译文 until the languages are known): the bar does not change its size.
         var known = _sourceLabel != null && _targetLabel != null && _sourceLabel != _targetLabel;
-        LanguageSwitch.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
-        if (!known)
-        {
-            return;
-        }
-
-        SourceLanguageButton.Content = _sourceLabel;
-        TargetLanguageButton.Content = _targetLabel;
+        LanguageSwitch.Visibility = Visibility.Visible;
+        SourceLanguageButton.Content = known ? _sourceLabel : "原文";
+        TargetLanguageButton.Content = known ? _targetLabel : "译文";
         SourceLanguageButton.IsChecked = _showOriginal;
         TargetLanguageButton.IsChecked = !_showOriginal;
     }
@@ -249,6 +249,15 @@ public partial class OverlayWindow
 
         Canvas.SetLeft(TranslateStatus, left);
         Canvas.SetTop(TranslateStatus, top);
+        if (TranslateProgress.Visibility == Visibility.Visible)
+        {
+            // Inside the area's top right corner (under the bar when that is inside too).
+            TranslateProgress.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var pill = TranslateProgress.DesiredSize;
+            var pillTop = top >= selection.Top ? top + size.Height + 4 : selection.Top + 6;
+            Canvas.SetLeft(TranslateProgress, Math.Max(selection.Left + 4, selection.Right - pill.Width - 6));
+            Canvas.SetTop(TranslateProgress, pillTop);
+        }
     }
 
     /// <summary>✕: 原位翻译 off (as the toolbar's switch).</summary>
