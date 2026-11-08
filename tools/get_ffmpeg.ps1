@@ -28,7 +28,18 @@ $base = 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1'
 Write-Host "  下载 ffmpeg（$base）…"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $gz = Join-Path $target 'ffmpeg.gz'
-Invoke-WebRequest "$base/ffmpeg-win32-x64.gz" -OutFile $gz -UseBasicParsing
+# GitHub's release downloads fail now and then (502 / 504): a few tries, a little apart.
+function Fetch($url, $file) {
+    for ($try = 1; ; $try++) {
+        try { Invoke-WebRequest $url -OutFile $file -UseBasicParsing; return }
+        catch {
+            if ($try -ge 6) { throw }
+            Write-Host "  下载失败（$($_.Exception.Message)），$($try * 10) 秒后重试…"
+            Start-Sleep -Seconds ($try * 10)
+        }
+    }
+}
+Fetch "$base/ffmpeg-win32-x64.gz" $gz
 $in = [IO.File]::OpenRead($gz)
 try {
     $unzip = New-Object IO.Compression.GZipStream($in, [IO.Compression.CompressionMode]::Decompress)
@@ -36,6 +47,6 @@ try {
     try { $unzip.CopyTo($out) } finally { $out.Dispose(); $unzip.Dispose() }
 } finally { $in.Dispose() }
 Remove-Item $gz
-Invoke-WebRequest "$base/win32-x64.LICENSE" -OutFile (Join-Path $target 'ffmpeg.exe.LICENSE') -UseBasicParsing
-Invoke-WebRequest "$base/win32-x64.README" -OutFile (Join-Path $target 'ffmpeg.exe.README') -UseBasicParsing
+Fetch "$base/win32-x64.LICENSE" (Join-Path $target 'ffmpeg.exe.LICENSE')
+Fetch "$base/win32-x64.README" (Join-Path $target 'ffmpeg.exe.README')
 Write-Host "  [OK] ffmpeg         $exe"
