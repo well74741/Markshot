@@ -20,7 +20,7 @@ static class Round65Test
     static void Check(bool ok, string what) { Console.WriteLine((ok ? "PASS " : "FAIL ") + what); if (!ok) _fail++; }
     static void Pump(int ms) { var u = DateTime.Now.AddMilliseconds(ms); while (DateTime.Now < u) { Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background); Thread.Sleep(5); } }
     const BindingFlags Any = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static;
-    static string Source(string file) => File.ReadAllText(Repo.File(file));
+    static string Source(string file) => File.ReadAllText(Repo.File(file)).Replace("\r\n", "\n"); // (CI checks out with CRLF)
     static IReadOnlyList<string> Headers(FloatButtonWindow button) => (IReadOnlyList<string>)button.GetType().GetMethod("MenuHeaders", Any)!.Invoke(button, null)!;
 
     static object? Prop(object target, string name) => target.GetType().GetProperty(name, Any)!.GetValue(target);
