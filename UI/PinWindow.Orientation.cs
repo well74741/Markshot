@@ -45,8 +45,13 @@ public partial class PinWindow
             _orientation.Add(op);
         }
 
-        AnimateOrientation(op);
+        if (!_quietOrientation)
+        {
+            AnimateOrientation(op);
+        }
     }
+
+    private bool _quietOrientation; // F: the steps are undone without their own animations
 
     /// <summary>
     /// A quick turn after a flip / rotation: the new image starts where the old one was
@@ -73,28 +78,69 @@ public partial class PinWindow
         }
     }
 
-    /// <summary>F: back to 100%, opaque and the original orientation. Annotations are kept.</summary>
+    /// <summary>
+    /// F: back to 100%, opaque and the original orientation, in one move: the steps are undone at once (unseen) and
+    /// the picture swings / scales from how it looked straight to how it began. Annotations are kept.
+    /// </summary>
     private void ResetPinImageTransform()
     {
-        for (var i = _orientation.Count - 1; i >= 0; i--)
+        // What the flips / turns add up to (column vectors, y down): one turn, perhaps mirrored.
+        int a = 1, b = 0, c = 0, d = 1;
+        foreach (var op in _orientation)
         {
-            switch (_orientation[i])
+            var (oa, ob, oc, od) = op switch { 'H' => (-1, 0, 0, 1), 'V' => (1, 0, 0, -1), _ => (0, 1, -1, 0) };
+            (a, b, c, d) = (oa * a + ob * c, oa * b + ob * d, oc * a + od * c, oc * b + od * d);
+        }
+
+        var zoom = _zoom;
+        _quietOrientation = true;
+        try
+        {
+            for (var i = _orientation.Count - 1; i >= 0; i--)
             {
-                case 'R':
-                    // Undo a 90° counter-clockwise turn with three more.
-                    ApplyOrientation('R', record: false);
-                    ApplyOrientation('R', record: false);
-                    ApplyOrientation('R', record: false);
-                    break;
-                default:
-                    ApplyOrientation(_orientation[i], record: false); // flips undo themselves
-                    break;
+                switch (_orientation[i])
+                {
+                    case 'R':
+                        // Undo a 90° counter-clockwise turn with three more.
+                        ApplyOrientation('R', record: false);
+                        ApplyOrientation('R', record: false);
+                        ApplyOrientation('R', record: false);
+                        break;
+                    default:
+                        ApplyOrientation(_orientation[i], record: false); // flips undo themselves
+                        break;
+                }
             }
+        }
+        finally
+        {
+            _quietOrientation = false;
         }
 
         _orientation.Clear();
         ResetView();
+
+        // From the old look to the original: a mirror (scale -1), the turn, the size.
+        var mirror = a * d - b * c < 0 ? -1 : 1;
+        var angle = Math.Atan2(c * mirror, a * mirror) * 180 / Math.PI;
+        if (Math.Abs(angle) < 0.5 && mirror == 1 && Math.Abs(zoom - 1) < 0.001)
+        {
+            return;
+        }
+
+        var scale = new ScaleTransform(mirror * zoom, zoom);
+        var rotate = new RotateTransform(angle);
+        ImageHost.RenderTransformOrigin = new Point(0.5, 0.5);
+        ImageHost.RenderTransform = new TransformGroup { Children = { scale, rotate } };
+        var duration = new Duration(TimeSpan.FromMilliseconds(240));
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(mirror * zoom, 1, duration) { EasingFunction = Motion.Ease });
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(zoom, 1, duration) { EasingFunction = Motion.Ease });
+        rotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(angle, 0, duration) { EasingFunction = Motion.Ease });
+        ResetMotion = (mirror, angle, zoom);
     }
+
+    /// <summary>Tests: where the last F started its one move from (mirror, angle, size).</summary>
+    internal (int Mirror, double Angle, double Zoom)? ResetMotion { get; private set; }
 
     private protected void ApplyPinImageTransform(Transform transform, Func<Point, Point> map, int newWidth, int newHeight, char op)
     {

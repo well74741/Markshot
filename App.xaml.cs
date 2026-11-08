@@ -247,6 +247,7 @@ public partial class App : Application
             _float = new UI.FloatButtonWindow(Config, FloatAction, () => ShowSettings("Float"), () => SetFloatButton(false));
             _float.Closed += (_, _) => _float = null;
             _float.PinsShown = () => !_pinsHidden;
+            _float.PinsClosedAll = () => _pins.Count == 0 && _closedAll.Any(entry => _closedPins.Any(closed => ReferenceEquals(closed.Entry, entry)));
             _float.OrderChanged += () => _settings?.SyncFloatOrder();
             _float.PinRequested += image => PinCentered(image);
             _float.PinFileRequested += (file, index) => PinFile(file, index % 8);
@@ -302,6 +303,9 @@ public partial class App : Application
                 break;
             case "PasteClipboard":
                 PinFromClipboard();
+                break;
+            case "OpenAllPins":
+                OpenAllPins();
                 break;
             case "CloseAllPins":
                 CloseAllPins();
@@ -414,6 +418,7 @@ public partial class App : Application
         _capturing = true;
         _hotkeys?.UnregisterAll();
         _float?.Suspend(); // left out of the screenshot anyway; out of the way of the capture too
+        BitmapSource? shot = null;
 
         try
         {
@@ -429,7 +434,14 @@ public partial class App : Application
                 PinNow = (source, output) => WithHistory(CreatePin(output, (int)source.SelectionScreenRect.X, (int)source.SelectionScreenRect.Y,
                     source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow), source)
             };
+            if (!Config.FloatHideWhileCapturing)
+            {
+                // Kept for the capture (out of the screenshot itself, taken above): back as soon as the capture shows.
+                overlay.ContentRendered += (_, _) => _float?.Resume();
+            }
+
             overlay.ShowDialog();
+            shot = overlay.Result == CaptureAction.None ? null : overlay.OutputImage ?? overlay.PinBaseImage;
             if (overlay.RangeChanged)
             {
                 Config.Save(); // the 识别范围 the wheel chose
@@ -508,6 +520,7 @@ public partial class App : Application
         {
             _capturing = false;
             _float?.Resume();
+            NoteScreenshot(shot); // as it comes back: the screenshot on the button, sliding away
             if (!_shuttingDown)
             {
                 ApplyHotkeys();
@@ -863,11 +876,40 @@ public partial class App : Application
         }
     }
 
+    private readonly List<PinEntry> _closedAll = new(); // what 关闭所有贴图 closed last (打开所有贴图 brings them back)
+
     public void CloseAllPins()
     {
+        var before = _closedPins.Count;
         foreach (var pin in _pins.ToArray())
         {
             pin.CloseImmediately();
+        }
+
+        _closedAll.Clear();
+        _closedAll.AddRange(_closedPins.Skip(Math.Min(before, _closedPins.Count)).Select(closed => closed.Entry));
+    }
+
+    /// <summary>打开所有贴图: the pins 关闭所有贴图 closed, as they were.</summary>
+    public void OpenAllPins()
+    {
+        foreach (var entry in _closedAll.ToList())
+        {
+            if (_closedPins.Any(closed => ReferenceEquals(closed.Entry, entry)))
+            {
+                RestorePinEntry(entry);
+            }
+        }
+
+        _closedAll.Clear();
+    }
+
+    /// <summary>A screenshot was taken (any way): the floating button shows it for a moment.</summary>
+    public void NoteScreenshot(BitmapSource? shot)
+    {
+        if (shot != null && _float != null)
+        {
+            _float.ShowThumbnail(shot);
         }
     }
 
@@ -1151,6 +1193,11 @@ public partial class App : Application
 
         var session = new UI.ScrollCaptureSession(area, Config.ScrollHorizontal, (action, image) =>
         {
+            if (action != UI.ScrollCaptureAction.Cancel)
+            {
+                NoteScreenshot(image);
+            }
+
             switch (action)
             {
                 case UI.ScrollCaptureAction.Edit when image != null:
@@ -1245,6 +1292,7 @@ public partial class App : Application
             return;
         }
 
+        NoteScreenshot(image);
         switch (action)
         {
             case "Ocr":

@@ -182,6 +182,11 @@ public sealed class RecorderController
             new RecordDimWindow(Rect).Show(); // first, so the frame and the toolbar stay bright above it
         }
 
+        if (!fromCapture)
+        {
+            _frame.PrepareOpen(); // see-through from its first frame: it fades in once (it showed, vanished and came back)
+        }
+
         _frame.Show();
         _bar.Show(); // after the frame: above it
         Layout();
@@ -401,6 +406,32 @@ public sealed class RecorderController
     }
 
     /// <summary>Places the frame, the preview and the toolbar around the area.</summary>
+    /// <summary>截屏 on the recorder bar: what is in the area right now, copied (any time, recording or not); the frame flashes white.</summary>
+    public BitmapSource? Snapshot()
+    {
+        if (!IsOpen || Rect.Width < 2 || Rect.Height < 2)
+        {
+            return null;
+        }
+
+        BitmapSource shot;
+        try
+        {
+            shot = ScreenCapture.CaptureRegion(Rect);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("录屏区域截屏失败", ex);
+            return null;
+        }
+
+        ClipboardService.CopyImage(shot);
+        _frame?.Flash();
+        (Application.Current as App)?.NoteScreenshot(shot);
+        Toast.Notify("已复制录屏区域截图", $"{shot.PixelWidth} × {shot.PixelHeight}");
+        return shot;
+    }
+
     public void Layout()
     {
         var moves = new List<WindowMove>();

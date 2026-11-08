@@ -238,7 +238,8 @@ public partial class OverlayWindow
         var size = TranslateStatus.DesiredSize;
         var selection = new Rect(_selection.X / _scale, _selection.Y / _scale,
             _selection.Width / _scale, _selection.Height / _scale);
-        // Top-right corner above the selection; inside it when there is no room.
+        // Always above the area's top right corner, right-aligned with it (as on a pin); just under the top edge
+        // of the area only when the screen ends above it. The toolbar is under the area's left edge.
         var left = Math.Clamp(selection.Right - size.Width, 4, Math.Max(4, ActualWidth - size.Width - 4));
         var top = selection.Top - size.Height - 6;
         if (top < 4)
@@ -246,34 +247,20 @@ public partial class OverlayWindow
             top = selection.Top + 6;
         }
 
-        // Never over the toolbar: try inside the area, below it, then beside the bar.
-        if (Toolbar.Visibility == Visibility.Visible && Toolbar.ActualWidth > 0)
-        {
-            var bar = new Rect(Canvas.GetLeft(Toolbar), Canvas.GetTop(Toolbar), Toolbar.ActualWidth, Toolbar.ActualHeight);
-            bar.Inflate(4, 4);
-            var candidates = new[]
-            {
-                new Point(left, top),
-                new Point(left, selection.Top + 6),
-                new Point(left, selection.Bottom + 6),
-                new Point(left, bar.Top - size.Height - 2),
-                new Point(left, bar.Bottom + 2),
-                new Point(Math.Max(4, bar.Left - size.Width - 4), bar.Top + 4)
-            };
-            foreach (var candidate in candidates)
-            {
-                var place = new Rect(candidate, size);
-                if (!place.IntersectsWith(bar) && place.Top >= 4 && place.Bottom <= ActualHeight - 4)
-                {
-                    left = candidate.X;
-                    top = candidate.Y;
-                    break;
-                }
-            }
-        }
-
         Canvas.SetLeft(TranslateStatus, left);
         Canvas.SetTop(TranslateStatus, top);
+    }
+
+    /// <summary>✕: 原位翻译 off (as the toolbar's switch).</summary>
+    private void TranslateClose_Click(object sender, RoutedEventArgs e)
+    {
+        _autoTranslate = false;
+        _showOriginal = false;
+        Toolbar.SetTranslateEnabled(false);
+        App.Config.ImmersiveTranslate = false;
+        App.Config.Save();
+        CancelTranslation();
+        UpdateTranslationVisuals();
     }
 
     private void SourceLanguage_Click(object sender, RoutedEventArgs e)

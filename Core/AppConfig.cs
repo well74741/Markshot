@@ -277,6 +277,9 @@ public sealed class AppConfig
     /// <summary>The floating button hides while a full-screen program (video, game) is in front.</summary>
     public bool FloatHideFullscreen { get; set; } = true;
 
+    /// <summary>截图时隐藏: out of the way while a capture is open (never in the screenshot either way).</summary>
+    public bool FloatHideWhileCapturing { get; set; } = true;
+
     /// <summary>The floating button's own picture (a file in the config folder; empty = the Markshot logo). Also the tray icon.</summary>
     public string FloatIcon { get; set; } = "";
 

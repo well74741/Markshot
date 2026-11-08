@@ -202,6 +202,28 @@ public partial class PinWindow
 
     private void PinSourceLanguage_Click(object sender, RoutedEventArgs e) => ShowPinLanguage(original: true);
 
+    private void PinCloseTranslation_Click(object sender, RoutedEventArgs e) => CloseInPlaceTranslation();
+
+    /// <summary>关闭原位翻译 (menu / the ✕ by the switch): back to the original picture, the switch goes.</summary>
+    private void CloseInPlaceTranslation()
+    {
+        var original = _untranslatedBase;
+        var showing = !_pinShowsOriginal;
+        if (_editMode && original != null && showing)
+        {
+            ExitEditMode(true);
+        }
+
+        CancelInPlaceTranslation();
+        if (original != null && showing)
+        {
+            SetBaseImage(original);
+        }
+
+        _statusTimer?.Stop();
+        PinStatus.Visibility = Visibility.Collapsed;
+    }
+
     private void PinTargetLanguage_Click(object sender, RoutedEventArgs e) => ShowPinLanguage(original: false);
 
     private void CancelInPlaceTranslation()

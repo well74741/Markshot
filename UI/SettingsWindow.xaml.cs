@@ -287,6 +287,7 @@ public partial class SettingsWindow : Window
     {
         FloatEnabledCheck.IsChecked = _config.FloatButtonEnabled;
         FloatFullscreenCheck.IsChecked = _config.FloatHideFullscreen;
+        FloatCaptureHideCheck.IsChecked = _config.FloatHideWhileCapturing;
         var reorder = FillToolbarRow(FloatActionsRow, FloatButtonWindow.Actions, _config.FloatActionOrder, _config.FloatActionHidden);
         reorder.Reordered += _ =>
         {
@@ -1268,6 +1269,7 @@ public partial class SettingsWindow : Window
         _config.AskOpenFolderAfterSave = AskOpenFolderCheck.IsChecked == true;
         _config.EscExitsCapture = EscExitsCheck.IsChecked == true;
         _config.QuickDoubleClickCopy = QuickDoubleClickCheck.IsChecked == true;
+        _config.FloatHideWhileCapturing = FloatCaptureHideCheck.IsChecked != false;
         _config.HideToolChevrons = HideChevronsCheck.IsChecked == true;
 
         _config.SaveDirectory = SaveDirBox.Text.Trim();

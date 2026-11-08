@@ -745,6 +745,8 @@
                                       Content="显示悬浮按钮（单击截图，鼠标移上去展开更多）" Click="FloatEnabled_Click" />
                             <CheckBox x:Name="FloatFullscreenCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="全屏程序（视频、游戏等）在前面时自动隐藏" Click="FloatFullscreen_Click" />
+                            <CheckBox x:Name="FloatCaptureHideCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                      Content="截图时隐藏（关闭后截图界面上也显示；它本身不会出现在截图里。录屏时一直显示）" />
                             <Grid Margin="0,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="84" />

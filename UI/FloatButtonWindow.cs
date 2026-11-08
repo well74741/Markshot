@@ -28,6 +28,51 @@ public sealed class FloatButtonWindow : Window
     /// <summary>Whether the pins show (显示贴图 dims while they are all hidden).</summary>
     public Func<bool>? PinsShown { get; set; }
 
+    /// <summary>关闭所有贴图 was used and none is open now: the menu offers 打开所有贴图.</summary>
+    public Func<bool>? PinsClosedAll { get; set; }
+
+    /// <summary>
+    /// A screenshot was taken: the button shows it at its own size for half a second, then it slides away to the
+    /// right and the button's picture is there again. Hidden for the capture, it does this as it comes back.
+    /// </summary>
+    public void ShowThumbnail(BitmapSource shot)
+    {
+        _thumbTimer?.Stop();
+        _thumbSlide.BeginAnimation(TranslateTransform.XProperty, null);
+        _thumbSlide.X = 0;
+        _thumbImage.Source = shot;
+        _thumb.Width = _thumb.Height = MainSize * 0.86;
+        _thumb.HorizontalAlignment = HorizontalAlignment.Center;
+        _thumb.VerticalAlignment = VerticalAlignment.Center;
+        _thumb.Visibility = Visibility.Visible;
+        _icon.Opacity = 0;
+        _thumbTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _thumbTimer.Tick -= SlideThumbnailAway;
+        _thumbTimer.Tick += SlideThumbnailAway;
+        _thumbTimer.Start();
+    }
+
+    /// <summary>Tests: the screenshot is on the button now.</summary>
+    internal bool ShowingThumbnail => _thumb.Visibility == Visibility.Visible;
+
+    private void SlideThumbnailAway(object? sender, EventArgs e)
+    {
+        _thumbTimer?.Stop();
+        _icon.Opacity = _config.FloatIconOpacity;
+        var slide = new DoubleAnimation(0, MainSize + 4, new Duration(TimeSpan.FromMilliseconds(220))) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+        slide.Completed += (_, _) =>
+        {
+            if (_thumbTimer?.IsEnabled != true)
+            {
+                _thumb.Visibility = Visibility.Collapsed;
+                _thumbImage.Source = null;
+                _thumbSlide.BeginAnimation(TranslateTransform.XProperty, null);
+                _thumbSlide.X = 0;
+            }
+        };
+        _thumbSlide.BeginAnimation(TranslateTransform.XProperty, slide);
+    }
+
     private readonly AppConfig _config;
     private readonly Action<string> _run;
     private readonly Action _openSettings;
@@ -41,6 +86,11 @@ public sealed class FloatButtonWindow : Window
     private readonly StackPanel _items;
     private readonly ScaleTransform _plateScale = new(1, 1);
     private readonly ScaleTransform _pressScale = new(1, 1); // pressed: the button gives a little
+    private readonly Border _thumb;
+    private readonly System.Windows.Controls.Image _thumbImage;
+    private readonly TranslateTransform _thumbSlide = new();
+    private DispatcherTimer? _thumbTimer;
+    private long _holdMoveUntil; // the row folding at the start of a drag: the window waits (no drawing while it moves)
     private readonly ReorderBehavior _reorder;
     private readonly DispatcherTimer _fullscreenWatch = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private IntPtr _handle;
@@ -84,10 +134,23 @@ public sealed class FloatButtonWindow : Window
 
         _icon = new System.Windows.Controls.Image { Stretch = Stretch.Uniform };
         RenderOptions.SetBitmapScalingMode(_icon, BitmapScalingMode.HighQuality);
+        // A screenshot just taken shows here for a moment (same size), then slides away to the right.
+        _thumbImage = new System.Windows.Controls.Image { Stretch = Stretch.UniformToFill };
+        RenderOptions.SetBitmapScalingMode(_thumbImage, BitmapScalingMode.HighQuality);
+        _thumb = new Border
+        {
+            Child = _thumbImage,
+            CornerRadius = new CornerRadius(6),
+            BorderThickness = new Thickness(1.5),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0xE6, 0xFF, 0xFF, 0xFF)),
+            Visibility = Visibility.Collapsed,
+            RenderTransform = _thumbSlide,
+            IsHitTestVisible = false
+        };
         _main = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), // the whole round area takes the mouse
-            Child = _icon,
+            Child = new Grid { Children = { _icon, _thumb }, ClipToBounds = true },
             Cursor = Cursors.Hand,
             ToolTip = "单击截图 · 拖动移动 · 右键更多",
             RenderTransformOrigin = new Point(0.5, 0.5),
@@ -431,7 +494,7 @@ public sealed class FloatButtonWindow : Window
             return;
         }
 
-        var duration = new Duration(TimeSpan.FromMilliseconds(110));
+        var duration = new Duration(TimeSpan.FromMilliseconds(FoldMs));
         var fold = new DoubleAnimation(0.4, duration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
         var fade = new DoubleAnimation(0, duration);
         fade.Completed += (_, _) =>
@@ -448,10 +511,13 @@ public sealed class FloatButtonWindow : Window
     /// <summary>Tests: the row is folding away right now.</summary>
     internal bool Folding => _plate.Visibility == Visibility.Visible && !_expanded;
 
+    private const int FoldMs = 100;
+    private const double PressedScale = 0.86;
+
     /// <summary>Pressed in a little (and back).</summary>
     private void Press(bool down)
     {
-        var to = down ? 0.86 : 1.0;
+        var to = down ? PressedScale : 1.0;
         var motion = new DoubleAnimation(to, new Duration(TimeSpan.FromMilliseconds(down ? 70 : 120)))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
@@ -526,7 +592,22 @@ public sealed class FloatButtonWindow : Window
         if (!_moving)
         {
             _moving = true;
-            Collapse(animate: true); // the row draws in quickly (the button stays pressed in until let go)
+            // The row draws in quickly (the button stays pressed in until let go); nothing animates while the
+            // window then moves: a see-through window drawn and moved at once showed a frame on its path.
+            if (_expanded)
+            {
+                Collapse(animate: true);
+                _holdMoveUntil = Environment.TickCount64 + FoldMs + 15;
+            }
+
+            _pressScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            _pressScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            _pressScale.ScaleX = _pressScale.ScaleY = PressedScale;
+        }
+
+        if (Environment.TickCount64 < _holdMoveUntil)
+        {
+            return; // the next move after the fold catches up
         }
 
         MoveTo(_pressCenter.X + dx, _pressCenter.Y + dy, keepInside: false);
@@ -833,7 +914,14 @@ public sealed class FloatButtonWindow : Window
 
         Add("添加贴图…", "AddPin");
         Add("粘贴剪贴板", "PasteClipboard");
-        Add("关闭所有贴图", "CloseAllPins");
+        if (PinsClosedAll?.Invoke() == true)
+        {
+            Add("打开所有贴图", "OpenAllPins"); // the ones 关闭所有贴图 closed
+        }
+        else
+        {
+            Add("关闭所有贴图", "CloseAllPins");
+        }
         menu.Items.Add(new Separator());
         var hotkeys = new MenuItem { Header = "禁用所有快捷键", IsChecked = _config.HotkeysDisabled };
         hotkeys.Click += (_, _) => Run("ToggleHotkeys");

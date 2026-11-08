@@ -1524,7 +1524,18 @@ public sealed class NumberAnnotation : Annotation
         var outline = Outlined ? new Pen(Brushes.White, Math.Max(1.2, Radius * 0.1)) : null;
         if (Tail is { } tail && (tail - Center).Length > Radius * 1.3 + 8)
         {
+            // Turning the badge does not swing its arrow: the arrow keeps pointing where it was dragged.
+            var turned = Math.Abs(Rotation) >= 0.01;
+            if (turned)
+            {
+                dc.PushTransform(new RotateTransform(-Rotation, Center.X, Center.Y));
+            }
+
             DrawTail(dc, ink, tail, outline);
+            if (turned)
+            {
+                dc.Pop();
+            }
         }
 
         if (Hollow)
@@ -1610,10 +1621,15 @@ public sealed class NumberAnnotation : Annotation
             return false;
         }
 
-        // On the arrow.
+        // On the arrow (which does not turn with the badge; the point may come in the badge's turned frame).
         var line = tail - Center;
-        var t = Math.Clamp(Vector.Multiply(point - Center, line) / Math.Max(1e-6, line.LengthSquared), 0, 1);
-        return (point - (Center + line * t)).Length <= Math.Max(4, Radius * 0.2) + tolerance;
+        bool On(Point p)
+        {
+            var t = Math.Clamp(Vector.Multiply(p - Center, line) / Math.Max(1e-6, line.LengthSquared), 0, 1);
+            return (p - (Center + line * t)).Length <= Math.Max(4, Radius * 0.2) + tolerance;
+        }
+
+        return On(point) || (Math.Abs(Rotation) >= 0.01 && On(GeometryUtil.Rotate(point, Center, Rotation)));
     }
 }
 

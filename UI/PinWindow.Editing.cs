@@ -1908,6 +1908,7 @@ public partial class PinWindow
             var bounds = hit.Bounds;
             bounds.Inflate(4 / (1.0 / _zoom), 4 / (1.0 / _zoom));
             Editor.HoverBounds = bounds;
+            Editor.HoverElement = hit; // drawn as its selection frame will be
             Editor.HoverLabel = _tool == AnnotationTool.Text ? "单击编辑 · 拖动移动" : "点击选中并继续编辑";
             Editor.ShowHover = true;
             InputLayer.Cursor = _tool switch
@@ -1933,6 +1934,7 @@ public partial class PinWindow
 
         Editor.ShowHover = false;
         Editor.HoverBounds = Rect.Empty;
+        Editor.HoverElement = null;
         Editor.HoverLabel = null;
         Editor.InvalidateVisual();
     }

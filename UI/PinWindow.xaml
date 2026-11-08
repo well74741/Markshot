@@ -60,12 +60,16 @@
             <Border x:Name="PinLanguageSwitch" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
                     Background="{DynamicResource T_F01C1C1C}" BorderBrush="{DynamicResource T_33FFFFFF}" BorderThickness="1"
                     CornerRadius="7" Padding="4">
-                <Border Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2">
-                    <StackPanel Orientation="Horizontal">
-                        <ToggleButton x:Name="PinSourceButton" Style="{StaticResource LanguageSegment}" Click="PinSourceLanguage_Click" ToolTip="显示原文" />
-                        <ToggleButton x:Name="PinTargetButton" Style="{StaticResource LanguageSegment}" Click="PinTargetLanguage_Click" ToolTip="显示译文" />
-                    </StackPanel>
-                </Border>
+                <StackPanel Orientation="Horizontal">
+                    <Border Background="{DynamicResource T_FF2A2A2A}" CornerRadius="5" Padding="2">
+                        <StackPanel Orientation="Horizontal">
+                            <ToggleButton x:Name="PinSourceButton" Style="{StaticResource LanguageSegment}" Click="PinSourceLanguage_Click" ToolTip="显示原文" />
+                            <ToggleButton x:Name="PinTargetButton" Style="{StaticResource LanguageSegment}" Click="PinTargetLanguage_Click" ToolTip="显示译文" />
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="PinTranslateClose" Style="{StaticResource ToolButton}" Content="✕" FontSize="11" Padding="7,2" Margin="3,0,0,0"
+                            Click="PinCloseTranslation_Click" ToolTip="关闭原位翻译" />
+                </StackPanel>
             </Border>
             <Border x:Name="PinStatus" Visibility="Collapsed" IsHitTestVisible="False"
                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"

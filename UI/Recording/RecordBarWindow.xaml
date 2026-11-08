@@ -51,6 +51,28 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- 截屏: as big as 开始, neutral. -->
+        <Style x:Key="SnapButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{DynamicResource T_1AFFFFFF}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource T_33FFFFFF}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <!-- Rounded on every Windows: the DWM corner preference exists on Windows 11 only; elsewhere the window region is
@@ -82,6 +104,12 @@
                     <Button x:Name="DelayButton" Style="{StaticResource ToolButton}" Height="30" Padding="4,0" Click="Delay_Click" ToolTip="延时秒数" />
                     <Border Style="{StaticResource Sep}" />
                 </StackPanel>
+                <Button x:Name="SnapButton" Style="{StaticResource SnapButton}" Margin="0,0,4,0" Click="Snap_Click" ToolTip="截取录屏框里的画面并复制（录制中也可以）">
+                    <StackPanel Orientation="Horizontal">
+                        <Border Style="{StaticResource IconCaptureMask}" Width="14" Height="14" VerticalAlignment="Center" />
+                        <TextBlock Text="截屏" Foreground="{DynamicResource T_FFFFFFFF}" FontSize="12.5" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
                 <Button x:Name="StartButton" Style="{StaticResource RecButton}" Click="Start_Click">
                     <StackPanel Orientation="Horizontal">
                         <Border x:Name="StartGlyph" Width="10" Height="10" CornerRadius="5" Background="#FF4D4F" VerticalAlignment="Center" />

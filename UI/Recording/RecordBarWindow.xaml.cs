@@ -569,6 +569,8 @@ public partial class RecordBarWindow : Window
         Refresh();
     }
 
+    private void Snap_Click(object sender, RoutedEventArgs e) => _controller.Snapshot();
+
     private void Start_Click(object sender, RoutedEventArgs e)
     {
         if (_controller.Phase == RecordPhase.Setup)

@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.64`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.65`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,20 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.65 0.8.65 变更
+
+- 悬浮按钮拖动闪帧：拖动开始时浮窗收起动画 / 按下缩放动画与窗口移动同时进行（透明窗口边画边移会在路径上留一帧）。现在先收起（`FoldMs` 100ms 内窗口不动，`_holdMoveUntil`），按下缩放直接到位，移动时没有动画。
+- 缩略图：`FloatButtonWindow.ShowThumbnail`（`_thumb` 叠在图标上、同尺寸，500ms 后 220ms 向右滑出，`_main` 内容 ClipToBounds）。`App.NoteScreenshot`：截图结束（Resume 之后，隐藏的按钮淡入时一起）、Win+鼠标、长截图、录屏截屏都调用。
+- `FloatHideWhileCapturing`（默认 true，设置「截图时隐藏」）：关闭时截图仍先隐藏再取屏，覆盖窗口 ContentRendered 后 `Resume`。
+- 悬浮菜单：`PinsClosedAll`（没有打开的贴图且 `_closedAll` 里还有可恢复的）→「打开所有贴图」（`OpenAllPins` 逐个 `RestorePinEntry`）。`CloseAllPins` 记下这次关掉的条目。
+- 贴图：右键「关闭原位翻译」（翻译中 / 已翻译）；语言切换窗口加 ✕（`CloseInPlaceTranslation`：回到原图）。截图：`TranslateClose`（关掉原位翻译开关）。
+  截图的语言条固定在选区右上方居右（屏幕顶端放不下时放选区内），不再绕工具栏换位置。「清除批注内容」只在有非图片元素时出现。
+- F：`ResetPinImageTransform` 先算出翻转/旋转合成（2×2 整数矩阵：镜像 + 角度），`_quietOrientation` 下无动画地逐步撤销，再一次 240ms 从原外观（含缩放）过渡到原始。`ResetMotion` 供测试。
+- 编辑器悬停：`AnnotationEditor.HoverElement` → `DrawHoverFrame` 用与 `DrawFrame` 相同的 `SelectionFrame` + 旋转画（无手柄）；悬停在已选中元素上不画。
+- 序号旋转：`NumberAnnotation.Draw` 画箭头时反向旋转（箭头不随序号转），`HitTest` 两种坐标都试。
+- 录屏：`RecordFrameWindow.PrepareOpen`（显示前不透明度 0，只淡入一次）。工具栏「截屏」（`SnapButton`，与开始同高同内边距，`IconCaptureMask`）→ `RecorderController.Snapshot`：截录屏区域、复制、`Flash`（线条 170ms 白色）、通知按钮缩略图。
+- Logo：`tools/colorize_logo.py` 把 `tools/logo_white.ico`（原白色像素图）每个尺寸按对角渐变（青 → 蓝 → 紫 → 粉 → 橙）上色、保留明暗和透明，写 `Assets/markshot.ico`、`markshot_dark.ico`（同一个）、`markshot.png`。
 
 ## 8.1.64 0.8.64 变更
 

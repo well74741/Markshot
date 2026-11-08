@@ -148,6 +148,28 @@ internal sealed class RecordFrameWindow : Window
 
     public void Placed() => _view.InvalidateVisual();
 
+    /// <summary>Before it first shows: see-through, so it fades in only once.</summary>
+    public void PrepareOpen() => _view.Opacity = 0;
+
+    private long _flashUntil;
+
+    /// <summary>截屏: the line turns white for a moment and back.</summary>
+    public void Flash()
+    {
+        _flashUntil = Environment.TickCount64 + 170;
+        _view.InvalidateVisual();
+        var back = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+        back.Tick += (_, _) =>
+        {
+            back.Stop();
+            _view.InvalidateVisual();
+        };
+        back.Start();
+    }
+
+    /// <summary>The line is white (just after a 截屏).</summary>
+    public bool Flashing => Environment.TickCount64 < _flashUntil;
+
     /// <summary>The frame settles in when the recorder opens (1.035 → 1, fading in).</summary>
     public void PlayOpen()
     {
@@ -348,7 +370,7 @@ internal sealed class RecordFrameWindow : Window
                 dc.DrawGeometry(HitBrush, null, ring);
             }
 
-            var color = phase switch
+            var color = _window.Flashing ? Colors.White : phase switch
             {
                 RecordPhase.Recording or RecordPhase.Finishing => Red,
                 RecordPhase.Paused => Amber,

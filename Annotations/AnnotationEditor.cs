@@ -126,6 +126,9 @@ public sealed class AnnotationEditor : FrameworkElement
 
     public Rect HoverBounds { get; set; } = Rect.Empty;
 
+    /// <summary>The element under the pointer: its preview outline is the selection frame's own (same size, same turn).</summary>
+    public Annotation? HoverElement { get; set; }
+
     public string? HoverLabel { get; set; }
 
     public bool ShowHover { get; set; }
@@ -213,7 +216,11 @@ public sealed class AnnotationEditor : FrameworkElement
             dc.Pop();
         }
 
-        if (ShowHover && HoverBounds.Width > 0)
+        if (ShowHover && HoverElement != null && !ReferenceEquals(HoverElement, Selected) && !ReferenceEquals(HoverElement, EditingText))
+        {
+            DrawHoverFrame(dc, HoverElement, HoverLabel);
+        }
+        else if (ShowHover && HoverElement == null && HoverBounds.Width > 0)
         {
             DrawHover(dc, HoverBounds, HoverLabel);
         }
@@ -657,6 +664,11 @@ public sealed class AnnotationEditor : FrameworkElement
             return;
         }
 
+        DrawHoverLabel(dc, bounds, label!, unit);
+    }
+
+    private static void DrawHoverLabel(DrawingContext dc, Rect bounds, string label, double unit)
+    {
         var text = new FormattedText(
             label!,
             CultureInfo.CurrentUICulture,
@@ -685,6 +697,25 @@ public sealed class AnnotationEditor : FrameworkElement
             3 * unit);
 
         dc.DrawText(text, new Point(labelRect.X + 6 * unit, labelRect.Y + 3 * unit));
+    }
+
+    /// <summary>The preview of an element under the pointer: exactly where its selection frame will be (no handles).</summary>
+    private void DrawHoverFrame(DrawingContext dc, Annotation annotation, string? label)
+    {
+        var unit = Scale;
+        var frame = SelectionFrame(annotation.Bounds, unit);
+        var center = new Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
+        dc.PushTransform(new RotateTransform(annotation.Rotation, center.X, center.Y));
+        dc.DrawRectangle(null, new Pen(Accent, 3 * unit) { LineJoin = PenLineJoin.Miter }, frame);
+        dc.Pop();
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            // The label above the turned frame's outline.
+            var corners = new[] { frame.TopLeft, frame.TopRight, frame.BottomLeft, frame.BottomRight }
+                .Select(p => RotatePoint(p, center, annotation.Rotation)).ToList();
+            var outline = new Rect(new Point(corners.Min(p => p.X), corners.Min(p => p.Y)), new Point(corners.Max(p => p.X), corners.Max(p => p.Y)));
+            DrawHoverLabel(dc, outline, label!, unit);
+        }
     }
 
     private void DrawFrame(DrawingContext dc, Annotation annotation, bool editing)

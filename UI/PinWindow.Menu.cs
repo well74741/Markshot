@@ -48,10 +48,12 @@ public partial class PinWindow
         if (_translateCts != null)
         {
             menu.Items.Add(new MenuItem { Header = "正在原位翻译…", IsEnabled = false });
+            Add("关闭原位翻译", CloseInPlaceTranslation);
         }
         else if (_untranslatedBase != null && _translatedBase != null)
         {
             Add(_pinShowsOriginal ? "显示译文" : "显示原文", () => ShowPinLanguage(!_pinShowsOriginal));
+            Add("关闭原位翻译", CloseInPlaceTranslation);
         }
         else
         {
@@ -63,9 +65,9 @@ public partial class PinWindow
 
         Add(_editMode ? "完成标注" : "编辑标注", ToggleEditing, gesture: "Space");
         Add("在图片编辑器里打开", OpenInEditor);
-        if (Editor.Items.Count > 0)
+        if (Editor.Items.Any(item => item is not ImageAnnotation))
         {
-            Add("清除批注内容", ClearAnnotations);
+            Add("清除批注内容", ClearAnnotations); // only once something is annotated
         }
 
         Separator();
