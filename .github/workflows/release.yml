@@ -30,6 +30,12 @@ jobs:
             choco install innosetup --no-progress -y
           }
 
+      # ffmpeg (for the recorder) is fetched once and kept: its download host fails now and then.
+      - uses: actions/cache@v4
+        with:
+          path: tools/deps/ffmpeg
+          key: ffmpeg-b6.1.1-win32-x64
+
       - name: Tests (a release is only built when they pass)
         shell: pwsh
         run: ./tests/run.ps1

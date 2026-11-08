@@ -33,9 +33,10 @@ function Fetch($url, $file) {
     for ($try = 1; ; $try++) {
         try { Invoke-WebRequest $url -OutFile $file -UseBasicParsing; return }
         catch {
-            if ($try -ge 6) { throw }
-            Write-Host "  下载失败（$($_.Exception.Message)），$($try * 10) 秒后重试…"
-            Start-Sleep -Seconds ($try * 10)
+            if ($try -ge 10) { throw }
+            $wait = [Math]::Min(60, $try * 15)
+            Write-Host "  下载失败（$($_.Exception.Message)），$wait 秒后重试…"
+            Start-Sleep -Seconds $wait
         }
     }
 }
