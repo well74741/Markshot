@@ -317,7 +317,25 @@ static class Round70Test
         }
 
         // ---- text recognition: tables, symbols and formulas, columns, long pictures (the real recogniser)
-        if (Environment.GetEnvironmentVariable("R70") != "noocr")
+        // The layout alone (no recogniser needed): a table, a fraction, two columns of text.
+        {
+            Markshot.Services.OcrTextBlock B(string t, int x, int y, int w, int h = 20) => new(t, new Int32Rect(x, y, w, h));
+            var doc = Markshot.Services.OcrLayout.Analyze(new[]
+            {
+                B("姓名", 10, 10, 40), B("部门", 150, 10, 40), B("工号", 290, 10, 40),
+                B("张三", 10, 50, 40), B("设计部", 150, 50, 60), B("1024", 290, 50, 40),
+                B("李四", 10, 90, 40), B("研发部", 150, 90, 60), B("2048", 290, 90, 40),
+            });
+            Check(doc.Tables.Count == 1 && doc.Tables[0].Rows.Count == 3 && doc.Tables[0].Rows[2][1] == "研发部", "layout: rows lined up in columns are a table");
+            var fraction = Markshot.Services.OcrLayout.Analyze(new[] { B("y=", 10, 32, 30), B("a+b", 50, 22, 40, 18), B("2c", 56, 44, 26, 18), B("+1", 104, 32, 24) }).Text;
+            Check(fraction.Contains("(a+b)/2c"), $"layout: a stacked fraction is one line ({fraction})");
+            var line = "第一栏的一行文字写得比较长一些";
+            var columns = Markshot.Services.OcrLayout.Analyze(Enumerable.Range(0, 3).SelectMany(i => new[] { B("左" + i + line, 10, 10 + i * 30, 300), B("右" + i + line, 420, 10 + i * 30, 300) }).ToList()).Text;
+            Check(columns.IndexOf("左2", StringComparison.Ordinal) < columns.IndexOf("右0", StringComparison.Ordinal), "layout: two columns of text are read one after the other");
+        }
+
+        // (the recognition models are shipped with Markshot; a build without them — GitHub's — skips the real recogniser)
+        if (Environment.GetEnvironmentVariable("R70") != "noocr" && File.Exists(System.IO.Path.Combine(AppContext.BaseDirectory, "models", "v5", "ch_PP-OCRv5_mobile_det.onnx")))
         {
             BitmapSource Draw(int width, int height, Action<DrawingContext> draw)
             {
