@@ -618,7 +618,7 @@ public partial class OverlayWindow
 
         _hoverTarget = target;
         // Inside the window only of the program in use when the capture started; any other window is framed whole.
-        if (!config.DetectElements || (_detailWindow != target.Handle && (config.DetectRange <= 1 || !IsActiveProgram(target.Handle))))
+        if (!config.DetectElements || target.Own || (_detailWindow != target.Handle && (config.DetectRange <= 1 || !IsActiveProgram(target.Handle))))
         {
             SetHoverChain(new List<HoverCandidate> { new(window, target.Label) });
             return;
@@ -977,7 +977,7 @@ public partial class OverlayWindow
         }
 
         var opened = _detailWindow == target.Handle || (App.Config.DetectRange > 1 && IsActiveProgram(target.Handle));
-        if (opened || !App.Config.DetectElements)
+        if (opened || !App.Config.DetectElements || target.Own)
         {
             ShowWheelTip("这里没有更小的元素");
             return true;

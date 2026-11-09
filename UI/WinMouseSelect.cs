@@ -410,6 +410,14 @@ public sealed class WinMouseSelect
         }
 
         var area = Area;
+        if (_frame.Content is Border border)
+        {
+            // Rounded as the result will be (the capture's 圆角).
+            var radius = Math.Min(Math.Max(0, App.Config?.CaptureCornerRadius ?? 0), Math.Min(area.Width, area.Height) / 2.0);
+            var scale = VisualTreeHelper.GetDpi(_frame).DpiScaleX;
+            border.CornerRadius = new CornerRadius(radius / scale);
+        }
+
         var handle = new WindowInteropHelper(_frame).Handle;
         Native.SetWindowPos(handle, Native.HWND_TOPMOST, area.X, area.Y, Math.Max(2, area.Width), Math.Max(2, area.Height),
             Native.SWP_NOACTIVATE | 0x0040 /* SHOWWINDOW */);

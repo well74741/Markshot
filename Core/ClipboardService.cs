@@ -65,6 +65,51 @@ public static class ClipboardService
         }
     }
 
+    /// <summary>Tables: tab-separated text and an HTML table (Excel / Word paste them as tables).</summary>
+    public static bool CopyTables(string tsv, string htmlTable)
+    {
+        // The raw clipboard, as for pictures (open for a moment only): Unicode text and the HTML format.
+        var text = System.Text.Encoding.Unicode.GetBytes(tsv + "\0");
+        var html = System.Text.Encoding.UTF8.GetBytes(HtmlFragment(htmlTable) + "\0");
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            if (OpenClipboard(IntPtr.Zero))
+            {
+                try
+                {
+                    EmptyClipboard();
+                    var ok = Put(13 /* CF_UNICODETEXT */, text);
+                    Put(CfHtml, html);
+                    return ok;
+                }
+                finally
+                {
+                    CloseClipboard();
+                }
+            }
+
+            Thread.Sleep(attempt < 10 ? 15 : 40);
+        }
+
+        Log.Error($"复制表格失败：剪贴板被其他程序占用（{OpenClipboardOwner()}）。");
+        return false;
+    }
+
+    /// <summary>The clipboard's HTML format: a header with byte offsets, then the fragment.</summary>
+    public static string HtmlFragment(string fragment)
+    {
+        const string Header = "Version:0.9\r\nStartHTML:{0:D10}\r\nEndHTML:{1:D10}\r\nStartFragment:{2:D10}\r\nEndFragment:{3:D10}\r\n";
+        const string Start = "<html><head><meta charset=\"utf-8\"></head><body><!--StartFragment-->";
+        const string End = "<!--EndFragment--></body></html>";
+        var headerLength = string.Format(Header, 0, 0, 0, 0).Length;
+        var utf8 = System.Text.Encoding.UTF8;
+        var startHtml = headerLength;
+        var startFragment = startHtml + utf8.GetByteCount(Start);
+        var endFragment = startFragment + utf8.GetByteCount(fragment);
+        var endHtml = endFragment + utf8.GetByteCount(End);
+        return string.Format(Header, startHtml, endHtml, startFragment, endFragment) + Start + fragment + End;
+    }
+
     public static bool HasImage
     {
         get
@@ -158,6 +203,7 @@ public static class ClipboardService
     private const uint CF_HDROP = 15;
     private const uint GMEM_MOVEABLE = 0x0002;
     private static readonly uint CfPng = RegisterClipboardFormat("PNG");
+    private static readonly uint CfHtml = RegisterClipboardFormat("HTML Format");
 
     /// <summary>Opens the clipboard (a short wait if another program has it), empties it and puts the picture in.</summary>
     private static bool TrySetRaw(byte[] dib, byte[] png, string? file)

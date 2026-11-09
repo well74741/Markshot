@@ -2045,13 +2045,44 @@ public partial class PinWindow
         Editor.InvalidateVisual();
     }
 
+    /// <summary>
+    /// The pin's text is out of the way: text selection is off in the settings, or the 拖动贴图 key is held (a modifier,
+    /// a combination of them, or any other key set in the settings).
+    /// </summary>
     private static bool IsTextBypassHeld()
     {
-        var setting = App.Config.TextBypassModifier ?? "Alt";
+        if (!App.Config.PinTextSelect)
+        {
+            return true;
+        }
+
+        var setting = App.Config.TextBypassModifier;
+        if (string.IsNullOrWhiteSpace(setting))
+        {
+            setting = "Alt";
+        }
+
         var modifiers = Keyboard.Modifiers;
-        return (setting.Contains("Alt", StringComparison.OrdinalIgnoreCase) && (modifiers & ModifierKeys.Alt) != 0)
-               || (setting.Contains("Ctrl", StringComparison.OrdinalIgnoreCase) && (modifiers & ModifierKeys.Control) != 0)
-               || (setting.Contains("Shift", StringComparison.OrdinalIgnoreCase) && (modifiers & ModifierKeys.Shift) != 0);
+        var held = false;
+        foreach (var part in setting.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            var down = part.ToUpperInvariant() switch
+            {
+                "ALT" => (modifiers & ModifierKeys.Alt) != 0,
+                "CTRL" or "CONTROL" => (modifiers & ModifierKeys.Control) != 0,
+                "SHIFT" => (modifiers & ModifierKeys.Shift) != 0,
+                "SPACE" => Keyboard.IsKeyDown(Key.Space),
+                _ => Enum.TryParse<Key>(part, true, out var key) && Keyboard.IsKeyDown(key)
+            };
+            if (!down)
+            {
+                return false; // every part of a combination
+            }
+
+            held = true;
+        }
+
+        return held;
     }
 
     /// <summary>Removes every annotation from the pin (undoable while editing).</summary>

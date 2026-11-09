@@ -16,16 +16,16 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Patch releases count in two digits from 0.8.01 on (display version);
          the numeric Windows version fields carry 0.8.1.0. -->
-    <Version>0.8.69</Version>
-    <InformationalVersion>0.8.69</InformationalVersion>
+    <Version>0.8.70</Version>
+    <InformationalVersion>0.8.70</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>Markshot</Product>
-    <Company>well74741</Company>
-    <Authors>well74741</Authors>
-    <Copyright>Copyright © 2026 well74741</Copyright>
+    <Company>guoqing.wu</Company>
+    <Authors>guoqing.wu (well74741)</Authors>
+    <Copyright>Copyright © 2026 guoqing.wu (well74741)</Copyright>
     <Description>Markshot — 截图、批注、贴图、本地 OCR 与原位翻译</Description>
-    <AssemblyVersion>0.8.69.0</AssemblyVersion>
-    <FileVersion>0.8.69.0</FileVersion>
+    <AssemblyVersion>0.8.70.0</AssemblyVersion>
+    <FileVersion>0.8.70.0</FileVersion>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
@@ -68,6 +68,14 @@
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
     <Content Include="models\v5\ppocrv5_dict.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 帮助: one web page (tools\make_help.py builds it), opened from the tray menu and the settings window's "?". -->
+    <Content Include="help\index.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>

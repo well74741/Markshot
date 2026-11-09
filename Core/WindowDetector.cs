@@ -8,6 +8,9 @@ public sealed class WindowTarget
     public Rect Bounds { get; init; }
 
     public string Label { get; init; } = string.Empty;
+
+    /// <summary>One of Markshot's own windows (settings, editor…): framed whole, never looked into.</summary>
+    public bool Own { get; init; }
 }
 
 /// <summary>
@@ -31,9 +34,9 @@ public static class WindowDetector
             }
 
             Native.GetWindowThreadProcessId(handle, out var pid);
-            if (pid == ownPid || !Shown(handle))
+            if ((pid == ownPid && !OwnFramed(handle)) || !Shown(handle))
             {
-                return true; // Markshot's own, or a window that is not really on the screen
+                return true; // Markshot's capture / pins / buttons, or a window that is not really on the screen
             }
 
             // The window as drawn (DWM): GetWindowRect includes the invisible resize borders around it (several pixels
@@ -101,8 +104,16 @@ public static class WindowDetector
             }
         }
 
-        return new WindowTarget { Handle = handle2, Bounds = bounds, Label = label };
+        Native.GetWindowThreadProcessId(found, out var foundPid);
+        return new WindowTarget { Handle = handle2, Bounds = bounds, Label = label, Own = foundPid == ownPid };
     }
+
+    /// <summary>
+    /// Markshot's own windows that can be captured like any program's: those with a title bar (settings, editor,
+    /// history, text results). The capture itself, pins, toolbars and the floating button have none.
+    /// </summary>
+    private static bool OwnFramed(IntPtr handle) =>
+        (Native.GetWindowLongPtr(handle, -16 /* GWL_STYLE */).ToInt64() & 0x00C00000 /* WS_CAPTION */) == 0x00C00000;
 
     /// <summary>
     /// A window really on the screen: not cloaked (a suspended store app, a window on another virtual desktop — "visible"

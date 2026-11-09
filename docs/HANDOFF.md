@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.69`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.70`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,32 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.70 0.8.70 变更
+
+- 帮助：`tools/make_help.py` 生成 `help/index.html`（单文件：文字、按钮图标与 logo 内嵌，动图是 SVG + SMIL，`?demo=名字&t=秒` 定格单个动图便于检查）。
+  csproj 以 Content 复制到 exe 旁；`Core/HelpDocument.Open` 用默认浏览器打开（没有本地页面时打开 GitHub README；`OpenOverride` 供测试）。入口：托盘「帮助」、设置标题栏「?」。
+  改版本号后要重新运行脚本（round70 检查页面版本）。
+- 设置窗口改为自绘标题栏（`WindowChrome`，CaptionHeight 按 SettingsFactor 缩放，GlassFrameThickness 0,0,0,1 保留阴影）：标题栏颜色随主题即时变化，
+  修复系统标题栏换主题后保持旧色、拖动时标题像被选中、按钮消失（直到窗口重新激活）；帮助 / 最小化 / 最大化 / 关闭按钮自绘，最大化时 BorderThickness 补上溢出屏幕的边框。
+  其他窗口 `Theme.ApplyTitleBar` 设置后 SWP_FRAMECHANGED + RedrawWindow 立即重绘非客户区。
+- 窗口识别：本进程带标题栏（WS_CAPTION）的窗口（设置、编辑器、历史、文字识别）也能识别，`WindowTarget.Own` 时只框整个窗口、不做 UI Automation（自己进程的 UIA 可能卡住）。
+- 长截图：
+  - 精确匹配只认重叠区内大部分变化格子都对得上的距离（`Explained`，≥60%）：原来不一致的列直接不计，列表里每项相同的头像列能撑起一个错误距离 → 重复拼接。
+  - 精确匹配不够精确（< 97%，小数滚动时文字中间行上下一行也相同）时用容差匹配细化，最小二乘求小数部分 `_phase`；容差粗扫也用“介于两行之间”判断（半像素混合时原先粗扫就丢掉了正确距离）。
+  - 每帧位置按已拼好的内容校准（`_bodyMeans` + `Anchor` ±2 行，误差不累积）；跳得太远时 `LocateLoosely` 按亮度在两屏内找回（有相似的其他位置则放弃，等下一帧）。
+  - 固定列判断用“介于两像素之间”（小数滚动时头像列、页边被当成固定侧栏裁掉）；“只有局部在变”只统计有内容的格子；抓帧 100 → 70ms。
+  - round70 模拟：整数 / 小数、来回滚、大步长、相似列表项、1100×860 大区域，逐行核对结果（0 错行），大区域约 29ms/帧。
+- 文字识别：`Services/OcrLayout.Analyze` → `OcrDocument(Text, Tables)`（`OcrService.Layout` 只取 Text，原有行 / 缩进 / 段落规则不变）。
+  行内间隔 > 1.5 行高分单元格；连续 ≥2 行、每行 ≥2 格、按“没有单元格跨过的竖向空隙”切出的列对齐（≥70% 行）= 表格；列 ≤3、每列 ≥8 行高宽、
+  行几乎占满列宽、平均 ≥12 字 = 分栏正文（按栏输出）。分数：上下两个框横向重叠 ≥60%、间隔小，旁边有一个框的中线正好在两者之间（表格单元格与行同高，不会误判）→ `(a)/(b)`。
+  长图（长边 > 2200 且 > 短边 1.6 倍）按长边切成 max(1400, 短边) 的段、重叠 160，框中线落在本段“自有范围”才保留（识别器检测时会把图缩到约 1000px）。
+  PP-OCRv5 中文字典本身含 π ± ≤ ≥ √ ∑ ² ℃ 等，未做替换；上下标在同一行时识别成普通字符（如 r2），多层公式只能读出文字。
+  `TranslationWindow.ShowTables`：「表格」开关 + Grid（首行加粗、单元格可选中）；复制时 `ClipboardService.CopyTables`（Unicode 文本 + CF_HTML）。
+- 长截图工具条加「文字识别」（`ScrollCaptureAction.Ocr` → `ShowOcr`）。
+- 贴图：`AppConfig.PinTextSelect`（默认开；关闭时 `RefreshTextLayer` 不识别、`IsTextBypassHeld` 恒真）；`TextBypassModifier` 改为按键录制框（单独修饰键、组合或普通键都可）。
+- 帮助页：箭头头部用 animateMotion rotate=auto 沿线移动；新增套索、文字识别（表格）、录屏、图片编辑器四个动图；特色功能 `<strong class="star">` 加粗高亮；「关于」：作者 guoqing.wu、版权、GitHub、微信二维码（`donate_qr_wechat_light.png`，白底便于扫码）。
+- Win + 鼠标：复制 / 贴图沿用 `CaptureCornerRadius`（`ImageOps.RoundCorners`，贴图 cornerRadius 同步），划的框显示同样圆角。
 
 ## 8.1.69 0.8.69 变更
 

@@ -276,6 +276,11 @@ public partial class PinWindow
     {
         var version = ++_textLayerVersion;
         TextLayer.Reset();
+        if (!App.Config.PinTextSelect)
+        {
+            return; // no text to select: nothing recognised (no work in the background either)
+        }
+
         var image = SourceImage;
         try
         {

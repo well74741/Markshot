@@ -110,9 +110,13 @@ public partial class TranslationWindow : Window
             return;
         }
 
-        if (ClipboardService.CopyText(SourceBox.Text))
+        var copied = TableToggle.IsChecked == true && _tables.Count > 0
+            ? ClipboardService.CopyTables(string.Join(Environment.NewLine + Environment.NewLine, _tables.Select(table => table.ToTsv())),
+                string.Join("<br>", _tables.Select(table => table.ToHtml())))
+            : ClipboardService.CopyText(SourceBox.Text);
+        if (copied)
         {
-            SetStatus("原文已复制", StatusKind.Done);
+            SetStatus(TableToggle.IsChecked == true ? "表格已复制，可直接粘贴到 Excel / Word" : "原文已复制", StatusKind.Done);
         }
         else
         {
@@ -133,13 +137,15 @@ public partial class TranslationWindow : Window
 
         try
         {
-            var text = await OcrService.RecognizeAsync(_image, App.Config.OcrLanguage);
+            var document = await OcrService.RecognizeDocumentAsync(_image, App.Config.OcrLanguage);
             if (_closed)
             {
                 return;
             }
 
+            var text = document.Text;
             SourceBox.Text = text;
+            ShowTables(document.Tables);
 
             if (string.IsNullOrWhiteSpace(text))
             {
@@ -164,6 +170,83 @@ public partial class TranslationWindow : Window
                 SetStatus("识别失败：" + ex.Message, StatusKind.Error);
             }
         }
+    }
+
+    private IReadOnlyList<OcrTable> _tables = Array.Empty<OcrTable>();
+
+    /// <summary>Tests: the tables found.</summary>
+    public IReadOnlyList<OcrTable> Tables => _tables;
+
+    /// <summary>
+    /// Tables found in the picture: a 表格 switch over the text, and the tables drawn as tables (header row bold, lines
+    /// between cells, every cell selectable). The text keeps them tab-separated.
+    /// </summary>
+    public void ShowTables(IReadOnlyList<OcrTable> tables)
+    {
+        _tables = tables;
+        TablePanel.Children.Clear();
+        TableToggle.Visibility = tables.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (tables.Count == 0)
+        {
+            TableToggle.IsChecked = false;
+            return;
+        }
+
+        foreach (var table in tables)
+        {
+            var grid = new Grid { Margin = new Thickness(0, 0, 0, 14), HorizontalAlignment = HorizontalAlignment.Left };
+            for (var c = 0; c < table.ColumnCount; c++)
+            {
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            }
+
+            for (var r = 0; r < table.Rows.Count; r++)
+            {
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                for (var c = 0; c < table.ColumnCount; c++)
+                {
+                    var cell = new TextBox
+                    {
+                        Text = c < table.Rows[r].Count ? table.Rows[r][c] : "",
+                        IsReadOnly = true,
+                        BorderThickness = new Thickness(0),
+                        Background = Brushes.Transparent,
+                        FontSize = 13,
+                        FontWeight = r == 0 ? FontWeights.SemiBold : FontWeights.Normal,
+                        MaxWidth = 260,
+                        TextWrapping = TextWrapping.Wrap,
+                        Padding = new Thickness(6, 4, 6, 4)
+                    };
+                    cell.SetResourceReference(ForegroundProperty, Theme.Key(0xFFF0F0F0));
+                    cell.SelectionBrush = (Brush)FindResource("Accent");
+                    var border = new Border
+                    {
+                        Child = cell,
+                        BorderThickness = new Thickness(c == 0 ? 1 : 0, r == 0 ? 1 : 0, 1, 1)
+                    };
+                    border.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x33FFFFFF));
+                    if (r == 0)
+                    {
+                        border.SetResourceReference(Border.BackgroundProperty, Theme.Key(0x14FFFFFF));
+                    }
+
+                    Grid.SetRow(border, r);
+                    Grid.SetColumn(border, c);
+                    grid.Children.Add(border);
+                }
+            }
+
+            TablePanel.Children.Add(grid);
+        }
+
+        TableToggle.IsChecked = true; // a table read: shown as one
+    }
+
+    private void TableToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        var table = TableToggle.IsChecked == true;
+        TableView.Visibility = table ? Visibility.Visible : Visibility.Collapsed;
+        SourceBox.Visibility = table ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>The 二维码 / 条形码 in the picture, read beside the text recognition.</summary>

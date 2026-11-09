@@ -17,13 +17,14 @@ public enum ScrollState
 public enum ScrollCaptureAction
 {
     Edit,
+    Ocr,
     Copy,
     Save,
     Cancel
 }
 
 /// <summary>
-/// 长截图: the chosen area is grabbed ten times a second while the user scrolls its content
+/// 长截图: the chosen area is grabbed about 14 times a second while the user scrolls its content
 /// (down, or sideways); <see cref="ScrollStitcher"/> appends what scrolled into view (sideways:
 /// the frames are transposed, stitched the same way and turned back). A frame marks the area (it
 /// lets every click and wheel through), a toolbar under it switches 竖向 / 横向 (Tab) and ends with
@@ -51,7 +52,8 @@ public sealed class ScrollCaptureSession
         _frame = new ScrollFrameWindow(rect);
         _preview = new ScrollPreviewWindow(rect);
         _bar = new ScrollBarWindow(this, rect);
-        _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(100) };
+        // ~14 frames a second: a big wheel step (smooth scrolling animates it) is seen half way, with overlap to stitch.
+        _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(70) };
         _timer.Tick += (_, _) => Grab();
     }
 
@@ -457,6 +459,7 @@ public sealed class ScrollCaptureSession
             row.Children.Add(_vertical);
             row.Children.Add(_horizontal);
             row.Children.Add(separator);
+            row.Children.Add(Action("IconOcrMask", "文字识别：识别长图里的文字", ScrollCaptureAction.Ocr));
             row.Children.Add(Action("IconEditMask", "编辑：在图片编辑器里打开（Enter）", ScrollCaptureAction.Edit));
             row.Children.Add(Action("IconCopyMask", "复制", ScrollCaptureAction.Copy));
             row.Children.Add(Action("IconSaveMask", "保存", ScrollCaptureAction.Save));

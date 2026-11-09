@@ -22,6 +22,7 @@ public sealed class ScrollStitcher
     private readonly int[] _bandStart = new int[Bands + 1];
     private readonly List<byte[]> _bodyRows = new();
     private readonly List<ulong[]> _bodyCells = new();
+    private readonly List<byte[]> _bodyMeans = new(); // each stitched row's cells by brightness (tolerant matching)
     private readonly bool[] _movingBands = new bool[Bands];
     private readonly int[] _columnChanged;
     private readonly int[] _columnFollowed;
@@ -34,6 +35,7 @@ public sealed class ScrollStitcher
     private int _viewTop; // where the last frame's body starts in the stitched body
     private double _viewFraction; // … and the part of a row it is off by (pages scrolled by fractions of a pixel)
     private double _phase; // the fraction found by the last tolerant match
+    private double _exactRatio; // how many of the cells the last exact match explained
 
     public ScrollStitcher(int width, int height, int maxHeight = 30000)
     {
@@ -88,19 +90,29 @@ public sealed class ScrollStitcher
     /// <summary>The body rows one frame shows: a step close to this leaves almost no overlap.</summary>
     public int ViewHeight => _top < 0 ? _height : BodyHeight;
 
-    /// <summary>The share of the picture that differs between two frames (0–1).</summary>
+    /// <summary>
+    /// The share of what is drawn that differs between two frames (0–1). Empty cells (one colour in both) are not
+    /// counted: on a page with much white space a real scroll changed less than half of all cells and was reported as
+    /// 只有局部在变.
+    /// </summary>
     private static double ChangedShare(Cells a, Cells b)
     {
-        var changed = 0;
+        int changed = 0, drawn = 0;
         for (var i = 0; i < a.Hash.Length; i++)
         {
+            if (a.Blank[i] && b.Blank[i] && a.Hash[i] == b.Hash[i])
+            {
+                continue;
+            }
+
+            drawn++;
             if (a.Hash[i] != b.Hash[i])
             {
                 changed++;
             }
         }
 
-        return changed / (double)Math.Max(1, a.Hash.Length);
+        return changed / (double)Math.Max(1, drawn);
     }
 
     /// <summary>The scroll distance of the last frame (content moved up by this many rows; 0 = not placed).</summary>
@@ -133,7 +145,20 @@ public sealed class ScrollStitcher
         // Pixel-exact first; then by brightness, with some tolerance: many programs scroll by a fraction of a pixel
         // (display scaling, smooth scrolling), so the moved rows are resampled and never equal exactly.
         _phase = 0;
-        var shift = FindShift(_last, cells, out var matched) ?? FindShiftLoosely(_last, cells, out matched);
+        var shift = FindShift(_last, cells, out var matched);
+        // Not quite exact: a page scrolled by a fraction, its flat insides (the middle rows of text) equal one row off
+        // as well. The tolerant match tells the fraction (lost otherwise: half a row each time adds up to a doubled row).
+        if (shift is { } whole && _exactRatio < 0.97 && FindShiftLoosely(_last, cells, out var loose) is { } refined && Math.Abs(refined - whole) <= 1)
+        {
+            shift = refined;
+            matched = loose;
+        }
+        else if (shift != null)
+        {
+            _phase = 0;
+        }
+
+        shift ??= FindShiftLoosely(_last, cells, out matched);
         int position;
         var fraction = 0.0;
         if (shift != null)
@@ -144,15 +169,17 @@ public sealed class ScrollStitcher
                 Learn(matched, cells);
             }
 
-            // Fractions add up over the frames (each frame is compared with the one before): kept, so nothing drifts.
+            // Fractions add up over the frames (each frame is compared with the one before); then the place is checked
+            // against what was stitched (a fixed reference: an error of a fraction of a row does not add up, and a
+            // frame of a page scrolled by fractions that matched one row off exactly is put right).
             var exact = _viewTop + _viewFraction + shift.Value + _phase;
-            position = (int)Math.Round(exact);
-            fraction = exact - position;
+            position = Anchor(cells, (int)Math.Round(exact), 2);
+            fraction = Math.Clamp(exact - position, -0.5, 0.5);
         }
-        else if (_top >= 0 && Locate(cells) is { } found)
+        else if (_top >= 0 && (Locate(cells) ?? LocateLoosely(cells)) is { } found)
         {
-            // Scrolled too far for one step: found again in what was stitched.
-            position = found;
+            // Scrolled too far for one step (or back over what was stitched): found again in what was stitched.
+            position = Anchor(cells, found, 2);
         }
         else
         {
@@ -187,6 +214,7 @@ public sealed class ScrollStitcher
 
             _bodyRows.InsertRange(0, Enumerable.Range(0, fresh).Select(j => Row(frame, _top + j)));
             _bodyCells.InsertRange(0, Enumerable.Range(0, fresh).Select(j => RowCells(cells.Hash, _top + j)));
+            _bodyMeans.InsertRange(0, Enumerable.Range(0, fresh).Select(j => RowCells(cells.Mean, _top + j)));
             added += fresh;
             position = 0;
         }
@@ -230,6 +258,7 @@ public sealed class ScrollStitcher
     {
         _bodyRows.Add(Row(frame, y));
         _bodyCells.Add(RowCells(cells.Hash, y));
+        _bodyMeans.Add(RowCells(cells.Mean, y));
     }
 
     /// <summary>A row stayed where it was (a spinner or a caret in it is tolerated).</summary>
@@ -314,6 +343,7 @@ public sealed class ScrollStitcher
             return null;
         }
 
+        var explained = Explained(informative);
         var bandMatches = new int[Bands];
         var bandSeen = new int[Bands];
         (int Matches, int Seen) Score(int d, int step)
@@ -379,7 +409,7 @@ public sealed class ScrollStitcher
         foreach (var (d, _) in candidates.OrderByDescending(c => c.Rank).Take(8))
         {
             var (matches, seen) = Score(d, 1);
-            if (matches < minimum || matches < seen * MinScore)
+            if (matches < minimum || matches < seen * MinScore || !explained(d, low, high, matches))
             {
                 continue;
             }
@@ -397,7 +427,8 @@ public sealed class ScrollStitcher
             return null;
         }
 
-        Score(shift, 1);
+        var (bestMatches, bestSeen) = Score(shift, 1);
+        _exactRatio = bestMatches / (double)Math.Max(1, bestSeen);
         var agreeing = new bool[Bands];
         for (var b = 0; b < Bands; b++)
         {
@@ -482,6 +513,8 @@ public sealed class ScrollStitcher
             return null;
         }
 
+        var explained = Explained(informative);
+
         var bandMatches = new int[Bands];
         var bandSeen = new int[Bands];
         // Moved by d + t rows (0 <= t < 1): a row now is the previous rows d and d + 1 blended (the brightness of a
@@ -544,7 +577,7 @@ public sealed class ScrollStitcher
                 continue;
             }
 
-            var (matches, seen) = Score(d, 3);
+            var (matches, seen) = Score(d, 3, -1); // (any fraction: one with no fraction drops the true distance when the rows are blended half and half)
             if (matches >= 4)
             {
                 var ratio = matches / (double)Math.Max(1, seen);
@@ -556,7 +589,7 @@ public sealed class ScrollStitcher
         foreach (var d in candidates.OrderByDescending(c => c.Rank).Take(6).SelectMany(c => new[] { c.D, c.D - 1 }).Where(d => d != 0).Distinct())
         {
             var (matches, seen) = Score(d, 1, -1);
-            if (matches < Math.Max(16, count / 3) || matches < seen * 0.9)
+            if (matches < 16 || matches < seen * 0.9 || !explained(d, low, high, matches))
             {
                 continue;
             }
@@ -575,19 +608,31 @@ public sealed class ScrollStitcher
             return null;
         }
 
-        // The fraction: the blend that fits best (for where the rows go; the match itself is settled).
-        var bestPhase = 0.0;
-        var bestFit = -1;
-        foreach (var t in Phases)
+        // The fraction t (for where the rows go; the match itself is settled): a row now ≈ a + t·(b − a) for the
+        // previous rows a, b at the distance; least squares over the cells that match and have an edge to tell by.
+        // (Counting cells within the tolerance could not tell 0.25 from 0.5: rows went one off every few frames.)
+        double sumXy = 0, sumXx = 0;
+        for (var y = Math.Max(low, low - shift); y < Math.Min(high, high - shift - 1); y++)
         {
-            var fit = Score(shift, 1, t).Matches;
-            if (fit > bestFit)
+            for (var b = 0; b < Bands; b++)
             {
-                bestFit = fit;
-                bestPhase = t;
+                var i = y * Bands + b;
+                var other = (y + shift) * Bands + b;
+                if (!informative[i] || !Fits(i, other, -1))
+                {
+                    continue;
+                }
+
+                double a = previous.Mean[other], step = previous.Mean[other + Bands] - a;
+                if (Math.Abs(step) >= 3)
+                {
+                    sumXy += (current.Mean[i] - a) * step;
+                    sumXx += step * step;
+                }
             }
         }
 
+        var bestPhase = sumXx > 0 ? Math.Clamp(sumXy / sumXx, 0, 0.999) : 0;
         _phase = bestPhase;
         Score(shift, 1, -1);
         for (var b = 0; b < Bands; b++)
@@ -608,6 +653,162 @@ public sealed class ScrollStitcher
         }
 
         return shift;
+    }
+
+    /// <summary>
+    /// Whether a distance accounts for most of what changed where the two frames overlap. Bands that disagree are left
+    /// out of a match (a fixed side panel, a scroll bar), so without this a few look-alike columns (the same avatar
+    /// on every item of a list) could carry a wrong distance against all the rest: the page then stitched twice.
+    /// </summary>
+    private Func<int, int, int, int, bool> Explained(bool[] informative)
+    {
+        var before = new int[_height + 1];
+        for (var y = 0; y < _height; y++)
+        {
+            var n = 0;
+            for (var b = 0; b < Bands; b++)
+            {
+                if (informative[y * Bands + b])
+                {
+                    n++;
+                }
+            }
+
+            before[y + 1] = before[y] + n;
+        }
+
+        return (d, low, high, matches) =>
+        {
+            var from = Math.Max(low, low - d);
+            var to = Math.Min(high, high - d);
+            return to <= from || matches >= (before[to] - before[from]) * 0.6;
+        };
+    }
+
+    /// <summary>
+    /// How far the frame's body differs from the stitched rows when its top is at row p of the stitched body (mean
+    /// brightness difference per cell; NaN when they overlap by too little to tell).
+    /// </summary>
+    private double Misfit(Cells current, int p, int step = 1)
+    {
+        var body = BodyHeight;
+        var count = _bodyMeans.Count;
+        double sum = 0;
+        var seen = 0;
+        for (var j = Math.Max(0, -p); j < body && p + j < count; j += step)
+        {
+            var row = (_top + j) * Bands;
+            var stored = _bodyMeans[p + j];
+            for (var band = 0; band < Bands; band++)
+            {
+                if (_movingBands[band])
+                {
+                    sum += Math.Abs(current.Mean[row + band] - stored[band]);
+                    seen++;
+                }
+            }
+        }
+
+        return seen < 8 * Bands / Math.Max(1, step) / 2 ? double.NaN : sum / seen;
+    }
+
+    /// <summary>The place near <paramref name="position"/> where the frame fits what was stitched best.</summary>
+    private int Anchor(Cells current, int position, int reach)
+    {
+        var here = Misfit(current, position);
+        if (double.IsNaN(here))
+        {
+            return position;
+        }
+
+        var best = position;
+        var bestMisfit = here;
+        for (var p = position - reach; p <= position + reach; p++)
+        {
+            var misfit = Misfit(current, p);
+            if (p != position && !double.IsNaN(misfit) && misfit < bestMisfit * 0.8)
+            {
+                best = p;
+                bestMisfit = misfit;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// <see cref="Locate"/> by brightness (pages scrolled by fractions of a pixel never repeat a row exactly): the place
+    /// within two screens where nearly every cell is as stitched (or between two stitched rows), and no other place
+    /// fits about as well (look-alike content: rather wait for the next frame than stitch it twice).
+    /// </summary>
+    private int? LocateLoosely(Cells current)
+    {
+        const int Same = 6;
+        var body = BodyHeight;
+        var count = _bodyMeans.Count;
+        var minOverlap = Math.Max(16, body / 4);
+        var from = Math.Max(-(body - minOverlap), _viewTop - body * 2);
+        var to = Math.Min(count - minOverlap, _viewTop + body * 2);
+        (double Score, int Seen) Fit(int p, int step)
+        {
+            int matches = 0, seen = 0;
+            for (var j = Math.Max(0, -p); j < body && p + j + 1 < count; j += step)
+            {
+                var row = (_top + j) * Bands;
+                var stored = _bodyMeans[p + j];
+                var next = _bodyMeans[p + j + 1];
+                for (var band = 0; band < Bands; band++)
+                {
+                    if (_movingBands[band] && !current.Blank[row + band])
+                    {
+                        seen++;
+                        int value = current.Mean[row + band], a = stored[band], b = next[band];
+                        if (value >= Math.Min(a, b) - Same && value <= Math.Max(a, b) + Same)
+                        {
+                            matches++;
+                        }
+                    }
+                }
+            }
+
+            return (matches / (double)Math.Max(1, seen), seen);
+        }
+
+        var scores = new List<(int P, double Score)>();
+        for (var p = from; p <= to; p += 2)
+        {
+            var (score, seen) = Fit(p, 3);
+            if (seen >= 24)
+            {
+                scores.Add((p, score));
+            }
+        }
+
+        if (scores.Count == 0)
+        {
+            return null;
+        }
+
+        var (near, top) = scores.MaxBy(s => s.Score);
+        // Another place far from it fitting nearly as well: look-alike content, not to be trusted.
+        if (scores.Any(s => Math.Abs(s.P - near) > 6 && s.Score > top - 0.04))
+        {
+            return null;
+        }
+
+        int? best = null;
+        var bestScore = 0.0;
+        for (var p = Math.Max(from, near - 3); p <= Math.Min(to, near + 3); p++)
+        {
+            var (score, seen) = Fit(p, 1);
+            if (seen >= 24 && score > bestScore)
+            {
+                bestScore = score;
+                best = p;
+            }
+        }
+
+        return bestScore >= 0.9 ? best : null;
     }
 
     /// <summary>
@@ -691,13 +892,24 @@ public sealed class ScrollStitcher
                 if (value != (before[row + x] & 0x00FFFFFF))
                 {
                     _columnChanged[x]++;
-                    if (value == (before[other + x] & 0x00FFFFFF))
+                    if (value == (before[other + x] & 0x00FFFFFF) || Between(value, before[other + x], other + _width < before.Length ? before[other + _width + x] : before[other + x]))
                     {
                         _columnFollowed[x]++;
                     }
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// A pixel of a page scrolled by a fraction of a row: between the two pixels it was resampled from (green, which
+    /// carries most of the brightness, with a little tolerance). Without this the columns of such a page did not count
+    /// as following the scroll, and its edges (an avatar column, a margin) were cut off as a fixed panel.
+    /// </summary>
+    private static bool Between(uint value, uint a, uint b)
+    {
+        int g = (int)((value >> 8) & 0xFF), ga = (int)((a >> 8) & 0xFF), gb = (int)((b >> 8) & 0xFF);
+        return g >= Math.Min(ga, gb) - 6 && g <= Math.Max(ga, gb) + 6;
     }
 
     /// <summary>

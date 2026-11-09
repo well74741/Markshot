@@ -16,6 +16,11 @@ public partial class SettingsWindow : Window
         _config = config;
         Theme.TrackTitleBar(this);
         UiScale.AttachWindow(this);
+        // The title bar's height on the screen (the content is scaled), the dragging area.
+        System.Windows.Shell.WindowChrome.GetWindowChrome(this).CaptionHeight = TitleBar.Height * UiScale.SettingsFactor;
+        StateChanged += (_, _) => FitMaximized();
+        Activated += (_, _) => TitleText.Opacity = 1;
+        Deactivated += (_, _) => TitleText.Opacity = 0.55;
 
         CaptureHotkeyBox.Text = config.CaptureHotkey;
         PinHotkeyBox.Text = config.PinHotkey;
@@ -74,6 +79,10 @@ public partial class SettingsWindow : Window
         AskOpenFolderCheck.IsChecked = config.AskOpenFolderAfterSave;
         EscExitsCheck.IsChecked = config.EscExitsCapture;
         QuickDoubleClickCheck.IsChecked = config.QuickDoubleClickCopy;
+        PinTextSelectCheck.IsChecked = config.PinTextSelect;
+        PinTextSelectCheck.Checked += (_, _) => TextBypassBox.IsEnabled = true;
+        PinTextSelectCheck.Unchecked += (_, _) => TextBypassBox.IsEnabled = false;
+        TextBypassBox.IsEnabled = config.PinTextSelect;
         HideChevronsCheck.IsChecked = config.HideToolChevrons;
         SaveDirBox.Text = config.SaveDirectory;
         Loaded += (_, _) => RefreshUpdate(quiet: true);
@@ -1269,6 +1278,7 @@ public partial class SettingsWindow : Window
         _config.AskOpenFolderAfterSave = AskOpenFolderCheck.IsChecked == true;
         _config.EscExitsCapture = EscExitsCheck.IsChecked == true;
         _config.QuickDoubleClickCopy = QuickDoubleClickCheck.IsChecked == true;
+        _config.PinTextSelect = PinTextSelectCheck.IsChecked == true;
         _config.FloatHideWhileCapturing = FloatCaptureHideCheck.IsChecked != false;
         _config.HideToolChevrons = HideChevronsCheck.IsChecked == true;
 
@@ -1414,6 +1424,48 @@ public partial class SettingsWindow : Window
         popup.MouseLeave += (_, _) => VersionText_MouseLeave(popup, null!);
         return popup;
     }
+
+    private void Help_Click(object sender, RoutedEventArgs e) => HelpDocument.Open();
+
+    private void Minimize_Click(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
+
+    private void Maximize_Click(object sender, RoutedEventArgs e)
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            SystemCommands.RestoreWindow(this);
+        }
+        else
+        {
+            SystemCommands.MaximizeWindow(this);
+        }
+    }
+
+    private void TitleClose_Click(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>
+    /// Maximized, a window reaches past the screen by its (invisible) resize border: that much is kept empty, so the
+    /// title bar and the buttons at the bottom stay on the screen. The maximize button turns into restore.
+    /// </summary>
+    private void FitMaximized()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        MaximizeButton.Content = maximized ? "\uE923" : "\uE922";
+        MaximizeButton.ToolTip = maximized ? "向下还原" : "最大化";
+        if (!maximized)
+        {
+            BorderThickness = new Thickness(0);
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var x = (GetSystemMetrics(32 /* SM_CXSIZEFRAME */) + GetSystemMetrics(92 /* SM_CXPADDEDBORDER */)) / dpi.DpiScaleX;
+        var y = (GetSystemMetrics(33 /* SM_CYSIZEFRAME */) + GetSystemMetrics(92)) / dpi.DpiScaleY;
+        BorderThickness = new Thickness(x, y, x, y);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {

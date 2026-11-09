@@ -41,6 +41,32 @@
             <Setter Property="FontSize" Value="12" />
         </Style>
 
+        <Style x:Key="PaneToggle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="{DynamicResource T_FFC8C8C8}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="9,3">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource T_14FFFFFF}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Accent}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="PaneEditor" TargetType="TextBox">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource T_FFF0F0F0}" />
@@ -177,13 +203,23 @@
                             <TextBlock Text="原文" Style="{StaticResource PaneTitle}" />
                             <TextBlock x:Name="SourceMeta" Text="识别结果，可编辑" Style="{StaticResource PaneMeta}" />
                         </StackPanel>
-                        <Button Content="复制" Style="{StaticResource PaneAction}" HorizontalAlignment="Right"
-                                Click="CopySource_Click" ToolTip="复制原文" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <!-- Shown when tables were found: the text, or the tables as tables. -->
+                            <ToggleButton x:Name="TableToggle" Style="{StaticResource PaneToggle}" Content="表格" Visibility="Collapsed"
+                                          ToolTip="以表格显示识别出的表格（复制时可直接粘贴到 Excel / Word）" Checked="TableToggle_Changed" Unchecked="TableToggle_Changed" />
+                            <Button Content="复制" Style="{StaticResource PaneAction}" Click="CopySource_Click" ToolTip="复制原文" />
+                        </StackPanel>
                     </Grid>
                     <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource T_14FFFFFF}" Margin="14,8,14,0" />
                     <!-- 二维码 / 条形码 found in the picture: links open on a click. -->
                     <StackPanel x:Name="CodePanel" DockPanel.Dock="Top" Margin="14,8,14,0" Visibility="Collapsed" />
-                    <TextBox x:Name="SourceBox" Style="{StaticResource PaneEditor}" />
+                    <Grid>
+                        <TextBox x:Name="SourceBox" Style="{StaticResource PaneEditor}" />
+                        <ScrollViewer x:Name="TableView" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Visibility="Collapsed"
+                                      Padding="12,10,8,12">
+                            <StackPanel x:Name="TablePanel" />
+                        </ScrollViewer>
+                    </Grid>
                 </DockPanel>
             </Border>
 

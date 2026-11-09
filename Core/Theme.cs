@@ -172,7 +172,18 @@ public static partial class Theme
         var dark = IsLight ? 0 : 1;
         Native.DwmSetWindowAttribute(handle, 20, ref dark, sizeof(int));
         Native.DwmSetWindowAttribute(handle, 19, ref dark, sizeof(int));
+        if (window.IsVisible)
+        {
+            // Shown already (a theme switch): the frame is drawn again now, not only when the window is activated next
+            // (until then the title bar kept the old colours and its buttons could go missing).
+            Native.SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0,
+                0x0001 /* NOSIZE */ | 0x0002 /* NOMOVE */ | 0x0004 /* NOZORDER */ | Native.SWP_NOACTIVATE | Native.SWP_FRAMECHANGED);
+            RedrawWindow(handle, IntPtr.Zero, IntPtr.Zero, 0x0001 /* INVALIDATE */ | 0x0400 /* FRAME */ | 0x0100 /* UPDATENOW */);
+        }
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr region, uint flags);
 
     /// <summary>Keeps a window's title bar in step with theme switches.</summary>
     public static void TrackTitleBar(Window window)

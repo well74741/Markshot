@@ -92,7 +92,7 @@ static class Round69Test
                 Check(left >= sideWidth - 8 && kept <= width - sideWidth + 8, $"… the fixed side panel left out ({left}, {kept})");
             }
 
-            Check(Source("Core/ScrollStitcher.cs").Contains("FindShift(_last, cells, out var matched) ?? FindShiftLoosely(_last, cells, out matched)"), "an exact match first, then a tolerant one");
+            Check(Source("Core/ScrollStitcher.cs").Contains("var shift = FindShift(_last, cells, out var matched);") && Source("Core/ScrollStitcher.cs").Contains("shift ??= FindShiftLoosely(_last, cells, out matched);"), "an exact match first, then a tolerant one");
         }
 
         // ---- the capture window made in advance takes the screen's size before it shows (no black corner)

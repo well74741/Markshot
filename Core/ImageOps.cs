@@ -121,6 +121,31 @@ public static class ToneCurve
 /// <summary>Pixel operations of the image editor. Everything takes and returns frozen bitmaps.</summary>
 public static class ImageOps
 {
+    /// <summary>The picture with its corners rounded (see-through outside), as a capture with 圆角 gives it.</summary>
+    public static BitmapSource RoundCorners(BitmapSource image, double radius)
+    {
+        radius = Math.Min(radius, Math.Min(image.PixelWidth, image.PixelHeight) / 2.0);
+        if (radius < 0.5)
+        {
+            return image;
+        }
+
+        var visual = new DrawingVisual();
+        RenderOptions.SetBitmapScalingMode(visual, BitmapScalingMode.NearestNeighbor);
+        using (var dc = visual.RenderOpen())
+        {
+            var area = new Rect(0, 0, image.PixelWidth, image.PixelHeight);
+            dc.PushClip(new RectangleGeometry(area, radius, radius));
+            dc.DrawImage(image, area);
+            dc.Pop();
+        }
+
+        var bitmap = new RenderTargetBitmap(image.PixelWidth, image.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
     /// <summary>A frozen 96-dpi straight-alpha BGRA copy (what the editor works on).</summary>
     public static BitmapSource Normalize(BitmapSource source)
     {

@@ -30,6 +30,9 @@ public sealed class AppConfig
 
     public string TextBypassModifier { get; set; } = "Alt";
 
+    /// <summary>贴图上的文字可直接拖选复制 (a text layer from OCR); off: a drag on text moves the pin.</summary>
+    public bool PinTextSelect { get; set; } = true;
+
     public string PinFlipHorizontalHotkey { get; set; } = "Q";
 
     public string PinFlipVerticalHotkey { get; set; } = "W";

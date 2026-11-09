@@ -10,7 +10,61 @@
         FontFamily="Microsoft YaHei UI"
         UseLayoutRounding="True">
 
+    <!-- Its own title bar (drawn in the theme's colours, with 帮助): the system one kept its old colour after a theme
+         switch until the window was activated again. Resizing, snapping and the system menu stay the system's. -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0,0,0,1" CornerRadius="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
     <Window.Resources>
+        <Style x:Key="CaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFB8B8B8}" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource T_14FFFFFF}" />
+                                <Setter Property="Foreground" Value="{DynamicResource T_FFF0F0F0}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource T_22FFFFFF}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="CaptionClose" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#E81123" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#F1707A" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <!-- Left navigation item -->
         <Style x:Key="NavItem" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{DynamicResource T_FFB8B8B8}" />
@@ -221,7 +275,35 @@
 
     </Window.Resources>
 
-    <Grid Background="{DynamicResource T_FF1A1A1A}">
+    <Grid x:Name="WindowRoot">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+    <!-- Title bar: the navigation's colour on the left, the page's on the right, as the window below. -->
+    <Grid x:Name="TitleBar" Height="36">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="168" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Border Background="{DynamicResource T_FF151515}" />
+        <Border Grid.Column="1" Background="{DynamicResource T_FF1A1A1A}" />
+        <StackPanel x:Name="TitleText" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
+            <Image Source="{Binding Icon, RelativeSource={RelativeSource AncestorType=Window}}" Width="16" Height="16"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+            <TextBlock Text="Markshot 设置" Margin="8,0,0,0" FontSize="12" Foreground="{DynamicResource T_FFB8B8B8}" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="HelpButton" Style="{StaticResource CaptionButton}" FontFamily="Microsoft YaHei UI" FontSize="14" FontWeight="SemiBold"
+                    Content="?" ToolTip="帮助：功能介绍与使用方法" Click="Help_Click" />
+            <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" ToolTip="最小化" Click="Minimize_Click" />
+            <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" ToolTip="最大化" Click="Maximize_Click" />
+            <Button Style="{StaticResource CaptionClose}" Content="&#xE8BB;" ToolTip="关闭" Click="TitleClose_Click" />
+        </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="1" Background="{DynamicResource T_FF1A1A1A}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="168" />
             <ColumnDefinition Width="*" />
@@ -234,7 +316,7 @@
         <!-- Navigation -->
         <Border Grid.Row="0" Grid.RowSpan="2" Background="{DynamicResource T_FF151515}" BorderBrush="{DynamicResource T_14FFFFFF}" BorderThickness="0,0,1,0">
             <Grid>
-            <StackPanel Margin="12,18,12,12">
+            <StackPanel Margin="12,4,12,12">
                 <TextBlock Text="Markshot" Foreground="{DynamicResource T_FFF5F5F5}" FontSize="15" FontWeight="SemiBold" Margin="8,0,0,2" />
                 <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
                     <TextBlock x:Name="VersionText" Foreground="{DynamicResource T_FF6E6E6E}" FontSize="11" VerticalAlignment="Center"
@@ -462,12 +544,16 @@
                                     <TextBox x:Name="PinResetBox" Style="{StaticResource KeyField}" HorizontalAlignment="Left" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="4" Grid.ColumnSpan="2">
-                                    <TextBlock Text="拖动贴图辅助键" Style="{StaticResource RowLabel}" Margin="0,0,0,5"
-                                               ToolTip="按住此键拖动贴图，不进入文字编辑" />
-                                    <TextBox x:Name="TextBypassBox" Style="{StaticResource Field}" MaxLength="12" />
+                                    <TextBlock Text="按住拖动贴图" Style="{StaticResource RowLabel}" Margin="0,0,0,5"
+                                               ToolTip="按住这个键拖动文字上的地方，移动贴图而不是选中文字（点输入框后按下想用的键）" />
+                                    <TextBox x:Name="TextBypassBox" Style="{StaticResource HotkeyField}" HorizontalAlignment="Stretch"
+                                             GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus"
+                                             PreviewKeyDown="CaptureKeyBox_PreviewKeyDown" PreviewKeyUp="CaptureKeyBox_PreviewKeyUp" />
                                 </StackPanel>
                             </Grid>
-                            <CheckBox x:Name="QuickDoubleClickCheck" Margin="0,12,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                            <CheckBox x:Name="PinTextSelectCheck" Margin="0,12,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
+                                      Content="贴图上的文字可直接拖选复制（关闭后拖动文字处也是移动贴图）" />
+                            <CheckBox x:Name="QuickDoubleClickCheck" Margin="0,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="双击截图 / 贴图：复制并关闭" />
 
                         </StackPanel>
@@ -937,5 +1023,6 @@
                            TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" core:Marquee.Enabled="True" />
             </DockPanel>
         </Border>
+    </Grid>
     </Grid>
 </Window>

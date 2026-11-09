@@ -1301,6 +1301,9 @@ public partial class App : Application
                 case UI.ScrollCaptureAction.Edit when image != null:
                     OpenEditor(image);
                     break;
+                case UI.ScrollCaptureAction.Ocr when image != null:
+                    ShowOcr(image); // a long picture is read in pieces (OcrService)
+                    break;
                 case UI.ScrollCaptureAction.Copy when image != null:
                     ClipboardService.CopyImage(image); // (no bubble: the floating button shows it)
                     break;
@@ -1389,17 +1392,20 @@ public partial class App : Application
             return;
         }
 
-        NoteScreenshot(image);
+        // The 圆角 of the capture (Win + mouse is a capture too).
+        var corner = Math.Min(Math.Max(0, Config.CaptureCornerRadius), Math.Min(area.Width, area.Height) / 2.0);
+        var shot = action == "Ocr" ? image : ImageOps.RoundCorners(image, corner);
+        NoteScreenshot(shot);
         switch (action)
         {
             case "Ocr":
                 ShowOcr(image);
                 break;
             case "Pin":
-                CreatePin(image, area.X, area.Y, sweep: true);
+                CreatePin(shot, area.X, area.Y, cornerRadius: corner, sweep: true);
                 break;
             default:
-                ClipboardService.CopyImage(image); // (no bubble: the floating button shows it)
+                ClipboardService.CopyImage(shot); // (no bubble: the floating button shows it)
 
                 break;
         }

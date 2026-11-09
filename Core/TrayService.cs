@@ -98,6 +98,7 @@ public sealed class TrayService : IDisposable
             }
 
             Add("设置…", settings);
+            Add("帮助", HelpDocument.Open);
             if (diagnostics != null)
             {
                 Add("导出诊断信息", diagnostics);

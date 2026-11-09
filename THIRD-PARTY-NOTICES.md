@@ -1,6 +1,6 @@
 # Third-party notices
 
-Markshot is Copyright © 2026 well74741. It includes the following third-party components,
+Markshot is Copyright © 2026 guoqing.wu (GitHub: well74741). It includes the following third-party components,
 each under its own license:
 
 | Component | License | Use |
