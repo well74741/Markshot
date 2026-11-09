@@ -20,6 +20,8 @@ public static class WindowDetector
     {
         var ownPid = (uint)Environment.ProcessId;
         var found = IntPtr.Zero;
+        var foundBounds = Rect.Empty;
+        var wrapper = false; // the one found may be only a shadow / border window around the real one
 
         Native.EnumWindows((handle, _) =>
         {
@@ -49,8 +51,23 @@ public static class WindowDetector
                 return true;
             }
 
+            if (found != IntPtr.Zero)
+            {
+                // After a wrapper: the real window just inside it (a few dozen pixels of shadow / border around) wins.
+                var inset = Math.Max(Math.Max(bounds.Left - foundBounds.Left, foundBounds.Right - bounds.Right),
+                                     Math.Max(bounds.Top - foundBounds.Top, foundBounds.Bottom - bounds.Bottom));
+                if (inset >= 0 && inset <= 48 && bounds.Width * bounds.Height >= foundBounds.Width * foundBounds.Height * 0.6)
+                {
+                    found = handle;
+                }
+
+                return false;
+            }
+
             found = handle;
-            return false;
+            foundBounds = bounds;
+            wrapper = IsWrapper(handle);
+            return wrapper; // a wrapper: look one window further
         }, IntPtr.Zero);
 
         if (found == IntPtr.Zero)
@@ -111,6 +128,23 @@ public static class WindowDetector
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// A window drawn only as another's shadow / glowing border (WeChat, QQ, DingTalk and others make one around their
+    /// window): no title, see-through or a tool window that never takes the focus.
+    /// </summary>
+    private static bool IsWrapper(IntPtr handle)
+    {
+        var title = new StringBuilder(8);
+        Native.GetWindowText(handle, title, title.Capacity);
+        if (title.Length > 0)
+        {
+            return false;
+        }
+
+        var exStyle = Native.GetWindowLongPtr(handle, Native.GWL_EXSTYLE).ToInt64();
+        return (exStyle & (WS_EX_LAYERED | 0x80 /* WS_EX_TOOLWINDOW */ | 0x08000000 /* WS_EX_NOACTIVATE */)) != 0;
     }
 
     private const int DWMWA_CLOAKED = 14;

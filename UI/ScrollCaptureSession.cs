@@ -414,6 +414,8 @@ public sealed class ScrollCaptureSession
             _session = session;
             Title = "Markshot 长截图";
             WindowStyle = WindowStyle.None;
+            AllowsTransparency = true; // rounded like the annotation bar (it stays outside the area, never in the shots)
+            Background = Brushes.Transparent;
             ResizeMode = ResizeMode.NoResize;
             ShowInTaskbar = false;
             Topmost = true;
@@ -459,13 +461,22 @@ public sealed class ScrollCaptureSession
             row.Children.Add(Action("IconCopyMask", "复制", ScrollCaptureAction.Copy));
             row.Children.Add(Action("IconSaveMask", "保存", ScrollCaptureAction.Save));
             row.Children.Add(Action("IconCloseMask", "取消，回到截图（Esc）", ScrollCaptureAction.Cancel));
-            // The annotation bar's look: its colour, rounded corners, no outline (a plain window: kept out of the shots).
-            var frame = new Border { Child = row, CornerRadius = new CornerRadius(9) };
-            frame.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
-            UiScale.Attach(frame);
-            Content = frame;
-            SetResourceReference(BackgroundProperty, Theme.Key(0xFF1E1E1E));
-            RoundedWindow.Apply(this, 9 * UiScale.Factor);
+            // The annotation bar exactly: its plate (colour, corners, padding) and the narrow inner shade along the edge.
+            row.Margin = new Thickness(0);
+            var plate = new Border { Child = row, CornerRadius = new CornerRadius(9), Padding = new Thickness(5, 3, 5, 3) };
+            plate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xF21E1E1E));
+            var shade = new Border
+            {
+                CornerRadius = new CornerRadius(9),
+                BorderThickness = new Thickness(3),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x2E, 0, 0, 0)),
+                Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 4, KernelType = System.Windows.Media.Effects.KernelType.Gaussian }
+            };
+            var shadeClip = new Grid { IsHitTestVisible = false, Children = { shade } };
+            shadeClip.SizeChanged += (_, _) => shadeClip.Clip = new RectangleGeometry(new Rect(0, 0, shadeClip.ActualWidth, shadeClip.ActualHeight), 9, 9);
+            var bar = new Grid { Children = { plate, shadeClip } };
+            UiScale.Attach(bar);
+            Content = bar;
             SourceInitialized += (_, _) =>
             {
                 var handle = new WindowInteropHelper(this).Handle;
@@ -503,21 +514,34 @@ public sealed class ScrollCaptureSession
             {
                 // Under the area, else above it, else inside along its bottom; centred, on the work area.
                 var work = Monitors.Of(rect).WorkArea;
-                var gap = Px(rect, 6);
+                // Clear of the area and its frame line: under it, above it, else beside it (never inside: it would be in the shots).
+                var gap = Px(rect, 10);
+                var x = Math.Clamp(rect.X + rect.Width / 2 - me.Width / 2, work.X + 4, Math.Max(work.X + 4, work.X + work.Width - me.Width - 4));
                 var y = rect.Y + rect.Height + gap;
-                if (y + me.Height > work.Y + work.Height)
+                if (y + me.Height <= work.Y + work.Height)
                 {
-                    y = rect.Y - gap - me.Height >= work.Y
-                        ? rect.Y - gap - me.Height
-                        : rect.Y + rect.Height - me.Height - gap;
-                    if (y > rect.Y)
-                    {
-                        RecordNative.ExcludeFromCapture(new WindowInteropHelper(this).Handle, true);
-                    }
+                    return (x, y);
                 }
 
-                var x = Math.Clamp(rect.X + rect.Width / 2 - me.Width / 2, work.X + 4, Math.Max(work.X + 4, work.X + work.Width - me.Width - 4));
-                return (x, y);
+                if (rect.Y - gap - me.Height >= work.Y)
+                {
+                    return (x, rect.Y - gap - me.Height);
+                }
+
+                var bottom = Math.Min(rect.Y + rect.Height, work.Y + work.Height) - me.Height;
+                if (rect.X + rect.Width + gap + me.Width <= work.X + work.Width)
+                {
+                    return (rect.X + rect.Width + gap, bottom);
+                }
+
+                if (rect.X - gap - me.Width >= work.X)
+                {
+                    return (rect.X - gap - me.Width, bottom);
+                }
+
+                // No room anywhere (the area covers the screen): along its bottom, kept out of the shots if Windows can.
+                RecordNative.ExcludeFromCapture(new WindowInteropHelper(this).Handle, true);
+                return (x, rect.Y + rect.Height - me.Height - gap);
             });
             PreviewKeyDown += (_, e) =>
             {

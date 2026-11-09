@@ -531,6 +531,18 @@ public partial class OverlayWindow : Window
         BrightImage.Source = screen;
         Editor.Source = screen;
         Magnifier.Source = screen;
+        // In place and at full size before it shows (it showed its first frame at the default size: a black block
+        // in the top left corner). WPF's own idea of the size too, so Show does not put the old one back.
+        var handle = new WindowInteropHelper(this).Handle;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        Left = bounds.X / dpi.DpiScaleX;
+        Top = bounds.Y / dpi.DpiScaleY;
+        Width = bounds.Width / dpi.DpiScaleX;
+        Height = bounds.Height / dpi.DpiScaleY;
+        if (handle != IntPtr.Zero)
+        {
+            Native.SetWindowPos(handle, Native.HWND_TOPMOST, bounds.X, bounds.Y, bounds.Width, bounds.Height, Native.SWP_NOACTIVATE);
+        }
     }
 
     /// <summary>Tests: made in advance and not used yet.</summary>

@@ -32,6 +32,8 @@ public sealed class ScrollStitcher
     private int _top = -1;
     private int _bottom = -1;
     private int _viewTop; // where the last frame's body starts in the stitched body
+    private double _viewFraction; // … and the part of a row it is off by (pages scrolled by fractions of a pixel)
+    private double _phase; // the fraction found by the last tolerant match
 
     public ScrollStitcher(int width, int height, int maxHeight = 30000)
     {
@@ -107,7 +109,7 @@ public sealed class ScrollStitcher
     private int BodyHeight => _height - _top - _bottom;
 
     /// <summary>One hash per cell, and whether the cell is a single colour (says nothing about position).</summary>
-    private sealed record Cells(ulong[] Hash, bool[] Blank);
+    private sealed record Cells(ulong[] Hash, bool[] Blank, byte[] Mean);
 
     /// <summary>Adds a frame (stride = width × 4). Returns the rows it added.</summary>
     public int Add(byte[] frame)
@@ -128,8 +130,12 @@ public sealed class ScrollStitcher
         }
 
         // How far did the content move since the last placed frame?
-        var shift = FindShift(_last, cells, out var matched);
+        // Pixel-exact first; then by brightness, with some tolerance: many programs scroll by a fraction of a pixel
+        // (display scaling, smooth scrolling), so the moved rows are resampled and never equal exactly.
+        _phase = 0;
+        var shift = FindShift(_last, cells, out var matched) ?? FindShiftLoosely(_last, cells, out matched);
         int position;
+        var fraction = 0.0;
         if (shift != null)
         {
             CountColumns(frame, shift.Value);
@@ -138,7 +144,10 @@ public sealed class ScrollStitcher
                 Learn(matched, cells);
             }
 
-            position = _viewTop + shift.Value;
+            // Fractions add up over the frames (each frame is compared with the one before): kept, so nothing drifts.
+            var exact = _viewTop + _viewFraction + shift.Value + _phase;
+            position = (int)Math.Round(exact);
+            fraction = exact - position;
         }
         else if (_top >= 0 && Locate(cells) is { } found)
         {
@@ -182,6 +191,7 @@ public sealed class ScrollStitcher
             position = 0;
         }
 
+        _viewFraction = position == _viewTop + LastShift ? fraction : 0;
         _viewTop = position;
         for (var j = _bodyRows.Count - position; j < body && !Full; j++)
         {
@@ -411,6 +421,196 @@ public sealed class ScrollStitcher
     }
 
     /// <summary>
+    /// <see cref="FindShift"/> by each cell's mean brightness (a difference of a few levels counts as the same):
+    /// content moved by a fraction of a pixel is redrawn slightly differently.
+    /// </summary>
+    private static readonly double[] Phases = { 0, 0.25, 0.5, 0.75 };
+
+    private int? FindShiftLoosely(Cells previous, Cells current, out bool[] matchedRows)
+    {
+        const int Same = 6;
+        matchedRows = new bool[_height];
+        bool Still(int y)
+        {
+            var changed = 0;
+            for (var b = 0; b < Bands; b++)
+            {
+                if (Math.Abs(current.Mean[y * Bands + b] - previous.Mean[y * Bands + b]) > Same)
+                {
+                    changed++;
+                }
+            }
+
+            return changed <= 3;
+        }
+
+        var low = 0;
+        while (low < _height && Still(low))
+        {
+            low++;
+        }
+
+        var high = _height;
+        while (high > low && Still(high - 1))
+        {
+            high--;
+        }
+
+        if (high - low < 16)
+        {
+            return null;
+        }
+
+        // Cells that changed and have something in them (a flat cell matches anywhere).
+        var informative = new bool[_height * Bands];
+        var count = 0;
+        for (var y = low; y < high; y++)
+        {
+            for (var b = 0; b < Bands; b++)
+            {
+                var i = y * Bands + b;
+                if (!current.Blank[i] && Math.Abs(current.Mean[i] - previous.Mean[i]) > Same)
+                {
+                    informative[i] = true;
+                    count++;
+                }
+            }
+        }
+
+        if (count < 24)
+        {
+            return null;
+        }
+
+        var bandMatches = new int[Bands];
+        var bandSeen = new int[Bands];
+        // Moved by d + t rows (0 <= t < 1): a row now is the previous rows d and d + 1 blended (the brightness of a
+        // cell is linear in its pixels, so the blend of the cells' brightness).
+        // t < 0: any blend (the value between the two rows) — the previous frame may be a blend itself, the two
+        // blends of blends do not equal exactly.
+        bool Fits(int i, int other, double t)
+        {
+            if (t >= 0)
+            {
+                return Math.Abs(current.Mean[i] - (t == 0 ? previous.Mean[other] : previous.Mean[other] * (1 - t) + previous.Mean[other + Bands] * t)) <= Same;
+            }
+
+            int a = previous.Mean[other], b = previous.Mean[other + Bands], value = current.Mean[i];
+            return value >= Math.Min(a, b) - Same && value <= Math.Max(a, b) + Same;
+        }
+
+        (int Matches, int Seen) Score(int d, int step, double t = 0)
+        {
+            Array.Clear(bandMatches);
+            Array.Clear(bandSeen);
+            var from = Math.Max(low, low - d);
+            var to = Math.Min(high, high - d - (t != 0 ? 1 : 0));
+            for (var y = from; y < to; y += step)
+            {
+                for (var b = 0; b < Bands; b++)
+                {
+                    var i = y * Bands + b;
+                    if (informative[i])
+                    {
+                        bandSeen[b]++;
+                        if (Fits(i, (y + d) * Bands + b, t))
+                        {
+                            bandMatches[b]++;
+                        }
+                    }
+                }
+            }
+
+            int matches = 0, seen = 0;
+            for (var b = 0; b < Bands; b++)
+            {
+                if (bandSeen[b] >= 4 && bandMatches[b] >= bandSeen[b] * 0.7)
+                {
+                    matches += bandMatches[b];
+                    seen += bandSeen[b];
+                }
+            }
+
+            return (matches, seen);
+        }
+
+        int? best = null;
+        var bestRank = 0.0;
+        var candidates = new List<(int D, double Rank)>();
+        for (var d = -(_height - 16); d <= _height - 16; d++)
+        {
+            if (d == 0)
+            {
+                continue;
+            }
+
+            var (matches, seen) = Score(d, 3);
+            if (matches >= 4)
+            {
+                var ratio = matches / (double)Math.Max(1, seen);
+                candidates.Add((d, matches * Math.Pow(ratio, 6)));
+            }
+        }
+
+        // (and the row before each: moved by d - 1 and most of a row looks like d)
+        foreach (var d in candidates.OrderByDescending(c => c.Rank).Take(6).SelectMany(c => new[] { c.D, c.D - 1 }).Where(d => d != 0).Distinct())
+        {
+            var (matches, seen) = Score(d, 1, -1);
+            if (matches < Math.Max(16, count / 3) || matches < seen * 0.9)
+            {
+                continue;
+            }
+
+            var ratio = matches / (double)Math.Max(1, seen);
+            var rank = matches * Math.Pow(ratio, 6);
+            if (rank > bestRank)
+            {
+                best = d;
+                bestRank = rank;
+            }
+        }
+
+        if (best is not { } shift)
+        {
+            return null;
+        }
+
+        // The fraction: the blend that fits best (for where the rows go; the match itself is settled).
+        var bestPhase = 0.0;
+        var bestFit = -1;
+        foreach (var t in Phases)
+        {
+            var fit = Score(shift, 1, t).Matches;
+            if (fit > bestFit)
+            {
+                bestFit = fit;
+                bestPhase = t;
+            }
+        }
+
+        _phase = bestPhase;
+        Score(shift, 1, -1);
+        for (var b = 0; b < Bands; b++)
+        {
+            _movingBands[b] |= bandSeen[b] >= 4 && bandMatches[b] >= bandSeen[b] * 0.7;
+        }
+
+        for (var y = Math.Max(low, low - shift); y < Math.Min(high, high - shift); y++)
+        {
+            for (var b = 0; b < Bands; b++)
+            {
+                if (informative[y * Bands + b] && y + shift + 1 < _height && Fits(y * Bands + b, (y + shift) * Bands + b, -1))
+                {
+                    matchedRows[y] = true;
+                    break;
+                }
+            }
+        }
+
+        return shift;
+    }
+
+    /// <summary>
     /// The frame's body found in the stitched body (within two screens of the last position, above
     /// the start too); null when it does not fit well. Only bands seen moving count.
     /// </summary>
@@ -565,6 +765,7 @@ public sealed class ScrollStitcher
     {
         var hash = new ulong[_height * Bands];
         var blank = new bool[_height * Bands];
+        var mean = new byte[_height * Bands];
         var pixels = MemoryMarshal.Cast<byte, uint>(frame);
         for (var y = 0; y < _height; y++)
         {
@@ -574,19 +775,22 @@ public sealed class ScrollStitcher
                 var value = 14695981039346656037UL;
                 var first = pixels[row + _bandStart[b]] & 0x00FFFFFF;
                 var uniform = true;
+                var light = 0L;
                 for (var x = _bandStart[b]; x < _bandStart[b + 1]; x++)
                 {
                     var px = pixels[row + x] & 0x00FFFFFF;
                     uniform &= px == first;
                     value = (value ^ px) * 1099511628211UL;
+                    light += ((px >> 16) & 0xFF) * 3 + ((px >> 8) & 0xFF) * 6 + (px & 0xFF);
                 }
 
                 hash[y * Bands + b] = value;
                 blank[y * Bands + b] = uniform;
+                mean[y * Bands + b] = (byte)(light / (10 * Math.Max(1, _bandStart[b + 1] - _bandStart[b])));
             }
         }
 
-        return new Cells(hash, blank);
+        return new Cells(hash, blank, mean);
     }
 
     private static T[] RowCells<T>(T[] cells, int y) => cells.AsSpan(y * Bands, Bands).ToArray();

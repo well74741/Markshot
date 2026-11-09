@@ -85,7 +85,7 @@ static class Round68Test
         // ---- the long screenshot bar looks like the others; the settings window rests when idle; shorter texts
         {
             var scroll = Source("UI/ScrollCaptureSession.cs");
-            Check(scroll.Contains("new Border { Child = row, CornerRadius = new CornerRadius(9) }") && scroll.Contains("RoundedWindow.Apply(this, 9 * UiScale.Factor);"),
+            Check(scroll.Contains("CornerRadius = new CornerRadius(9)") && scroll.Contains("Theme.Key(0xF21E1E1E)"),
                 "the long screenshot bar: rounded, the annotation bar's colour");
             Check(Source("Core/Marquee.cs").Contains("RepeatBehavior = new RepeatBehavior(2)"), "a long line scrolls twice, then rests (no endless redrawing)");
             var xaml = Source("UI/SettingsWindow.xaml");

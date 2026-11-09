@@ -95,7 +95,45 @@ public sealed class FloatButtonWindow : Window
         Native.SetWindowPos(_handle, Native.HWND_TOPMOST, 0, 0, 0, 0, 0x0001 /* NOSIZE */ | 0x0002 /* NOMOVE */ | Native.SWP_NOACTIVATE);
     }
 
-    private readonly DispatcherTimer _topTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
+    private readonly DispatcherTimer _topTimer = new() { Interval = TimeSpan.FromSeconds(3) }; // (a fallback: popups are caught as they show)
+
+    private const uint EventObjectShow = 0x8002;
+    private const uint WineventOutOfContext = 0x0000;
+    private const uint WineventSkipOwnProcess = 0x0002;
+    private delegate void WinEventProc(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
+    private readonly WinEventProc _showHook;
+    private IntPtr _showHookHandle;
+    private bool _onTopQueued;
+
+    /// <summary>A window was shown somewhere: if it is a top-level always-on-top one, the button goes above it.</summary>
+    private void WinEventShow(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
+    {
+        if (idObject != 0 || idChild != 0 || hwnd == IntPtr.Zero || _onTopQueued || GetAncestor(hwnd, 2 /* GA_ROOT */) != hwnd)
+        {
+            return;
+        }
+
+        if ((Native.GetWindowLongPtr(hwnd, Native.GWL_EXSTYLE).ToInt64() & 0x8 /* WS_EX_TOPMOST */) == 0)
+        {
+            return;
+        }
+
+        _onTopQueued = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            _onTopQueued = false;
+            KeepOnTop();
+        }, DispatcherPriority.Input);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module, WinEventProc proc, uint process, uint thread, uint flags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool UnhookWinEvent(IntPtr hook);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
 
     /// <summary>Tests: the screenshot is on the button now.</summary>
     internal bool ShowingThumbnail => _thumb.Visibility == Visibility.Visible;
@@ -206,7 +244,18 @@ public sealed class FloatButtonWindow : Window
         PlaceTip(_main);
         _topTimer.Tick += (_, _) => KeepOnTop();
         _topTimer.Start();
-        Closed += (_, _) => _topTimer.Stop();
+        // Another program's always-on-top window appearing (a message popup): back on top straight away.
+        _showHook = WinEventShow;
+        _showHookHandle = SetWinEventHook(EventObjectShow, EventObjectShow, IntPtr.Zero, _showHook, 0, 0, WineventOutOfContext | WineventSkipOwnProcess);
+        Closed += (_, _) =>
+        {
+            _topTimer.Stop();
+            if (_showHookHandle != IntPtr.Zero)
+            {
+                UnhookWinEvent(_showHookHandle);
+                _showHookHandle = IntPtr.Zero;
+            }
+        };
 
         _items = new StackPanel { Orientation = Orientation.Horizontal };
         // The annotation bar's plate: same colour, corners, padding and the narrow inner shade; its buttons are the

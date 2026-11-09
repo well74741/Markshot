@@ -552,12 +552,40 @@ public partial class App : Application
             _capturing = false;
             _float?.Resume();
             Dispatcher.BeginInvoke(PrepareSpareOverlay, DispatcherPriority.ApplicationIdle); // the next capture's window, made while nothing happens
+            TrimMemorySoon();
             NoteScreenshot(shot); // as it comes back: the screenshot on the button, sliding away
             if (!_shuttingDown)
             {
                 ApplyHotkeys();
             }
         }
+    }
+
+    private DispatcherTimer? _trimTimer;
+
+    /// <summary>
+    /// A few seconds after a capture (its full-screen pictures are tens of MB each): the memory they held is given back
+    /// in one go while nothing happens, so Markshot sits small in the background.
+    /// </summary>
+    private void TrimMemorySoon()
+    {
+        _trimTimer ??= new DispatcherTimer(DispatcherPriority.ApplicationIdle) { Interval = TimeSpan.FromSeconds(4) };
+        _trimTimer.Stop();
+        _trimTimer.Tick -= TrimMemory;
+        _trimTimer.Tick += TrimMemory;
+        _trimTimer.Start();
+    }
+
+    private void TrimMemory(object? sender, EventArgs e)
+    {
+        _trimTimer?.Stop();
+        if (_capturing || _shuttingDown)
+        {
+            return;
+        }
+
+        System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: true);
     }
 
     private OverlayWindow? _spareOverlay;
@@ -631,7 +659,7 @@ public partial class App : Application
                 _closedPins.Add((pin.Snapshot(), entry));
                 _pinHistoryWindow?.Refresh();
                 // The exact restore (annotations, zoom) keeps whole pictures: at most 30 pins and ~800 MB of them.
-                while (_closedPins.Count > 30 || (_closedPins.Count > 3 && _closedPins.Sum(closed => SnapshotBytes(closed.Snapshot)) > 800L * 1024 * 1024))
+                while (_closedPins.Count > 20 || (_closedPins.Count > 3 && _closedPins.Sum(closed => SnapshotBytes(closed.Snapshot)) > 300L * 1024 * 1024))
                 {
                     _closedPins.RemoveAt(0);
                 }
