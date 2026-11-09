@@ -218,6 +218,9 @@ public sealed class AppConfig
     /// <summary>The pen's 软边 as last set (0…100 % of the brush width is feathered).</summary>
     public int PenSoftness { get; set; }
 
+    /// <summary>The 圆角 of new rectangles, as last set.</summary>
+    public double RectCornerRadius { get; set; }
+
     /// <summary>软边 of the eraser (0–100): how much of its width erases only partly, fading to the edge.</summary>
     public int EraserSoftness { get; set; }
 
@@ -509,11 +512,15 @@ public sealed class AppConfig
         return config;
     }
 
+    /// <summary>Settings were saved (anything prepared from them ahead — the spare capture window — is made again).</summary>
+    public static event Action? Saved;
+
     public void Save()
     {
         try
         {
             WriteTo(ConfigPath);
+            Saved?.Invoke();
         }
         catch (Exception ex)
         {

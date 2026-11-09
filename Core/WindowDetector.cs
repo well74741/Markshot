@@ -29,25 +29,22 @@ public static class WindowDetector
             }
 
             Native.GetWindowThreadProcessId(handle, out var pid);
-            if (pid == ownPid)
+            if (pid == ownPid || !Shown(handle))
             {
-                return true;
+                return true; // Markshot's own, or a window that is not really on the screen
             }
 
-            if (!Native.GetWindowRect(handle, out var rect) ||
-                rect.Width < 8 || rect.Height < 8)
-            {
-                return true;
-            }
-
-            if (screenX < rect.Left || screenX >= rect.Right ||
-                screenY < rect.Top || screenY >= rect.Bottom)
+            // The window as drawn (DWM): GetWindowRect includes the invisible resize borders around it (several pixels
+            // of whatever lies beside a window were framed with it, and a press there found the wrong window).
+            var bounds = GetBounds(handle);
+            if (bounds.Width < 8 || bounds.Height < 8 ||
+                screenX < bounds.Left || screenX >= bounds.Right || screenY < bounds.Top || screenY >= bounds.Bottom)
             {
                 return true;
             }
 
             var className = GetClassName(handle);
-            if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Windows.UI.Core.CoreWindow")
+            if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "Windows.UI.Core.CoreWindow")
             {
                 return true;
             }
@@ -89,6 +86,42 @@ public static class WindowDetector
 
         return new WindowTarget { Handle = handle2, Bounds = bounds, Label = label };
     }
+
+    /// <summary>
+    /// A window really on the screen: not cloaked (a suspended store app, a window on another virtual desktop — "visible"
+    /// but not shown, and often covering everything), not click-through, not a fully see-through layer.
+    /// </summary>
+    private static bool Shown(IntPtr handle)
+    {
+        if (DwmGetWindowAttribute(handle, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0)
+        {
+            return false;
+        }
+
+        var exStyle = Native.GetWindowLongPtr(handle, Native.GWL_EXSTYLE).ToInt64();
+        if ((exStyle & Native.WS_EX_TRANSPARENT) != 0)
+        {
+            return false; // overlays that let every click through (game / recorder HUDs)
+        }
+
+        if ((exStyle & WS_EX_LAYERED) != 0 && GetLayeredWindowAttributes(handle, out _, out var alpha, out var flags) &&
+            (flags & LWA_ALPHA) != 0 && alpha == 0)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private const int DWMWA_CLOAKED = 14;
+    private const long WS_EX_LAYERED = 0x00080000;
+    private const uint LWA_ALPHA = 0x2;
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetLayeredWindowAttributes(IntPtr hwnd, out uint key, out byte alpha, out uint flags);
 
     /// <summary>The window of the program in use, or none when that is the desktop, the taskbar or Markshot itself.</summary>
     public static IntPtr ActiveProgram()

@@ -863,6 +863,11 @@ public partial class AnnotationToolbar : UserControl
             AngleValue.Text = $"{Math.Round(_watermarkAngle)}°";
             WidthSlider.Value = Math.Clamp(_thickness, WidthSlider.Minimum, WidthSlider.Maximum);
             WidthValue.Text = ((int)Math.Round(WidthSlider.Value)).ToString(CultureInfo.InvariantCulture);
+            if (App.Config is { } cornerConfig)
+            {
+                _corner = cornerConfig.RectCornerRadius; // the last 圆角 set (kept between captures and starts)
+            }
+
             CornerSlider.Value = Math.Clamp(_corner, 0, 40);
             CornerValue.Text = ((int)Math.Round(CornerSlider.Value)).ToString(CultureInfo.InvariantCulture);
             FillToggle.IsChecked = _fill;
@@ -1773,6 +1778,11 @@ public partial class AnnotationToolbar : UserControl
 
         _corner = e.NewValue;
         CornerValue.Text = ((int)Math.Round(e.NewValue)).ToString(CultureInfo.InvariantCulture);
+        if (_selection == null && App.Config is { } config)
+        {
+            config.RectCornerRadius = Math.Round(e.NewValue); // remembered for the next rectangle (saved with the capture)
+        }
+
         SettingsChanged?.Invoke();
     }
 

@@ -35,6 +35,7 @@ public static class Marquee
 
         block.SizeChanged += (_, _) => Update(block);
         block.Loaded += (_, _) => Update(block);
+        block.MouseEnter += (_, _) => Update(block); // scrolls again on hover
         System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock))
             .AddValueChanged(block, (_, _) => block.Dispatcher.BeginInvoke(new Action(() => Update(block)), System.Windows.Threading.DispatcherPriority.Loaded));
     }
@@ -101,7 +102,9 @@ public static class Marquee
 
         var travel = TimeSpan.FromSeconds(Math.Clamp(overflow / 40, 1.2, 12)); // about 40 DIP a second
         var pause = TimeSpan.FromSeconds(1.6);
-        var scroll = new DoubleAnimationUsingKeyFrames { RepeatBehavior = RepeatBehavior.Forever };
+        // Twice, then it rests at the start (again when the pointer comes onto it): scrolling for ever kept the whole
+        // window drawing 60 times a second — the settings window dragged heavily because of a long path / status line.
+        var scroll = new DoubleAnimationUsingKeyFrames { RepeatBehavior = new RepeatBehavior(2) };
         scroll.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
         scroll.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(pause)));
         scroll.KeyFrames.Add(new EasingDoubleKeyFrame(-overflow, KeyTime.FromTimeSpan(pause + travel), new SineEase { EasingMode = EasingMode.EaseInOut }));

@@ -451,7 +451,7 @@ public sealed class ScrollCaptureSession
             ShowDirection(session.Horizontal);
             var separator = new Border { Width = 1, Height = 18, Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
             separator.SetResourceReference(Border.BackgroundProperty, Theme.Key(0x33FFFFFF));
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(5, 4, 5, 4) };
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(5, 3, 5, 3) };
             row.Children.Add(_vertical);
             row.Children.Add(_horizontal);
             row.Children.Add(separator);
@@ -459,12 +459,13 @@ public sealed class ScrollCaptureSession
             row.Children.Add(Action("IconCopyMask", "复制", ScrollCaptureAction.Copy));
             row.Children.Add(Action("IconSaveMask", "保存", ScrollCaptureAction.Save));
             row.Children.Add(Action("IconCloseMask", "取消，回到截图（Esc）", ScrollCaptureAction.Cancel));
-            var frame = new Border { Child = row, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0) };
-            frame.SetResourceReference(Border.BackgroundProperty, "PanelBackground");
-            frame.SetResourceReference(Border.BorderBrushProperty, "PanelBorder");
+            // The annotation bar's look: its colour, rounded corners, no outline (a plain window: kept out of the shots).
+            var frame = new Border { Child = row, CornerRadius = new CornerRadius(9) };
+            frame.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
             UiScale.Attach(frame);
             Content = frame;
-            SetResourceReference(BackgroundProperty, "PanelBackground");
+            SetResourceReference(BackgroundProperty, Theme.Key(0xFF1E1E1E));
+            RoundedWindow.Apply(this, 9 * UiScale.Factor);
             SourceInitialized += (_, _) =>
             {
                 var handle = new WindowInteropHelper(this).Handle;

@@ -89,9 +89,9 @@ public partial class SettingsWindow : Window
         VersionText.Text = "版本 " + AppVersion.Display;
         ConfigPathText.Text = AppConfig.ConfigPath;
         ConfigPathText.ToolTip = AppConfig.ConfigPath;
-        if (!config.Translation.IsConfigured)
+        if (!config.Translation.IsConfigured && !Services.OfflinePacks.AnyInstalled)
         {
-            StatusText.Text = "提示：还没有填写翻译 API Key，原位翻译和文字翻译需要它（见“翻译”页）。";
+            StatusText.Text = "未设置翻译：填 API Key 或下载离线包（“翻译”页）";
         }
 
         PreviewKeyDown += OnPreviewKeyDownFloat;

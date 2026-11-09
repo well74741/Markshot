@@ -1052,7 +1052,7 @@ public partial class OverlayWindow
     }
 
     /// <summary>The window in front before the capture opened (set by the app; the capture itself is not it).</summary>
-    public IntPtr ActiveWindow { get; init; }
+    public IntPtr ActiveWindow { get; set; }
 
     /// <summary>Two frames the user could not tell apart.</summary>
     private static bool Close(Rect a, Rect b) =>

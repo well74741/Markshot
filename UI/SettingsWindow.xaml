@@ -352,9 +352,9 @@
                                          GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="HotkeyBox_PreviewKeyDown" PreviewMouseDown="HotkeyBox_PreviewMouseDown" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"
-                                       Text="点击输入框后直接按组合键，也可以按鼠标中键 / 侧键（可配合 Ctrl / Alt / Shift）；Backspace 清除，Esc 还原；除截图外都可留空。" />
+                                       Text="点框后按组合键或鼠标中键 / 侧键；Backspace 清除，Esc 还原。" />
                             <CheckBox x:Name="HotkeysDisabledCheck" Margin="0,10,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="禁用所有快捷键（玩全屏游戏时避免误触；托盘菜单里也可以切换）" />
+                                      Content="禁用所有快捷键（全屏游戏防误触）" />
                         </StackPanel>
                     </Border>
 
@@ -362,10 +362,10 @@
                         <StackPanel>
                             <TextBlock Text="Win + 鼠标键" Style="{StaticResource CardTitle}" />
                             <CheckBox x:Name="WinMouseCheck" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="按住 Win 键用鼠标在屏幕上直接划出区域（屏幕不变暗、不显示提示）" />
+                                      Content="Win + 鼠标直接划区域" />
                             <StackPanel x:Name="WinMouseRows" Margin="0,8,0,0" />
                             <TextBlock Style="{StaticResource Hint}" Margin="0,8,0,0" TextWrapping="Wrap"
-                                       Text="三个键的功能可以任意设置，也可以相同。识别文字 = 打开文字识别窗口；贴图 = 直接贴到屏幕；复制 = 只复制到剪贴板。" />
+                                       Text="每个键可选：识别文字 / 贴图 / 复制。" />
                         </StackPanel>
                     </Border>
 
@@ -390,15 +390,15 @@
                                          GotKeyboardFocus="HotkeyBox_GotKeyboardFocus" LostKeyboardFocus="HotkeyBox_LostKeyboardFocus" PreviewKeyDown="CaptureKeyBox_PreviewKeyDown" PreviewKeyUp="CaptureKeyBox_PreviewKeyUp" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap"
-                                       Text="只在截图窗口里生效（选区前后都可以）。可以是组合键，也可以单独一个 Alt / Ctrl / Shift（单按一下切换，按住拖动等操作不受影响）。" />
+                                       Text="仅截图中有效；可用组合键或单个 Alt / Ctrl / Shift。" />
                             <CheckBox x:Name="EscExitsCheck" Margin="0,10,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="按一次 Esc 或右键直接退出截图（关闭后逐步退出：先放下工具 / 取消选中，再取消选区，最后退出；Esc 和右键一样）" />
+                                      Content="Esc / 右键一次直接退出截图（关闭则逐步退出）" />
                         </StackPanel>
                     </Border>
 
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Text="批注工具（单个字母，截图和贴图编辑时生效；Tab 切换同一按钮里的样式）" Style="{StaticResource CardTitle}" />
+                            <TextBlock Text="批注工具（单个字母；Tab 切换样式）" Style="{StaticResource CardTitle}" />
                             <UniformGrid Columns="7">
                                 <StackPanel>
                                     <TextBlock Text="图形" Style="{StaticResource RowLabel}" Margin="0,0,0,5" />
@@ -463,12 +463,12 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="4" Grid.ColumnSpan="2">
                                     <TextBlock Text="拖动贴图辅助键" Style="{StaticResource RowLabel}" Margin="0,0,0,5"
-                                               ToolTip="贴图上有文字批注时，按住此键（Alt / Ctrl / Shift）可直接拖动贴图而不进入文字编辑" />
+                                               ToolTip="按住此键拖动贴图，不进入文字编辑" />
                                     <TextBox x:Name="TextBypassBox" Style="{StaticResource Field}" MaxLength="12" />
                                 </StackPanel>
                             </Grid>
                             <CheckBox x:Name="QuickDoubleClickCheck" Margin="0,12,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="快速双击复制并关闭：无论是否拿着批注工具，双击截图或贴图立刻复制并关闭" />
+                                      Content="双击截图 / 贴图：复制并关闭" />
 
                         </StackPanel>
                     </Border>
@@ -485,7 +485,7 @@
                         <StackPanel>
                             <TextBlock Text="原位翻译" Style="{StaticResource CardTitle}" />
                             <ToggleButton x:Name="ImmersiveSwitch" Style="{StaticResource Switch}"
-                                          Content="截图时自动把选区内的文字替换成译文（同工具栏的翻译开关）" />
+                                          Content="截图时把选区文字替换成译文" />
                             <Grid Margin="0,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="84" />
@@ -561,7 +561,7 @@
                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" core:Marquee.Enabled="True" />
                             </DockPanel>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,10,0,0"
-                                       Text="支持 DeepSeek、OpenAI、Moonshot、SiliconFlow、Ollama、LM Studio 等提供 /chat/completions 的服务；本机地址可不填 Key。" />
+                                       Text="OpenAI 兼容接口（DeepSeek、Ollama…）；本机地址可不填 Key。" />
                         </StackPanel>
                     </Border>
 
@@ -584,7 +584,7 @@
                                 <TextBlock Text="翻译方式" Style="{StaticResource RowLabel}" />
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <RadioButton x:Name="EngineAuto" Style="{StaticResource SegmentRadio}" GroupName="Engine" Tag="Auto" Content="自动"
-                                                 ToolTip="用大模型 API；没有填 API Key 时用已下载的离线翻译包" />
+                                                 ToolTip="有 API Key 用大模型，否则用离线包" />
                                     <RadioButton x:Name="EngineApi" Style="{StaticResource SegmentRadio}" GroupName="Engine" Tag="Api" Content="大模型 API" />
                                     <RadioButton x:Name="EngineOffline" Style="{StaticResource SegmentRadio}" GroupName="Engine" Tag="Offline" Content="离线翻译包" />
                                 </StackPanel>
@@ -594,7 +594,7 @@
                                 <StackPanel Grid.Row="4" Grid.Column="1" x:Name="OfflinePackRows" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,10,0,0" TextWrapping="Wrap"
-                                       Text="不需要网络和 API Key，在本机运行（opus-mt 模型）。每个方向约 120 MB，手动下载到 %LOCALAPPDATA%\Markshot\translate，不包含在安装包里。目前支持中文 ↔ 英文，译文质量不如大模型。" />
+                                       Text="本机运行，无需网络；中 ↔ 英，每个约 120 MB，按需下载。" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -647,11 +647,11 @@
                                 </Border>
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0"
-                                       Text="单击按钮开关（变暗 = 不显示），长按拖动排序；批注栏上也可以长按按钮直接拖动排序。" />
+                                       Text="单击显示 / 隐藏，长按拖动排序。" />
                             <CheckBox x:Name="HideChevronsCheck" Margin="84,10,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="隐藏批注工具旁的收纳按钮 ▾" />
                             <TextBlock Style="{StaticResource Hint}" Margin="124,4,0,0" TextWrapping="Wrap"
-                                       Text="隐藏后，鼠标移到工具按钮上直接展开样式列表（矩形 / 椭圆、画笔 / 荧光笔…），更省空间。" />
+                                       Text="隐藏后悬停工具按钮展开样式列表。" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -699,7 +699,7 @@
                                 </Border>
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="选择后立即预览，点“保存”后保留（关闭时会询问）。浅色：所有界面换成浅色；跟随系统：随 Windows 的应用主题切换。工具栏大小：中、大让工具栏、菜单等的按钮和文字整体大一号、两号（设置窗口本身保持不变）。" />
+                                       Text="选择后即时预览，点“保存”生效。" />
                         </StackPanel>
                     </Border>
 
@@ -742,11 +742,11 @@
                         <StackPanel>
                             <TextBlock Text="悬浮按钮" Style="{StaticResource CardTitle}" />
                             <CheckBox x:Name="FloatEnabledCheck" Margin="84,0,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="显示悬浮按钮（单击截图，鼠标移上去展开更多）" Click="FloatEnabled_Click" />
+                                      Content="显示悬浮按钮（点击行为可自定义，悬停展开更多）" Click="FloatEnabled_Click" />
                             <CheckBox x:Name="FloatFullscreenCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="全屏程序（视频、游戏等）在前面时自动隐藏" Click="FloatFullscreen_Click" />
                             <CheckBox x:Name="FloatCaptureHideCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="截图时隐藏（关闭后截图界面上也显示；它本身不会出现在截图里。录屏时一直显示）" />
+                                      Content="截图时隐藏" />
                             <Grid Margin="0,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="84" />
@@ -808,7 +808,7 @@
                                 </StackPanel>
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="浮窗按钮：单击开关，长按拖动排序（悬浮按钮上同样可长按排序）。图标可选 PNG / JPG / GIF / WebP 等，动图按原速播放；也可把图片拖到预览框，或复制后按 Ctrl+V。托盘图标跟着一起换，阴影与贴图阴影相同。" />
+                                       Text="按钮单击显示 / 隐藏，长按排序；图标支持图片和动图，可拖入或 Ctrl+V。" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -824,7 +824,7 @@
                         <StackPanel>
                             <TextBlock Text="截图识别" Style="{StaticResource CardTitle}" />
                             <TextBlock Style="{StaticResource Hint}" Margin="84,0,0,6" TextWrapping="Wrap"
-                                       Text="先用系统无障碍接口找元素，找不到时（如 Electron / 网页应用、游戏、远程桌面）按画面识别文字段、图片和内容块。" />
+                                       Text="优先读取系统界面元素，读不到时按画面识别。" />
                             <CheckBox x:Name="DetectAutoCheck" Margin="84,2,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="自动识别截图区域（鼠标经过时自动框住）" Click="DetectAuto_Click" />
                             <CheckBox x:Name="DetectElementsCheck" Margin="104,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
@@ -838,12 +838,12 @@
                                            Foreground="{DynamicResource T_FFC8C8C8}" FontSize="12" VerticalAlignment="Center" />
                                 <Slider x:Name="DetectSensitivitySlider" Minimum="1" Maximum="4" TickFrequency="1" IsSnapToTickEnabled="True"
                                         IsMoveToPointEnabled="True" Width="150" VerticalAlignment="Center" ValueChanged="DetectSensitivity_Changed"
-                                        ToolTip="鼠标经过时先框住多大的东西；滚轮可以往外框到窗口、往里框到更小的元素。只在截图前正在用的软件里识别元素，其他窗口整个框住" />
+                                        ToolTip="悬停时先框住的大小；滚轮放大 / 缩小范围" />
                             </DockPanel>
                             <CheckBox x:Name="CaptureCursorCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="截图包含鼠标指针（截图中也可用快捷键切换）" />
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="截图时鼠标经过的元素 / 窗口会自动框住，单击即截取；滚轮在元素和外层之间切换。都关掉则只能拖动框选。" />
+                                       Text="悬停自动框选，单击截取；滚轮切换范围。" />
                         </StackPanel>
                     </Border>
 
@@ -851,13 +851,13 @@
                         <StackPanel>
                             <TextBlock Text="打开方式" Style="{StaticResource CardTitle}" />
                             <CheckBox x:Name="OpenWithCheck" Margin="84,2,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="在图片的「打开方式」里加入 Markshot（PNG、JPEG、WebP、BMP、GIF、TIFF、ICO）" />
+                                      Content="加入图片的「打开方式」" />
                             <StackPanel Orientation="Horizontal" Margin="84,10,0,0">
                                 <Button Content="设为图片默认打开方式…" Style="{StaticResource FooterButton}" Click="DefaultOpen_Click" />
                                 <Button Content="Windows 默认应用设置" Style="{StaticResource FooterButton}" Margin="8,0,0,0" Click="DefaultApps_Click" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0" TextWrapping="Wrap"
-                                       Text="Windows 不允许程序自己改默认打开方式：在弹出的窗口里选 Markshot 并勾选「始终使用此应用」。其他格式可在 Windows 默认应用设置里逐个选择。" />
+                                       Text="在弹出的窗口里选 Markshot 并勾选「始终使用此应用」。" />
                         </StackPanel>
                     </Border>
 
@@ -876,9 +876,9 @@
                                         Click="Browse_Click" Margin="8,0,0,0" />
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}" Margin="84,8,0,0"
-                                       Text="留空则保存到 图片\Markshot；Ctrl+Shift+S 直接存到这里不弹窗。" />
+                                       Text="留空为 图片\Markshot；Ctrl+Shift+S 直接保存到这里。" />
                             <CheckBox x:Name="CopyFileCheck" Margin="84,10,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="复制图片文件：复制截图或贴图时同时复制 PNG 文件，可直接在文件管理器里粘贴" />
+                                      Content="复制时附带 PNG 文件（可粘贴到文件夹）" />
                             <CheckBox x:Name="AskOpenFolderCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="保存图片后询问是否打开所在文件夹" />
                             <CheckBox x:Name="AutoStartCheck" Margin="84,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"

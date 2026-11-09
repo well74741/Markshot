@@ -127,6 +127,25 @@ public partial class App : Application
         _hotkeys = new HotkeyManager();
         // Every picture copied (toolbar, menu, double-click, keys …) shows on the floating button.
         ClipboardService.ImageCopied += image => Dispatcher.BeginInvoke(() => NoteScreenshot(image));
+        // Pictures copied by any program show on the floating button too.
+        _clipboardWatch = AppConfig.PathOverride != null ? null : new ClipboardWatcher(() => // (not in the tests: the clipboard is the user's)
+        {
+            if (_float != null && Config.FloatButtonEnabled && Environment.TickCount64 - _lastShotNote > 700)
+            {
+                NoteScreenshot(ClipboardWatcher.ReadImage());
+            }
+        });
+        Dispatcher.BeginInvoke(PrepareSpareOverlay, DispatcherPriority.ApplicationIdle); // the first capture opens quicker too
+        AppConfig.Saved += () => Dispatcher.BeginInvoke(() =>
+        {
+            // Settings changed: the spare (built from them) is made again when nothing is going on.
+            if (!_capturing && _spareOverlay != null)
+            {
+                _spareOverlay.Close();
+                _spareOverlay = null;
+                Dispatcher.BeginInvoke(PrepareSpareOverlay, DispatcherPriority.ApplicationIdle);
+            }
+        });
         _tray = new TrayService(
             () => StartCapture(),
             PinFromClipboard,
@@ -437,16 +456,15 @@ public partial class App : Application
         {
             var (image, bounds) = ScreenCapture.CaptureVirtualScreen();
             var cursor = CursorCapture.Grab(bounds.X, bounds.Y);
-            var overlay = new OverlayWindow(image, bounds, demo)
-            {
-                ActiveWindow = WindowDetector.ActiveProgram(), // the program in use: its elements are offered first
-                // The pin is created while the capture is still on screen (no gap, no flicker).
-                InitialSelection = selection,
-                OcrOnSelect = ocr,
-                CursorShot = cursor,
-                PinNow = (source, output) => WithHistory(CreatePin(output, (int)source.SelectionScreenRect.X, (int)source.SelectionScreenRect.Y,
-                    source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow), source)
-            };
+            // The window made in advance (its handle ready: a few hundred ms less to wait), else a new one.
+            var overlay = TakeSpareOverlay(image, bounds, demo) ?? new OverlayWindow(image, bounds, demo);
+            overlay.ActiveWindow = WindowDetector.ActiveProgram(); // the program in use: its elements are offered first
+            overlay.InitialSelection = selection;
+            overlay.OcrOnSelect = ocr;
+            overlay.CursorShot = cursor;
+            // The pin is created while the capture is still on screen (no gap, no flicker).
+            overlay.PinNow = (source, output) => WithHistory(CreatePin(output, (int)source.SelectionScreenRect.X, (int)source.SelectionScreenRect.Y,
+                source.PinBaseImage, source.PinAnnotations, source.PinCornerRadius, fromCapture: true, shapedShadow: source.PinShapedShadow), source);
             if (!Config.FloatHideWhileCapturing)
             {
                 // Kept for the capture (out of the screenshot itself, taken above): back as soon as the capture shows.
@@ -533,12 +551,46 @@ public partial class App : Application
         {
             _capturing = false;
             _float?.Resume();
+            Dispatcher.BeginInvoke(PrepareSpareOverlay, DispatcherPriority.ApplicationIdle); // the next capture's window, made while nothing happens
             NoteScreenshot(shot); // as it comes back: the screenshot on the button, sliding away
             if (!_shuttingDown)
             {
                 ApplyHotkeys();
             }
         }
+    }
+
+    private OverlayWindow? _spareOverlay;
+
+    /// <summary>A capture window made in advance (hidden), so a capture opens without making one.</summary>
+    private void PrepareSpareOverlay()
+    {
+        if (_spareOverlay != null || _capturing || _shuttingDown)
+        {
+            return;
+        }
+
+        try
+        {
+            _spareOverlay = OverlayWindow.CreateSpare();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("预备截图窗口失败", ex);
+            _spareOverlay = null;
+        }
+    }
+
+    private OverlayWindow? TakeSpareOverlay(BitmapSource image, Int32Rect bounds, bool demo)
+    {
+        if (demo || _spareOverlay is not { IsSpare: true } spare)
+        {
+            return null;
+        }
+
+        _spareOverlay = null;
+        spare.Load(image, bounds);
+        return spare;
     }
 
     public PinWindow CreatePin(BitmapSource image, int screenX, int screenY,
@@ -929,6 +981,7 @@ public partial class App : Application
     }
 
     private long _lastShotNote = -10000;
+    private ClipboardWatcher? _clipboardWatch;
 
     public void ToggleMouseThrough()
     {
@@ -1392,6 +1445,9 @@ public partial class App : Application
 
         _shuttingDown = true;
         Log.Info("Markshot 退出");
+        _spareOverlay?.Close();
+        _spareOverlay = null;
+        _clipboardWatch?.Dispose();
         _float?.Close();
         _recorder?.Close();
 

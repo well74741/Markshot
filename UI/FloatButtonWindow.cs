@@ -65,6 +65,38 @@ public sealed class FloatButtonWindow : Window
         _thumbTimer.Start();
     }
 
+    /// <summary>
+    /// The tip above the row (below it when the button is near the top of the screen), clear of the buttons — at the
+    /// pointer it lay over the next ones.
+    /// </summary>
+    private void PlaceTip(FrameworkElement element)
+    {
+        ToolTipService.SetPlacement(element, System.Windows.Controls.Primitives.PlacementMode.Top);
+        ToolTipService.SetVerticalOffset(element, -6);
+        element.ToolTipOpening += (_, _) =>
+        {
+            var work = Forms.Screen.FromPoint(new System.Drawing.Point((int)_centerX, (int)_centerY)).WorkingArea;
+            var high = _centerY - work.Top < work.Height * 0.25;
+            ToolTipService.SetPlacement(element, high ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top);
+            ToolTipService.SetVerticalOffset(element, high ? 6 : -6);
+        };
+    }
+
+    /// <summary>
+    /// Back on top now and then: a program's message popup (bottom right) that came later was drawn over the button.
+    /// </summary>
+    private void KeepOnTop()
+    {
+        if (!IsVisible || _pressed || _moving || _reorder.IsDragging || _handle == IntPtr.Zero || ContextMenu is { IsOpen: true })
+        {
+            return;
+        }
+
+        Native.SetWindowPos(_handle, Native.HWND_TOPMOST, 0, 0, 0, 0, 0x0001 /* NOSIZE */ | 0x0002 /* NOMOVE */ | Native.SWP_NOACTIVATE);
+    }
+
+    private readonly DispatcherTimer _topTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
+
     /// <summary>Tests: the screenshot is on the button now.</summary>
     internal bool ShowingThumbnail => _thumb.Visibility == Visibility.Visible;
 
@@ -166,11 +198,15 @@ public sealed class FloatButtonWindow : Window
             Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), // the whole round area takes the mouse
             Child = new Grid { Children = { _icon, _thumb }, ClipToBounds = true },
             Cursor = Cursors.Hand,
-            ToolTip = "单击截图 · 拖动移动 · 右键更多",
+            ToolTip = "单击截图 · 拖动移动 · 右键更多", // (the click's action: see ApplyLook)
             RenderTransformOrigin = new Point(0.5, 0.5),
             RenderTransform = _pressScale
         };
         ToolTipService.SetInitialShowDelay(_main, 900);
+        PlaceTip(_main);
+        _topTimer.Tick += (_, _) => KeepOnTop();
+        _topTimer.Start();
+        Closed += (_, _) => _topTimer.Stop();
 
         _items = new StackPanel { Orientation = Orientation.Horizontal };
         // The annotation bar's plate: same colour, corners, padding and the narrow inner shade; its buttons are the
@@ -392,6 +428,7 @@ public sealed class FloatButtonWindow : Window
                 ToolTip = Label(key) + "（长按拖动排序）",
                 Visibility = hidden.Contains(key) ? Visibility.Collapsed : Visibility.Visible
             };
+            PlaceTip(item);
             item.Click += (_, _) =>
             {
                 if (_reorder.JustDragged || _reorder.IsDragging)
@@ -410,6 +447,8 @@ public sealed class FloatButtonWindow : Window
     /// <summary>Picture, opacity and shadow from the settings (the shadow is the pins' one).</summary>
     public void ApplyLook()
     {
+        var click = Actions.Contains(_config.FloatClickAction) ? _config.FloatClickAction : "Capture";
+        _main.ToolTip = $"单击：{Label(click)} · 拖动移动 · 右键更多";
         FloatIcon.Load(_config).Play(_icon);
         _main.Width = MainSize;
         _main.Height = MainSize;
@@ -807,14 +846,15 @@ public sealed class FloatButtonWindow : Window
         Collapse();
         if (wasShown)
         {
-            // A quick fade, waited for here (the screenshot comes right after), then gone before it is taken.
-            FadeOutAndWait();
+            // Gone at once (no fade to wait for: the capture opens sooner), then off the screen before it is taken.
+            _fadingOut = false;
+            _root.BeginAnimation(OpacityProperty, null);
+            _root.Opacity = 0;
         }
 
         UpdateShown();
         if (wasShown)
         {
-            DwmFlush();
             DwmFlush();
         }
     }

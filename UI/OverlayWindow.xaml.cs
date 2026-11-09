@@ -52,13 +52,13 @@ public partial class OverlayWindow : Window
     private int _roundingCorner;
 
     private BitmapSource _screen; // what the capture shows: the screenshot, with the pointer when 显示鼠标 is on
-    private readonly BitmapSource _screenPlain;
+    private BitmapSource _screenPlain;
     private BitmapSource? _screenWithCursor;
     private CursorShot? _cursorShot;
     private bool _showCursor;
     private bool _crosshair;
     private Key? _tapKey; // a lone modifier pressed with nothing else (yet)
-    private readonly Int32Rect _bounds;
+    private Int32Rect _bounds;
     private readonly bool _demo;
 
     private readonly AnnotationHistory _history = new();
@@ -165,10 +165,10 @@ public partial class OverlayWindow : Window
     public Rect SelectionScreenRect { get; private set; }
 
     /// <summary>Start with this area selected (screen pixels).</summary>
-    public Int32Rect? InitialSelection { get; init; }
+    public Int32Rect? InitialSelection { get; set; }
 
     /// <summary>文字识别 from the floating button: once an area is chosen it is recognised (no toolbar step).</summary>
-    public bool OcrOnSelect { get; init; }
+    public bool OcrOnSelect { get; set; }
 
     /// <summary>For pins: the selection without annotations (translation included).</summary>
     public BitmapSource? PinBaseImage { get; private set; }
@@ -498,8 +498,43 @@ public partial class OverlayWindow : Window
         var style = Native.GetWindowLongPtr(handle, Native.GWL_EXSTYLE).ToInt64();
         Native.SetWindowLongPtr(handle, Native.GWL_EXSTYLE, new IntPtr(style | 0x00000080));
         Native.NotFullscreenApp(handle); // the taskbar stays as it is (no flash of the clock when the capture closes)
-        ApplyPhysicalBounds();
+        if (!_spare)
+        {
+            ApplyPhysicalBounds(); // (a spare made in advance stays hidden until it is used)
+        }
     }
+
+    private bool _spare;
+
+    /// <summary>
+    /// A capture window made in advance, its window handle created and waiting hidden: making a window the size of
+    /// all screens takes a few hundred milliseconds, which the capture then no longer waits for.
+    /// </summary>
+    public static OverlayWindow CreateSpare()
+    {
+        var placeholder = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Pbgra32, null, new byte[4], 4);
+        placeholder.Freeze();
+        var spare = new OverlayWindow(placeholder, new Int32Rect(-32000, -32000, 1, 1)) { _spare = true };
+        new WindowInteropHelper(spare).EnsureHandle();
+        return spare;
+    }
+
+    /// <summary>A spare takes the screenshot it shows (before it is shown).</summary>
+    public void Load(BitmapSource screen, Int32Rect bounds)
+    {
+        _spare = false;
+        _screen = screen;
+        _screenPlain = screen;
+        _screenWithCursor = null;
+        _bounds = bounds;
+        ScreenImage.Source = screen;
+        BrightImage.Source = screen;
+        Editor.Source = screen;
+        Magnifier.Source = screen;
+    }
+
+    /// <summary>Tests: made in advance and not used yet.</summary>
+    internal bool IsSpare => _spare;
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
