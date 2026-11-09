@@ -210,7 +210,9 @@ static class Round70Test
                 var (placed, lost, total, wrong, ms) = Run(page, bigWidth, bigHeight, offsets);
                 Check(Math.Abs(total - (bigHeight + 4000)) <= 2 && wrong <= 3 && lost == 0,
                     $"a big area in big steps: {total} rows for {bigHeight + 4000}, {wrong} wrong, {placed} placed / {lost} lost");
-                Check(ms < 40, $"… {ms:0.0} ms a frame");
+                // (the shared machines of GitHub Actions run a Debug build a few times slower: a loose bound there)
+                var bound = Environment.GetEnvironmentVariable("CI") == "true" ? 150 : 40;
+                Check(ms < bound, $"… {ms:0.0} ms a frame (under {bound})");
             }
         }
 
