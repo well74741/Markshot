@@ -109,10 +109,30 @@ public sealed class FormulaRecognizer : IDisposable
         }
     }
 
+    private static long _lastUse;
+    private static Timer? _idle;
+
     public static FormulaRecognizer Get()
     {
         lock (Gate)
         {
+            // Let go after a few minutes unused (about 500 MB in use); made again on the next use.
+            _lastUse = Environment.TickCount64;
+            _idle ??= new Timer(_ =>
+            {
+                if (Environment.TickCount64 - _lastUse > OcrService.UnloadAfter.TotalMilliseconds && Monitor.TryEnter(Gate))
+                {
+                    try
+                    {
+                        _loaded?.Dispose();
+                        _loaded = null;
+                    }
+                    finally
+                    {
+                        Monitor.Exit(Gate);
+                    }
+                }
+            }, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
             return _loaded ??= new FormulaRecognizer(OcrPacks.Folder(OcrPacks.Formula));
         }
     }

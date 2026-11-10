@@ -32,7 +32,7 @@ public static partial class Theme
     /// <summary>The named brushes of App.xaml and their dark colours.</summary>
     private static readonly (object Key, uint Dark)[] Named =
     {
-        ("PanelBackground", 0xF21C1C1C),
+        ("PanelBackground", 0xFF1C1C1C),
         ("PanelBorder", 0x33FFFFFF),
         ("TextPrimary", 0xFFF5F5F5),
         ("TextSecondary", 0xFF9A9A9A),

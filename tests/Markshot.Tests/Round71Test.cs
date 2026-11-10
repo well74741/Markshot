@@ -103,7 +103,7 @@ static class Round71Test
             }
 
             var xaml = Source("UI/SettingsWindow.xaml");
-            Check(xaml.Contains("x:Name=\"OcrPackRows\""), "settings → 保存与识别: 识别模型 with download / delete");
+            Check(xaml.Contains("x:Name=\"OcrPackRows\""), "settings → 识别与保存: 识别模型 with download / delete");
             Check(Source("UI/TranslationWindow.xaml").Contains("x:Name=\"FormulaButton\""), "the text recognition window: 公式 (when the pack is there)");
         }
 

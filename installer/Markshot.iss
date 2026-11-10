@@ -83,6 +83,8 @@ Root: HKCU; Subkey: "Software\Classes\.webp\OpenWithProgids"; ValueType: none; V
 Root: HKCU; Subkey: "Software\Classes\.ico\OpenWithProgids"; ValueType: none; ValueName: "Markshot.Image"; Flags: uninsdeletevalue
 
 [Run]
+; Windows keeps a program's icon by its path: refreshed, so the new logo shows (Task Manager, Start menu, taskbar).
+Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden skipifdoesntexist
 Filename: "{app}\Markshot.exe"; Description: "启动 Markshot"; Flags: nowait postinstall skipifsilent
 ; An update started from Markshot runs silently: Markshot opens again when it is done.
 Filename: "{app}\Markshot.exe"; Flags: nowait; Check: RestartAfterUpdate

@@ -4,7 +4,7 @@ namespace Markshot.UI;
 
 /// <summary>
 /// "Saved — open the folder?" after saving an image. The check box at the bottom turns the
-/// prompt off (also in Settings → 保存与识别).
+/// prompt off (also in Settings → 识别与保存).
 /// </summary>
 internal sealed class SavedPromptWindow : Window
 {

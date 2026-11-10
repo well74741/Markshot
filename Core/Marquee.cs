@@ -34,10 +34,31 @@ public static class Marquee
         }
 
         block.SizeChanged += (_, _) => Update(block);
-        block.Loaded += (_, _) => Update(block);
         block.MouseEnter += (_, _) => Update(block); // scrolls again on hover
-        System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock))
-            .AddValueChanged(block, (_, _) => block.Dispatcher.BeginInvoke(new Action(() => Update(block)), System.Windows.Threading.DispatcherPriority.Loaded));
+        // The text's changes, heard only while the block is on screen: a property descriptor's listener is held by
+        // WPF for good (a static table), and with it the block and its whole window — every capture window and pin
+        // that had shown such a line stayed in memory with its screenshots (gigabytes after a day).
+        var descriptor = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock));
+        EventHandler changed = (_, _) => block.Dispatcher.BeginInvoke(new Action(() => Update(block)), System.Windows.Threading.DispatcherPriority.Loaded);
+        var listening = false;
+        block.Loaded += (_, _) =>
+        {
+            if (!listening)
+            {
+                descriptor.AddValueChanged(block, changed);
+                listening = true;
+            }
+
+            Update(block);
+        };
+        block.Unloaded += (_, _) =>
+        {
+            if (listening)
+            {
+                descriptor.RemoveValueChanged(block, changed);
+                listening = false;
+            }
+        };
     }
 
     /// <summary>The width the whole line needs beyond what is shown.</summary>

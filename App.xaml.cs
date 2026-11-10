@@ -243,8 +243,28 @@ public partial class App : Application
 
         Config.LastVersion = current;
         Config.Save();
+        RefreshShellIcons();
         return previous;
     }
+
+    /// <summary>
+    /// A new version's first start: Windows is told the icons changed. It keeps a program's icon by its path, so the
+    /// Task Manager / Start menu showed the logo of the version installed before.
+    /// </summary>
+    private static void RefreshShellIcons()
+    {
+        try
+        {
+            SHChangeNotify(0x08000000 /* SHCNE_ASSOCCHANGED */, 0x0000 /* SHCNF_IDLIST */, IntPtr.Zero, IntPtr.Zero);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("刷新图标缓存失败", ex);
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
 
     private UI.FloatButtonWindow? _float;
 
@@ -475,7 +495,14 @@ public partial class App : Application
             shot = overlay.Result == CaptureAction.None ? null : overlay.OutputImage ?? overlay.PinBaseImage;
             if (overlay.RangeChanged)
             {
-                Config.Save(); // the 识别范围 the wheel chose
+                if (Config.DetectRangeRemember)
+                {
+                    Config.Save(); // the 识别范围 the wheel chose
+                }
+                else
+                {
+                    Config.DetectRange = overlay.RangeAtStart; // only for that capture
+                }
             }
 
             SaveRemembered();

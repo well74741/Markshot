@@ -15,6 +15,60 @@ public static class OcrService
     private static readonly object Gate = new();
     private static RapidOcr? _chineseEngine;
     private static RapidOcr? _latinEngine;
+    private static long _lastUse;
+    private static Timer? _idle;
+
+    /// <summary>
+    /// The recognisers (a few hundred MB of model and working memory) are let go after a few minutes unused and made
+    /// again on the next use (about a second): Markshot sits small in the background. Pins' text layers use them too.
+    /// </summary>
+    public static TimeSpan UnloadAfter { get; set; } = TimeSpan.FromMinutes(3);
+
+    private static RapidOcr Engine(string languageTag)
+    {
+        _lastUse = Environment.TickCount64;
+        _idle ??= new Timer(_ => UnloadIfIdle(), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+        return UseLatin(languageTag)
+            ? _latinEngine ??= CreateEngine(latin: true)
+            : _chineseEngine ??= CreateEngine(latin: false);
+    }
+
+    /// <summary>Tests / idle: the engines go (made again when needed).</summary>
+    public static bool UnloadIfIdle(bool force = false)
+    {
+        if (!force && Environment.TickCount64 - _lastUse < UnloadAfter.TotalMilliseconds)
+        {
+            return false;
+        }
+
+        if (!Monitor.TryEnter(Gate))
+        {
+            return false; // recognising right now
+        }
+
+        try
+        {
+            if (_chineseEngine == null && _latinEngine == null)
+            {
+                return false;
+            }
+
+            _chineseEngine?.Dispose();
+            _latinEngine?.Dispose();
+            _chineseEngine = null;
+            _latinEngine = null;
+        }
+        finally
+        {
+            Monitor.Exit(Gate);
+        }
+
+        Log.Info("文字识别模型闲置，已释放");
+        GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: true);
+        return true;
+    }
+
+    public static bool Loaded => _chineseEngine != null || _latinEngine != null;
 
     public static Task<string> RecognizeAsync(BitmapSource image, string languageTag = "")
     {
@@ -102,9 +156,7 @@ public static class OcrService
     {
         lock (Gate)
         {
-            var engine = UseLatin(languageTag)
-                ? _latinEngine ??= CreateEngine(latin: true)
-                : _chineseEngine ??= CreateEngine(latin: false);
+            var engine = Engine(languageTag);
 
             using var bitmap = ToSkBitmap(image);
             var result = engine.Detect(bitmap, RapidOcrOptions.Default with { DoAngle = false });
@@ -173,9 +225,7 @@ public static class OcrService
 
         lock (Gate)
         {
-            var engine = UseLatin(languageTag)
-                ? _latinEngine ??= CreateEngine(latin: true)
-                : _chineseEngine ??= CreateEngine(latin: false);
+            var engine = Engine(languageTag);
 
             using var bitmap = ToSkBitmap(image);
 

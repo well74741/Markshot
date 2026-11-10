@@ -5,7 +5,7 @@
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
 
-        <SolidColorBrush x:Key="PanelBackground" Color="#F21C1C1C" />
+        <SolidColorBrush x:Key="PanelBackground" Color="#FF1C1C1C" />
         <SolidColorBrush x:Key="PanelBorder" Color="#33FFFFFF" />
         <SolidColorBrush x:Key="TextPrimary" Color="#F5F5F5" />
         <SolidColorBrush x:Key="TextSecondary" Color="#9A9A9A" />

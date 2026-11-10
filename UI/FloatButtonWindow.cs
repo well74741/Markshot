@@ -271,7 +271,7 @@ public sealed class FloatButtonWindow : Window
         var shadeClip = new Grid { IsHitTestVisible = false, Children = { shade } };
         shadeClip.SizeChanged += (_, _) => shadeClip.Clip = new RectangleGeometry(new Rect(0, 0, shadeClip.ActualWidth, shadeClip.ActualHeight), 9, 9);
         var face = new Border { CornerRadius = new CornerRadius(9), Padding = new Thickness(5, 3, 5, 3), Child = _items };
-        face.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xF21E1E1E));
+        face.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
         _plate = new Border
         {
             Child = new Grid { Children = { face, shadeClip } },
@@ -978,6 +978,23 @@ public sealed class FloatButtonWindow : Window
         }
     }
 
+    /// <summary>Runs after the next frames are drawn.</summary>
+    private static void AfterFrames(int frames, Action then)
+    {
+        EventHandler? tick = null;
+        tick = (_, _) =>
+        {
+            if (--frames > 0)
+            {
+                return;
+            }
+
+            CompositionTarget.Rendering -= tick;
+            then();
+        };
+        CompositionTarget.Rendering += tick;
+    }
+
     private void UpdateShown()
     {
         var show = !_suspended && !_fullscreenHidden;
@@ -985,10 +1002,23 @@ public sealed class FloatButtonWindow : Window
         {
             if (!IsVisible)
             {
+                // A see-through window shows its last picture again for a frame when it is shown — the button with the
+                // row open as it was clicked (a flash after a capture left without a screenshot). So: shown far off
+                // the screen, drawn see-through once, then put in its place and faded in.
                 _root.BeginAnimation(OpacityProperty, null);
                 _root.Opacity = 0;
+                Left = -32000;
+                Top = -32000;
                 Show();
-                Place();
+                AfterFrames(2, () =>
+                {
+                    if (!_suspended && !_fullscreenHidden && IsVisible)
+                    {
+                        Place();
+                        FadeIn();
+                    }
+                });
+                return;
             }
 
             FadeIn();

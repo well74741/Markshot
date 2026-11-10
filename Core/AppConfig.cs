@@ -138,6 +138,9 @@ public sealed class AppConfig
     [System.Text.Json.Serialization.JsonIgnore]
     public int DetectRange { get; set; } = 3;
 
+    /// <summary>The 识别范围 the wheel picks in a capture is kept for the next one (off: each capture starts at the set range).</summary>
+    public bool DetectRangeRemember { get; set; } = true;
+
     /// <summary>The 0.8.33–0.8.37 识别灵敏度 (1…5), read once to set <see cref="DetectRange"/>; not written any more.</summary>
     [System.Text.Json.Serialization.JsonPropertyName("DetectSensitivity")]
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

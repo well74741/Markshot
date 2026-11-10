@@ -119,7 +119,7 @@ static class Round69Test
         {
             var scroll = Source("UI/ScrollCaptureSession.cs");
             var bar = scroll[scroll.IndexOf("private sealed class ScrollBarWindow", StringComparison.Ordinal)..];
-            Check(bar.Contains("AllowsTransparency = true") && bar.Contains("Theme.Key(0xF21E1E1E)") && bar.Contains("CornerRadius = new CornerRadius(9)") &&
+            Check(bar.Contains("AllowsTransparency = true") && bar.Contains("Theme.Key(0xFF1E1E1E)") && bar.Contains("CornerRadius = new CornerRadius(9)") &&
                   bar.Contains("BlurEffect") && !bar.Contains("RoundedWindow.Apply"), "the same plate, corners and inner shade as the annotation bar");
             Check(bar.Contains("Px(rect, 10)"), "placed outside the area, a little away (not in the picture)");
         }

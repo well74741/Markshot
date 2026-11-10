@@ -60,6 +60,7 @@ public partial class SettingsWindow : Window
         ShapeKeyBox.Text = config.ToolShapeHotkey;
         CopyFileCheck.IsChecked = config.CopyImageAsFile;
         DetectAutoCheck.IsChecked = config.DetectAuto;
+        DetectRememberCheck.IsChecked = config.DetectRangeRemember;
         DetectSensitivitySlider.Value = Math.Clamp(config.DetectRange, 1, 4);
         DetectElementsCheck.IsChecked = config.DetectElements;
         DetectWindowsCheck.IsChecked = config.DetectWindows;
@@ -1034,8 +1035,8 @@ public partial class SettingsWindow : Window
     private void DetectAuto_Click(object sender, RoutedEventArgs e)
     {
         var on = DetectAutoCheck.IsChecked == true;
-        DetectElementsCheck.IsEnabled = DetectWindowsCheck.IsEnabled = DetectSensitivityRow.IsEnabled = on;
-        DetectSensitivityRow.Opacity = DetectElementsCheck.Opacity = DetectWindowsCheck.Opacity = on ? 1 : 0.45;
+        DetectElementsCheck.IsEnabled = DetectWindowsCheck.IsEnabled = DetectSensitivityRow.IsEnabled = DetectRememberCheck.IsEnabled = on;
+        DetectSensitivityRow.Opacity = DetectElementsCheck.Opacity = DetectWindowsCheck.Opacity = DetectRememberCheck.Opacity = on ? 1 : 0.45;
     }
 
     private void DetectSensitivity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1354,6 +1355,7 @@ public partial class SettingsWindow : Window
         _config.UiSize = _uiSize;
         _config.CopyImageAsFile = CopyFileCheck.IsChecked == true;
         _config.DetectAuto = DetectAutoCheck.IsChecked == true;
+        _config.DetectRangeRemember = DetectRememberCheck.IsChecked == true;
         _config.DetectRange = (int)Math.Round(DetectSensitivitySlider.Value);
         _config.DetectElements = DetectElementsCheck.IsChecked == true;
         _config.DetectWindows = DetectWindowsCheck.IsChecked == true;

@@ -134,12 +134,14 @@ public partial class AnnotationToolbar : UserControl
             UiScale.Attach(root); // the control's own size includes the scale: placement code keeps working
         }
 
-        Theme.Changed += UpdateSwatches;
+        // Theme switches are heard only while the bar is on screen: a bar never shown (a pin's, until it is edited)
+        // never gets Unloaded, and a static event would hold it — and its pin with the pictures — for good.
         Unloaded += (_, _) => Theme.Changed -= UpdateSwatches;
         Loaded += (_, _) =>
         {
             Theme.Changed -= UpdateSwatches;
             Theme.Changed += UpdateSwatches;
+            UpdateSwatches(); // a switch while it was away
         };
         // Presses on the bar's own background stay here (a pin window would take them as a click
         // on empty canvas and drop the selection, closing this row).
@@ -1427,6 +1429,9 @@ public partial class AnnotationToolbar : UserControl
         _hoverIntent.Stop();
         _hoverPending = null;
         EnsureHoverPopup();
+        var showing = _hoverShown && _hoverCard!.Visibility == Visibility.Visible && _hoverCard.Opacity > 0.05;
+        var fromTool = _hoverPopup!.PlacementTarget as FrameworkElement;
+        var oldWidth = _hoverCard!.ActualWidth;
         _hoverList!.Children.Clear();
         foreach (var (label, isChecked, pick) in entry.Items())
         {
@@ -1452,25 +1457,68 @@ public partial class AnnotationToolbar : UserControl
             _hoverList.Children.Add(item);
         }
 
-        var moved = !ReferenceEquals(_hoverPopup!.PlacementTarget, tool);
+        var moved = fromTool != null && !ReferenceEquals(fromTool, tool);
+        var slide = 0.0;
+        if (showing && moved && fromTool!.IsVisible && tool.IsVisible)
+        {
+            // From under the last button: where its middle is, seen from the new one (the list then slides across).
+            var from = fromTool.TranslatePoint(new Point(fromTool.ActualWidth / 2, 0), tool);
+            slide = from.X - tool.ActualWidth / 2;
+        }
+
         _hoverPopup.PlacementTarget = tool;
         _hoverAnchor = tool;
         if (!_hoverPopup.IsOpen)
         {
             _hoverPopup.IsOpen = true;
         }
-        else if (moved)
+
+        _hoverPopup.BeginAnimation(Popup.HorizontalOffsetProperty, null);
+        if (Math.Abs(slide) > 0.5)
         {
-            // placed again under the new button (a nudge of the offset makes the popup recompute its place)
-            _hoverPopup.HorizontalOffset = _hoverPopup.HorizontalOffset == 0 ? 0.01 : 0;
+            // Slides to the new button, its width easing from the last list's to this one's.
+            _hoverPopup.HorizontalOffset = slide;
+            _hoverPopup.BeginAnimation(Popup.HorizontalOffsetProperty, new System.Windows.Media.Animation.DoubleAnimation(slide, 0, HoverSlide) { EasingFunction = Motion.Ease });
+            _hoverCard.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var newWidth = _hoverCard.DesiredSize.Width - _hoverCard.Margin.Left - _hoverCard.Margin.Right;
+            if (oldWidth > 0 && Math.Abs(newWidth - oldWidth) > 0.5)
+            {
+                var widen = new System.Windows.Media.Animation.DoubleAnimation(oldWidth, newWidth, HoverSlide) { EasingFunction = Motion.Ease };
+                widen.Completed += (_, _) =>
+                {
+                    if (ReferenceEquals(_hoverAnchor, tool))
+                    {
+                        _hoverCard.BeginAnimation(WidthProperty, null);
+                        _hoverCard.ClearValue(WidthProperty);
+                    }
+                };
+                _hoverCard.BeginAnimation(WidthProperty, widen);
+            }
+        }
+        else
+        {
+            _hoverPopup.HorizontalOffset = 0;
+            _hoverCard.BeginAnimation(WidthProperty, null);
+            _hoverCard.ClearValue(WidthProperty);
         }
 
-        var showing = _hoverShown;
         _hoverShown = true;
         ((FrameworkElement)_hoverPopup.Child).IsHitTestVisible = true;
-        if (!showing || _hoverCard!.Opacity < 0.99)
+        RaiseHoverPopup(); // above the bar's other windows (the settings row opened after it was made)
+        if (!showing || _hoverCard.Opacity < 0.99)
         {
-            Motion.PopIn(_hoverCard!, fromAbove: true, duration: new Duration(TimeSpan.FromMilliseconds(120)));
+            Motion.PopIn(_hoverCard, fromAbove: true, duration: new Duration(TimeSpan.FromMilliseconds(120)));
+        }
+    }
+
+    private static readonly Duration HoverSlide = new(TimeSpan.FromMilliseconds(170));
+
+    /// <summary>The list's window to the top (no activation): the popup is made once and kept, other windows came later.</summary>
+    private void RaiseHoverPopup()
+    {
+        if (_hoverPopup?.Child is { } child && PresentationSource.FromVisual(child) is System.Windows.Interop.HwndSource source)
+        {
+            Native.SetWindowPos(source.Handle, Native.HWND_TOPMOST, 0, 0, 0, 0, 0x0001 /* NOSIZE */ | 0x0002 /* NOMOVE */ | Native.SWP_NOACTIVATE);
         }
     }
 

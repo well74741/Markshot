@@ -902,10 +902,15 @@ public partial class OverlayWindow
             // no monitor list: the bottom of the capture
         }
 
-        var left = screen.X + (screen.Width - size.Width) / 2;
-        var top = screen.Bottom - size.Height - 72;
-        Canvas.SetLeft(WheelTip, Math.Max(4, Math.Min(left, Math.Max(4, ActualWidth - size.Width - 4))));
-        Canvas.SetTop(WheelTip, Math.Max(4, Math.Min(top, Math.Max(4, ActualHeight - size.Height - 4))));
+        _wheelTipCenter = screen.X + screen.Width / 2;
+        _wheelTipBottom = screen.Bottom;
+        PlaceWheelTip(size);
+        if (!_wheelTipTracked)
+        {
+            // Centred on its real size once laid out (a longer or shorter label than measured kept the old middle).
+            _wheelTipTracked = true;
+            WheelTip.SizeChanged += (_, e) => PlaceWheelTip(e.NewSize);
+        }
         if (_wheelTipTimer == null)
         {
             _wheelTipTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
@@ -914,6 +919,18 @@ public partial class OverlayWindow
 
         _wheelTipTimer.Stop();
         _wheelTipTimer.Start();
+    }
+
+    private double _wheelTipCenter;
+    private double _wheelTipBottom;
+    private bool _wheelTipTracked;
+
+    private void PlaceWheelTip(Size size)
+    {
+        var left = _wheelTipCenter - size.Width / 2;
+        var top = _wheelTipBottom - size.Height - 72;
+        Canvas.SetLeft(WheelTip, Math.Max(4, Math.Min(left, Math.Max(4, ActualWidth - size.Width - 4))));
+        Canvas.SetTop(WheelTip, Math.Max(4, Math.Min(top, Math.Max(4, ActualHeight - size.Height - 4))));
     }
 
     private void HideWheelTip()
@@ -948,6 +965,9 @@ public partial class OverlayWindow
 
     /// <summary>The wheel changed the 识别范围 (saved when the capture closes).</summary>
     public bool RangeChanged { get; private set; }
+
+    /// <summary>The 识别范围 when the capture started (put back afterwards when it is not to be remembered).</summary>
+    public int RangeAtStart { get; } = App.Config?.DetectRange ?? 3;
 
     private static string ShortLabel(string label)
     {
@@ -1178,7 +1198,7 @@ public partial class OverlayWindow
                     RangeChanged = true;
                 }
 
-                ShowWheelTip($"{RangeName(range)}（已记住）· {name} · 滚轮：上 变大，下 变小");
+                ShowWheelTip($"{RangeName(range)}{(App.Config.DetectRangeRemember ? "（已记住）" : "")} · {name} · 滚轮：上 变大，下 变小");
             }
         }
 

@@ -153,10 +153,39 @@ public sealed class OfflineTranslator : IDisposable
         _prefix = pack.Prefix;
     }
 
+    private static long _lastUse;
+    private static Timer? _idle;
+
     public static OfflineTranslator Get(OfflinePacks.Pack pack)
     {
         lock (Gate)
         {
+            // Let go after a few minutes unused; loaded again on the next translation.
+            _lastUse = Environment.TickCount64;
+            _idle ??= new Timer(_ =>
+            {
+                if (Environment.TickCount64 - _lastUse > OcrService.UnloadAfter.TotalMilliseconds)
+                {
+                    lock (Gate)
+                    {
+                        foreach (var (id, idle) in Loaded.ToList())
+                        {
+                            if (Monitor.TryEnter(idle._run)) // not while it translates
+                            {
+                                try
+                                {
+                                    Loaded.Remove(id);
+                                    idle.Dispose();
+                                }
+                                finally
+                                {
+                                    Monitor.Exit(idle._run);
+                                }
+                            }
+                        }
+                    }
+                }
+            }, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
             if (!Loaded.TryGetValue(pack.Id, out var translator))
             {
                 Loaded[pack.Id] = translator = new OfflineTranslator(pack);

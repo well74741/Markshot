@@ -467,7 +467,7 @@ public sealed class ScrollCaptureSession
             // The annotation bar exactly: its plate (colour, corners, padding) and the narrow inner shade along the edge.
             row.Margin = new Thickness(0);
             var plate = new Border { Child = row, CornerRadius = new CornerRadius(9), Padding = new Thickness(5, 3, 5, 3) };
-            plate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xF21E1E1E));
+            plate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
             var shade = new Border
             {
                 CornerRadius = new CornerRadius(9),

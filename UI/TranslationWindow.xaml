@@ -35,9 +35,12 @@
         </Style>
 
         <!-- Small text action inside a pane header. -->
+        <!-- Actions (导出, 复制): a filled plate. Switches (表格, 公式) below: an outline, filled blue when on. -->
         <Style x:Key="PaneAction" TargetType="Button" BasedOn="{StaticResource ToolButton}">
-            <Setter Property="Foreground" Value="{DynamicResource T_FFC8C8C8}" />
-            <Setter Property="Padding" Value="9,3" />
+            <Setter Property="Foreground" Value="{DynamicResource T_FFE0E0E0}" />
+            <Setter Property="Background" Value="{DynamicResource T_22FFFFFF}" />
+            <Setter Property="Padding" Value="10,3" />
+            <Setter Property="Margin" Value="4,0,0,0" />
             <Setter Property="FontSize" Value="12" />
         </Style>
 
@@ -50,8 +53,12 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="9,3">
-                            <ContentPresenter VerticalAlignment="Center" />
+                        <Border x:Name="Bd" Background="Transparent" BorderBrush="{DynamicResource T_44FFFFFF}" BorderThickness="1" CornerRadius="5" Padding="9,2">
+                            <StackPanel Orientation="Horizontal">
+                                <!-- a small dot: the switch's state at a glance -->
+                                <Ellipse x:Name="Dot" Width="6" Height="6" Margin="0,0,5,0" VerticalAlignment="Center" Fill="{DynamicResource T_66FFFFFF}" />
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </StackPanel>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -59,7 +66,12 @@
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{StaticResource Accent}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                <Setter TargetName="Dot" Property="Fill" Value="White" />
                                 <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -207,8 +219,8 @@
                             <!-- Shown when tables were found: the text, or the tables as tables. -->
                             <ToggleButton x:Name="TableToggle" Style="{StaticResource PaneToggle}" Content="表格" Visibility="Collapsed"
                                           ToolTip="以表格显示识别出的表格（复制时可直接粘贴到 Excel / Word）" Checked="TableToggle_Changed" Unchecked="TableToggle_Changed" />
-                            <Button x:Name="FormulaButton" Content="公式" Style="{StaticResource PaneAction}" Click="Formula_Click" Visibility="Collapsed"
-                                    ToolTip="把图片当作公式识别成 LaTeX（公式识别模型，设置 → 保存与识别 里下载）" />
+                            <ToggleButton x:Name="FormulaButton" Content="公式" Style="{StaticResource PaneToggle}" Click="Formula_Click" Visibility="Collapsed"
+                                          ToolTip="识别成 LaTeX 公式（再点一下回到文字）。看起来像公式时才出现" />
                             <Button Content="导出" Style="{StaticResource PaneAction}" Click="Export_Click" ToolTip="把识别结果存成文件：Excel / Markdown / 文本" />
                             <Button Content="复制" Style="{StaticResource PaneAction}" Click="CopySource_Click" ToolTip="复制原文" />
                         </StackPanel>

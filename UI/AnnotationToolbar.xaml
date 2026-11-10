@@ -6,7 +6,7 @@
 
     <!-- No outline (it looked flat); a narrow inner shade along the edge gives the bar some depth. -->
     <Grid>
-    <Border x:Name="BarPlate" Background="{DynamicResource T_F21E1E1E}" CornerRadius="9" Padding="5,3">
+    <Border x:Name="BarPlate" Background="{DynamicResource T_FF1E1E1E}" CornerRadius="9" Padding="5,3">
         <StackPanel>
             <StackPanel x:Name="MainRow" Orientation="Horizontal" VerticalAlignment="Center">
                 <Border x:Name="DragHandle" Width="20" Height="28" Background="Transparent"

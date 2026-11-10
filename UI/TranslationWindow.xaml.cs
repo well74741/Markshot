@@ -132,7 +132,6 @@ public partial class TranslationWindow : Window
             return;
         }
 
-        FormulaButton.Visibility = OcrPacks.FormulaInstalled ? Visibility.Visible : Visibility.Collapsed;
         SetStatus("正在识别文字…", StatusKind.Busy);
         _ = ReadCodesAsync(_image);
 
@@ -147,6 +146,8 @@ public partial class TranslationWindow : Window
             var text = document.Text;
             SourceBox.Text = text;
             ShowTables(document.Tables);
+            // 公式 only when the pack is there and what was read looks like mathematics (not for ordinary text).
+            FormulaButton.Visibility = OcrPacks.FormulaInstalled && LooksLikeFormula(text) ? Visibility.Visible : Visibility.Collapsed;
 
             if (string.IsNullOrWhiteSpace(text))
             {
@@ -187,10 +188,12 @@ public partial class TranslationWindow : Window
         {
             SourceBox.Text = _textBeforeFormula;
             _textBeforeFormula = null;
-            FormulaButton.Content = "公式";
+            FormulaButton.IsChecked = false;
             SetStatus("已回到文字识别结果", StatusKind.Idle);
             return;
         }
+
+        FormulaButton.IsChecked = false; // on only once the formula is shown
 
         SetStatus("正在识别公式…", StatusKind.Busy);
         FormulaButton.IsEnabled = false;
@@ -205,7 +208,7 @@ public partial class TranslationWindow : Window
             _textBeforeFormula = SourceBox.Text;
             TableToggle.IsChecked = false;
             SourceBox.Text = latex;
-            FormulaButton.Content = "文字";
+            FormulaButton.IsChecked = true;
             SetStatus(latex.Length == 0 ? "没有识别出公式" : "已识别为 LaTeX 公式，可复制到 Word / Markdown / 论文里", latex.Length == 0 ? StatusKind.Idle : StatusKind.Done);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -217,6 +220,31 @@ public partial class TranslationWindow : Window
         {
             FormulaButton.IsEnabled = true;
         }
+    }
+
+    /// <summary>
+    /// What was read looks like mathematics: a few lines at most, few Chinese characters, and operators or symbols of
+    /// formulas (= with +, −, ×, ^, √, ∑, ∫, fractions …). Ordinary sentences and tables do not.
+    /// </summary>
+    public static bool LooksLikeFormula(string text)
+    {
+        text = text.Trim();
+        if (text.Length == 0 || text.Length > 400 || text.Split('\n').Length > 8)
+        {
+            return false;
+        }
+
+        var cjk = text.Count(c => c is >= '\u4e00' and <= '\u9fff');
+        var letters = text.Count(c => !char.IsWhiteSpace(c));
+        if (cjk > letters * 0.3)
+        {
+            return false;
+        }
+
+        var strong = text.Count(c => "√∑∫∏∂∇∞≤≥≠≈±×÷πθαβγδλμσΩ^_{}".Contains(c));
+        var operators = text.Count(c => "=+-−*/<>()".Contains(c));
+        var fraction = System.Text.RegularExpressions.Regex.IsMatch(text, @"\)/\(|\w/\(|\)/\w");
+        return strong >= 1 && operators >= 1 || fraction || (text.Contains('=') && operators >= 3);
     }
 
     /// <summary>导出: the text as shown (edits included) to Excel / Markdown / text; Excel first when tables were read.</summary>
