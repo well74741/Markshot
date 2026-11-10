@@ -11,8 +11,15 @@ namespace Markshot.UI;
 /// </summary>
 public sealed class SaveImageDialog : Window
 {
-    private static readonly (string Label, string Extension)[] Formats =
+    private static readonly (string Label, string Extension)[] ImageFormats =
         { ("PNG", ".png"), ("JPEG", ".jpg"), ("WebP", ".webp"), ("BMP", ".bmp"), ("TIFF", ".tif") };
+
+    /// <summary>The formats offered (pictures, or the given ones: the text recognition's export).</summary>
+    private readonly (string Label, string Extension)[] _formats;
+
+    /// <summary>The name already ends with one of the offered formats (else the chosen one is added).</summary>
+    private bool Known(string name) =>
+        ReferenceEquals(_formats, ImageFormats) ? ImageFile.IsImage(name) : _formats.Any(f => f.Extension.Equals(Path.GetExtension(name), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The folder used last in this run (the next dialog starts there).</summary>
     private static string? _lastDirectory;
@@ -33,8 +40,9 @@ public sealed class SaveImageDialog : Window
     private readonly bool _transparent;
 
     /// <param name="picture">What will be saved: the size estimate and the transparency notice use it.</param>
-    public SaveImageDialog(string title, string fileName, string? directory, BitmapSource? picture = null)
+    public SaveImageDialog(string title, string fileName, string? directory, BitmapSource? picture = null, (string Label, string Extension)[]? formats = null)
     {
+        _formats = formats ?? ImageFormats;
         _picture = picture;
         _transparent = picture != null && HasTransparency(picture);
         Title = title;
@@ -58,8 +66,8 @@ public sealed class SaveImageDialog : Window
         var browse = new Button { Content = "浏览…", Style = (Style)Application.Current.FindResource("FooterButton"), Margin = new Thickness(8, 0, 0, 0) };
         browse.Click += (_, _) => Browse();
 
-        var formats = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var (label, extension) in Formats)
+        var formatRow = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var (label, extension) in _formats)
         {
             var button = new RadioButton
             {
@@ -70,10 +78,10 @@ public sealed class SaveImageDialog : Window
             };
             button.Checked += (_, _) => FormatChosen(extension);
             _formatButtons[extension] = button;
-            formats.Children.Add(button);
+            formatRow.Children.Add(button);
         }
 
-        var formatPlate = new Border { CornerRadius = new CornerRadius(5), Padding = new Thickness(2), Child = formats, HorizontalAlignment = HorizontalAlignment.Left };
+        var formatPlate = new Border { CornerRadius = new CornerRadius(5), Padding = new Thickness(2), Child = formatRow, HorizontalAlignment = HorizontalAlignment.Left };
         formatPlate.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF2A2A2A));
 
         var folderRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -178,9 +186,10 @@ public sealed class SaveImageDialog : Window
     public string? ResultPath { get; private set; }
 
     /// <summary>Asks where to save; null when cancelled. A topmost owner (the capture) keeps the dialog above it.</summary>
-    public static string? Ask(Window? owner, string title, string fileName, string? directory = null, BitmapSource? picture = null)
+    public static string? Ask(Window? owner, string title, string fileName, string? directory = null, BitmapSource? picture = null,
+        (string Label, string Extension)[]? formats = null)
     {
-        var dialog = new SaveImageDialog(title, fileName, directory, picture);
+        var dialog = new SaveImageDialog(title, fileName, directory, picture, formats);
         if (owner is { IsVisible: true })
         {
             dialog.Owner = owner;
@@ -203,7 +212,7 @@ public sealed class SaveImageDialog : Window
         {
             var name = _name.Text.Trim();
             var extension = Path.GetExtension(name).ToLowerInvariant();
-            if (!ImageFile.IsImage(name) || extension is ".gif" or ".ico")
+            if (!Known(name) || extension is ".gif" or ".ico")
             {
                 name += SelectedExtension;
             }
@@ -212,7 +221,7 @@ public sealed class SaveImageDialog : Window
         }
     }
 
-    private string SelectedExtension => _formatButtons.FirstOrDefault(pair => pair.Value.IsChecked == true).Key ?? ".png";
+    private string SelectedExtension => _formatButtons.FirstOrDefault(pair => pair.Value.IsChecked == true).Key ?? _formats[0].Extension;
 
     public void SetFormat(string extension)
     {
@@ -335,7 +344,7 @@ public sealed class SaveImageDialog : Window
         }
         else if (_formatButtons.Values.All(b => b.IsChecked != true))
         {
-            _formatButtons[".png"].IsChecked = true;
+            _formatButtons[_formats[0].Extension].IsChecked = true;
         }
 
         _syncing = false;
@@ -350,7 +359,7 @@ public sealed class SaveImageDialog : Window
         {
             var name = _name.Text.Trim();
             var current = Path.GetExtension(name);
-            var stem = current.Length > 0 && ImageFile.IsImage(name) ? name[..^current.Length] : name;
+            var stem = current.Length > 0 && Known(name) ? name[..^current.Length] : name;
             _syncing = true;
             _name.Text = stem + extension;
             _syncing = false;

@@ -7,6 +7,12 @@ public static class ReleaseNotes
 {
     public static readonly (string Version, string[] Lines)[] All =
     {
+        ("0.8.71", new[]
+        {
+            "文字识别可导出为 Excel / Markdown / 文本，表格逐格导出",
+            "可下载「公式识别」扩展模型（设置 → 保存与识别），把公式图片识别成 LaTeX；日常文字识别不变",
+            "工具栏按钮的悬停高亮更跟手；鼠标快速划过时样式列表不再闪烁，展开收起更顺滑",
+        }),
         ("0.8.70", new[]
         {
             "新增帮助文档：托盘菜单「帮助」或设置窗口右上角的「?」打开，含功能介绍、使用案例和操作动图",

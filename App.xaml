@@ -154,7 +154,7 @@
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.03">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>
@@ -163,7 +163,7 @@
                                 <Trigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.09">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>
@@ -504,7 +504,7 @@
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.03">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.1" Duration="0:0:0.16">
@@ -519,7 +519,7 @@
                                 <Trigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.09">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
@@ -571,7 +571,7 @@
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.03">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.1" Duration="0:0:0.16">
@@ -586,7 +586,7 @@
                                 <Trigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.09">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
@@ -648,7 +648,7 @@
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.03">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.1" Duration="0:0:0.16">
@@ -663,7 +663,7 @@
                                 <Trigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.09">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
@@ -715,7 +715,7 @@
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.03">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.1" Duration="0:0:0.16">
@@ -730,7 +730,7 @@
                                 <Trigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.09">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
@@ -925,7 +925,7 @@
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.03">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.05" Duration="0:0:0.16">
@@ -940,7 +940,7 @@
                                 <Trigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.09">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">
@@ -1021,7 +1021,7 @@
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.03">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.05" Duration="0:0:0.16">
@@ -1036,7 +1036,7 @@
                                 <Trigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16">
+                                            <DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.09">
                                                 <DoubleAnimation.EasingFunction><core:StandardEase /></DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                             <DoubleAnimation Storyboard.TargetName="Cp" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.16">

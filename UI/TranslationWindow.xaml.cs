@@ -132,6 +132,7 @@ public partial class TranslationWindow : Window
             return;
         }
 
+        FormulaButton.Visibility = OcrPacks.FormulaInstalled ? Visibility.Visible : Visibility.Collapsed;
         SetStatus("正在识别文字…", StatusKind.Busy);
         _ = ReadCodesAsync(_image);
 
@@ -169,6 +170,80 @@ public partial class TranslationWindow : Window
             {
                 SetStatus("识别失败：" + ex.Message, StatusKind.Error);
             }
+        }
+    }
+
+    private string? _textBeforeFormula;
+
+    /// <summary>公式: the picture read as a formula (LaTeX) by the downloaded pack; again: back to the text.</summary>
+    private async void Formula_Click(object sender, RoutedEventArgs e)
+    {
+        if (_image == null || _busy)
+        {
+            return;
+        }
+
+        if (_textBeforeFormula != null)
+        {
+            SourceBox.Text = _textBeforeFormula;
+            _textBeforeFormula = null;
+            FormulaButton.Content = "公式";
+            SetStatus("已回到文字识别结果", StatusKind.Idle);
+            return;
+        }
+
+        SetStatus("正在识别公式…", StatusKind.Busy);
+        FormulaButton.IsEnabled = false;
+        try
+        {
+            var latex = await FormulaRecognizer.RecognizeAsync(_image, _cts.Token);
+            if (_closed)
+            {
+                return;
+            }
+
+            _textBeforeFormula = SourceBox.Text;
+            TableToggle.IsChecked = false;
+            SourceBox.Text = latex;
+            FormulaButton.Content = "文字";
+            SetStatus(latex.Length == 0 ? "没有识别出公式" : "已识别为 LaTeX 公式，可复制到 Word / Markdown / 论文里", latex.Length == 0 ? StatusKind.Idle : StatusKind.Done);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Error("公式识别失败", ex);
+            SetStatus("公式识别失败：" + ex.Message, StatusKind.Error);
+        }
+        finally
+        {
+            FormulaButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>导出: the text as shown (edits included) to Excel / Markdown / text; Excel first when tables were read.</summary>
+    private void Export_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(SourceBox.Text))
+        {
+            SetStatus("没有可导出的文字", StatusKind.Idle);
+            return;
+        }
+
+        var formats = _tables.Count > 0 ? OcrExport.Formats : OcrExport.Formats.OrderBy(f => f.Extension == ".txt" ? 0 : 1).ToArray();
+        var path = SaveImageDialog.Ask(this, "导出识别结果", $"文字识别_{DateTime.Now:yyyyMMdd_HHmmss}", formats: formats);
+        if (path == null)
+        {
+            return;
+        }
+
+        try
+        {
+            OcrExport.Save(path, SourceBox.Text);
+            SetStatus("已导出：" + Path.GetFileName(path), StatusKind.Done);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Error("导出识别结果失败", ex);
+            SetStatus("导出失败：" + ex.Message, StatusKind.Error);
         }
     }
 

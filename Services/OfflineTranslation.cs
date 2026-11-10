@@ -75,12 +75,18 @@ public static class OfflinePacks
     /// <summary>Downloads a pack (each file to .part first; a stopped download leaves nothing half-done in use).</summary>
     public static async Task DownloadAsync(Pack pack, string mirrorId, IProgress<(long Done, long Total)>? progress, CancellationToken token)
     {
+        await FetchAsync(pack.Repo, Files, Folder(pack), pack.ApproxBytes, mirrorId, progress, token);
+        OfflineTranslator.Forget(pack.Id);
+    }
+
+    /// <summary>Files of a Hugging Face model into a folder (also used by the recognition model packs).</summary>
+    internal static async Task FetchAsync(string repo, (string Remote, string Local)[] files, string folder, long total, string mirrorId,
+        IProgress<(long Done, long Total)>? progress, CancellationToken token)
+    {
         var host = Mirrors.FirstOrDefault(mirror => mirror.Id == mirrorId).Host ?? Mirrors[0].Host;
-        var folder = Folder(pack);
         Directory.CreateDirectory(folder);
-        var total = pack.ApproxBytes;
         long done = 0;
-        foreach (var (remote, local) in Files)
+        foreach (var (remote, local) in files)
         {
             var target = Path.Combine(folder, local);
             if (File.Exists(target))
@@ -90,7 +96,7 @@ public static class OfflinePacks
             }
 
             var part = target + ".part";
-            using var response = await Http.GetAsync($"{host}/{pack.Repo}/resolve/main/{remote}", HttpCompletionOption.ResponseHeadersRead, token);
+            using var response = await Http.GetAsync($"{host}/{repo}/resolve/main/{remote}", HttpCompletionOption.ResponseHeadersRead, token);
             response.EnsureSuccessStatusCode();
             await using (var input = await response.Content.ReadAsStreamAsync(token))
             await using (var output = File.Create(part))
@@ -109,7 +115,6 @@ public static class OfflinePacks
         }
 
         progress?.Report((done, done));
-        OfflineTranslator.Forget(pack.Id);
     }
 
     public static void Delete(Pack pack)

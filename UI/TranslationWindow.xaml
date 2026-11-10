@@ -207,6 +207,9 @@
                             <!-- Shown when tables were found: the text, or the tables as tables. -->
                             <ToggleButton x:Name="TableToggle" Style="{StaticResource PaneToggle}" Content="表格" Visibility="Collapsed"
                                           ToolTip="以表格显示识别出的表格（复制时可直接粘贴到 Excel / Word）" Checked="TableToggle_Changed" Unchecked="TableToggle_Changed" />
+                            <Button x:Name="FormulaButton" Content="公式" Style="{StaticResource PaneAction}" Click="Formula_Click" Visibility="Collapsed"
+                                    ToolTip="把图片当作公式识别成 LaTeX（公式识别模型，设置 → 保存与识别 里下载）" />
+                            <Button Content="导出" Style="{StaticResource PaneAction}" Click="Export_Click" ToolTip="把识别结果存成文件：Excel / Markdown / 文本" />
                             <Button Content="复制" Style="{StaticResource PaneAction}" Click="CopySource_Click" ToolTip="复制原文" />
                         </StackPanel>
                     </Grid>

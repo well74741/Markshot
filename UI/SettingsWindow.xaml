@@ -987,6 +987,17 @@
                                            VerticalAlignment="Center"
                                            Text="留空 = 中英日混排模型；填 en = 英文/拉丁专用模型" />
                             </Grid>
+                            <!-- Larger models for special pictures, downloaded by hand (as the offline translation packs). -->
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="84" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="扩展模型" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,6,0,0" />
+                                <StackPanel Grid.Column="1" x:Name="OcrPackRows" />
+                            </Grid>
+                            <TextBlock Style="{StaticResource Hint}" Margin="84,6,0,0" TextWrapping="Wrap"
+                                       Text="日常文字识别已内置；公式识别按需下载，装好后文字识别窗口出现「公式」按钮。下载源同翻译页。" />
                         </StackPanel>
                     </Border>
 

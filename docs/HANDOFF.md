@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.70`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.71`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,18 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.71 0.8.71 变更
+
+- 批注栏样式列表（隐藏 ▾ 时悬停展开）：原来每次悬停新建一个 Popup（新窗口 + 阴影），快速划过时窗口反复创建销毁 → 闪烁，也拖慢下一个按钮的高亮。
+  现在一个工具栏只建一个 Popup（`EnsureHoverPopup`），列表“关闭”只是卡片淡出 + 不接收点击（透明像素点击穿透），窗口保持打开；
+  鼠标停在工具上 70ms（`_hoverIntent`）才展开，已展开时移到别的工具立即换内容；动画都从当前值继续，不会跳。工具栏隐藏 / 卸载时才真正关闭 Popup。
+  按钮高亮：进入 0ms，离开 0.16 → 0.09s（App.xaml 7 处）。
+- 文字识别导出 `Services/OcrExport`：按显示的文本（含编辑）——连续 ≥2 行 Tab 数相同即表格。xlsx 手写 SpreadsheetML（inlineStr，数字转数值、前导 0 保留文本、表头 s=1 加粗、按字宽估列宽）；
+  md 表格 + 其余行行尾两空格换行；txt UTF-8 BOM。`SaveImageDialog` 加 `formats` 参数复用 Markshot 的保存窗口。
+- 扩展识别模型 `Services/FormulaRecognizer.cs`：`OcrPacks`（%LOCALAPPDATA%\Markshot\ocr\<id>，下载复用 `OfflinePacks.FetchAsync` 与翻译页的下载源）。
+  公式：breezedeus/pix2text-mfr-1.5（MIT，encoder 87MB + decoder 32MB，无 KV cache 的 decoder 每步整段重算）。输入 384×384 白底、(x/127.5−1)；BOS=1 EOS=2 贪心；
+  BPE 字节级只做解码（GPT-2 字节表反查）。本机约 0.7 s/式。测试用 `MARKSHOT_OCR_PACKS` 指向已下载的包目录，没有时跳过。
 
 ## 8.1.70 0.8.70 变更
 

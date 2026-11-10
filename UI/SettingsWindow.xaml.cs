@@ -341,6 +341,107 @@ public partial class SettingsWindow : Window
         }
 
         BuildPackRows();
+        BuildOcrPackRows();
+    }
+
+    /// <summary>识别模型: the optional recognition packs (公式识别), each with 下载 / 删除 or 取消 and its progress.</summary>
+    private void BuildOcrPackRows()
+    {
+        OcrPackRows.Children.Clear();
+        foreach (var pack in Services.OcrPacks.All)
+        {
+            var key = "ocr:" + pack.Id;
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6), Tag = key };
+            var installed = Services.OcrPacks.IsInstalled(pack);
+            var busy = _downloads.ContainsKey(key);
+            var action = new Button { Style = (Style)FindResource("FooterButton"), Content = busy ? "取消" : installed ? "删除" : "下载", MinWidth = 64, Tag = pack.Id };
+            action.Click += OcrPackAction_Click;
+            DockPanel.SetDock(action, Dock.Right);
+            row.Children.Add(action);
+            var name = new TextBlock { Text = pack.Label, Width = 96, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, ToolTip = pack.Description };
+            name.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFD8D8D8));
+            DockPanel.SetDock(name, Dock.Left);
+            row.Children.Add(name);
+            var state = new TextBlock
+            {
+                Text = busy ? "准备下载…" : installed ? $"已安装（{Services.OcrPacks.SizeOnDisk(pack) / 1048576.0:0} MB）" : $"未下载，约 {pack.ApproxBytes / 1000000} MB · 识别成 LaTeX",
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 12,
+                Margin = new Thickness(0, 0, 10, 0),
+                Tag = "state",
+                ToolTip = pack.Description
+            };
+            state.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(installed ? 0xFF4CC38A : 0xFF9A9A9A));
+            row.Children.Add(state);
+            OcrPackRows.Children.Add(row);
+        }
+    }
+
+    private async void OcrPackAction_Click(object sender, RoutedEventArgs e)
+    {
+        var pack = Services.OcrPacks.Find((string)((Button)sender).Tag)!;
+        var key = "ocr:" + pack.Id;
+        TextBlock? State() => OcrPackRows.Children.OfType<DockPanel>().FirstOrDefault(row => (string)row.Tag == key)?
+            .Children.OfType<TextBlock>().FirstOrDefault(text => (string?)text.Tag == "state");
+        if (_downloads.Remove(key, out var running))
+        {
+            running.Cancel();
+            return;
+        }
+
+        if (Services.OcrPacks.IsInstalled(pack))
+        {
+            if (MessageBox.Show(this, $"删除识别模型「{pack.Label}」？", "Markshot", MessageBoxButton.OKCancel) == MessageBoxResult.OK)
+            {
+                Services.OcrPacks.Delete(pack);
+                BuildOcrPackRows();
+            }
+
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _downloads[key] = cts;
+        BuildOcrPackRows();
+        var mirror = MirrorRow.Children.OfType<RadioButton>().FirstOrDefault(radio => radio.IsChecked == true)?.Tag as string ?? "hf-mirror";
+        var progress = new Progress<(long Done, long Total)>(p =>
+        {
+            if (State() is { } state)
+            {
+                state.Text = $"下载中 {p.Done / 1048576.0:0} / {p.Total / 1048576.0:0} MB";
+            }
+        });
+        string? failure = null;
+        try
+        {
+            await Services.OcrPacks.DownloadAsync(pack, mirror, progress, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            failure = "已取消（下完的文件会保留，再点下载继续）";
+        }
+        catch (Exception ex)
+        {
+            Log.Error("下载识别模型失败", ex);
+            failure = "下载失败：" + ex.Message + "（可在翻译页换个下载源再试）";
+        }
+        finally
+        {
+            _downloads.Remove(key);
+            cts.Dispose();
+        }
+
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        BuildOcrPackRows();
+        if (failure != null && State() is { } failed)
+        {
+            failed.Text = failure;
+            failed.SetResourceReference(TextBlock.ForegroundProperty, Theme.Key(0xFFFF6B6B));
+        }
     }
 
     /// <summary>One row per pack: what it is, its state, 下载 / 删除 (or 取消 with the progress while it downloads).</summary>
