@@ -7,6 +7,10 @@ public static class ReleaseNotes
 {
     public static readonly (string Version, string[] Lines)[] All =
     {
+        ("0.8.75", new[]
+        {
+            "修复工具栏靠近屏幕边缘时，样式列表整体偏离按钮的问题",
+        }),
         ("0.8.74", new[]
         {
             "批注栏样式列表：底盘变窄，只显示当前按钮的选项，旁边的选项随底盘移开逐渐淡出；最左、最右的按钮下底盘不再被截断",

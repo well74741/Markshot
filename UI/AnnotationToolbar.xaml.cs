@@ -1214,6 +1214,8 @@ public partial class AnnotationToolbar : UserControl
     private readonly TranslateTransform _plateMove = new();
     private readonly Dictionary<ButtonBase, StackPanel> _listOf = new();
     private const double PlateWidth = 84;
+    private Grid? _hoverInner;
+    private readonly TranslateTransform _hoverShift = new();
     private const double PlateRoom = 8; // room for the shadow around the plate
     private double PlateSide => PlateWidth / 2 + PlateRoom; // room left and right of the bar: a plate under an end tool is not cut
     private double _plateTarget;
@@ -1495,6 +1497,10 @@ public partial class AnnotationToolbar : UserControl
         _hoverShown = true;
         ((FrameworkElement)_hoverPopup.Child).IsHitTestVisible = true;
         RaiseHoverPopup(); // above the bar's other windows (the settings row opened after it was made)
+        if (!showing)
+        {
+            AlignHoverHost();
+        }
         if (!showing || _hoverCard!.Opacity < 0.99)
         {
             var fade = new System.Windows.Media.Animation.DoubleAnimation(1, new Duration(TimeSpan.FromMilliseconds(110))) { EasingFunction = Motion.Ease };
@@ -1502,6 +1508,34 @@ public partial class AnnotationToolbar : UserControl
             _hoverLists!.BeginAnimation(OpacityProperty, fade);
         }
     }
+
+    /// <summary>
+    /// Where the popup really is against where it should be (its left edge PlateSide left of the bar): the difference
+    /// shifts the plate and lists back under their buttons.
+    /// </summary>
+    private void AlignHoverHost()
+    {
+        if (_hoverInner == null || _hoverPopup?.Child is not FrameworkElement host || !host.IsLoaded)
+        {
+            return;
+        }
+
+        try
+        {
+            host.UpdateLayout();
+            _hoverShift.X = 0;
+            var expected = MainRow.PointToScreen(new Point(-PlateSide, 0));
+            var local = _hoverInner.PointFromScreen(expected);
+            _hoverShift.X = Math.Abs(local.X) < 0.5 ? 0 : local.X;
+        }
+        catch (InvalidOperationException)
+        {
+            _hoverShift.X = 0; // not connected to a screen yet
+        }
+    }
+
+    /// <summary>Tests: how far the plate's layer is shifted to stay under the buttons.</summary>
+    internal double HoverShift => _hoverShift.X;
 
     /// <summary>One frame of the plate's glide: eased towards its button (about 140 ms to arrive).</summary>
     private void GlidePlate(object? sender, EventArgs e)
@@ -1575,7 +1609,10 @@ public partial class AnnotationToolbar : UserControl
         _hoverCard.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x33FFFFFF));
         _hoverCard.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.35 };
         _hoverLists = new Canvas { Margin = new Thickness(PlateSide, 0, PlateSide, 0), Opacity = 0, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
-        var host = new Grid { Background = null, Children = { _hoverCard, _hoverLists }, LayoutTransform = UiScale.Transform, ClipToBounds = false };
+        // The plate and the lists in an inner layer that can be shifted: Windows keeps a popup on the screen, so near
+        // the screen's edge the popup was moved and everything in it stood beside its buttons.
+        _hoverInner = new Grid { Children = { _hoverCard, _hoverLists }, RenderTransform = _hoverShift, HorizontalAlignment = HorizontalAlignment.Left };
+        var host = new Grid { Background = null, Children = { _hoverInner }, LayoutTransform = UiScale.Transform, ClipToBounds = false };
         host.MouseEnter += (_, _) => _hoverLeave.Stop();
         host.MouseLeave += (_, _) => LeftHoverMenu();
         _hoverPopup = new Popup
@@ -1654,7 +1691,24 @@ public partial class AnnotationToolbar : UserControl
         // The words are seen only through the plate (the clip moves with it).
         _hoverCard!.Height = height + 6;
         _hoverLists!.Width = MainRow.ActualWidth;
-        ((FrameworkElement)_hoverPopup!.Child).Width = MainRow.ActualWidth + 2 * PlateSide;
+        // As wide as the bar with room on both sides, but never past the screen (else Windows moves the popup).
+        var width = MainRow.ActualWidth + 2 * PlateSide;
+        try
+        {
+            var left = MainRow.PointToScreen(new Point(-PlateSide, 0));
+            var right = MainRow.PointToScreen(new Point(MainRow.ActualWidth + PlateSide, 0));
+            var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)((left.X + right.X) / 2), (int)left.Y)).WorkingArea;
+            if (right.X > screen.Right && right.X > left.X)
+            {
+                width *= Math.Max(0.2, (screen.Right - left.X) / (right.X - left.X));
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // not on the screen yet
+        }
+
+        ((FrameworkElement)_hoverPopup!.Child).Width = width;
         _hoverLists.Height = height + 6;
         _hoverLists.Clip = new RectangleGeometry(new Rect(3, 0, PlateWidth - 6, height + 6)) { Transform = _plateMove };
     }
