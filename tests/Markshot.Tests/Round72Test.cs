@@ -128,7 +128,8 @@ static class Round72Test
             var target = scroll.TranslatePoint(new Point(scroll.ActualWidth / 2, 0), (UIElement)bar.FindName("MainRow")).X - 52;
             var midway = (double)plate.GetValue(bar)!;
             Check(Math.Abs(midway - target) > 20, $"the plate slides from the last tool ({Math.Abs(midway - target):0} DIP away at first), one fixed width");
-            Pump(400);
+            // (slow machines: up to two seconds for the 140 ms glide to be drawn through)
+            for (var waited = 0; waited < 2000 && Math.Abs((double)plate.GetValue(bar)! - target) >= 0.5; waited += 100) Pump(100);
             Check(Math.Abs((double)plate.GetValue(bar)! - target) < 0.5, "… and ends under the new one");
             window.Close();
             config.HideToolChevrons = before;
