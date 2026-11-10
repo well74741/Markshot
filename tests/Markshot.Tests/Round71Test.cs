@@ -132,7 +132,7 @@ static class Round71Test
             bar.CloseHoverMenu();
             Pump(250);
             var card = (FrameworkElement)typeof(AnnotationToolbar).GetField("_hoverCard", Any)!.GetValue(bar)!;
-            Check(!bar.IsHoverMenuOpen && card.Visibility == Visibility.Collapsed && !((FrameworkElement)((System.Windows.Controls.Primitives.Popup)popup!).Child).IsHitTestVisible,
+            Check(!bar.IsHoverMenuOpen && card.Opacity < 0.05 && !((FrameworkElement)((System.Windows.Controls.Primitives.Popup)popup!).Child).IsHitTestVisible,
                 "closing fades the list out (clicks go through at once)");
             window.Close();
             Pump(50);

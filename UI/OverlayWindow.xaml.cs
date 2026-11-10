@@ -54,6 +54,14 @@ public partial class OverlayWindow : Window
     private BitmapSource _screen; // what the capture shows: the screenshot, with the pointer when 显示鼠标 is on
     private BitmapSource _screenPlain;
     private BitmapSource? _screenWithCursor;
+
+    private static readonly BitmapSource Placeholder = Freeze(BitmapSource.Create(1, 1, 96, 96, PixelFormats.Pbgra32, null, new byte[4], 4));
+
+    private static BitmapSource Freeze(BitmapSource bitmap)
+    {
+        bitmap.Freeze();
+        return bitmap;
+    }
     private CursorShot? _cursorShot;
     private bool _showCursor;
     private bool _crosshair;
@@ -953,6 +961,12 @@ public partial class OverlayWindow : Window
         Editor.Source = null;
         ScreenImage.Source = null;
         BrightImage.Source = null;
+        Magnifier.Source = null;
+        // The screenshots let go now, not when the window itself is collected (a text box's finalizer keeps a closed
+        // window a while longer; with it the screen picture, its copy with the pointer and the segmenter's ~70 MB).
+        _segmenter = null;
+        _screenWithCursor = null;
+        _screen = _screenPlain = Placeholder;
         base.OnClosed(e);
     }
 }

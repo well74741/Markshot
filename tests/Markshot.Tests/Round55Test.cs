@@ -200,7 +200,7 @@ static class Round55Test
             Check(Math.Abs(main.Width - small * 2) < 0.01 && Math.Abs(small - FloatButtonWindow.BaseSize) < 0.01, $"size 200 % = twice as big ({small} → {main.Width})");
             button.PointerOnItOverride = () => true;
             button.Suspend();
-            Check(!button.IsVisible, "out of the way during a capture (after a quick fade)");
+            Check((!button.IsVisible || (bool)button.GetType().GetProperty("Cloaked", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(button)!), "out of the way during a capture (cloaked: out of the screen's picture) (after a quick fade)");
             button.Resume();
             Pump(200);
             Check((bool)Get(button, "HoverBlocked")! && button.IsVisible, "back after the capture with the pointer on it: it stays closed");

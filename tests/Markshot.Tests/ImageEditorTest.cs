@@ -414,8 +414,8 @@ static class ImageEditorTest
         editor.PanBy(new Vector(-100000, 0));
         Check(editor.PanOffset.X + 400 * zoomAfter >= 47, "a part of it always stays in view");
         Call(editor, "EditorKey", System.Windows.Input.Key.F, false);
-        Pump(30);
-        Check(Math.Abs(editor.PanOffset.X - fitted.X) < 2 && Math.Abs(editor.PanOffset.Y - fitted.Y) < 2 && (double)Field(editor, "_zoom") == zoomBefore, "F: fitted and back in the middle");
+        Pump(400); // (a short glide since 0.8.73)
+        Check(Math.Abs(editor.PanOffset.X - fitted.X) < 2 && Math.Abs(editor.PanOffset.Y - fitted.Y) < 2 && Math.Abs((double)Field(editor, "_zoom") - zoomBefore) < 1e-6, "F: fitted and back in the middle");
 
         // ---- zoom far in: up to 3200 %, the checkerboard only where the picture is visible, pixels stay sharp
         for (var i = 0; i < 80; i++) editor.ZoomAt(120, new Point(300, 200));

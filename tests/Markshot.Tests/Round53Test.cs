@@ -219,7 +219,7 @@ static class Round53Test
             button.CheckFullscreen();
             Check(button.IsVisible, "and it comes back afterwards");
             button.Suspend();
-            Check(!button.IsVisible, "out of the way during a capture");
+            Check((!button.IsVisible || (bool)button.GetType().GetProperty("Cloaked", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(button)!), "out of the way during a capture (cloaked: out of the screen's picture)");
             button.Resume();
             Check(button.IsVisible, "back after the capture");
             config.PinShadowSize = 20;

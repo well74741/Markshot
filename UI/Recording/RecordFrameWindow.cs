@@ -30,6 +30,16 @@ internal sealed class RecordFrameWindow : Window
     private string? _drag;
     private Native.POINT _dragStart;
     private Int32Rect _dragOrigin;
+    private Int32Rect _beforeDrag; // where the frame was when the drag began (a right click goes back to it)
+    private Native.POINT _lastCursor;
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
+
+    /// <summary>Tests: 空格 held (the frame does not take the keyboard: it is read from the system).</summary>
+    internal Func<bool>? SpaceOverride { get; set; }
+
+    private bool SpaceHeld => SpaceOverride?.Invoke() ?? (GetAsyncKeyState(0x20 /* VK_SPACE */) & 0x8000) != 0;
 
     public RecordFrameWindow(RecorderController controller)
     {
@@ -198,7 +208,9 @@ internal sealed class RecordFrameWindow : Window
     {
         _drag = kind;
         _dragStart = Native.CursorPosition();
+        _lastCursor = _dragStart;
         _dragOrigin = _controller.Rect;
+        _beforeDrag = _dragOrigin;
         _view.CaptureMouse();
         _view.InvalidateVisual();
     }
@@ -211,6 +223,16 @@ internal sealed class RecordFrameWindow : Window
         }
 
         var c = Native.CursorPosition();
+        if (SpaceHeld && _drag != "move")
+        {
+            // 空格 held while resizing: the frame moves with the pointer at its size (as in the capture), the resize
+            // goes on from there when it is let go.
+            int mx = c.X - _lastCursor.X, my = c.Y - _lastCursor.Y;
+            _dragOrigin = new Int32Rect(_dragOrigin.X + mx, _dragOrigin.Y + my, _dragOrigin.Width, _dragOrigin.Height);
+            _dragStart = new Native.POINT { X = _dragStart.X + mx, Y = _dragStart.Y + my };
+        }
+
+        _lastCursor = c;
         int dx = c.X - _dragStart.X, dy = c.Y - _dragStart.Y;
         var r0 = _dragOrigin;
         if (_drag == "move")
@@ -267,6 +289,18 @@ internal sealed class RecordFrameWindow : Window
         }
 
         _controller.SetRect(new Int32Rect(x, y, w, h), clip: true);
+    }
+
+    /// <summary>Right click while dragging: the frame back where it was, the drag over.</summary>
+    public void CancelDrag()
+    {
+        if (_drag == null)
+        {
+            return;
+        }
+
+        _controller.SetRect(_beforeDrag);
+        EndDrag();
     }
 
     public void EndDrag()
@@ -518,6 +552,15 @@ internal sealed class RecordFrameWindow : Window
             if (_window.Dragging)
             {
                 _window.EndDrag();
+                e.Handled = true;
+            }
+        }
+
+        protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
+        {
+            if (_window.Dragging)
+            {
+                _window.CancelDrag(); // as everywhere in Markshot: a right click undoes the drag being made
                 e.Handled = true;
             }
         }

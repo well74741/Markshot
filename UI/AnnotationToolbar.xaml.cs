@@ -1204,12 +1204,17 @@ public partial class AnnotationToolbar : UserControl
     private (ButtonBase Tool, Button Chevron, Func<(string Label, bool Checked, Action Pick)[]> Items)[]? _variantTools;
     private Popup? _hoverPopup;
     private ButtonBase? _hoverAnchor;
-    private readonly DispatcherTimer _hoverLeave = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private readonly DispatcherTimer _hoverLeave = new() { Interval = TimeSpan.FromMilliseconds(220) }; // crossing a plain button on the way keeps the plate
     private readonly DispatcherTimer _hoverIntent = new() { Interval = TimeSpan.FromMilliseconds(70) };
     private ButtonBase? _hoverPending; // the pointer came onto it: its list opens if it is still there a moment later
     private bool _hoverShown;
-    private Border? _hoverCard;
-    private StackPanel? _hoverList;
+    private Border? _hoverCard;          // the plate: one fixed width, slides under the button the pointer is on
+    private StackPanel? _hoverList;      // the list under that button (tests)
+    private Canvas? _hoverLists;         // every tool's list, each under its button, seen only through the plate
+    private readonly TranslateTransform _plateMove = new();
+    private readonly Dictionary<ButtonBase, StackPanel> _listOf = new();
+    private const double PlateWidth = 104;
+    private const double PlateRoom = 8; // room for the shadow around the plate
     private bool _hoverWired;
     private ButtonBase? _hoverSuppressed; // clicked: no list again until the pointer has left it
 
@@ -1418,102 +1423,85 @@ public partial class AnnotationToolbar : UserControl
     }
 
     /// <summary>
-    /// The styles of a tool in a small list centred under its button. One popup serves every tool and stays open
-    /// (see-through, letting clicks through) while the list is hidden: opening and closing only fade the list, from
-    /// wherever it is — a list closing while the next one opens never jumps or flashes, and no window is made per hover.
+    /// The styles of the tools, as one plate under the bar: every tool's list is laid out under its own button but
+    /// seen only through the plate, a fixed-width card that slides to the button the pointer is on — moving along the
+    /// bar is one transform animated (no list made, no window made or resized), the words simply come into view.
+    /// The popup stays open, see-through (clicks pass) while the plate is hidden.
     /// </summary>
     internal void OpenHoverMenu(ButtonBase tool)
     {
-        var entry = _variantTools!.First(t => ReferenceEquals(t.Tool, tool));
         _hoverLeave.Stop();
         _hoverIntent.Stop();
         _hoverPending = null;
         EnsureHoverPopup();
-        var showing = _hoverShown && _hoverCard!.Visibility == Visibility.Visible && _hoverCard.Opacity > 0.05;
-        var fromTool = _hoverPopup!.PlacementTarget as FrameworkElement;
-        var oldWidth = _hoverCard!.ActualWidth;
-        _hoverList!.Children.Clear();
-        foreach (var (label, isChecked, pick) in entry.Items())
+        LayOutHoverLists();
+        if (!_listOf.TryGetValue(tool, out var list))
         {
-            var item = new Button
-            {
-                Style = (Style)FindResource("ToolButton"),
-                Content = new TextBlock { Text = label, TextAlignment = TextAlignment.Center, FontWeight = isChecked ? FontWeights.SemiBold : FontWeights.Normal },
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Center,
-                Padding = new Thickness(12, 6, 12, 6),
-                Tag = isChecked
-            };
-            if (isChecked)
+            return;
+        }
+
+        // The ticked style as it is now.
+        var entry = _variantTools!.First(t => ReferenceEquals(t.Tool, tool));
+        var items = entry.Items();
+        for (var i = 0; i < list.Children.Count && i < items.Length; i++)
+        {
+            var item = (Button)list.Children[i];
+            item.Tag = items[i].Checked;
+            ((TextBlock)item.Content).FontWeight = items[i].Checked ? FontWeights.SemiBold : FontWeights.Normal;
+            if (items[i].Checked)
             {
                 item.SetResourceReference(ForegroundProperty, "Accent");
             }
-
-            item.Click += (_, _) =>
+            else
             {
-                CloseHoverMenu();
-                pick();
-            };
-            _hoverList.Children.Add(item);
+                item.ClearValue(ForegroundProperty);
+            }
         }
 
-        var moved = fromTool != null && !ReferenceEquals(fromTool, tool);
-        var slide = 0.0;
-        if (showing && moved && fromTool!.IsVisible && tool.IsVisible)
-        {
-            // From under the last button: where its middle is, seen from the new one (the list then slides across).
-            var from = fromTool.TranslatePoint(new Point(fromTool.ActualWidth / 2, 0), tool);
-            slide = from.X - tool.ActualWidth / 2;
-        }
-
-        _hoverPopup.PlacementTarget = tool;
+        _hoverList = list;
+        var target = Canvas.GetLeft(list) - 3; // the plate's left: the list sits 3 inside it
+        var showing = _hoverShown && _hoverCard!.Opacity > 0.05;
         _hoverAnchor = tool;
-        if (!_hoverPopup.IsOpen)
+        if (!_hoverPopup!.IsOpen)
         {
             _hoverPopup.IsOpen = true;
         }
-
-        _hoverPopup.BeginAnimation(Popup.HorizontalOffsetProperty, null);
-        if (Math.Abs(slide) > 0.5)
+        else if (!showing)
         {
-            // Slides to the new button, its width easing from the last list's to this one's.
-            _hoverPopup.HorizontalOffset = slide;
-            _hoverPopup.BeginAnimation(Popup.HorizontalOffsetProperty, new System.Windows.Media.Animation.DoubleAnimation(slide, 0, HoverSlide) { EasingFunction = Motion.Ease });
-            _hoverCard.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            var newWidth = _hoverCard.DesiredSize.Width - _hoverCard.Margin.Left - _hoverCard.Margin.Right;
-            if (oldWidth > 0 && Math.Abs(newWidth - oldWidth) > 0.5)
-            {
-                var widen = new System.Windows.Media.Animation.DoubleAnimation(oldWidth, newWidth, HoverSlide) { EasingFunction = Motion.Ease };
-                widen.Completed += (_, _) =>
-                {
-                    if (ReferenceEquals(_hoverAnchor, tool))
-                    {
-                        _hoverCard.BeginAnimation(WidthProperty, null);
-                        _hoverCard.ClearValue(WidthProperty);
-                    }
-                };
-                _hoverCard.BeginAnimation(WidthProperty, widen);
-            }
+            _hoverPopup.HorizontalOffset = _hoverPopup.HorizontalOffset == 0 ? 0.01 : 0; // placed again (the bar may have moved)
+        }
+
+        if (showing)
+        {
+            // From wherever the plate is (even mid-way): it glides on.
+            _plateMove.BeginAnimation(TranslateTransform.XProperty, new System.Windows.Media.Animation.DoubleAnimation(target, HoverSlide) { EasingFunction = Motion.Ease });
         }
         else
         {
-            _hoverPopup.HorizontalOffset = 0;
-            _hoverCard.BeginAnimation(WidthProperty, null);
-            _hoverCard.ClearValue(WidthProperty);
+            _plateMove.BeginAnimation(TranslateTransform.XProperty, null);
+            _plateMove.X = target;
         }
 
         _hoverShown = true;
         ((FrameworkElement)_hoverPopup.Child).IsHitTestVisible = true;
         RaiseHoverPopup(); // above the bar's other windows (the settings row opened after it was made)
-        if (!showing || _hoverCard.Opacity < 0.99)
+        if (!showing || _hoverCard!.Opacity < 0.99)
         {
-            Motion.PopIn(_hoverCard, fromAbove: true, duration: new Duration(TimeSpan.FromMilliseconds(120)));
+            var fade = new System.Windows.Media.Animation.DoubleAnimation(1, new Duration(TimeSpan.FromMilliseconds(110))) { EasingFunction = Motion.Ease };
+            _hoverCard!.BeginAnimation(OpacityProperty, fade);
+            _hoverLists!.BeginAnimation(OpacityProperty, fade);
         }
     }
 
-    private static readonly Duration HoverSlide = new(TimeSpan.FromMilliseconds(170));
+    private static readonly Duration HoverSlide = new(TimeSpan.FromMilliseconds(140));
 
-    /// <summary>The list's window to the top (no activation): the popup is made once and kept, other windows came later.</summary>
+    /// <summary>Tests: the buttons of the list shown now.</summary>
+    internal IReadOnlyList<Button> HoverItems() => _hoverList?.Children.OfType<Button>().ToList() ?? new List<Button>();
+
+    /// <summary>Tests: where the plate is (its left, in the bar's units).</summary>
+    internal double PlateX => _plateMove.X;
+
+    /// <summary>The list window to the top (no activation): it is made once and kept, other windows came later.</summary>
     private void RaiseHoverPopup()
     {
         if (_hoverPopup?.Child is { } child && PresentationSource.FromVisual(child) is System.Windows.Interop.HwndSource source)
@@ -1529,29 +1517,31 @@ public partial class AnnotationToolbar : UserControl
             return;
         }
 
-        const double shadowRoom = 8;
-        _hoverList = new StackPanel();
-        _hoverCard = new Border { Padding = new Thickness(3), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Child = _hoverList, Margin = new Thickness(shadowRoom), Opacity = 0 };
+        _hoverCard = new Border
+        {
+            Width = PlateWidth,
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(PlateRoom, 0, 0, PlateRoom),
+            RenderTransform = _plateMove,
+            Opacity = 0,
+            IsHitTestVisible = true
+        };
         _hoverCard.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
         _hoverCard.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x33FFFFFF));
         _hoverCard.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.35 };
-        var host = new Grid { Background = Brushes.Transparent, Children = { _hoverCard }, LayoutTransform = UiScale.Transform };
+        _hoverLists = new Canvas { Margin = new Thickness(PlateRoom, 0, 0, 0), Opacity = 0 };
+        var host = new Grid { Background = null, Children = { _hoverCard, _hoverLists }, LayoutTransform = UiScale.Transform, ClipToBounds = false };
         host.MouseEnter += (_, _) => _hoverLeave.Stop();
         host.MouseLeave += (_, _) => LeftHoverMenu();
         _hoverPopup = new Popup
         {
-            Placement = PlacementMode.Custom,
-            // Centred under the button; the shadow room above it overlaps the button, so the list touches it.
-            CustomPopupPlacementCallback = (popupSize, targetSize, _) =>
-            {
-                var dpi = _hoverAnchor == null ? 1 : VisualTreeHelper.GetDpi(_hoverAnchor).DpiScaleY;
-                return new[]
-                {
-                    new CustomPopupPlacement(new Point((targetSize.Width - popupSize.Width) / 2, targetSize.Height - shadowRoom * dpi * UiScale.Factor + 2 * dpi),
-                        PopupPrimaryAxis.Horizontal)
-                };
-            },
-            StaysOpen = true, // no mouse capture: the tool button stays clickable and the pointer may leave freely
+            PlacementTarget = MainRow,
+            Placement = PlacementMode.Bottom,
+            VerticalOffset = 1,
+            StaysOpen = true, // no mouse capture: the tool buttons stay clickable and the pointer may leave freely
             AllowsTransparency = true,
             Focusable = false,
             Child = host
@@ -1567,7 +1557,65 @@ public partial class AnnotationToolbar : UserControl
         Unloaded += (_, _) => ShutHoverPopup();
     }
 
-    /// <summary>The list goes (fading); the popup stays, see-through, for the next one.</summary>
+    /// <summary>Every tool's list under its button (rebuilt only when the bar's tools changed), clipped to the plate.</summary>
+    private void LayOutHoverLists()
+    {
+        var tools = _variantTools!.Where(t => t.Tool.IsVisible).ToList();
+        if (tools.Count != _listOf.Count || tools.Any(t => !_listOf.ContainsKey(t.Tool)))
+        {
+            _listOf.Clear();
+            _hoverLists!.Children.Clear();
+            foreach (var (tool, _, itemsOf) in tools)
+            {
+                var list = new StackPanel { Width = PlateWidth - 6 };
+                foreach (var (label, _, pick) in itemsOf())
+                {
+                    var item = new Button
+                    {
+                        Style = (Style)FindResource("ToolButton"),
+                        Content = new TextBlock { Text = label, TextAlignment = TextAlignment.Center },
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment = HorizontalAlignment.Center,
+                        Padding = new Thickness(8, 6, 8, 6)
+                    };
+                    var chosen = tool;
+                    item.Click += (_, _) =>
+                    {
+                        CloseHoverMenu();
+                        // the item's action, looked up again (its label stays, its state may have changed)
+                        var now = _variantTools!.First(t => ReferenceEquals(t.Tool, chosen)).Items();
+                        var index = ((StackPanel)item.Parent).Children.IndexOf(item);
+                        if (index >= 0 && index < now.Length)
+                        {
+                            now[index].Pick();
+                        }
+                    };
+                    list.Children.Add(item);
+                }
+
+                _listOf[tool] = list;
+                _hoverLists.Children.Add(list);
+            }
+        }
+
+        var height = 0.0;
+        foreach (var (tool, list) in _listOf)
+        {
+            var centre = tool.TranslatePoint(new Point(tool.ActualWidth / 2, 0), MainRow).X;
+            Canvas.SetLeft(list, centre - PlateWidth / 2 + 3);
+            Canvas.SetTop(list, 3);
+            list.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            height = Math.Max(height, list.DesiredSize.Height);
+        }
+
+        // The words are seen only through the plate (the clip moves with it).
+        _hoverCard!.Height = height + 6;
+        _hoverLists!.Width = MainRow.ActualWidth;
+        _hoverLists.Height = height + 6;
+        _hoverLists.Clip = new RectangleGeometry(new Rect(3, 0, PlateWidth - 6, height + 6)) { Transform = _plateMove };
+    }
+
+    /// <summary>The plate fades (the popup stays, see-through, for the next time).</summary>
     public void CloseHoverMenu()
     {
         _hoverLeave.Stop();
@@ -1585,10 +1633,9 @@ public partial class AnnotationToolbar : UserControl
             host.IsHitTestVisible = false; // clicks go through to what is under it at once
         }
 
-        if (_hoverCard != null)
-        {
-            Motion.PopOut(_hoverCard, towardsAbove: true, duration: new Duration(TimeSpan.FromMilliseconds(110)));
-        }
+        var fade = new System.Windows.Media.Animation.DoubleAnimation(0, new Duration(TimeSpan.FromMilliseconds(100)));
+        _hoverCard?.BeginAnimation(OpacityProperty, fade);
+        _hoverLists?.BeginAnimation(OpacityProperty, fade);
     }
 
     private void ShutHoverPopup()
@@ -1599,10 +1646,13 @@ public partial class AnnotationToolbar : UserControl
             _hoverPopup.IsOpen = false;
         }
 
-        if (_hoverCard != null)
+        foreach (var element in new UIElement?[] { _hoverCard, _hoverLists })
         {
-            _hoverCard.BeginAnimation(OpacityProperty, null);
-            _hoverCard.Opacity = 0;
+            if (element != null)
+            {
+                element.BeginAnimation(OpacityProperty, null);
+                element.Opacity = 0;
+            }
         }
     }
 

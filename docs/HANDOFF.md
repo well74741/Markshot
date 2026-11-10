@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.72`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.73`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,18 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.73 0.8.73 变更
+
+- 批注栏样式列表重做：一个 Popup（PlacementTarget = MainRow，宽 = 整个主行），所有带样式工具的列表一次性摆在各自按钮下方（`LayOutHoverLists`，工具集变化才重建）；
+  固定宽度 104 的底盘 `_hoverCard` 用 `_plateMove`（TranslateTransform）移动，列表层 Canvas 的 Clip = 底盘大小的 RectangleGeometry 并共用同一个变换 → 底盘滑到哪里露出哪里的文字，
+  被裁掉的按钮也点不到。移动只是一个变换动画（140ms，从当前值继续），不重建、不改窗口大小。离开宽限 50 → 220ms（经过普通按钮不收起）。测试用 `HoverItems()` / `PlateX`。
+- 悬浮按钮截图期间不再 Hide/Show（分层窗口重显会闪出上一帧）：`Cloak(true)` = DWMWA_CLOAK + WS_EX_TRANSPARENT，透明度置 0；恢复时 uncloak 再淡入。全屏隐藏仍走 Hide。
+- 录屏框：调整大小时按住空格（GetAsyncKeyState，窗口不接收键盘）整体移动；拖动中右键 `CancelDrag` 回到拖动前。
+- 编辑器 F：`FitAnimated`（缩放按几何插值、位置线性，ease-out 180ms，CompositionTarget.Rendering）。
+- 内存：OverlayWindow 关闭时清掉截图 / 分割器引用；`App.TrimNow`（强制压缩 GC ×2 + 等终结器 + SetProcessWorkingSetSize(-1,-1)）在截图结束、关闭贴图 / 编辑器 / 识别窗口 4 秒后执行；
+  关闭贴图快照 8 张 / 120MB；`ConcurrentGarbageCollection=false`、`System.GC.ConserveMemory=7`。实测全新空闲实例任务管理器“内存”（私有工作集）约 47MB（Release，WS 143MB）。
+  `MARKSHOT_PROFILE_DIR` 环境变量：独立配置目录 + 独立单实例互斥，用于测量（不影响正常运行）。
 
 ## 8.1.72 0.8.72 变更
 

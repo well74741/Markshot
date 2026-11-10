@@ -123,11 +123,13 @@ static class Round72Test
             open.Invoke(bar, new object[] { (System.Windows.Controls.Primitives.ButtonBase)bar.FindName("ToolShape") });
             Pump(200);
             open.Invoke(bar, new object[] { (System.Windows.Controls.Primitives.ButtonBase)bar.FindName("ScrollButton") });
-            var popup = (System.Windows.Controls.Primitives.Popup)typeof(AnnotationToolbar).GetField("_hoverPopup", Any)!.GetValue(bar)!;
-            var card = (FrameworkElement)typeof(AnnotationToolbar).GetField("_hoverCard", Any)!.GetValue(bar)!;
-            Check(Math.Abs(popup.HorizontalOffset) > 20 && card.HasAnimatedProperties, $"the list slides from the last tool ({popup.HorizontalOffset:0} DIP away at first) and its width eases");
+            var plate = typeof(AnnotationToolbar).GetProperty("PlateX", Any)!;
+            var scroll = (FrameworkElement)bar.FindName("ScrollButton");
+            var target = scroll.TranslatePoint(new Point(scroll.ActualWidth / 2, 0), (UIElement)bar.FindName("MainRow")).X - 52;
+            var midway = (double)plate.GetValue(bar)!;
+            Check(Math.Abs(midway - target) > 20, $"the plate slides from the last tool ({Math.Abs(midway - target):0} DIP away at first), one fixed width");
             Pump(400);
-            Check(Math.Abs(popup.HorizontalOffset) < 0.5, "… and ends under the new one");
+            Check(Math.Abs((double)plate.GetValue(bar)! - target) < 0.5, "… and ends under the new one");
             window.Close();
             config.HideToolChevrons = before;
             Check(Source("UI/AnnotationToolbar.xaml.cs").Contains("RaiseHoverPopup(); // above the bar's other windows"), "the list's window comes to the top when shown (not under the settings row)");

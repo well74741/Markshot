@@ -53,7 +53,15 @@ public partial class App : Application
 
         // Pictures named on the command line (打开方式 in Explorer) open in the image editor.
         var files = OpenRequests.ImagesIn(e.Args);
-        _mutex = new Mutex(true, @"Local\Markshot.SingleInstance", out var createdNew);
+        // Diagnostics (memory / start-up measurements): a separate instance with its own settings folder.
+        var profile = Environment.GetEnvironmentVariable("MARKSHOT_PROFILE_DIR");
+        if (!string.IsNullOrEmpty(profile))
+        {
+            Directory.CreateDirectory(profile);
+            AppConfig.PathOverride = Path.Combine(profile, "config.json");
+        }
+
+        _mutex = new Mutex(true, @"Local\Markshot.SingleInstance" + (string.IsNullOrEmpty(profile) ? "" : "." + profile.GetHashCode().ToString("x")), out var createdNew);
         if (!createdNew && files.Count > 0 && OpenRequests.Send(files))
         {
             Shutdown(); // the running Markshot opens them
@@ -611,9 +619,32 @@ public partial class App : Application
             return;
         }
 
-        System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
-        GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: true);
+        TrimNow();
     }
+
+    /// <summary>
+    /// Memory given back while nothing happens: a full collection that also compacts the large objects (screenshots),
+    /// the finalisers run (bitmaps' native memory), a second collection, then the pages Windows lent us returned
+    /// (the working set trimmed: Task Manager shows what is really in use). A few dozen ms, only when idle.
+    /// </summary>
+    public static void TrimNow()
+    {
+        System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        try
+        {
+            SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, -1, -1);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("释放工作集失败", ex);
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern bool SetProcessWorkingSetSize(IntPtr process, nint minimum, nint maximum);
 
     private OverlayWindow? _spareOverlay;
 
@@ -685,12 +716,15 @@ public partial class App : Application
 
                 _closedPins.Add((pin.Snapshot(), entry));
                 _pinHistoryWindow?.Refresh();
-                // The exact restore (annotations, zoom) keeps whole pictures: at most 30 pins and ~800 MB of them.
-                while (_closedPins.Count > 20 || (_closedPins.Count > 3 && _closedPins.Sum(closed => SnapshotBytes(closed.Snapshot)) > 300L * 1024 * 1024))
+                // The exact restore (annotations, zoom) keeps whole pictures in memory: the last 8 pins, ~120 MB at most
+                // (older ones come back from the pin history on disk, as pictures).
+                while (_closedPins.Count > 8 || (_closedPins.Count > 2 && _closedPins.Sum(closed => SnapshotBytes(closed.Snapshot)) > 120L * 1024 * 1024))
                 {
                     _closedPins.RemoveAt(0);
                 }
             }
+
+            TrimMemorySoon();
         };
 
         if (view is { } shown)
@@ -847,7 +881,7 @@ public partial class App : Application
     public void ShowTranslation(BitmapSource image)
     {
         var window = new TranslationWindow(image);
-        window.Closed += (_, _) => _translations.Remove(window);
+        window.Closed += (_, _) => { _translations.Remove(window); TrimMemorySoon(); };
         _translations.Add(window);
         window.Show();
         window.Activate();
@@ -856,7 +890,7 @@ public partial class App : Application
     public void ShowOcr(BitmapSource image)
     {
         var window = new TranslationWindow(image, autoTranslate: false);
-        window.Closed += (_, _) => _translations.Remove(window);
+        window.Closed += (_, _) => { _translations.Remove(window); TrimMemorySoon(); };
         _translations.Add(window);
         window.Show();
         window.Activate();
@@ -1258,7 +1292,7 @@ public partial class App : Application
     {
         var editor = new UI.ImageEditorWindow(image, path, annotations, sourcePin);
         _editors.Add(editor);
-        editor.Closed += (_, _) => _editors.Remove(editor);
+        editor.Closed += (_, _) => { _editors.Remove(editor); TrimMemorySoon(); };
         editor.Show();
         editor.Activate();
         return editor;

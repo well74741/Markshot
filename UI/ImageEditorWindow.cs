@@ -1482,6 +1482,59 @@ public sealed class ImageEditorWindow : PinWindow
         }
     }
 
+    /// <summary>
+    /// F: back to fitted and in the middle with a short glide (zoom and place eased together, ~180 ms) — after the
+    /// canvas was dragged away the jump in one frame lost the eye.
+    /// </summary>
+    public void FitAnimated()
+    {
+        if (!_hasImage || _stage.ActualWidth <= 0)
+        {
+            return;
+        }
+
+        var (fromZoom, fromPan) = (_zoom, _pan);
+        Fit();
+        var (toZoom, toPan) = (_zoom, _pan);
+        if (Math.Abs(toZoom - fromZoom) < 1e-4 && (toPan - fromPan).Length < 1)
+        {
+            return;
+        }
+
+        // back to where it was, then on to the fitted view frame by frame
+        SetZoom(fromZoom);
+        MoveTo(fromPan);
+        _fitClock.Restart();
+        _fitFrom = (fromZoom, fromPan);
+        _fitTo = (toZoom, toPan);
+        if (!_fitting)
+        {
+            _fitting = true;
+            CompositionTarget.Rendering += FitFrame;
+        }
+    }
+
+    private readonly System.Diagnostics.Stopwatch _fitClock = new();
+    private (double Zoom, Point Pan) _fitFrom, _fitTo;
+    private bool _fitting;
+    private const double FitMs = 180;
+
+    private void FitFrame(object? sender, EventArgs e)
+    {
+        var t = Math.Min(1, _fitClock.Elapsed.TotalMilliseconds / FitMs);
+        var eased = 1 - Math.Pow(1 - t, 3); // ease out
+        // the zoom moves evenly to the eye (geometric), the place in step with it
+        var zoom = _fitFrom.Zoom * Math.Pow(_fitTo.Zoom / _fitFrom.Zoom, eased);
+        var pan = new Point(_fitFrom.Pan.X + (_fitTo.Pan.X - _fitFrom.Pan.X) * eased, _fitFrom.Pan.Y + (_fitTo.Pan.Y - _fitFrom.Pan.Y) * eased);
+        SetZoom(zoom);
+        MoveTo(pan);
+        if (t >= 1 || !IsLoaded)
+        {
+            CompositionTarget.Rendering -= FitFrame;
+            _fitting = false;
+        }
+    }
+
     /// <summary>The picture in the middle of the view at the current zoom.</summary>
     public void Center() =>
         MoveTo(new Point((_stage.ActualWidth - _baseImage.PixelWidth * _zoom) / 2, (_stage.ActualHeight - _baseImage.PixelHeight * _zoom) / 2));
@@ -3376,7 +3429,7 @@ public sealed class ImageEditorWindow : PinWindow
         {
             if (key == Key.F && Keyboard.Modifiers == ModifierKeys.None)
             {
-                Fit(); // F: back in the middle, fitted
+                FitAnimated(); // F: back in the middle, fitted (a short glide)
                 return true;
             }
 

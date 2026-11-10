@@ -87,7 +87,7 @@ public sealed class FloatButtonWindow : Window
     /// </summary>
     private void KeepOnTop()
     {
-        if (!IsVisible || _pressed || _moving || _reorder.IsDragging || _handle == IntPtr.Zero || ContextMenu is { IsOpen: true })
+        if (!IsVisible || _cloaked || _pressed || _moving || _reorder.IsDragging || _handle == IntPtr.Zero || ContextMenu is { IsOpen: true })
         {
             return;
         }
@@ -184,6 +184,7 @@ public sealed class FloatButtonWindow : Window
     private bool _expanded;
     private bool _suspended;
     private bool _fullscreenHidden;
+    private bool _cloaked; // kept shown but taken out of the screen's picture (a capture): no hide / show, no old frame
     private bool _pressed;
     private bool _moving;
     private Native.POINT _pressPoint;
@@ -995,9 +996,56 @@ public sealed class FloatButtonWindow : Window
         CompositionTarget.Rendering += tick;
     }
 
+    /// <summary>
+    /// Out of the screen's picture at once (DWM cloak), though still shown: hiding a see-through window and showing it
+    /// again made it flash its last frame (the button with the row open, as it was clicked) when a capture ended.
+    /// Clicks go through it meanwhile.
+    /// </summary>
+    private void Cloak(bool cloak)
+    {
+        if (_handle == IntPtr.Zero || _cloaked == cloak)
+        {
+            return;
+        }
+
+        _cloaked = cloak;
+        var value = cloak ? 1 : 0;
+        Native.DwmSetWindowAttribute(_handle, 13 /* DWMWA_CLOAK */, ref value, sizeof(int));
+        var style = Native.GetWindowLongPtr(_handle, Native.GWL_EXSTYLE).ToInt64();
+        style = cloak ? style | Native.WS_EX_TRANSPARENT : style & ~(long)Native.WS_EX_TRANSPARENT;
+        Native.SetWindowLongPtr(_handle, Native.GWL_EXSTYLE, new IntPtr(style));
+    }
+
+    /// <summary>Tests: taken out of the screen's picture for a capture.</summary>
+    internal bool Cloaked => _cloaked;
+
     private void UpdateShown()
     {
         var show = !_suspended && !_fullscreenHidden;
+        if (show && _cloaked)
+        {
+            // Back from a capture: it was drawn see-through meanwhile, so it simply fades in where it is.
+            _root.BeginAnimation(OpacityProperty, null);
+            _root.Opacity = 0;
+            Cloak(false);
+            FadeIn();
+            return;
+        }
+
+        if (!show && _suspended && !_fullscreenHidden && IsVisible && _handle != IntPtr.Zero)
+        {
+            Collapse();
+            _fadingOut = false;
+            _root.BeginAnimation(OpacityProperty, null);
+            _root.Opacity = 0;
+            Cloak(true);
+            return;
+        }
+
+        if (_cloaked && _fullscreenHidden)
+        {
+            Cloak(false); // hidden the usual way instead
+        }
         if (show && (!IsVisible || _fadingOut))
         {
             if (!IsVisible)

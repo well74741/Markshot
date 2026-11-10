@@ -133,7 +133,7 @@ static class Round69Test
         // ---- lighter in the background
         {
             var app = Source("App.xaml.cs");
-            Check(app.Contains("300L * 1024 * 1024") && app.Contains("TrimMemorySoon();") && app.Contains("GCLargeObjectHeapCompactionMode.CompactOnce"),
+            Check(app.Contains("120L * 1024 * 1024") && app.Contains("TrimMemorySoon();") && app.Contains("GCLargeObjectHeapCompactionMode.CompactOnce"),
                 "closed pins kept within 300 MB; memory given back after a capture");
         }
 

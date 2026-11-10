@@ -161,22 +161,21 @@ static class Batch9Test
             typeof(AnnotationToolbar).GetMethod("OpenHoverMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(hoverBar, new object[] { penTool });
             Pump(100);
             var popup = (Popup)typeof(AnnotationToolbar).GetField("_hoverPopup", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(hoverBar)!;
-            var card = (Border)((Grid)popup.Child).Children[0];
-            var hoverItems = ((StackPanel)card.Child).Children.OfType<Button>().ToList();
-            Check(hoverBar.IsHoverMenuOpen && popup.StaysOpen && popup.Placement == PlacementMode.Custom &&
+            var hoverItems = ((System.Collections.Generic.IReadOnlyList<Button>)typeof(AnnotationToolbar).GetMethod("HoverItems", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(hoverBar, null)!).ToList();
+            Check(hoverBar.IsHoverMenuOpen && popup.StaysOpen &&
                   hoverItems.Select(i => ((TextBlock)i.Content).Text).SequenceEqual(new[] { "画笔", "荧光笔" }),
                 "… resting on the pen shows 画笔 / 荧光笔 under it (without taking the mouse)");
-            var placed = popup.CustomPopupPlacementCallback(new Size(80, 70), new Size(30, 30), new Point())[0].Point;
-            Check(Math.Abs(placed.X - (30 - 80) / 2.0) < 0.01, "… centred under the button");
-            Check(card.ActualWidth < 110 && hoverItems.All(i => i.HorizontalContentAlignment == HorizontalAlignment.Center && ((TextBlock)i.Content).TextAlignment == TextAlignment.Center),
-                $"… a narrow list ({card.ActualWidth:0} DIP) with its words centred");
+            var penCentre = penTool.TranslatePoint(new Point(penTool.ActualWidth / 2, 0), (UIElement)hoverBar.FindName("MainRow")).X;
+            var plateX = (double)typeof(AnnotationToolbar).GetProperty("PlateX", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(hoverBar)!;
+            Check(Math.Abs(plateX + 52 - penCentre) < 1, "… centred under the button");
+            Check(hoverItems.All(i => i.HorizontalContentAlignment == HorizontalAlignment.Center && ((TextBlock)i.Content).TextAlignment == TextAlignment.Center),
+                "… its words centred");
             hoverItems[1].RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             Pump(50);
             Check(hoverBar.Tool == Markshot.Annotations.AnnotationTool.Highlighter && !hoverBar.IsHoverMenuOpen, "… picking one takes that tool and closes the list");
             Check(((FrameworkElement)hoverBar.FindName("ScrollChevron")).Visibility == Visibility.Collapsed, "… the 长截图 ▾ is hidden too (its directions on hover)");
             typeof(AnnotationToolbar).GetMethod("OpenHoverMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(hoverBar, new object[] { (ButtonBase)hoverBar.FindName("ScrollButton") });
-            var scrollPopup = (Popup)typeof(AnnotationToolbar).GetField("_hoverPopup", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(hoverBar)!;
-            var scrollItems = ((StackPanel)((Border)((Grid)scrollPopup.Child).Children[0]).Child).Children.OfType<Button>().Select(i => ((TextBlock)i.Content).Text).ToList();
+            var scrollItems = ((System.Collections.Generic.IReadOnlyList<Button>)typeof(AnnotationToolbar).GetMethod("HoverItems", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(hoverBar, null)!).Select(i => ((TextBlock)i.Content).Text).ToList();
             Check(scrollItems.SequenceEqual(new[] { "竖向长截图", "横向长截图" }), "… resting on 长截图 shows 竖向 / 横向");
             hoverBar.CloseHoverMenu();
             config.HideToolChevrons = false;
