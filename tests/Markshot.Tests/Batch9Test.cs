@@ -167,7 +167,7 @@ static class Batch9Test
                 "… resting on the pen shows 画笔 / 荧光笔 under it (without taking the mouse)");
             var penCentre = penTool.TranslatePoint(new Point(penTool.ActualWidth / 2, 0), (UIElement)hoverBar.FindName("MainRow")).X;
             var plateX = (double)typeof(AnnotationToolbar).GetProperty("PlateX", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(hoverBar)!;
-            Check(Math.Abs(plateX + 52 - penCentre) < 1, "… centred under the button");
+            Check(Math.Abs(plateX + 42 - penCentre) < 1, "… centred under the button");
             Check(hoverItems.All(i => i.HorizontalContentAlignment == HorizontalAlignment.Center && ((TextBlock)i.Content).TextAlignment == TextAlignment.Center),
                 "… its words centred");
             hoverItems[1].RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));

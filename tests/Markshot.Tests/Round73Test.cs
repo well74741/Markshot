@@ -56,6 +56,21 @@ static class Round73Test
                 $"one plate of one width; every tool's list laid out once ({count} lists), not made per hover");
             Check(lists.Clip is RectangleGeometry { Transform: TranslateTransform t } && ReferenceEquals(t, card.RenderTransform),
                 "the words are seen only through the plate (the clip moves with it)");
+            var shown = lists.Children.OfType<FrameworkElement>().Count(l => l.Opacity > 0.9);
+            var hidden = lists.Children.OfType<FrameworkElement>().Count(l => l.Opacity < 0.05);
+            Check(shown == 1 && hidden >= count - 2, $"only the list under the plate is seen; the ones beside it fade away ({shown} seen, {hidden} gone)");
+            var host = (FrameworkElement)((System.Windows.Controls.Primitives.Popup)typeof(AnnotationToolbar).GetField("_hoverPopup", Any)!.GetValue(bar)!).Child;
+            var mainRow = (FrameworkElement)bar.FindName("MainRow");
+            Check(host.Width >= mainRow.ActualWidth + card.Width, "room on both sides: a plate under the first or last tool is not cut");
+            if (Environment.GetEnvironmentVariable("R73SHOT") is { } folder)
+            {
+                var bitmap = new RenderTargetBitmap((int)host.ActualWidth + 2, (int)host.ActualHeight + 2, 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(host);
+                using var file = File.Create(Path.Combine(folder, "plate.png"));
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                encoder.Save(file);
+            }
             window.Close();
             config.HideToolChevrons = before;
         }

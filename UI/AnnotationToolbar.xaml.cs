@@ -1213,8 +1213,12 @@ public partial class AnnotationToolbar : UserControl
     private Canvas? _hoverLists;         // every tool's list, each under its button, seen only through the plate
     private readonly TranslateTransform _plateMove = new();
     private readonly Dictionary<ButtonBase, StackPanel> _listOf = new();
-    private const double PlateWidth = 104;
+    private const double PlateWidth = 84;
     private const double PlateRoom = 8; // room for the shadow around the plate
+    private double PlateSide => PlateWidth / 2 + PlateRoom; // room left and right of the bar: a plate under an end tool is not cut
+    private double _plateTarget;
+    private bool _plateGliding;
+    private readonly System.Diagnostics.Stopwatch _plateClock = new();
     private bool _hoverWired;
     private ButtonBase? _hoverSuppressed; // clicked: no list again until the pointer has left it
 
@@ -1468,18 +1472,24 @@ public partial class AnnotationToolbar : UserControl
         }
         else if (!showing)
         {
-            _hoverPopup.HorizontalOffset = _hoverPopup.HorizontalOffset == 0 ? 0.01 : 0; // placed again (the bar may have moved)
+            _hoverPopup.HorizontalOffset = Math.Abs(_hoverPopup.HorizontalOffset + PlateSide) < 0.001 ? -PlateSide + 0.01 : -PlateSide; // placed again (the bar may have moved)
         }
 
+        _plateTarget = target;
         if (showing)
         {
-            // From wherever the plate is (even mid-way): it glides on.
-            _plateMove.BeginAnimation(TranslateTransform.XProperty, new System.Windows.Media.Animation.DoubleAnimation(target, HoverSlide) { EasingFunction = Motion.Ease });
+            // From wherever the plate is (even mid-way): it glides on, the words beside it fading as it leaves them.
+            if (!_plateGliding)
+            {
+                _plateGliding = true;
+                _plateClock.Restart();
+                CompositionTarget.Rendering += GlidePlate;
+            }
         }
         else
         {
-            _plateMove.BeginAnimation(TranslateTransform.XProperty, null);
             _plateMove.X = target;
+            ShadeLists();
         }
 
         _hoverShown = true;
@@ -1493,7 +1503,39 @@ public partial class AnnotationToolbar : UserControl
         }
     }
 
-    private static readonly Duration HoverSlide = new(TimeSpan.FromMilliseconds(140));
+    /// <summary>One frame of the plate's glide: eased towards its button (about 140 ms to arrive).</summary>
+    private void GlidePlate(object? sender, EventArgs e)
+    {
+        var dt = Math.Min(50, _plateClock.Elapsed.TotalMilliseconds);
+        _plateClock.Restart();
+        var x = _plateMove.X;
+        x += (_plateTarget - x) * (1 - Math.Exp(-dt / 38.0));
+        if (Math.Abs(_plateTarget - x) < 0.3 || !IsLoaded)
+        {
+            x = _plateTarget;
+            CompositionTarget.Rendering -= GlidePlate;
+            _plateGliding = false;
+        }
+
+        _plateMove.X = x;
+        ShadeLists();
+    }
+
+    /// <summary>
+    /// Only the list under the plate is seen; its neighbours fade out with their distance from the plate's middle
+    /// (the buttons are close together: their lists would lie on top of each other under the plate).
+    /// </summary>
+    private void ShadeLists()
+    {
+        var middle = _plateMove.X + PlateWidth / 2;
+        foreach (var list in _listOf.Values)
+        {
+            var distance = Math.Abs(Canvas.GetLeft(list) - 3 + PlateWidth / 2 - middle);
+            var opacity = Math.Clamp(1 - distance / 22.0, 0, 1);
+            list.Opacity = opacity;
+            list.IsHitTestVisible = opacity > 0.6;
+        }
+    }
 
     /// <summary>Tests: the buttons of the list shown now.</summary>
     internal IReadOnlyList<Button> HoverItems() => _hoverList?.Children.OfType<Button>().ToList() ?? new List<Button>();
@@ -1524,7 +1566,7 @@ public partial class AnnotationToolbar : UserControl
             BorderThickness = new Thickness(1),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(PlateRoom, 0, 0, PlateRoom),
+            Margin = new Thickness(PlateSide, 0, 0, PlateRoom),
             RenderTransform = _plateMove,
             Opacity = 0,
             IsHitTestVisible = true
@@ -1532,7 +1574,7 @@ public partial class AnnotationToolbar : UserControl
         _hoverCard.SetResourceReference(Border.BackgroundProperty, Theme.Key(0xFF1E1E1E));
         _hoverCard.SetResourceReference(Border.BorderBrushProperty, Theme.Key(0x33FFFFFF));
         _hoverCard.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.35 };
-        _hoverLists = new Canvas { Margin = new Thickness(PlateRoom, 0, 0, 0), Opacity = 0 };
+        _hoverLists = new Canvas { Margin = new Thickness(PlateSide, 0, PlateSide, 0), Opacity = 0, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         var host = new Grid { Background = null, Children = { _hoverCard, _hoverLists }, LayoutTransform = UiScale.Transform, ClipToBounds = false };
         host.MouseEnter += (_, _) => _hoverLeave.Stop();
         host.MouseLeave += (_, _) => LeftHoverMenu();
@@ -1541,6 +1583,7 @@ public partial class AnnotationToolbar : UserControl
             PlacementTarget = MainRow,
             Placement = PlacementMode.Bottom,
             VerticalOffset = 1,
+            HorizontalOffset = -PlateSide, // the room left of the bar (see PlateSide)
             StaysOpen = true, // no mouse capture: the tool buttons stay clickable and the pointer may leave freely
             AllowsTransparency = true,
             Focusable = false,
@@ -1567,7 +1610,7 @@ public partial class AnnotationToolbar : UserControl
             _hoverLists!.Children.Clear();
             foreach (var (tool, _, itemsOf) in tools)
             {
-                var list = new StackPanel { Width = PlateWidth - 6 };
+                var list = new StackPanel { Width = PlateWidth - 6, Opacity = 0 };
                 foreach (var (label, _, pick) in itemsOf())
                 {
                     var item = new Button
@@ -1576,7 +1619,7 @@ public partial class AnnotationToolbar : UserControl
                         Content = new TextBlock { Text = label, TextAlignment = TextAlignment.Center },
                         HorizontalAlignment = HorizontalAlignment.Stretch,
                         HorizontalContentAlignment = HorizontalAlignment.Center,
-                        Padding = new Thickness(8, 6, 8, 6)
+                        Padding = new Thickness(4, 6, 4, 6)
                     };
                     var chosen = tool;
                     item.Click += (_, _) =>
@@ -1611,6 +1654,7 @@ public partial class AnnotationToolbar : UserControl
         // The words are seen only through the plate (the clip moves with it).
         _hoverCard!.Height = height + 6;
         _hoverLists!.Width = MainRow.ActualWidth;
+        ((FrameworkElement)_hoverPopup!.Child).Width = MainRow.ActualWidth + 2 * PlateSide;
         _hoverLists.Height = height + 6;
         _hoverLists.Clip = new RectangleGeometry(new Rect(3, 0, PlateWidth - 6, height + 6)) { Transform = _plateMove };
     }

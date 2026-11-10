@@ -125,7 +125,7 @@ static class Round72Test
             open.Invoke(bar, new object[] { (System.Windows.Controls.Primitives.ButtonBase)bar.FindName("ScrollButton") });
             var plate = typeof(AnnotationToolbar).GetProperty("PlateX", Any)!;
             var scroll = (FrameworkElement)bar.FindName("ScrollButton");
-            var target = scroll.TranslatePoint(new Point(scroll.ActualWidth / 2, 0), (UIElement)bar.FindName("MainRow")).X - 52;
+            var target = scroll.TranslatePoint(new Point(scroll.ActualWidth / 2, 0), (UIElement)bar.FindName("MainRow")).X - 42;
             var midway = (double)plate.GetValue(bar)!;
             Check(Math.Abs(midway - target) > 20, $"the plate slides from the last tool ({Math.Abs(midway - target):0} DIP away at first), one fixed width");
             // (slow machines: up to two seconds for the 140 ms glide to be drawn through)
