@@ -134,6 +134,7 @@ public partial class AnnotationToolbar : UserControl
             UiScale.Attach(root); // the control's own size includes the scale: placement code keeps working
         }
 
+        LoadToolSizes();
         // Theme switches are heard only while the bar is on screen: a bar never shown (a pin's, until it is edited)
         // never gets Unloaded, and a static event would hold it — and its pin with the pictures — for good.
         Unloaded += (_, _) => Theme.Changed -= UpdateSwatches;
@@ -1885,6 +1886,27 @@ public partial class AnnotationToolbar : UserControl
         if (_selection == null && _toolSizes.ContainsKey(_tool))
         {
             _toolSizes[_tool] = _thickness;
+            if (App.Config is { } config)
+            {
+                config.ToolSizes[_tool.ToString()] = Math.Round(_thickness, 2); // kept for the next capture / start
+            }
+        }
+    }
+
+    /// <summary>The sizes the tools had last time (the settings), over the defaults.</summary>
+    private void LoadToolSizes()
+    {
+        if (App.Config?.ToolSizes is not { Count: > 0 } saved)
+        {
+            return;
+        }
+
+        foreach (var tool in _toolSizes.Keys.ToList())
+        {
+            if (saved.TryGetValue(tool.ToString(), out var size) && size > 0 && size < 1000)
+            {
+                _toolSizes[tool] = size;
+            }
         }
     }
 

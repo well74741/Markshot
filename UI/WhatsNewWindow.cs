@@ -7,6 +7,11 @@ public static class ReleaseNotes
 {
     public static readonly (string Version, string[] Lines)[] All =
     {
+        ("0.8.76", new[]
+        {
+            "批注工具的粗细 / 字号会记住，下次截图、贴图、重启后仍是上次的大小",
+            "自动识别：个别软件把视频 / 画布报告在窗口左上角（位置不对），不再框到这种错误的区域",
+        }),
         ("0.8.75", new[]
         {
             "修复工具栏靠近屏幕边缘时，样式列表整体偏离按钮的问题",

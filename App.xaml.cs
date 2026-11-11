@@ -457,12 +457,16 @@ public partial class App : Application
     private int _savedSoftness;
 
     /// <summary>What is remembered from use (the capture's rounded corners, the pen's 软边) goes to disk when it changed.</summary>
+    private string _savedSizes = "";
+
     private void SaveRemembered()
     {
-        if (Math.Abs(_savedCorner - Config.CaptureCornerRadius) > 0.01 || _savedSoftness != Config.PenSoftness)
+        var sizes = string.Join(";", Config.ToolSizes.OrderBy(pair => pair.Key).Select(pair => pair.Key + "=" + pair.Value));
+        if (Math.Abs(_savedCorner - Config.CaptureCornerRadius) > 0.01 || _savedSoftness != Config.PenSoftness || sizes != _savedSizes)
         {
             _savedCorner = Config.CaptureCornerRadius;
             _savedSoftness = Config.PenSoftness;
+            _savedSizes = sizes;
             Config.Save();
         }
     }

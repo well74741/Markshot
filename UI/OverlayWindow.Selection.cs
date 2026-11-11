@@ -1031,7 +1031,12 @@ public partial class OverlayWindow
                 local = Rect.Intersect(local, window);
             }
 
-            found.Add(new HoverCandidate(local, element.Label));
+            if (Misplaced(local, window))
+            {
+                continue;
+            }
+
+            found.Add(new HoverCandidate(Snapped(local, pieces), element.Label));
         }
 
         foreach (var piece in pieces)
@@ -1058,6 +1063,58 @@ public partial class OverlayWindow
 
         return chain;
     }
+
+    /// <summary>
+    /// A program's element whose reported place is off (a video or canvas some programs report at the window's corner,
+    /// or at an unscaled size): when the picture shows a block of nearly its size under the pointer somewhere else,
+    /// the element is framed where the picture shows it. (Seen with players: the frame stood at the top left of the
+    /// window and only came right when the pointer was moved past its wrong edge.)
+    /// </summary>
+    private static Rect Snapped(Rect element, IReadOnlyList<Int32Rect> pieces)
+    {
+        if (element.IsEmpty || element.Width < 40 || element.Height < 40)
+        {
+            return element;
+        }
+
+        Rect? best = null;
+        var bestShift = double.MaxValue;
+        foreach (var piece in pieces)
+        {
+            var dw = Math.Abs(piece.Width - element.Width);
+            var dh = Math.Abs(piece.Height - element.Height);
+            if (dw > Math.Max(8, element.Width * 0.04) || dh > Math.Max(8, element.Height * 0.04))
+            {
+                continue; // another size: another thing
+            }
+
+            var shift = Math.Max(Math.Abs(piece.X - element.X), Math.Abs(piece.Y - element.Y));
+            if (shift <= 6)
+            {
+                return element; // the picture agrees with where it is
+            }
+
+            var rect = new Rect(piece.X, piece.Y, piece.Width, piece.Height);
+            var overlap = Rect.Intersect(rect, element);
+            if (!overlap.IsEmpty && overlap.Width * overlap.Height >= element.Width * element.Height * 0.5 && shift < bestShift)
+            {
+                bestShift = shift;
+                best = rect;
+            }
+        }
+
+        return best ?? element;
+    }
+
+    /// <summary>
+    /// An element reported at the window's very corner (where its title bar is) but smaller than the window: a place
+    /// some programs give a video / canvas they draw elsewhere. Not offered (the picture's pieces and the window are).
+    /// </summary>
+    private static bool Misplaced(Rect element, Rect window) =>
+        !element.IsEmpty && !window.IsEmpty &&
+        Math.Abs(element.X - window.X) <= 4 && Math.Abs(element.Y - window.Y) <= 4 &&
+        element.Width < window.Width - 8 && element.Height < window.Height - 8 &&
+        element.Width >= 200 && element.Height >= 120;
 
     /// <summary>The window of the program that was in front when the capture started (its elements are offered).</summary>
     private bool IsActiveProgram(IntPtr window)

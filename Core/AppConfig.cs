@@ -260,6 +260,9 @@ public sealed class AppConfig
 
     public List<CaptureRegion> RecentRegions { get; set; } = new();
 
+    /// <summary>Each annotation tool's last size (粗细 / 字号), kept between captures, pins and starts.</summary>
+    public Dictionary<string, double> ToolSizes { get; set; } = new();
+
     /// <summary>The version that wrote this file last (empty before 0.8.53): an update shows what is new once.</summary>
     public string LastVersion { get; set; } = "";
 
