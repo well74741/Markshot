@@ -23,6 +23,8 @@ static class Program
         // Real desktop clicks must not close a picker under test; explicit SimulateClick still tests outside clicks.
         typeof(Markshot.UI.ColorPickerWindow).GetField("ButtonsDownOverride", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
             .SetValue(null, new Func<bool>(() => false));
+        typeof(Markshot.UI.ColorPickerWindow).GetField("IsolateScreenPicking", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .SetValue(null, true);
         var app = new Application();
         var xaml = File.ReadAllText(Repo.File("App.xaml"));
         var start = xaml.IndexOf("<Application.Resources>") + "<Application.Resources>".Length;
@@ -76,6 +78,7 @@ static class Program
         if (mode == "round75") Round75Test.Run();
         if (mode == "round76") Round76Test.Run();
         if (mode == "round78") Round78Test.Run();
+        if (mode == "round79") Round79Test.Run();
         if (mode == "mtprobe") MtProbe.Run();
         if (mode == "pageprobe") PageProbe.Run();
         if (mode == "captureprobe") CaptureProbe.Run();

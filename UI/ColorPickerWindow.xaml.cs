@@ -16,6 +16,7 @@ public partial class ColorPickerWindow : Window
 
     /// <summary>Tests: simulated button state, not real desktop input.</summary>
     internal static Func<bool>? ButtonsDownOverride;
+    internal static bool IsolateScreenPicking; // test shield is off-screen and never reads or captures desktop input
 
     private bool PointerInside()
     {
@@ -424,12 +425,25 @@ public partial class ColorPickerWindow : Window
             Topmost = true;
             ResizeMode = ResizeMode.NoResize;
             Cursor = Cursors.Cross;
+            if (IsolateScreenPicking)
+            {
+                Left = Top = -32000;
+                Width = Height = 1;
+                Background = Brushes.Transparent;
+                IsHitTestVisible = false;
+            }
             SourceInitialized += (_, _) =>
             {
                 var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
                 // Never activated: the colour panel is modal and took the focus straight back, which
                 // ended picking at once (the cross vanished as soon as it left the panel).
-                SetWindowLong(handle, -20, GetWindowLong(handle, -20) | 0x08000000 /* WS_EX_NOACTIVATE */ | Native.WS_EX_TOOLWINDOW);
+                SetWindowLong(handle, -20, GetWindowLong(handle, -20) | 0x08000000 /* WS_EX_NOACTIVATE */ | Native.WS_EX_TOOLWINDOW |
+                    (IsolateScreenPicking ? Native.WS_EX_TRANSPARENT : 0));
+                if (IsolateScreenPicking)
+                {
+                    Native.SetWindowPos(handle, Native.HWND_TOPMOST, -32000, -32000, 1, 1, Native.SWP_NOACTIVATE);
+                    return;
+                }
                 Native.SetWindowPos(handle, Native.HWND_TOPMOST,
                     Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN),
                     Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN),
@@ -476,6 +490,7 @@ public partial class ColorPickerWindow : Window
 
         private void Sample()
         {
+            if (IsolateScreenPicking) return;
             if (GetCursorPos(out var point) && TryReadScreenColor(point.X, point.Y, out var color))
             {
                 Sampled?.Invoke(color);

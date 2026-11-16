@@ -18,14 +18,16 @@ static class PickerProbe
 
     static void Key(Window w, Key key)
     {
-        var args = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(w), 0, key) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+        var source = PresentationSource.FromVisual(w);
+        if (source == null) { Check(false, "key target is still open"); return; }
+        var args = new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, key) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
         w.RaiseEvent(args);
     }
 
     public static void Run()
     {
         Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        var picker = new ColorPickerWindow(Colors.Red);
+        var picker = new ColorPickerWindow(Colors.Red) { Left = -4000, Top = -4000, WindowStartupLocation = WindowStartupLocation.Manual, ShowActivated = false };
         picker.Show();
         Pump(300);
         var shieldField = typeof(ColorPickerWindow).GetField("_shield", BindingFlags.NonPublic | BindingFlags.Instance)!;

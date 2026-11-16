@@ -174,7 +174,7 @@ public sealed class FloatButtonWindow : Window
     private readonly TranslateTransform _thumbSlide = new();
     private DispatcherTimer? _thumbTimer;
     private BitmapSource? _pendingThumb; // a screenshot taken while it was hidden
-    private long _holdMoveUntil; // the row folding at the start of a drag: the window waits (no drawing while it moves)
+    private Point _dragAnchor; // main-button centre in window DIPs, cached once (no layout in the drag path)
     private readonly ReorderBehavior _reorder;
     private readonly DispatcherTimer _fullscreenWatch = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private IntPtr _handle;
@@ -194,6 +194,12 @@ public sealed class FloatButtonWindow : Window
 
     /// <summary>Where the pointer is (screen pixels); replaceable in tests.</summary>
     internal static Func<Native.POINT> Pointer = Native.CursorPosition;
+    internal static Func<Point>? DragPointerOverride; // tests: no real cursor input
+    private static Native.POINT DragPointer()
+    {
+        if (DragPointerOverride?.Invoke() is { } point) return new Native.POINT { X = (int)point.X, Y = (int)point.Y };
+        return Pointer();
+    }
 
     /// <summary>Whether a full-screen program is in front on the button's monitor; replaceable in tests.</summary>
     public Func<bool>? FullscreenOverride;
@@ -372,13 +378,22 @@ public sealed class FloatButtonWindow : Window
             // Shown only once it is where it belongs, side and all (it was drawn once on the wrong side: a jump).
             Dispatcher.BeginInvoke(() => FadeIn(), DispatcherPriority.Render);
         };
-        DpiChanged += (_, _) => Dispatcher.BeginInvoke(Place, DispatcherPriority.Loaded);
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            if (_moving) { PrepareDragPosition(); PlaceDragPosition(); }
+            else Place();
+        }, DispatcherPriority.Loaded);
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
         Closed += (_, _) =>
         {
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
             UiScale.Changed -= OnUiScaleChanged;
             _fullscreenWatch.Stop();
+            if (_moveQueued) CompositionTarget.Rendering -= ApplyPendingMove;
+            _moveQueued = false;
+            _pendingMove = null;
+            _pressed = _moving = false;
+            _root.CacheMode = null;
         };
         _fullscreenWatch.Tick += (_, _) => CheckFullscreen();
         _fullscreenWatch.Start();
@@ -617,7 +632,6 @@ public sealed class FloatButtonWindow : Window
     internal bool Folding => _plate.Visibility == Visibility.Visible && !_expanded;
 
     private const int FoldMs = 100;
-    private const int DragFoldMs = 45; // at the start of a drag: quick, the window waits only this long
     private const double PressedScale = 0.86;
 
     /// <summary>Pressed in a little (and back).</summary>
@@ -673,7 +687,7 @@ public sealed class FloatButtonWindow : Window
     {
         _pressed = true;
         _moving = false;
-        _pressPoint = Pointer();
+        _pressPoint = DragPointer();
         _pressCenter = (_centerX, _centerY);
         _main.CaptureMouse();
         Press(down: true);
@@ -687,7 +701,7 @@ public sealed class FloatButtonWindow : Window
             return;
         }
 
-        var now = Pointer();
+        var now = DragPointer();
         var dx = now.X - _pressPoint.X;
         var dy = now.Y - _pressPoint.Y;
         if (!_moving && Math.Abs(dx) + Math.Abs(dy) < 5)
@@ -698,22 +712,13 @@ public sealed class FloatButtonWindow : Window
         if (!_moving)
         {
             _moving = true;
-            // The row draws in quickly (the button stays pressed in until let go); nothing animates while the
-            // window then moves: a see-through window drawn and moved at once showed a frame on its path.
-            if (_expanded)
-            {
-                Collapse(animate: true, DragFoldMs);
-                _holdMoveUntil = Environment.TickCount64 + DragFoldMs;
-            }
-
+            // No pause waiting for the menu to fold: it is hidden without changing the window's dimensions.
+            Collapse(animate: false);
+            PrepareDragPosition();
+            _root.CacheMode = new BitmapCache(); // small icon/shadow texture, only while dragged
             _pressScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
             _pressScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
             _pressScale.ScaleX = _pressScale.ScaleY = PressedScale;
-        }
-
-        if (Environment.TickCount64 < _holdMoveUntil)
-        {
-            return; // the next move after the fold catches up
         }
 
         // At most one move per drawn frame, made just before WPF draws it: a see-through window moved between its
@@ -736,9 +741,36 @@ public sealed class FloatButtonWindow : Window
         if (_pendingMove is { } target)
         {
             _pendingMove = null;
-            MoveTo(target.X, target.Y, keepInside: false);
+            if (_pressed && _moving)
+            {
+                // Sample just before rendering, not the cursor position from an earlier mouse message.
+                var cursor = DragPointer();
+                target = (_pressCenter.X + cursor.X - _pressPoint.X, _pressCenter.Y + cursor.Y - _pressPoint.Y);
+            }
+            _centerX = target.X;
+            _centerY = target.Y;
+            PlaceDragPosition();
         }
     }
+
+    private void PrepareDragPosition()
+    {
+        // One layout at the start; keep the menu's opening direction unchanged until release.
+        UpdateLayout();
+        _dragAnchor = _main.TranslatePoint(new Point(_main.ActualWidth / 2, _main.ActualHeight / 2), this);
+    }
+
+    private void PlaceDragPosition()
+    {
+        if (_handle == IntPtr.Zero) return;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var x = Math.Round(_centerX - _dragAnchor.X * dpi.DpiScaleX);
+        var y = Math.Round(_centerY - _dragAnchor.Y * dpi.DpiScaleY);
+        Left = x / dpi.DpiScaleX;
+        Top = y / dpi.DpiScaleY;
+    }
+
+    internal bool Dragging => _moving;
 
     /// <summary>Tests: a drag move waits for the next frame.</summary>
     internal bool MoveWaiting => _pendingMove != null;
@@ -755,8 +787,15 @@ public sealed class FloatButtonWindow : Window
     private void EndPress(bool click)
     {
         var moved = _moving;
+        if (moved)
+        {
+            // Flush the release position even if the last mouse-move frame has not been rendered yet.
+            var cursor = DragPointer();
+            _pendingMove = (_pressCenter.X + cursor.X - _pressPoint.X, _pressCenter.Y + cursor.Y - _pressPoint.Y);
+        }
         _pressed = false;
         _moving = false;
+        _root.CacheMode = null;
         Press(down: false);
         if (_moveQueued)
         {
@@ -971,6 +1010,7 @@ public sealed class FloatButtonWindow : Window
 
     public void CheckFullscreen()
     {
+        if (_pressed || _moving || _reorder.IsDragging) return; // never hide/reposition a window while it is being dragged
         var hide = _config.FloatHideFullscreen && (FullscreenOverride?.Invoke() ?? FullscreenInFront());
         if (hide != _fullscreenHidden)
         {

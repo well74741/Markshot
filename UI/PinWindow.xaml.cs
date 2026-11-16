@@ -171,6 +171,7 @@ public partial class PinWindow : Window
         ImageHost.SizeChanged += (_, _) => UpdateFrame(); // the see-through shadow's clip follows the size
         Closed += (_, _) =>
         {
+            CancelQueuedPinDrag();
             LeaveGroup();
             StopBackgroundWork();
         };
@@ -619,6 +620,7 @@ public partial class PinWindow : Window
         }
 
         PlaceToolbar();
+        PlaceLanguageSwitch();
     }
 
     private static Color ParseColor(string? text, Color fallback)
@@ -863,6 +865,50 @@ public partial class PinWindow : Window
     }
 
     private bool _pinMoved; // the pin drag has passed its threshold
+    private (int X, int Y, ModifierKeys Modifiers, bool Middle)? _pendingPinDrag;
+    private bool _pinDragQueued;
+    internal Func<Point>? DragPointerOverride; // tests: screen-pixel cursor, no real input
+
+    private void QueuePinDrag(int x, int y, ModifierKeys modifiers, bool middle)
+    {
+        _pendingPinDrag = (x, y, modifiers, middle);
+        if (_pinDragQueued) return;
+        _pinDragQueued = true;
+        CompositionTarget.Rendering += FlushPinDrag;
+    }
+
+    private void CancelQueuedPinDrag()
+    {
+        if (_pinDragQueued) CompositionTarget.Rendering -= FlushPinDrag;
+        _pinDragQueued = false;
+        _pendingPinDrag = null;
+    }
+
+    private void FlushPinDrag(object? sender, EventArgs e)
+    {
+        var pending = _pendingPinDrag;
+        CancelQueuedPinDrag();
+        if (pending is not { } move || (!move.Middle && !_dragging) || (move.Middle && !_middleDragging)) return;
+        var cursor = DragPointerOverride?.Invoke();
+        if (cursor == null)
+        {
+            var actual = Native.CursorPosition();
+            cursor = new Point(actual.X, actual.Y); // newest input, not a queued mouse message
+        }
+        var modifiers = DragPointerOverride == null ? Keyboard.Modifiers : move.Modifiers;
+        if (move.Middle) ContinueMiddleDrag((int)cursor.Value.X, (int)cursor.Value.Y, modifiers);
+        else ContinuePinDrag((int)cursor.Value.X, (int)cursor.Value.Y, modifiers);
+    }
+
+    private void ContinueMiddleDrag(int x, int y, ModifierKeys modifiers)
+    {
+        var (dx, dy) = Straighten(x - _dragStartCursorX, y - _dragStartCursorY, modifiers);
+        if (!_middleMoved && Math.Abs(dx) + Math.Abs(dy) <= 3) return;
+        _middleMoved = true;
+        _left = _dragStartLeft + dx;
+        _top = _dragStartTop + dy;
+        ApplyPosition();
+    }
 
     /// <summary>Only screen-pixel movement: do not visit the annotation / OCR hover paths during a pin drag.</summary>
     private void ContinuePinDrag(int cursorX, int cursorY, ModifierKeys modifiers)
@@ -882,6 +928,7 @@ public partial class PinWindow : Window
 
     private void CancelPinDrag()
     {
+        CancelQueuedPinDrag(); // no queued frame may move it again after right-click cancellation
         _dragging = false;
         _left = _dragStartLeft;
         _top = _dragStartTop;
@@ -903,6 +950,7 @@ public partial class PinWindow : Window
             return;
         }
 
+        FlushPinDrag(null, EventArgs.Empty);
         _dragging = false;
         if (IsMouseCaptured)
         {
@@ -914,7 +962,7 @@ public partial class PinWindow : Window
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
-        if (_editMode && e.LeftButton == MouseButtonState.Released &&
+        if (!_dragging && !_middleDragging && _editMode && e.LeftButton == MouseButtonState.Released &&
             _textEditor.FrameCursorAt(ToPixels(e.GetPosition(ImageHost))) is { } frameCursor)
         {
             ImageHost.Cursor = frameCursor; // frame of the text being typed
@@ -923,16 +971,15 @@ public partial class PinWindow : Window
 
         if (_middleDragging)
         {
-            var middleCursor = Native.CursorPosition();
-            var (dx, dy) = Straighten(middleCursor.X - _dragStartCursorX, middleCursor.Y - _dragStartCursorY);
-            if (_middleMoved || Math.Abs(dx) + Math.Abs(dy) > 3)
+            if (e.MiddleButton != MouseButtonState.Pressed)
             {
-                _middleMoved = true;
-                _left = _dragStartLeft + dx;
-                _top = _dragStartTop + dy;
-                ApplyPosition();
+                FlushPinDrag(null, EventArgs.Empty);
+                _middleDragging = false;
+                if (IsMouseCaptured) ReleaseMouseCapture();
+                return; // a lost release must not leave a stale drag following later mouse moves
             }
-
+            var middleCursor = Native.CursorPosition();
+            QueuePinDrag(middleCursor.X, middleCursor.Y, Keyboard.Modifiers, middle: true);
             return;
         }
 
@@ -945,7 +992,7 @@ public partial class PinWindow : Window
             }
 
             var cursor = Native.CursorPosition();
-            ContinuePinDrag(cursor.X, cursor.Y, Keyboard.Modifiers);
+            QueuePinDrag(cursor.X, cursor.Y, Keyboard.Modifiers, middle: false);
             return;
         }
 
@@ -1089,6 +1136,7 @@ public partial class PinWindow : Window
             return;
         }
 
+        FlushPinDrag(null, EventArgs.Empty);
         _dragging = false;
         ReleaseMouseCapture();
         EndGroupDrag(_left != _dragStartLeft || _top != _dragStartTop);
@@ -1134,6 +1182,7 @@ public partial class PinWindow : Window
             return;
         }
 
+        FlushPinDrag(null, EventArgs.Empty);
         _middleDragging = false;
         ReleaseMouseCapture();
         if (!_middleMoved)

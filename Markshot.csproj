@@ -16,21 +16,21 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Patch releases count in two digits from 0.8.01 on (display version);
          the numeric Windows version fields carry 0.8.1.0. -->
-    <Version>0.8.78</Version>
-    <InformationalVersion>0.8.78</InformationalVersion>
+    <Version>0.8.79</Version>
+    <InformationalVersion>0.8.79</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>Markshot</Product>
     <Company>guoqing.wu</Company>
     <Authors>guoqing.wu (well74741)</Authors>
     <Copyright>Copyright © 2026 guoqing.wu (well74741)</Copyright>
     <Description>Markshot — 截图、批注、贴图、本地 OCR 与原位翻译</Description>
-    <AssemblyVersion>0.8.78.0</AssemblyVersion>
-    <FileVersion>0.8.78.0</FileVersion>
+    <AssemblyVersion>0.8.79.0</AssemblyVersion>
+    <FileVersion>0.8.79.0</FileVersion>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
-    <!-- A tray program idle most of the time: no background GC thread; the GC gives memory back more eagerly. -->
-    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- Let collection run in the background during interaction; explicit idle cleanup handles released images. -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
@@ -76,7 +76,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="3" />
   </ItemGroup>
 
   <ItemGroup>

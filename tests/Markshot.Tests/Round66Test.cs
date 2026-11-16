@@ -140,7 +140,7 @@ static class Round66Test
             button.Close();
 
             var code = Source("UI/FloatButtonWindow.cs");
-            Check(code.Contains("Collapse(animate: true, DragFoldMs);") && code.Contains("private const int DragFoldMs = 45;"), "a drag waits only briefly for the row to fold");
+            Check(code.Contains("Collapse(animate: false);") && !code.Contains("_holdMoveUntil"), "a drag does not wait for the menu to fold");
         }
 
         // ---- every copy of a picture shows on the button; no bubble for copies

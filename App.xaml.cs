@@ -624,6 +624,20 @@ public partial class App : Application
             return;
         }
 
+        if (Mouse.Captured != null || Mouse.LeftButton == MouseButtonState.Pressed ||
+            Mouse.MiddleButton == MouseButtonState.Pressed || Mouse.RightButton == MouseButtonState.Pressed ||
+            _float?.Dragging == true)
+        {
+            _trimTimer?.Start(); // a timer being low-priority does not mean the UI is really idle
+            return;
+        }
+        if (_pins.Any(pin => pin.IsVisible) || _editors.Any(window => window.IsVisible) || _translations.Any(window => window.IsVisible) ||
+            _settings?.IsVisible == true || (_recorder != null && _recorder.Phase != UI.Recording.RecordPhase.Idle))
+        {
+            // Do not evict visible pictures from RAM: hard working-set trimming made the next drag page them in.
+            GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
+            return;
+        }
         TrimNow();
     }
 

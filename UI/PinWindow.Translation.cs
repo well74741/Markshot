@@ -151,7 +151,7 @@ public partial class PinWindow
             PinLanguageSwitch.Margin = new Thickness(0);
             _languageHost = new ToolbarHostWindow(PinLanguageSwitch) { Owner = this };
             _languageHost.SizeChanged += (_, _) => PlaceLanguageSwitch();
-            LocationChanged += (_, _) => PlaceLanguageSwitch();
+            LocationChanged += (_, _) => { if (!_placingPin) PlaceLanguageSwitch(); };
             SizeChanged += (_, _) => PlaceLanguageSwitch();
             IsVisibleChanged += (_, _) =>
             {

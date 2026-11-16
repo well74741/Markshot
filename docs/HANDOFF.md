@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.78`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.79`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,18 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.79 0.8.79 变更
+
+- 贴图拖动：MouseMove 只更新 `_pendingPinDrag`，一个 CompositionTarget.Rendering 回调读取最新物理鼠标位置并提交位置（不平滑插值、不改变正常单像素移动）；中键同样处理。
+  松手/捕获丢失时提交最后一帧，右键撤回/关闭时清空订阅，避免旧队列继续移动。标签在 Left/Top 成对更新后定位一次。
+- 悬浮图标：去掉拖动开始的45ms收菜单等待；菜单立即隐藏（不改变窗口尺寸），缓存鼠标抓取点相对主图标的位置，移动仅写 Left/Top。
+  不在每帧 Place/UpdateLayout，也不在跨越屏幕中线时 Arrange 菜单；松手再重新布局/限位。仅拖动期间给小图标启用 BitmapCache，松手/关闭即清除。
+  Rendering 读取最新指针位置，而非等待旧 MouseMove；拖动时不触发全屏隐藏。
+- 内存整理：捕获输入/按住鼠标/拖动图标时重启4秒计时，不做强制整理；有可见贴图、编辑器、识别、设置或录屏时只考虑非阻塞 GC，不强制清工作集。
+  ConcurrentGarbageCollection 恢复为true，ConserveMemory 7→3，保持空闲释放但避免用过强回收策略换取低工作集数字。
+- round79：200个鼠标消息合并成一帧、单像素跟随、最新位置、取消/关闭清理、中键Shift约束、悬浮图标零等待/中心穿越/抓取点、工作集整理避让。测试不注入真实鼠标键盘输入。
+  吸色器回归隔离：Program 设置 ColorPickerWindow.IsolateScreenPicking，测试遮罩1×1且在屏幕外、点击穿透、不读取桌面像素；PickerProbe面板也放屏外，避免真实用户点击关闭测试窗口（生产默认false）。
 
 ## 8.1.78 0.8.78 变更
 

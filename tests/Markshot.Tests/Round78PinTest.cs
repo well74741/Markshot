@@ -255,7 +255,7 @@ static class Round78PinTest
             Check(pinSource.Contains("!picking && !IsTextBypassHeld() && TextLayer.IsOverText(pixel)") &&
                 editing.Contains("setting.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)") &&
                 editing.Contains("\"SPACE\" => Keyboard.IsKeyDown(Key.Space)"), "text selection bypass and modifier combinations remain intact");
-            Check(Source("UI/PinWindow.Translation.cs").Contains("LocationChanged += (_, _) => PlaceLanguageSwitch();") &&
+            Check(Source("UI/PinWindow.Translation.cs").Contains("if (!_placingPin) PlaceLanguageSwitch();") && Source("UI/PinWindow.xaml.cs").Contains("PlaceLanguageSwitch();") &&
                 Source("UI/PinWindow.Translation.cs").Contains("var image = ImageScreenRect();"), "language label still follows the image's screen anchor");
         }
         finally
