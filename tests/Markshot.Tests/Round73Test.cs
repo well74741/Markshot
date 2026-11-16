@@ -135,7 +135,7 @@ static class Round73Test
             Console.WriteLine($"  working set {before / 1048576} MB → {after / 1048576} MB");
             Check(after < before, "a trim gives memory back (collection with compaction, the working set returned)");
             var app = Source("App.xaml.cs");
-            Check(app.Contains("SetProcessWorkingSetSize(") && app.Contains("120L * 1024 * 1024") && Source("UI/OverlayWindow.xaml.cs").Contains("_segmenter = null;") &&
+            Check(app.Contains("SetProcessWorkingSetSize(") && app.Contains("List<PinEntry> _closedPins") && Source("UI/OverlayWindow.xaml.cs").Contains("_segmenter = null;") &&
                   Source("Markshot.csproj").Contains("System.GC.ConserveMemory"), "closed windows let go of their pictures at once; a closed pin / editor / text window trims too");
         }
 

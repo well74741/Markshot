@@ -914,7 +914,7 @@
                             <CheckBox x:Name="DetectAutoCheck" Margin="84,2,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="自动识别截图区域（鼠标经过时自动框住）" Click="DetectAuto_Click" />
                             <CheckBox x:Name="DetectElementsCheck" Margin="104,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
-                                      Content="识别 UI 元素：文字、图片、表格、按钮等" />
+                                      Content="识别元素：文字、图片、表格、按钮、桌面图标等" />
                             <CheckBox x:Name="DetectWindowsCheck" Margin="104,8,0,0" Foreground="{DynamicResource T_FFD8D8D8}" FontSize="12"
                                       Content="识别窗口" />
                             <DockPanel x:Name="DetectSensitivityRow" Margin="104,10,0,0" HorizontalAlignment="Left">

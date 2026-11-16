@@ -11,6 +11,9 @@ public sealed class WindowTarget
 
     /// <summary>One of Markshot's own windows (settings, editor…): framed whole, never looked into.</summary>
     public bool Own { get; init; }
+
+    /// <summary>The shell's desktop icon list (not a software window).</summary>
+    public bool Desktop { get; init; }
 }
 
 /// <summary>
@@ -24,6 +27,7 @@ public static class WindowDetector
         var ownPid = (uint)Environment.ProcessId;
         var found = IntPtr.Zero;
         var foundBounds = Rect.Empty;
+        var desktop = false;
         var wrapper = false; // the one found may be only a shadow / border window around the real one
 
         Native.EnumWindows((handle, _) =>
@@ -49,7 +53,16 @@ public static class WindowDetector
             }
 
             var className = GetClassName(handle);
-            if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "Windows.UI.Core.CoreWindow")
+            if (className is "Progman" or "WorkerW")
+            {
+                var icons = DesktopList(handle, screenX, screenY);
+                if (icons == IntPtr.Zero) return true;
+                found = icons;
+                desktop = true;
+                return false; // the desktop is behind software windows, never chosen through one of them
+            }
+
+            if (className is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "Windows.UI.Core.CoreWindow")
             {
                 return true;
             }
@@ -80,9 +93,9 @@ public static class WindowDetector
 
         var handle2 = found;
         var bounds = GetBounds(found);
-        var label = GetLabel(found);
+        var label = desktop ? "桌面" : GetLabel(found);
 
-        if (preferChild)
+        if (preferChild && !desktop)
         {
             var point = new Native.POINT { X = screenX, Y = screenY };
             if (Native.ScreenToClient(found, ref point))
@@ -105,8 +118,28 @@ public static class WindowDetector
         }
 
         Native.GetWindowThreadProcessId(found, out var foundPid);
-        return new WindowTarget { Handle = handle2, Bounds = bounds, Label = label, Own = foundPid == ownPid };
+        return new WindowTarget { Handle = handle2, Bounds = bounds, Label = label, Own = foundPid == ownPid, Desktop = desktop };
     }
+
+    private static IntPtr DesktopList(IntPtr root, int x, int y)
+    {
+        var found = IntPtr.Zero;
+        EnumChildWindows(root, (child, _) =>
+        {
+            if (GetClassName(child) != "SysListView32" || !Native.IsWindowVisible(child)) return true;
+            var bounds = GetBounds(child, useDwm: false);
+            if (!bounds.IsEmpty && bounds.Contains(new Point(x, y)))
+            {
+                found = child;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool EnumChildWindows(IntPtr parent, Native.EnumWindowsProc callback, IntPtr parameter);
 
     /// <summary>
     /// Markshot's own windows that can be captured like any program's: those with a title bar (settings, editor,

@@ -90,7 +90,7 @@ public partial class PinWindow
             {
                 pin._left = start.Left + dx;
                 pin._top = start.Top + dy;
-                pin.ApplyBounds();
+                pin.ApplyPosition();
             }
         }
     }
@@ -124,7 +124,7 @@ public partial class PinWindow
         {
             pin._left += dx;
             pin._top += dy;
-            pin.ApplyBounds();
+            pin.ApplyPosition();
         }
     }
 

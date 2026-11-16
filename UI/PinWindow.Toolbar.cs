@@ -61,9 +61,20 @@ public partial class PinWindow
         var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(image.Left, image.Bottom)).Bounds;
         var width = bar.Right - bar.Left;
         x = Math.Max(screen.Left, Math.Min(x, screen.Right - width));
+        if (bar.Left == x && bar.Top == y)
+        {
+            return; // size / location notifications can request the same placement more than once
+        }
+
         _placingToolbar = true;
-        host.MoveTo(x, y);
-        _placingToolbar = false;
+        try
+        {
+            host.MoveTo(x, y);
+        }
+        finally
+        {
+            _placingToolbar = false;
+        }
     }
 
     private void ShowToolbarWindow()

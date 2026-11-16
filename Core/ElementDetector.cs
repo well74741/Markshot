@@ -35,6 +35,21 @@ public static class ElementDetector
             using (cache.Activate())
             {
                 var current = AutomationElement.FromHandle(window);
+                started.Restart(); // budget starts after the first contact with the other process
+                // Desktop icons: return whole ListItems (icon and caption), not a caption fragment. Walking all
+                // wallpaper descendants or segmenting the screen is unnecessary.
+                if (current != null && current.Current.ClassName == "SysListView32")
+                {
+                    var icons = current.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem));
+                    var pointOnDesktop = new Point(x, y);
+                    foreach (AutomationElement icon in icons)
+                    {
+                        if (cancel.IsCancellationRequested || started.Elapsed > Budget) break;
+                        if (!Offscreen(icon) && Entry(icon) is { } item && item.Bounds.Contains(pointOnDesktop))
+                            chain.Add(item);
+                    }
+                    return chain.OrderBy(item => item.Bounds.Width * item.Bounds.Height).ToList();
+                }
                 // The budget is for the walk: the first contact with UI Automation in a process can take a while.
                 started.Restart();
                 var point = new Point(x, y);

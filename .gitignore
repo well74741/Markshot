@@ -25,5 +25,6 @@ dist/
 publish_portable/
 tools/deps/
 tests/out/
+tests/archive-out/
 tests/**/bin/
 tests/**/obj/

@@ -30,6 +30,8 @@ public partial class TranslationWindow : Window
             HeaderSubtitle.Text = "本地 OCR · 可编辑后复制或翻译";
         }
 
+        ClipboardService.BindTextCopy(SourceBox);
+        ClipboardService.BindTextCopy(ResultBox);
         SourceBox.TextChanged += (_, _) => UpdateMeta();
         ResultBox.TextChanged += (_, _) => UpdateMeta();
         Loaded += OnLoaded;
@@ -336,6 +338,7 @@ public partial class TranslationWindow : Window
                     };
                     cell.SetResourceReference(ForegroundProperty, Theme.Key(0xFFF0F0F0));
                     cell.SelectionBrush = (Brush)FindResource("Accent");
+                    ClipboardService.BindTextCopy(cell);
                     var border = new Border
                     {
                         Child = cell,

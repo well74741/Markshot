@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.77`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.78`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,22 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.78 0.8.78 变更
+
+- 剪贴板去重：`ClipboardService` 只保留最后一次成功写入的 SHA-256 摘要、剪贴板变更序号与可选临时图片文件路径。
+  图片按 BGRA 像素（包括 alpha）、尺寸和「同时复制图片文件」开关比较；文本按原始 UTF-16 比较；表格还比较 HTML 内容。
+  摘要相同且 `GetClipboardSequenceNumber` 未变化才返回成功而不写入，不再生成 PNG / 临时文件或发送 `ImageCopied`；其他软件改过剪贴板、格式/像素/文字变化或上次失败，照常写入。
+  `CopyOverride` / `CopyTextOverride` / `CopyTablesOverride` + `SequenceOverride` 供隔离测试，禁止用测试碰用户真实剪贴板。
+- 贴图拖动：原来每条鼠标消息经 `ApplyBounds` 重设画布、文字层大小并 InvalidateVisual。拆出 `ApplyPosition`，普通/中键拖动、多选移动和微移只更新 WPF Left/Top，避免窗口原生位置和 WPF 状态互相纠正。
+  保留右键撤回、Shift 轴向限制、文字绕过、多选和工具栏/语言标签跟随；复制按钮成功后 `FinishPinEditing` 收起工具栏（失败保留，编辑器不改变）。
+- 桌面识别：`WindowTarget.Desktop`；找到 Progman/WorkerW 内的 SysListView32 图标列表，按 UI Automation ListItem 识别整个图标与名称。
+  不对壁纸做图像分割；图标属于元素识别而非窗口识别，空白处是屏幕范围。合成边界回归不驱动用户桌面。
+- 历史恢复：`PinArchive` / `PinWindow.Archive` 显式已知类型归档底图、批注、擦除 Mask、抠除、水印、图片调色及撤销/重做；图片按内容去重、无损压缩行数据，撤销步骤懒加载，资源缓存为 WeakReference。
+  翻转/旋转历史批量压缩转存，避免延迟闭包持有被变换的大图。`App._closedPins` 只保留 PinEntry / 文件路径，不再常驻全尺寸快照；恢复前 `AdoptArchive`，恢复成功才删除原历史索引。
+  关闭会话与持久历史各最多30条/512MB，单包512MB、临时会话文件总计1GB；活动撤销源用文件租约保护，淘汰/失败/退出清理，磁盘不可用时沿用既有受限历史策略并提示。兼容旧 PNG（旧版已合成的笔迹无法反推编辑步骤）。
+  保存仍为同步：1600×900高熵底图+独立合成图、50步，本机约331ms保存/35ms恢复，包约8MB；极大多资源图片可能更慢。
+- 回归：round78 包含隔离复制序号、桌面悬停链、贴图轻量移动及归档恢复；测试不用用户剪贴板/真实输入/用户历史目录。
 
 ## 8.1.77 0.8.77 变更
 

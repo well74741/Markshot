@@ -239,7 +239,8 @@ static class AnnotateTest
 
         // ---- pins picked together: Shift adds, Ctrl takes out; they move and close together
         PinWindow MakePin(int x) { var p = new PinWindow(Blank(120, 80), x, -4000, null, null) { ShowActivated = false }; p.Show(); return p; }
-        var a = MakePin(-4000); var b = MakePin(-3800); var c = MakePin(-3600);
+        var groupOriginX = System.Windows.Forms.SystemInformation.VirtualScreen.Left + 120;
+        var a = MakePin(groupOriginX); var b = MakePin(groupOriginX + 200); var c = MakePin(groupOriginX + 400); // positions inside the screen: boundary clamping is tested separately
         Pump(300);
         bool Press(PinWindow p, ModifierKeys m) => (bool)typeof(PinWindow).GetMethod("GroupPress", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(p, new object[] { m })!;
         int Left(PinWindow p) => (int)Get(p, "_left");

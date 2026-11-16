@@ -618,7 +618,12 @@ public partial class OverlayWindow
 
         _hoverTarget = target;
         // Inside the window only of the program in use when the capture started; any other window is framed whole.
-        if (!config.DetectElements || target.Own || (_detailWindow != target.Handle && (config.DetectRange <= 1 || !IsActiveProgram(target.Handle))))
+        if (target.Desktop && !config.DetectElements)
+        {
+            ClearHover();
+            return;
+        }
+        if (!config.DetectElements || target.Own || (!target.Desktop && _detailWindow != target.Handle && (config.DetectRange <= 1 || !IsActiveProgram(target.Handle))))
         {
             SetHoverChain(new List<HoverCandidate> { new(window, target.Label) });
             return;
@@ -650,7 +655,7 @@ public partial class OverlayWindow
         var (sx, sy) = _hoverScreenPoint;
         var pieces = new List<Int32Rect>();
         // While the picture is being worked out the UI thread does not touch it (asking would wait for the lock).
-        if (!_preparing && !_segmenterFailed)
+        if (!_hoverTarget.Desktop && !_preparing && !_segmenterFailed)
         {
             if (_segmenter is { } segmenter && segmenter.IsReady(region))
             {
@@ -1056,9 +1061,17 @@ public partial class OverlayWindow
             }
         }
 
-        if (App.Config.DetectWindows && !window.IsEmpty && _hoverTarget != null)
+        if (!window.IsEmpty && _hoverTarget != null)
         {
-            chain.Add(new HoverCandidate(window, _hoverTarget.Label));
+            if (_hoverTarget.Desktop)
+            {
+                // Empty desktop: offer the screen, never call it a software window / remember it as a range.
+                chain.Add(new HoverCandidate(window, "桌面") { Screen = true });
+            }
+            else if (App.Config.DetectWindows)
+            {
+                chain.Add(new HoverCandidate(window, _hoverTarget.Label));
+            }
         }
 
         return chain;
@@ -1144,6 +1157,11 @@ public partial class OverlayWindow
         var range = App.Config.DetectRange;
         // The screen frames above the window are for the wheel only: never where a frame starts.
         var count = chain.Count(c => !c.Screen);
+        if (_hoverTarget?.Desktop == true && count > 0)
+        {
+            _startLevel = 0; // desktop icon bounds do not depend on a software-window size range
+            return 0;
+        }
         if (count == 0)
         {
             _startLevel = 0;

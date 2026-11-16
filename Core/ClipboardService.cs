@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Markshot.Core;
 
@@ -12,87 +14,201 @@ public static class ClipboardService
     /// <summary>A picture went to the clipboard (any copy: toolbar, menu, double-click, keys): the floating button shows it.</summary>
     public static event Action<BitmapSource>? ImageCopied;
 
-    public static bool CopyImage(BitmapSource image)
+    /// <summary>Tests: text / table sinks and a simulated clipboard sequence, never the user's clipboard.</summary>
+    public static Func<string, bool>? CopyTextOverride { get; set; }
+    public static Func<string, string, bool>? CopyTablesOverride { get; set; }
+    public static Func<uint>? SequenceOverride { get; set; }
+
+    private static readonly object CopyGate = new();
+    private static byte[]? _lastDigest;
+    private static uint _lastSequence;
+    private static string? _lastFile;
+    private static uint Sequence => SequenceOverride?.Invoke() ?? GetClipboardSequenceNumber();
+
+    public static void ResetCopyCache()
     {
-        if (CopyOverride is { } copyOverride)
+        lock (CopyGate)
         {
-            var copied = copyOverride(image);
-            if (copied)
-            {
-                ImageCopied?.Invoke(image);
-            }
-
-            return copied;
+            _lastDigest = null;
+            _lastSequence = 0;
+            _lastFile = null;
         }
-
-        var file = App.Config?.CopyImageAsFile == true ? SaveClipboardFile(image) : null; // Explorer pastes this as a .png file
-        var picture = Frozen(image);
-
-        // Written by the raw clipboard API, not WPF's: WPF hands Windows an OLE data object and then "flushes" it,
-        // which converts the picture into every format right there and keeps the clipboard open meanwhile —
-        // clipboard managers / chat programs that listen (they react to every copy) found it open and it failed
-        // ("被其他程序占用", most often after copying a few pins in a row). Here the clipboard is opened for a few
-        // milliseconds only: the bitmap is prepared first, then put there in one go.
-        var dib = ToDib(picture);
-        var png = Png(picture);
-        for (var attempt = 0; attempt < 40; attempt++)
-        {
-            if (TrySetRaw(dib, png, file))
-            {
-                Log.Info($"复制图片 {image.PixelWidth}x{image.PixelHeight}：成功{(attempt > 0 ? $"（第 {attempt + 1} 次）" : "")}");
-                ImageCopied?.Invoke(image);
-                return true;
-            }
-
-            Thread.Sleep(attempt < 10 ? 15 : 40); // another program has it open for a moment: try again soon
-        }
-
-        Log.Error($"写入剪贴板失败：剪贴板被其他程序占用（{OpenClipboardOwner()}）。");
-        return false;
     }
 
-    public static bool CopyText(string text)
+    private static bool Unchanged(byte[] digest) => _lastDigest != null && _lastSequence != 0 &&
+        digest.AsSpan().SequenceEqual(_lastDigest) && Sequence == _lastSequence &&
+        (_lastFile == null || File.Exists(_lastFile));
+
+    private static void RememberCopy(byte[] digest, uint sequence, string? file = null)
     {
-        try
+        _lastDigest = sequence != 0 ? digest : null;
+        _lastSequence = sequence;
+        _lastFile = file;
+    }
+
+    /// <summary>Only a digest is retained, not the text or full image. Formats form part of the identity.</summary>
+    private static byte[] TextDigest(string kind, string text, string? html = null)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var value in new[] { kind, text, html ?? "" })
         {
-            Clipboard.SetText(text);
-            return true;
+            hash.AppendData(BitConverter.GetBytes(value.Length));
+            hash.AppendData(MemoryMarshal.AsBytes(value.AsSpan())); // exact UTF-16, without encoding/normalisation
         }
-        catch (COMException ex)
+
+        return hash.GetHashAndReset();
+    }
+
+    private static byte[] PictureDigest(BitmapSource image, bool asFile)
+    {
+        // Canonical BGRA (including alpha), row chunks: two freshly composed images with the same pixels are the
+        // same copy. DPI / source-object identity do not matter, CopyImageAsFile does. At most 64 rows temporarily.
+        var picture = image.Format == PixelFormats.Bgra32 ? image : new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
+        var stride = checked(picture.PixelWidth * 4);
+        var rows = Math.Min(64, picture.PixelHeight);
+        var bytes = new byte[checked(stride * rows)];
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData(Encoding.ASCII.GetBytes(asFile ? "image+file" : "image"));
+        hash.AppendData(BitConverter.GetBytes(picture.PixelWidth));
+        hash.AppendData(BitConverter.GetBytes(picture.PixelHeight));
+        for (var y = 0; y < picture.PixelHeight; y += rows)
         {
-            Log.Error("复制文本失败", ex);
+            var count = Math.Min(rows, picture.PixelHeight - y);
+            picture.CopyPixels(new Int32Rect(0, y, picture.PixelWidth, count), bytes, stride, 0);
+            hash.AppendData(bytes.AsSpan(0, count * stride));
+        }
+
+        return hash.GetHashAndReset();
+    }
+
+    public static bool CopyImage(BitmapSource image)
+    {
+        lock (CopyGate)
+        {
+            // Existing test sinks are independent of the real clipboard; dedup tests supply their own sequence too.
+            var testing = CopyOverride != null;
+            var asFile = App.Config?.CopyImageAsFile == true;
+            var digest = PictureDigest(image, asFile);
+            if ((!testing || SequenceOverride != null) && Unchanged(digest))
+            {
+                return true; // already there; no clipboard notification, PNG encoding or new temporary file
+            }
+
+            if (CopyOverride is { } sink)
+            {
+                var copied = sink(image);
+                if (copied)
+                {
+                    if (SequenceOverride != null) RememberCopy(digest, Sequence);
+                    ImageCopied?.Invoke(image);
+                }
+                return copied;
+            }
+
+            var picture = Frozen(image);
+            var file = asFile ? SaveClipboardFile(picture) : null;
+            var dib = ToDib(picture);
+            var png = Png(picture);
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                if (TrySetRaw(dib, png, file, out var writtenSequence))
+                {
+                    RememberCopy(digest, writtenSequence, file);
+                    Log.Info($"复制图片 {image.PixelWidth}x{image.PixelHeight}：成功{(attempt > 0 ? $"（第 {attempt + 1} 次）" : "")}");
+                    ImageCopied?.Invoke(image);
+                    return true;
+                }
+                Thread.Sleep(attempt < 10 ? 15 : 40);
+            }
+
+            Log.Error($"写入剪贴板失败：剪贴板被其他程序占用（{OpenClipboardOwner()}）。");
             return false;
         }
     }
 
-    /// <summary>Tables: tab-separated text and an HTML table (Excel / Word paste them as tables).</summary>
-    public static bool CopyTables(string tsv, string htmlTable)
+    public static bool CopyText(string text)
     {
-        // The raw clipboard, as for pictures (open for a moment only): Unicode text and the HTML format.
-        var text = System.Text.Encoding.Unicode.GetBytes(tsv + "\0");
-        var html = System.Text.Encoding.UTF8.GetBytes(HtmlFragment(htmlTable) + "\0");
-        for (var attempt = 0; attempt < 40; attempt++)
+        lock (CopyGate)
         {
-            if (OpenClipboard(IntPtr.Zero))
+            var digest = TextDigest("text", text);
+            if ((CopyTextOverride == null || SequenceOverride != null) && Unchanged(digest)) return true;
+            if (CopyTextOverride is { } sink)
             {
-                try
-                {
-                    EmptyClipboard();
-                    var ok = Put(13 /* CF_UNICODETEXT */, text);
-                    Put(CfHtml, html);
-                    return ok;
-                }
-                finally
-                {
-                    CloseClipboard();
-                }
+                var copied = sink(text);
+                if (copied && SequenceOverride != null) RememberCopy(digest, Sequence);
+                return copied;
             }
 
-            Thread.Sleep(attempt < 10 ? 15 : 40);
+            // Remember the sequence while the clipboard is locked, not after another writer can take it over.
+            var bytes = Encoding.Unicode.GetBytes(text + "\0");
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                if (OpenClipboard(IntPtr.Zero))
+                {
+                    try
+                    {
+                        EmptyClipboard();
+                        var ok = Put(13 /* CF_UNICODETEXT */, bytes);
+                        if (ok) RememberCopy(digest, Sequence);
+                        return ok;
+                    }
+                    finally { CloseClipboard(); }
+                }
+                Thread.Sleep(attempt < 10 ? 15 : 40);
+            }
+            Log.Error($"复制文本失败：剪贴板被其他程序占用（{OpenClipboardOwner()}）。");
+            return false;
         }
+    }
 
-        Log.Error($"复制表格失败：剪贴板被其他程序占用（{OpenClipboardOwner()}）。");
-        return false;
+    /// <summary>Ctrl+C / context-menu Copy inside an OCR text box uses the same dedup rule as its Copy button.</summary>
+    public static void BindTextCopy(TextBox box)
+    {
+        box.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, e) =>
+        {
+            CopyText(box.SelectedText);
+            e.Handled = true;
+        }, (_, e) =>
+        {
+            e.CanExecute = box.SelectionLength > 0;
+            e.Handled = true;
+        }));
+    }
+
+    /// <summary>Tables: Unicode text and HTML; identical text with a different table is still a new copy.</summary>
+    public static bool CopyTables(string tsv, string htmlTable)
+    {
+        lock (CopyGate)
+        {
+            var digest = TextDigest("table", tsv, htmlTable);
+            if ((CopyTablesOverride == null || SequenceOverride != null) && Unchanged(digest)) return true;
+            if (CopyTablesOverride is { } sink)
+            {
+                var copied = sink(tsv, htmlTable);
+                if (copied && SequenceOverride != null) RememberCopy(digest, Sequence);
+                return copied;
+            }
+
+            var text = Encoding.Unicode.GetBytes(tsv + "\0");
+            var html = Encoding.UTF8.GetBytes(HtmlFragment(htmlTable) + "\0");
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                if (OpenClipboard(IntPtr.Zero))
+                {
+                    try
+                    {
+                        EmptyClipboard();
+                        var ok = Put(13 /* CF_UNICODETEXT */, text) && Put(CfHtml, html);
+                        if (ok) RememberCopy(digest, Sequence);
+                        return ok;
+                    }
+                    finally { CloseClipboard(); }
+                }
+                Thread.Sleep(attempt < 10 ? 15 : 40);
+            }
+            Log.Error($"复制表格失败：剪贴板被其他程序占用（{OpenClipboardOwner()}）。");
+            return false;
+        }
     }
 
     /// <summary>The clipboard's HTML format: a header with byte offsets, then the fragment.</summary>
@@ -206,8 +322,9 @@ public static class ClipboardService
     private static readonly uint CfHtml = RegisterClipboardFormat("HTML Format");
 
     /// <summary>Opens the clipboard (a short wait if another program has it), empties it and puts the picture in.</summary>
-    private static bool TrySetRaw(byte[] dib, byte[] png, string? file)
+    private static bool TrySetRaw(byte[] dib, byte[] png, string? file, out uint writtenSequence)
     {
+        writtenSequence = 0;
         if (!OpenClipboard(IntPtr.Zero))
         {
             return false;
@@ -217,12 +334,13 @@ public static class ClipboardService
         {
             EmptyClipboard();
             var ok = Put(CF_DIBV5, dib);
-            Put(CfPng, png); // keeps the transparency for programs that read PNG (browsers, Office, chat apps)
+            ok &= Put(CfPng, png); // keeps the transparency for programs that read PNG (browsers, Office, chat apps)
             if (file != null)
             {
-                Put(CF_HDROP, DropList(file));
+                ok &= Put(CF_HDROP, DropList(file));
             }
 
+            if (ok) writtenSequence = Sequence;
             return ok;
         }
         finally
@@ -315,6 +433,9 @@ public static class ClipboardService
             return "未知程序";
         }
     }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool OpenClipboard(IntPtr owner);

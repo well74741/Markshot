@@ -31,20 +31,10 @@ public partial class PinWindow
         Toolbar.SpotlightDarknessChanged += darkness => AnnotationOps.SetSpotlightDarkness(Editor, _history, darkness, UpdateUndoButtons);
         Toolbar.UndoRequested += Undo;
         Toolbar.RedoRequested += Redo;
-        Toolbar.CopyRequested += Copy;
+        Toolbar.CopyRequested += CopyFromToolbar;
         Toolbar.SaveRequested += Save;
         Toolbar.TranslateRequested += Translate;
-        Toolbar.ApplyRequested += () =>
-        {
-            ExitEditMode(true);
-            // The bar never activates: the pin takes the keys back, or Space could not bring the bar up again.
-            if (!IsActive)
-            {
-                Activate();
-            }
-
-            Keyboard.Focus(this);
-        };
+        Toolbar.ApplyRequested += FinishPinEditing;
         Toolbar.RefreshUndo(false, false);
         Toolbar.SizeChanged += (_, _) =>
         {
@@ -514,6 +504,47 @@ public partial class PinWindow
                 Keyboard.Focus(this);
             }
         }), DispatcherPriority.Input);
+    }
+
+    // Pin-only copy boundary: tests replace it instead of reading / writing the user's clipboard.
+    private static Func<BitmapSource, bool> CopyPinImage = ClipboardService.CopyImage;
+
+    /// <summary>The toolbar's copy applies the annotations and folds the bar only after a successful copy.</summary>
+    private void CopyFromToolbar()
+    {
+        if (IsEditor)
+        {
+            Copy(); // the image editor keeps its toolbar and its own virtual copy behaviour
+            return;
+        }
+
+        FinishPolyline();
+        if (_active != null)
+        {
+            CommitAnnotation();
+        }
+
+        _textEditor.Commit();
+        CommitWatermark();
+        if (!CopyPinImage(CurrentImage))
+        {
+            ShowPinStatus("复制失败：剪贴板被其他程序占用，请重试", TimeSpan.FromSeconds(3));
+            return;
+        }
+
+        FinishPinEditing(); // keep the pin; Space can bring the bar back, with undo steps intact
+    }
+
+    private void FinishPinEditing()
+    {
+        ExitEditMode(true);
+        // The bar never activates: the pin takes the keys back, or Space could not bring the bar up again.
+        if (!IsActive)
+        {
+            Activate();
+        }
+
+        Keyboard.Focus(this);
     }
 
     /// <summary>Copies what the pin shows (annotations included) and closes it; it stays when the clipboard is busy.</summary>

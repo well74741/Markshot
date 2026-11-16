@@ -6,6 +6,13 @@ public sealed class PinEntry
 
     public string? FilePath { get; set; }
 
+    /// <summary>Session archive handle only; never decoded full-size pixels/history in the closed-pin list.</summary>
+    public PinArchive? Archive { get; set; }
+
+    public PinArchive? LoadArchive() => Archive ??
+        (FilePath != null && Path.GetExtension(FilePath).Equals(PinArchive.Extension, StringComparison.OrdinalIgnoreCase) && File.Exists(FilePath)
+            ? new PinArchive(FilePath) : null);
+
     public string Group { get; set; } = "默认";
 
     public DateTime Created { get; set; } = DateTime.Now;
@@ -15,11 +22,28 @@ public sealed class PinEntry
     /// <summary>The full picture: in memory until it is on disk, then read from the file each time (not kept for every entry).</summary>
     public BitmapSource? LoadImage() => Image ?? Read(0);
 
-    /// <summary>A small picture for the history window (kept: a few KB).</summary>
-    public BitmapSource? Thumbnail() => _thumbnail ??= Image != null ? Image : Read(320);
+    /// <summary>A small picture for the history window, never a reference to the full-size image.</summary>
+    public BitmapSource? Thumbnail()
+    {
+        if (_thumbnail != null) return _thumbnail;
+        if (Image == null) return _thumbnail = Read(320);
+        var scale = Math.Min(1, 320.0 / Math.Max(Image.PixelWidth, Image.PixelHeight));
+        BitmapSource small = Image;
+        if (scale < 1) { small = new TransformedBitmap(Image, new ScaleTransform(scale, scale)); small.Freeze(); }
+        // Detach the scaled thumbnail from the original's pixel storage.
+        using var stream = new MemoryStream();
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(small)); encoder.Save(stream); stream.Position = 0;
+        var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze(); return _thumbnail = bitmap;
+    }
 
     private BitmapSource? Read(int width)
     {
+        if (LoadArchive() is { } archive)
+        {
+            try { return width == 0 ? archive.LoadImage() : archive.Thumbnail(); }
+            catch (Exception ex) { Log.Error("读取可编辑贴图历史失败", ex); return null; }
+        }
         if (string.IsNullOrWhiteSpace(FilePath) || !File.Exists(FilePath))
         {
             return null;

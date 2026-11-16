@@ -14,6 +14,9 @@ public partial class ColorPickerWindow : Window
     /// <summary>For tests: where the pointer is (screen pixels).</summary>
     internal static Func<Point>? PointerOverride;
 
+    /// <summary>Tests: simulated button state, not real desktop input.</summary>
+    internal static Func<bool>? ButtonsDownOverride;
+
     private bool PointerInside()
     {
         Point at;
@@ -109,7 +112,7 @@ public partial class ColorPickerWindow : Window
                 return;
             }
 
-            var down = (GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0 || (GetAsyncKeyState(0x04) & 0x8000) != 0;
+            var down = ButtonsDownOverride?.Invoke() ?? ((GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0 || (GetAsyncKeyState(0x04) & 0x8000) != 0);
             if (down && !_wasDown && !PointerInside())
             {
                 Cancel_Click(this, new RoutedEventArgs());

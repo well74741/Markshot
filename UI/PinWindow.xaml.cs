@@ -19,6 +19,7 @@ public partial class PinWindow : Window
     private PinCrosshair? _crosshair;
     private Point? _toolbarOffset;   // pixels from the image's top-left once the user dragged it
     private bool _placingToolbar;
+    private bool _placingPin; // Left / Top are changed together: the bar follows only once
     private Annotation? _freshSelection;
     private WatermarkAnnotation? _draggingWatermark;
     private Point _watermarkLast;
@@ -173,7 +174,13 @@ public partial class PinWindow : Window
             LeaveGroup();
             StopBackgroundWork();
         };
-        LocationChanged += (_, _) => PlaceToolbar(); // the toolbar window follows the pin
+        LocationChanged += (_, _) =>
+        {
+            if (!_placingPin)
+            {
+                PlaceToolbar(); // a position update changes Left and Top together
+            }
+        };
         // Alt over the pin: 辅助线 through the pointer across the screen (as in the capture).
         if (!IsEditor)
         {
@@ -284,14 +291,8 @@ public partial class PinWindow : Window
 
             if (_dragging)
             {
-                // Right-click while dragging the pin: back to where it was.
-                _dragging = false;
-                _left = _dragStartLeft;
-                _top = _dragStartTop;
-                ReleaseMouseCapture();
-                ApplyBounds();
-                MoveGroup(0, 0);
-                EndGroupDrag(moved: true);
+                // Right-click while dragging the pin: back to where it was, including the group.
+                CancelPinDrag();
                 _suppressContextMenu = true;
                 e.Handled = true;
                 return;
@@ -497,15 +498,7 @@ public partial class PinWindow : Window
         UpdateFrame(); // ShapedShadow / CornerRadius are set after the constructor drew the first shadow
         UpdateAnimation();
 
-        var handle = new WindowInteropHelper(this).Handle;
-        var dpi = handle != IntPtr.Zero ? Native.GetDpiForWindow(handle) / 96.0 : 1.0;
-
-        Width = _pixelWidth / dpi;
-        Height = _pixelHeight / dpi;
-        Left = _left / dpi;
-        Top = _top / dpi;
-
-        ApplyBounds();
+        ApplyBounds(); // one WPF sizing / positioning path, including the display's DPI
         Dispatcher.BeginInvoke(new Action(ApplyBounds), DispatcherPriority.Loaded);
         if (FromCapture)
         {
@@ -570,14 +563,35 @@ public partial class PinWindow : Window
         RootGrid.Margin = new Thickness(pad);
         var width = imageWidth + pad * 2;
         var height = imageHeight + pad * 2;
-        var windowLeft = _left - pad;
-        var windowTop = _top - pad;
+        // The visual sizes above are DIPs. Let WPF size its HWND in the same units: passing
+        // those numbers straight to SetWindowPos cropped the image at 125% / 150% display scale.
+        Width = width;
+        Height = height;
+        ApplyPosition();
+    }
 
+    /// <summary>
+    /// Position-only path for dragging / nudging: no canvas sizing, text repaint or shadow work.
+    /// Image positions and cursor deltas are screen pixels; Window.Left / Top are WPF DIPs.
+    /// </summary>
+    private void ApplyPosition()
+    {
+        if (IsEditor || new WindowInteropHelper(this).Handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var padX = (int)Math.Round(Pad * dpi.DpiScaleX);
+        var padY = (int)Math.Round(Pad * dpi.DpiScaleY);
+        var width = (int)Math.Round(Width * dpi.DpiScaleX);
+        var height = (int)Math.Round(Height * dpi.DpiScaleY);
+        var windowLeft = _left - padX;
+        var windowTop = _top - padY;
         var virtualX = Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN);
         var virtualY = Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN);
         var virtualW = Native.GetSystemMetrics(Native.SM_CXVIRTUALSCREEN);
         var virtualH = Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN);
-
         if (width <= virtualW)
         {
             windowLeft = Math.Clamp(windowLeft, virtualX, virtualX + virtualW - width);
@@ -588,14 +602,22 @@ public partial class PinWindow : Window
             windowTop = Math.Clamp(windowTop, virtualY, virtualY + virtualH - height);
         }
 
-        Native.SetWindowPos(
-            handle,
-            Topmost ? Native.HWND_TOPMOST : Native.HWND_NOTOPMOST,
-            windowLeft,
-            windowTop,
-            width,
-            height,
-            Native.SWP_NOACTIVATE | (_parked ? 0 : Native.SWP_SHOWWINDOW));
+        // Remember the displayed position, not a wanted position beyond the boundary.
+        _left = windowLeft + padX;
+        _top = windowTop + padY;
+        _placingPin = true;
+        try
+        {
+            // These position properties do not invalidate the canvas. Keeping them in sync
+            // also stops a subsequent WPF update from moving a natively-moved HWND back.
+            Left = windowLeft / dpi.DpiScaleX;
+            Top = windowTop / dpi.DpiScaleY;
+        }
+        finally
+        {
+            _placingPin = false;
+        }
+
         PlaceToolbar();
     }
 
@@ -842,6 +864,37 @@ public partial class PinWindow : Window
 
     private bool _pinMoved; // the pin drag has passed its threshold
 
+    /// <summary>Only screen-pixel movement: do not visit the annotation / OCR hover paths during a pin drag.</summary>
+    private void ContinuePinDrag(int cursorX, int cursorY, ModifierKeys modifiers)
+    {
+        var (moveX, moveY) = Straighten(cursorX - _dragStartCursorX, cursorY - _dragStartCursorY, modifiers);
+        if (!_pinMoved && Math.Abs(moveX) + Math.Abs(moveY) < 4)
+        {
+            return; // a click does not nudge the pin
+        }
+
+        _pinMoved = true;
+        _left = _dragStartLeft + moveX;
+        _top = _dragStartTop + moveY;
+        ApplyPosition();
+        MoveGroup(moveX, moveY);
+    }
+
+    private void CancelPinDrag()
+    {
+        _dragging = false;
+        _left = _dragStartLeft;
+        _top = _dragStartTop;
+        if (IsMouseCaptured)
+        {
+            ReleaseMouseCapture();
+        }
+
+        ApplyPosition();
+        MoveGroup(0, 0);
+        EndGroupDrag(moved: true);
+    }
+
     /// <summary>A pin drag whose release went elsewhere (capture lost, a quick double-click): over, at the place it is.</summary>
     private void EndStaleDrag()
     {
@@ -877,9 +930,22 @@ public partial class PinWindow : Window
                 _middleMoved = true;
                 _left = _dragStartLeft + dx;
                 _top = _dragStartTop + dy;
-                ApplyBounds();
+                ApplyPosition();
             }
 
+            return;
+        }
+
+        if (_dragging)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed)
+            {
+                EndStaleDrag(); // the release went elsewhere; an old press must not move the pin
+                return;
+            }
+
+            var cursor = Native.CursorPosition();
+            ContinuePinDrag(cursor.X, cursor.Y, Keyboard.Modifiers);
             return;
         }
 
@@ -926,61 +992,38 @@ public partial class PinWindow : Window
             return;
         }
 
-        if (!_dragging && !_editMode)
+        if (!_editMode)
         {
             var pixel = ToPixels(e.GetPosition(ImageHost));
             ImageHost.Cursor = !IsTextBypassHeld() && TextLayer.IsOverText(pixel) ? Cursors.IBeam : Cursors.Arrow;
             return;
         }
 
-        if (!_dragging)
+        if (_tool == AnnotationTool.None)
         {
-            if (_editMode && _tool == AnnotationTool.None)
+            var point = ToPixels(e.GetPosition(ImageHost));
+            if (!IsTextBypassHeld() &&
+                (HitAnnotation(point) is TextAnnotation or WatermarkAnnotation))
             {
-                var point = ToPixels(e.GetPosition(ImageHost));
-                if (!IsTextBypassHeld() &&
-                    (HitAnnotation(point) is TextAnnotation or WatermarkAnnotation))
-                {
-                    ImageHost.Cursor = Cursors.IBeam;
-                }
-                else if (_selected != null)
-                {
-                    UpdateAnnotationTransformCursor(point);
-                }
-                else
-                {
-                    ImageHost.Cursor = Cursors.Arrow;
-                }
+                ImageHost.Cursor = Cursors.IBeam;
             }
-
-            return;
+            else if (_selected != null)
+            {
+                UpdateAnnotationTransformCursor(point);
+            }
+            else
+            {
+                ImageHost.Cursor = Cursors.Arrow;
+            }
         }
-
-        if (e.LeftButton != MouseButtonState.Pressed)
-        {
-            // The release never arrived: moving the mouse later must not drag the pin from an old press (it jumped).
-            EndStaleDrag();
-            return;
-        }
-
-        var cursor = Native.CursorPosition();
-        var (moveX, moveY) = Straighten(cursor.X - _dragStartCursorX, cursor.Y - _dragStartCursorY);
-        if (!_pinMoved && Math.Abs(moveX) + Math.Abs(moveY) < 4)
-        {
-            return; // a click (quick clicks while selecting elements) does not nudge the pin
-        }
-
-        _pinMoved = true;
-        _left = _dragStartLeft + moveX;
-        _top = _dragStartTop + moveY;
-        ApplyBounds();
-        MoveGroup(moveX, moveY); // pins picked with this one come along
     }
 
     /// <summary>With Shift held a pin moves only horizontally or only vertically (the larger direction).</summary>
-    private static (int X, int Y) Straighten(int dx, int dy)
+    private static (int X, int Y) Straighten(int dx, int dy) => Straighten(dx, dy, Keyboard.Modifiers);
+
+    private static (int X, int Y) Straighten(int dx, int dy, ModifierKeys modifiers)
     {
-        if ((Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+        if ((modifiers & ModifierKeys.Shift) == 0)
         {
             return (dx, dy);
         }
@@ -1176,14 +1219,16 @@ public partial class PinWindow : Window
             return;
         }
 
-        var oldWidth = _pixelWidth * _zoom;
-        var oldHeight = _pixelHeight * _zoom;
+        // Pin positions are physical pixels; its visual dimensions (unlike the editor's) scale with DPI.
+        var dpi = IsEditor ? new DpiScale(1, 1) : VisualTreeHelper.GetDpi(this);
+        var oldWidth = _pixelWidth * _zoom * dpi.DpiScaleX;
+        var oldHeight = _pixelHeight * _zoom * dpi.DpiScaleY;
         var centerX = _left + oldWidth / 2;
         var centerY = _top + oldHeight / 2;
 
         _zoom = newZoom;
-        _left = (int)Math.Round(centerX - _pixelWidth * _zoom / 2);
-        _top = (int)Math.Round(centerY - _pixelHeight * _zoom / 2);
+        _left = (int)Math.Round(centerX - _pixelWidth * _zoom * dpi.DpiScaleX / 2);
+        _top = (int)Math.Round(centerY - _pixelHeight * _zoom * dpi.DpiScaleY / 2);
         ApplyBounds();
         ShowZoomLabel();
     }

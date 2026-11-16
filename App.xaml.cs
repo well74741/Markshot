@@ -17,9 +17,10 @@ public partial class App : Application
 
     private const int MaxPins = 20;
 
-    // Pins closed in this session, newest last: restore reopens them exactly (place, zoom,
-    // editable annotations). The disk history covers pins closed in earlier sessions.
-    private readonly List<(PinSnapshot Snapshot, PinEntry Entry)> _closedPins = new();
+    // Session archive handles, newest last: at most 30 closed pins / 512 MB compressed.
+    // Each retains its complete undo stack; no full-size images live in this list. A leased
+    // session source survives persistent-file deletion/eviction while a restored pin needs it.
+    private readonly List<PinEntry> _closedPins = new();
 
     private Mutex? _mutex;
     private long _lastErrorShown = -10000;
@@ -297,7 +298,7 @@ public partial class App : Application
             _float.Closed += (_, _) => _float = null;
             _float.PinsShown = () => !_pinsHidden;
             _float.PinsClickThrough = () => _pins.Count == 0 ? null : _pins.All(pin => pin.IsClickThrough);
-            _float.PinsClosedAll = () => _pins.Count == 0 && _closedAll.Any(entry => _closedPins.Any(closed => ReferenceEquals(closed.Entry, entry)));
+            _float.PinsClosedAll = () => _pins.Count == 0 && _closedAll.Any(entry => _closedPins.Any(closed => ReferenceEquals(closed, entry)));
             _float.OrderChanged += () => _settings?.SyncFloatOrder();
             _float.PinRequested += image => PinCentered(image);
             _float.PinFileRequested += (file, index) => PinFile(file, index % 8);
@@ -686,7 +687,7 @@ public partial class App : Application
     public PinWindow CreatePin(BitmapSource image, int screenX, int screenY,
         BitmapSource? baseImage = null, List<Annotations.Annotation>? annotations = null, double cornerRadius = 0,
         bool fromCapture = false, bool shapedShadow = false, bool sweep = false, (double Zoom, double Opacity)? view = null,
-        AnimatedImage? animation = null)
+        AnimatedImage? animation = null, PinArchiveState? archive = null)
     {
         while (_pins.Count >= MaxPins)
         {
@@ -710,26 +711,28 @@ public partial class App : Application
             _pins.Remove(pin);
             if (!_shuttingDown && !pin.SkipHistory)
             {
-                var entry = new PinEntry { Image = pin.SourceImage };
-                History.Add(entry);
-                PinStore.Save(entry, pin.SourceImage);
-                if (entry.FilePath != null)
+                try
                 {
-                    entry.Image = null; // on disk now: read back when it is needed
+                    var saved = pin.CaptureArchive();
+                    var entry = new PinEntry { Archive = saved };
+                    History.Add(entry);
+                    if (!PinStore.Save(entry, saved)) // independent persistent copy; eviction cannot break session undo
+                        _tray?.ShowBalloon("贴图历史未能落盘", "本次运行仍可恢复，但未能保存到磁盘；退出后这条记录将丢失。" );
+                    _closedPins.Add(entry);
+                    TrimClosedPinArchives();
+                    _pinHistoryWindow?.Refresh();
                 }
-
-                _closedPins.Add((pin.Snapshot(), entry));
-                _pinHistoryWindow?.Refresh();
-                // The exact restore (annotations, zoom) keeps whole pictures in memory: the last 8 pins, ~120 MB at most
-                // (older ones come back from the pin history on disk, as pictures).
-                while (_closedPins.Count > 8 || (_closedPins.Count > 2 && _closedPins.Sum(closed => SnapshotBytes(closed.Snapshot)) > 120L * 1024 * 1024))
+                catch (Exception ex)
                 {
-                    _closedPins.RemoveAt(0);
+                    Log.Error("归档关闭的贴图失败", ex);
+                    _tray?.ShowBalloon("贴图历史未能保存", "临时目录不可写或图片过大，请检查磁盘空间。" );
                 }
             }
 
             TrimMemorySoon();
         };
+
+        if (archive != null) pin.AdoptArchive(archive);
 
         if (view is { } shown)
         {
@@ -780,9 +783,17 @@ public partial class App : Application
     /// <summary>The pins are hidden by 显示贴图 (tests).</summary>
     public bool PinsHidden => _pinsHidden;
 
-    private static long SnapshotBytes(PinSnapshot snapshot) =>
-        (long)snapshot.Image.PixelWidth * snapshot.Image.PixelHeight * 4 +
-        (snapshot.BaseImage is { } baseImage && !ReferenceEquals(baseImage, snapshot.Image) ? (long)baseImage.PixelWidth * baseImage.PixelHeight * 4 : 0);
+    private void TrimClosedPinArchives()
+    {
+        // The history's existing 30-entry range, also bounded by compressed bytes. Dropping a
+        // handle releases its file lease; an active restored pin's lazy readers keep theirs alive.
+        while (_closedPins.Count > History.Capacity || (_closedPins.Count > 0 && _closedPins.Sum(e => e.Archive?.StoredBytes ?? 0) > 512L * 1024 * 1024))
+        {
+            var oldest = _closedPins[0];
+            _closedPins.RemoveAt(0);
+            oldest.Archive = null;
+        }
+    }
 
     /// <summary>After an image was saved: offer to open its folder (unless turned off).</summary>
     public void ShowSavedPrompt(string path)
@@ -912,26 +923,13 @@ public partial class App : Application
     /// </summary>
     public void RestoreLastPin()
     {
-        if (_closedPins.Count > 0)
-        {
-            var (snapshot, entry) = _closedPins[^1];
-            _closedPins.RemoveAt(_closedPins.Count - 1);
-            History.Remove(entry);
-            CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
-                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null, sweep: true, view: (snapshot.Zoom, snapshot.Opacity));
-            return;
-        }
-
-        var last = History.Last;
-        var image = last?.LoadImage();
-        if (last == null || image == null)
+        var last = _closedPins.LastOrDefault() ?? History.Last;
+        if (last == null)
         {
             _tray?.ShowBalloon("没有可恢复的贴图", "关闭过的贴图会保留在这里，可随时恢复。");
             return;
         }
-
-        History.Remove(last);
-        CreatePinAtCursor(image, sweep: true);
+        RestorePinEntry(last);
     }
 
     private UI.PinHistoryWindow? _pinHistoryWindow;
@@ -956,43 +954,59 @@ public partial class App : Application
     /// <summary>Pins a history entry again: as it was (annotations, zoom) when closed in this session.</summary>
     public void RestorePinEntry(PinEntry entry)
     {
-        var index = _closedPins.FindIndex(closed => ReferenceEquals(closed.Entry, entry));
-        History.Remove(entry);
-        if (index >= 0)
+        try
         {
-            var (snapshot, _) = _closedPins[index];
-            _closedPins.RemoveAt(index);
-            CreatePin(snapshot.Image, snapshot.Left, snapshot.Top,
-                snapshot.BaseImage, snapshot.Annotations.Count > 0 ? snapshot.Annotations : null, sweep: true, view: (snapshot.Zoom, snapshot.Opacity));
-            return;
-        }
+            if (entry.LoadArchive() is { } stored)
+            {
+                var state = stored.KeepForSession().Restore();
+                var snapshot = state.Snapshot;
+                CreatePin(snapshot.Image, snapshot.Left, snapshot.Top, snapshot.BaseImage, snapshot.Annotations,
+                    state.CornerRadius, shapedShadow: state.ShapedShadow, sweep: true, view: (snapshot.Zoom, snapshot.Opacity), archive: state);
+            }
+            else if (entry.LoadImage() is { } image)
+            {
+                CreatePinAtCursor(image, sweep: true); // old PNG records have no recoverable element/undo data
+            }
+            else return;
 
-        if (entry.LoadImage() is { } image)
+            // Remove only after successful restoration (a damaged archive stays available for deletion).
+            History.Remove(entry);
+            _closedPins.Remove(entry);
+            PinStore.Delete(entry);
+        }
+        catch (Exception ex)
         {
-            CreatePinAtCursor(image, sweep: true);
+            Log.Error("恢复可编辑贴图失败", ex);
+            _tray?.ShowBalloon("贴图无法恢复", "贴图归档已损坏或不可读，原记录仍保留在历史中。" );
         }
     }
 
     /// <summary>编辑图片: a history entry in the image editor (with its annotations when it was closed in this session); it stays in the history.</summary>
     public void EditPinEntry(PinEntry entry)
     {
-        var index = _closedPins.FindIndex(closed => ReferenceEquals(closed.Entry, entry));
-        if (index >= 0)
+        try
         {
-            var (snapshot, _) = _closedPins[index];
-            OpenEditor(snapshot.BaseImage, annotations: snapshot.Annotations.Select(item => item.Clone()).ToList());
+            if (entry.LoadArchive() is { } stored)
+            {
+                var state = stored.KeepForSession().Restore();
+                var editor = OpenEditor(state.Snapshot.BaseImage, annotations: state.Snapshot.Annotations);
+                // An editor has its own extra-state owner; its new checkpoints must keep that owner's
+                // normal storage policy, but the imported archive steps remain lazy.
+                state.History.StoreSnapshot = null;
+                state.History.StoreTransformedSteps = null;
+                editor.AdoptHistory(state.History);
+            }
+            else if (entry.LoadImage() is { } image) OpenEditor(image);
         }
-        else if (entry.LoadImage() is { } image)
-        {
-            OpenEditor(image);
-        }
+        catch (Exception ex) { Log.Error("编辑历史贴图失败", ex); }
     }
 
     public void DeletePinEntry(PinEntry entry)
     {
         History.Remove(entry);
-        _closedPins.RemoveAll(closed => ReferenceEquals(closed.Entry, entry));
+        _closedPins.RemoveAll(closed => ReferenceEquals(closed, entry));
         PinStore.Delete(entry);
+        entry.Archive = null;
     }
 
     public void ClearPinHistory()
@@ -1000,10 +1014,12 @@ public partial class App : Application
         foreach (var entry in History.Items.ToList())
         {
             PinStore.Delete(entry);
+            entry.Archive = null;
         }
 
         History.Clear();
         _closedPins.Clear();
+        _closedAll.Clear();
     }
 
     private System.Windows.Threading.DispatcherTimer? _updateTimer;
@@ -1038,14 +1054,14 @@ public partial class App : Application
 
     public void CloseAllPins()
     {
-        var before = _closedPins.Count;
+        var before = _closedPins.ToHashSet();
         foreach (var pin in _pins.ToArray())
         {
             pin.CloseImmediately();
         }
 
         _closedAll.Clear();
-        _closedAll.AddRange(_closedPins.Skip(Math.Min(before, _closedPins.Count)).Select(closed => closed.Entry));
+        _closedAll.AddRange(_closedPins.Where(entry => !before.Contains(entry)));
     }
 
     /// <summary>打开所有贴图: the pins 关闭所有贴图 closed, as they were.</summary>
@@ -1053,7 +1069,7 @@ public partial class App : Application
     {
         foreach (var entry in _closedAll.ToList())
         {
-            if (_closedPins.Any(closed => ReferenceEquals(closed.Entry, entry)))
+            if (_closedPins.Any(closed => ReferenceEquals(closed, entry)))
             {
                 RestorePinEntry(entry);
             }
@@ -1590,6 +1606,7 @@ public partial class App : Application
         _tray = null;
         _mutex?.Dispose();
         _mutex = null;
+        PinArchive.CleanupSession();
         base.OnExit(e);
     }
 }

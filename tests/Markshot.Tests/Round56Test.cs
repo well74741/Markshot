@@ -179,7 +179,7 @@ static class Round56Test
             Check((int)cursors.GetProperty("CachedCount", Any)!.GetValue(null)! <= 96, "the cursor cache stays bounded");
             var entry = new PinEntry { FilePath = Path.Combine(dir, "turn.gif") };
             Check(entry.LoadImage() != null && entry.Image == null && entry.Thumbnail() is { PixelWidth: <= 320 }, "pin history pictures are read when needed, thumbnails small");
-            Check(Source("App.xaml.cs").Contains("TaskScheduler.UnobservedTaskException") && Source("App.xaml.cs").Contains("entry.Image = null"),
+            Check(Source("App.xaml.cs").Contains("TaskScheduler.UnobservedTaskException") && Source("Core/PinStore.cs").Contains("entry.Image = null") && Source("App.xaml.cs").Contains("List<PinEntry> _closedPins"),
                 "background failures are logged; closed pins do not keep their pictures in memory");
             Check(Source("Core/AppConfig.cs").Contains("AtomicFile.WriteAllText(path, json)") && Source("Core/PinStore.cs").Contains("AtomicFile.WriteAllText"),
                 "settings and the pin index are written whole or not at all");

@@ -20,6 +20,9 @@ static class Program
         // A settings window closed with changes would wait for an answer: tests answer 不保存 unless they set their own.
         typeof(Markshot.UI.SettingsWindow).GetField("AskAll", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
             .SetValue(null, new Func<int>(() => 1));
+        // Real desktop clicks must not close a picker under test; explicit SimulateClick still tests outside clicks.
+        typeof(Markshot.UI.ColorPickerWindow).GetField("ButtonsDownOverride", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .SetValue(null, new Func<bool>(() => false));
         var app = new Application();
         var xaml = File.ReadAllText(Repo.File("App.xaml"));
         var start = xaml.IndexOf("<Application.Resources>") + "<Application.Resources>".Length;
@@ -72,6 +75,7 @@ static class Program
         if (mode == "round74") Round74Test.Run();
         if (mode == "round75") Round75Test.Run();
         if (mode == "round76") Round76Test.Run();
+        if (mode == "round78") Round78Test.Run();
         if (mode == "mtprobe") MtProbe.Run();
         if (mode == "pageprobe") PageProbe.Run();
         if (mode == "captureprobe") CaptureProbe.Run();
