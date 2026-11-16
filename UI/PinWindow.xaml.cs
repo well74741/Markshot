@@ -92,6 +92,7 @@ public partial class PinWindow : Window
     // In-place translation: the base image before translating, null when showing the original.
     private BitmapSource? _untranslatedBase;
     private BitmapSource? _translatedBase; // 原位翻译: both kept, [原文 | 译文] switches
+    private string? _translatedText; // … and the translation as text (the 译文 of 文字识别)
     private string? _pinSourceLabel;
     private string? _pinTargetLabel;
     private bool _pinShowsOriginal;

@@ -7,6 +7,10 @@ public static class ReleaseNotes
 {
     public static readonly (string Version, string[] Lines)[] All =
     {
+        ("0.8.77", new[]
+        {
+            "开着原位翻译时点「文字识别」：原文区是翻译前的原文，译文区直接显示已翻译好的译文，不再重新翻译（截图和贴图都一样）",
+        }),
         ("0.8.76", new[]
         {
             "批注工具的粗细 / 字号会记住，下次截图、贴图、重启后仍是上次的大小",

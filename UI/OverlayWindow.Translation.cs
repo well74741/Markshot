@@ -8,6 +8,12 @@ namespace Markshot.UI;
 // Capture window: in-place translation of the selection.
 public partial class OverlayWindow
 {
+    /// <summary>The in-place translation's text (paragraphs) for the area translated, once it is done.</summary>
+    private string? _translatedText;
+
+    /// <summary>The translation shown now as text (null when none is shown for the selection).</summary>
+    private string? VisibleTranslationText() => VisibleTranslation() != null ? _translatedText : null;
+
     /// <summary>The translated pixels when they match the current selection and are not toggled off.</summary>
     private BitmapSource? VisibleTranslation() =>
         _autoTranslate && !_showOriginal && _translated != null && _hasSelection &&
@@ -89,6 +95,7 @@ public partial class OverlayWindow
             _effectiveScreen = null;
             _sourceLabel = update.Source ?? _sourceLabel;
             _targetLabel = update.Target ?? _targetLabel;
+            _translatedText = update.Done ? update.Text : null;
             UpdateTranslationVisuals();
             var partial = update.Done && update.Translated < update.Total;
             ShowTranslateStatus(update.Done && !partial && update.Translated > 0 ? null : update.Status,

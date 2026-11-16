@@ -150,6 +150,7 @@ public partial class OverlayWindow
         {
             PinOriginalBase = Compose(includeAnnotations: false, withTranslation: false);
             PinLanguages = (_sourceLabel, _targetLabel);
+            PinTranslatedText = _translatedText;
         }
         PinAnnotations = AnnotationOps.ToPinSpace(Editor.Items, origin, PinBaseImage);
         var pinBase = PinBaseImage;
@@ -393,9 +394,12 @@ public partial class OverlayWindow
         }
 
         CommitPendingText();
-        var image = Compose();
+        // With 原位翻译 on, the text is read from the picture as it was (not from the translation drawn on it), and
+        // the translation already made is handed over as the 译文 (no second translation).
+        var translated = VisibleTranslationText();
+        var image = translated != null ? Compose(includeAnnotations: true, withTranslation: false) : Compose();
         CloseWith(CaptureAction.None, image);
-        ((App)Application.Current).ShowOcr(image);
+        ((App)Application.Current).ShowOcr(image, translated, _targetLabel);
     }
 
     private void CloseWith(CaptureAction action, BitmapSource image)

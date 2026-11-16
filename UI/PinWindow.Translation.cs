@@ -41,6 +41,7 @@ public partial class PinWindow
                 _pinSourceLabel = update.Source ?? _pinSourceLabel;
                 _pinTargetLabel = update.Target ?? _pinTargetLabel;
                 _pinShowsOriginal = false;
+                _translatedText = update.Done ? update.Text : _translatedText;
                 SetBaseImage(update.Image);
                 UpdatePinLanguageSwitch();
             }
@@ -76,9 +77,19 @@ public partial class PinWindow
 
     private void ShowOriginal() => ShowPinLanguage(original: true);
 
+    /// <summary>
+    /// 文字识别 of a pin translated in place: the text read from the original picture, the translation already made
+    /// as the 译文 (not the translated picture read as if it were the original).
+    /// </summary>
+    internal (BitmapSource Image, string? Translation, string? Target) ForRecognition() =>
+        _untranslatedBase != null && _translatedBase != null && !_pinShowsOriginal && !_editMode
+            ? (_untranslatedBase, _translatedText, _pinTargetLabel)
+            : (CurrentImage, null, null);
+
     /// <summary>Pinned from a capture translated in place: it shows the translation, the original one click away.</summary>
-    public void AdoptTranslation(BitmapSource original, string? source, string? target)
+    public void AdoptTranslation(BitmapSource original, string? source, string? target, string? text = null)
     {
+        _translatedText = text;
         _untranslatedBase = original;
         _translatedBase = _baseImage;
         _pinSourceLabel = source;

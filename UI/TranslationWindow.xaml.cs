@@ -37,6 +37,12 @@ public partial class TranslationWindow : Window
         UiScale.AttachWindow(this);
     }
 
+    /// <summary>The capture's in-place translation of this picture: shown as the 译文 straight away (not translated again).</summary>
+    public string? GivenTranslation { get; init; }
+
+    /// <summary>The language it is in ("中文", "English" …).</summary>
+    public string? GivenTarget { get; init; }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
@@ -155,7 +161,12 @@ public partial class TranslationWindow : Window
                 return;
             }
 
-            if (_autoTranslate)
+            if (!string.IsNullOrWhiteSpace(GivenTranslation))
+            {
+                ShowGivenTranslation();
+                SetStatus("识别完成；译文来自截图时的原位翻译", StatusKind.Done);
+            }
+            else if (_autoTranslate)
             {
                 await TranslateAsync();
             }
@@ -419,6 +430,22 @@ public partial class TranslationWindow : Window
             row.Children.Add(text);
             CodePanel.Children.Add(row);
         }
+    }
+
+    /// <summary>The in-place translation as the 译文, its language picked in the list when it is one of them.</summary>
+    private void ShowGivenTranslation()
+    {
+        ResultBox.Text = GivenTranslation!.Trim();
+        if (GivenTarget is { } target)
+        {
+            var match = Languages.FirstOrDefault(l => l != Auto && ImmersiveTranslator.LanguageLabel(l) == target);
+            if (match != null)
+            {
+                TargetBox.SelectedItem = match;
+            }
+        }
+
+        UpdateMeta();
     }
 
     private async Task TranslateAsync()

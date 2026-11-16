@@ -186,6 +186,9 @@ public partial class OverlayWindow : Window
 
     public (string? Source, string? Target) PinLanguages { get; private set; }
 
+    /// <summary>The in-place translation as text, for the pin made from this capture.</summary>
+    public string? PinTranslatedText { get; private set; }
+
     /// <summary>For pins: the annotations in pin coordinates, still editable there.</summary>
     public List<Annotation>? PinAnnotations { get; private set; }
 

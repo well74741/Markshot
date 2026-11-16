@@ -60,7 +60,18 @@ public partial class PinWindow
             Add("原位翻译", TranslateInPlace);
         }
 
-        Add("文字识别 / 翻译…", () => ((App)Application.Current).TranslateImage(CurrentImage, this));
+        Add("文字识别 / 翻译…", () =>
+        {
+            var (image, translation, target) = ForRecognition();
+            if (translation != null)
+            {
+                ((App)Application.Current).ShowOcr(image, translation, target);
+            }
+            else
+            {
+                ((App)Application.Current).TranslateImage(image, this);
+            }
+        });
         Separator();
 
         Add(_editMode ? "完成标注" : "编辑标注", ToggleEditing, gesture: "Space");

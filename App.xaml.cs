@@ -891,9 +891,9 @@ public partial class App : Application
         window.Activate();
     }
 
-    public void ShowOcr(BitmapSource image)
+    public void ShowOcr(BitmapSource image, string? translation = null, string? target = null)
     {
-        var window = new TranslationWindow(image, autoTranslate: false);
+        var window = new TranslationWindow(image, autoTranslate: false) { GivenTranslation = translation, GivenTarget = target };
         window.Closed += (_, _) => { _translations.Remove(window); TrimMemorySoon(); };
         _translations.Add(window);
         window.Show();
@@ -1243,7 +1243,7 @@ public partial class App : Application
 
         if (source.PinOriginalBase is { } original)
         {
-            pin.AdoptTranslation(original, source.PinLanguages.Source, source.PinLanguages.Target); // 原位翻译: [原文 | 译文] on the pin too
+            pin.AdoptTranslation(original, source.PinLanguages.Source, source.PinLanguages.Target, source.PinTranslatedText); // 原位翻译: [原文 | 译文] on the pin too
         }
 
         return pin;

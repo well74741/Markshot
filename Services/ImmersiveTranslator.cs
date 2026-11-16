@@ -44,7 +44,11 @@ public static class ImmersiveTranslator
     /// <param name="Source">Detected language of the screenshot text ("中文", "English", …), null before OCR.</param>
     /// <param name="Target">Language actually translated into.</param>
     public sealed record Update(BitmapSource Image, string Status, bool Done, int Translated, int Total,
-        string? Source = null, string? Target = null);
+        string? Source = null, string? Target = null)
+    {
+        /// <summary>The translated text, paragraph by paragraph in reading order (the 译文 of 文字识别), once done.</summary>
+        public string? Text { get; init; }
+    }
 
     /// <summary>Short display name of a language ("中文", "English", "日本語", "한국어").</summary>
     public static string LanguageLabel(string language)
@@ -207,7 +211,9 @@ public static class ImmersiveTranslator
         var finalStatus = firstError == null
             ? $"已翻译为{targetLabel}"
             : $"部分翻译失败（{translatedCount}/{total}）：{firstError.Message}";
-        progress?.Report(new Update(final, finalStatus, true, translatedCount, total, source, targetLabel));
+        var text = string.Join(Environment.NewLine + Environment.NewLine,
+            paragraphs.Select((p, i) => translations[i] ?? p.Text).Where(t => !string.IsNullOrWhiteSpace(t)));
+        progress?.Report(new Update(final, finalStatus, true, translatedCount, total, source, targetLabel) { Text = text });
         return final;
     }
 
