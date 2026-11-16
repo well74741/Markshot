@@ -140,6 +140,10 @@ public partial class TranslationWindow : Window
 
         SetStatus("正在识别文字…", StatusKind.Busy);
         _ = ReadCodesAsync(_image);
+        if (!string.IsNullOrWhiteSpace(GivenTranslation))
+        {
+            ShowGivenTranslation(); // there at once, while the original is being read
+        }
 
         try
         {
@@ -163,7 +167,6 @@ public partial class TranslationWindow : Window
 
             if (!string.IsNullOrWhiteSpace(GivenTranslation))
             {
-                ShowGivenTranslation();
                 SetStatus("识别完成；译文来自截图时的原位翻译", StatusKind.Done);
             }
             else if (_autoTranslate)

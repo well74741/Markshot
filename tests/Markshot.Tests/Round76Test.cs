@@ -46,6 +46,8 @@ static class Round76Test
         {
             var window = new TranslationWindow(Text("Export settings"), autoTranslate: false) { GivenTranslation = "导出设置", GivenTarget = "中文", Left = -4000, Top = -4000, ShowActivated = false };
             window.Show();
+            Pump(300);
+            Check(((TextBox)window.FindName("ResultBox")).Text == "导出设置", "the 译文 is there at once, before the original is read");
             for (var waited = 0; waited < 8000 && ((TextBox)window.FindName("SourceBox")).Text.Length == 0 && models; waited += 100) Pump(100);
             Pump(200);
             var source = ((TextBox)window.FindName("SourceBox")).Text;
