@@ -92,6 +92,13 @@ public partial class OverlayWindow
             return;
         }
 
+        if (_hasSelection && e.ClickCount == 1 && !_textEditor.IsActive &&
+            _tool is AnnotationTool.None or AnnotationTool.Select && (Keyboard.Modifiers & ModifierKeys.Alt) != 0 && BeginDuplicateElementDrag(point))
+        {
+            e.Handled = true;
+            return;
+        }
+
         // The adjustment frame of the selected element works with any tool:
         // handles/edges resize, the band outside the corners rotates.
         if (_selectedAnnotation != null && _hasSelection)
@@ -482,6 +489,8 @@ public partial class OverlayWindow
             return;
         }
 
+        if (!PrepareElementDrag(point)) return;
+
         if ((_rotatingAnnotation || _resizingAnnotation || _draggingAnnotation) && _selectedAnnotation != null)
         {
             _history.CommitArmed();
@@ -539,6 +548,7 @@ public partial class OverlayWindow
                     return; // a click on a selected text should not nudge it
                 }
 
+                if (!_dragMoved) CommitDuplicateElementDrag();
                 _dragMoved = true;
                 ClearAnnotationHover();
                 _selectedAnnotation.Translate(dx, dy);
@@ -685,6 +695,7 @@ public partial class OverlayWindow
 
         if (_resizingAnnotation || _rotatingAnnotation || _draggingAnnotation || _textPress != null || _draggingWatermark != null)
         {
+            _duplicateDragSource = null;
             var target = _selectedAnnotation ?? _textPress;
             var index = target != null ? Editor.Items.IndexOf(target) : -1;
             var reverted = _history.CancelGesture(Editor.Items);
@@ -910,6 +921,7 @@ public partial class OverlayWindow
 
         if (_draggingAnnotation)
         {
+            _duplicateDragSource = null;
             _draggingAnnotation = false;
             _mode = DragMode.None;
             var clicked = _pendingTextClick && !_dragMoved;

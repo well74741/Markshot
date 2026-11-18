@@ -51,6 +51,9 @@ public sealed class ImageEditorWindow : PinWindow
     private readonly TextBox _widthBox = new();
     private readonly TextBox _heightBox = new();
     private Border? _styleSection;
+    private bool _lockOriginalImage;
+    private ToggleButton? _lockOriginalSwitch;
+    private FrameworkElement? _lockOriginalRow;
     private Border? _resetAllFooter;
     private FrameworkElement? _panelStack;
     private FrameworkElement? _radiusRow;
@@ -88,6 +91,10 @@ public sealed class ImageEditorWindow : PinWindow
     private Point _marqueeStart;
     private int _marqueeMode; // 0 replace, 1 add (Shift), 2 remove (Ctrl)
     private bool _groupMoving;
+    private bool _groupCopyDrag;
+    private int[] _groupDragSelection = Array.Empty<int>();
+    private bool _inferLegacyOriginal;
+    private bool _insertOriginalInHistory;
     private bool _groupMoved;
     private Point _groupLast;
     private Rect _groupStart;
@@ -132,12 +139,25 @@ public sealed class ImageEditorWindow : PinWindow
         _sourcePin = sourcePin;
         _waitingPin = sourcePin;
         _hasImage = hasImage;
+        _lockOriginalImage = App.Config.LockOriginalImage;
         // Not saved anywhere yet (a capture, a long screenshot): closing asks first.
         _unsavedNew = hasImage && path == null && sourcePin == null;
         if (hasImage)
         {
             // The picture is an element at the bottom of the stack, on a transparent canvas of its size.
-            Editor.Items.Insert(0, new ImageAnnotation { Image = image, Rect = new Rect(0, 0, image.PixelWidth, image.PixelHeight) });
+            var initial = Editor.Items.OfType<ImageAnnotation>().FirstOrDefault(p => p.IsInitialImage);
+            if (initial == null && IsEmptySource(image))
+            {
+                initial = Editor.Items.OfType<ImageAnnotation>().FirstOrDefault(); // imported editor/pin scene on an empty canvas
+                if (initial != null)
+                {
+                    initial.IsInitialImage = true;
+                    _inferLegacyOriginal = true;
+                }
+            }
+            _insertOriginalInHistory = initial == null;
+            Editor.Items.Insert(0, new ImageAnnotation { Image = image, Rect = new Rect(0, 0, image.PixelWidth, image.PixelHeight), IsInitialImage = initial == null });
+            ApplyOriginalProtection();
             _baseImage = ImageOps.Blank(image.PixelWidth, image.PixelHeight);
             Editor.Source = _baseImage;
             Img.Source = _baseImage;
@@ -390,8 +410,81 @@ public sealed class ImageEditorWindow : PinWindow
     public int AnnotationCount => Editor.Items.Count(item => item is not ImageAnnotation);
 
     /// <summary>What the panel's picture operations work on: the selected picture, else the first one.</summary>
-    private ImageAnnotation? Target => _sessionPicture ?? _selected as ImageAnnotation ?? _group.OfType<ImageAnnotation>().FirstOrDefault() ??
-                                       Editor.Items.OfType<ImageAnnotation>().FirstOrDefault();
+    private ImageAnnotation? Target => new[] { _sessionPicture, _selected as ImageAnnotation }
+        .Concat(_group.OfType<ImageAnnotation>()).Concat(Editor.Items.OfType<ImageAnnotation>())
+        .FirstOrDefault(p => p != null && CanModifyElement(p));
+
+    public bool OriginalImageLocked { get => _lockOriginalImage; set => SetOriginalLock(value); }
+
+    private protected override bool CanModifyElement(Annotation item) =>
+        !item.Protected && !(_lockOriginalImage && item is ImageAnnotation { IsInitialImage: true });
+
+    private void ApplyOriginalProtection()
+    {
+        foreach (var item in Editor.Items) item.Protected = _lockOriginalImage && item is ImageAnnotation { IsInitialImage: true };
+    }
+
+    private void SetOriginalLock(bool locked)
+    {
+        if (_lockOriginalImage == locked) return;
+        CancelSession();
+        CancelKeyPreview();
+        BakeAdjust();
+        CancelGesture();
+        _lockOriginalImage = locked;
+        App.Config.LockOriginalImage = locked;
+        App.Config.Save();
+        ApplyOriginalProtection();
+        SelectElements(SelectedElements.Where(CanModifyElement).ToList());
+        RefreshPanel();
+        Editor.InvalidateVisual();
+    }
+
+    private protected override void ElementsChanged()
+    {
+        ApplyOriginalProtection();
+        RefreshPanel();
+    }
+
+    private protected override void BeforeElementMutation()
+    {
+        CancelKeyPreview();
+        BakeAdjust();
+        if (_anglePicture != null) ApplyAngle(); // finish the preceding edit before arming a copy
+    }
+
+    private protected override bool CancelGesture()
+    {
+        if (!_groupMoving && !_marqueeOn) return base.CancelGesture();
+        var selection = _groupDragSelection;
+        var reverted = _groupMoving && _history.CancelGesture(Editor.Items);
+        _groupMoving = _groupCopyDrag = _groupMoved = _marqueeOn = false;
+        _groupDragSelection = Array.Empty<int>();
+        Editor.Marquee = null;
+        Editor.Guides = null;
+        if (_stage.IsMouseCaptured) _stage.ReleaseMouseCapture();
+        if (reverted)
+            SelectElements(selection.Where(i => i >= 0 && i < Editor.Items.Count).Select(i => Editor.Items[i]).ToArray());
+        UpdateUndoButtons();
+        ElementsChanged();
+        Editor.InvalidateVisual();
+        return true;
+    }
+
+    private static bool IsEmptySource(BitmapSource image)
+    {
+        if (image.Format != PixelFormats.Bgra32 && image.Format != PixelFormats.Pbgra32) return false;
+        var stride = image.PixelWidth * 4;
+        var rows = Math.Min(32, image.PixelHeight);
+        var buffer = new byte[stride * rows];
+        for (var y = 0; y < image.PixelHeight; y += rows)
+        {
+            var count = Math.Min(rows, image.PixelHeight - y);
+            image.CopyPixels(new Int32Rect(0, y, image.PixelWidth, count), buffer, stride, 0);
+            for (var i = 3; i < count * stride; i += 4) if (buffer[i] != 0) return false;
+        }
+        return true;
+    }
 
     /// <summary>Where that picture is on the canvas (tests).</summary>
     public Rect PictureRect => Target?.Rect ?? Rect.Empty;
@@ -650,7 +743,11 @@ public sealed class ImageEditorWindow : PinWindow
         _borderColorRow = BorderColorRow();
         _opacityRow = StyleSlider("透明度", "Opacity", 0, 100);
         _styleSliders["Opacity"].Slider.Minimum = 5;
-        _styleSection = Section("元素样式", null, _radiusRow, _shadowRow, _borderRow, _borderColorRow, _opacityRow);
+        _lockOriginalSwitch = new ToggleButton { Content = "锁定原始图片", Style = (Style)FindResource("PlateToggle"), IsChecked = _lockOriginalImage,
+            ToolTip = "保护最初打开的图片，不能拖动、变形、擦除或删除；新增图片和批注仍可编辑" };
+        _lockOriginalSwitch.Click += (_, _) => SetOriginalLock(_lockOriginalSwitch.IsChecked == true);
+        _lockOriginalRow = new StackPanel { Margin = new Thickness(0, 0, 0, 10), Children = { _lockOriginalSwitch } };
+        _styleSection = Section("元素样式", null, _lockOriginalRow, _radiusRow, _shadowRow, _borderRow, _borderColorRow, _opacityRow);
         // Always there (it rests while no picture is selected); 裁切与变形 takes its old place at the top.
         ((UIElement)_styleSection.Tag).IsEnabled = false;
         stack.Children.Add(Section("裁切与变形", Reset(EditGroup.Cut, "回到裁切 / 变形之前（之后做过其他图片操作时不可用，可用 Ctrl+Z 撤销）"), cutRow));
@@ -1216,6 +1313,7 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void ColourStep(ImageAnnotation picture, Func<BitmapSource, BitmapSource> change, string done)
     {
+        if (!CanModifyElement(picture)) return;
         GeometryStep(EditGroup.Colour, () =>
         {
             Realize(picture);
@@ -1234,10 +1332,22 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
+        ApplyOriginalProtection();
         var first = StyledElements.FirstOrDefault();
         var controls = (UIElement)_styleSection.Tag;
-        controls.IsEnabled = first != null; // always shown; it rests without a selected element
-        controls.Opacity = first != null ? 1 : 0.5;
+        controls.IsEnabled = true; // the lock switch must remain usable when locking clears the original's selection
+        controls.Opacity = 1;
+        if (_lockOriginalSwitch != null)
+        {
+            _lockOriginalSwitch.IsChecked = _lockOriginalImage;
+            _lockOriginalSwitch.IsEnabled = Editor.Items.OfType<ImageAnnotation>().Any(p => p.IsInitialImage);
+        }
+        foreach (var row in new[] { _radiusRow, _shadowRow, _borderRow, _borderColorRow, _opacityRow })
+        {
+            if (row == null) continue;
+            row.IsEnabled = first != null;
+            row.Opacity = first == null ? 0.5 : 1;
+        }
         var pictures = StyledPictures;
         // Rows come and go with the kind of element (the section eases to its new height); rows that do not suit
         // all the selected elements grey out.
@@ -1251,7 +1361,7 @@ public sealed class ImageEditorWindow : PinWindow
         });
         foreach (var (row, key) in new[] { (_radiusRow!, "Radius"), (_shadowRow!, "Shadow"), (_borderRow!, "Border"), (_borderColorRow!, "Border") })
         {
-            var on = first == null || StyleApplies(key);
+            var on = first != null && StyleApplies(key);
             row.IsEnabled = on;
             row.Opacity = on ? 1 : 0.4;
         }
@@ -1708,22 +1818,17 @@ public sealed class ImageEditorWindow : PinWindow
             ReclaimKeyboard();
         }
 
-        if (e.ChangedButton == MouseButton.Middle)
+        if (e.ChangedButton == MouseButton.Middle || (e.ChangedButton == MouseButton.Left &&
+            Keyboard.IsKeyDown(Key.Space) && !_textEditor.IsActive && !DrawingGestureActive && _overlay == null))
         {
-            // Whatever still holds the mouse (a slider of the bar, a drawing) lets go first.
-            Mouse.Captured?.ReleaseMouseCapture();
-            _panning = true;
-            _panStart = e.GetPosition(_stage);
-            _panOrigin = _pan;
-            _stage.CaptureMouse();
-            Mouse.OverrideCursor = Cursors.SizeAll;
+            BeginCanvasPan(e.GetPosition(_stage), e.ChangedButton == MouseButton.Left);
             e.Handled = true;
         }
     }
 
     private void Stage_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed && Editor.Items.Any(item => item is MosaicAnnotation or MosaicBrushAnnotation))
+        if (!_panning && e.LeftButton == MouseButtonState.Pressed && Editor.Items.Any(item => item is MosaicAnnotation or MosaicBrushAnnotation))
         {
             FollowMosaics(); // a picture dragged under a mosaic: it shows what is under it now
         }
@@ -1733,29 +1838,44 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
-        if (e.MiddleButton != MouseButtonState.Pressed)
+        if ((_panWithLeft ? e.LeftButton : e.MiddleButton) != MouseButtonState.Pressed)
         {
             EndPan(); // the release happened elsewhere
             return;
         }
 
-        var delta = e.GetPosition(_stage) - _panStart;
-        MoveTo(_panOrigin + delta);
+        ContinueCanvasPan(e.GetPosition(_stage));
         e.Handled = true;
     }
 
     private void Stage_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (_panning && e.ChangedButton == MouseButton.Middle)
+        if (_panning && e.ChangedButton == (_panWithLeft ? MouseButton.Left : MouseButton.Middle))
         {
             EndPan();
             e.Handled = true;
         }
     }
 
+    private bool _panWithLeft;
+
+    private void BeginCanvasPan(Point point, bool left)
+    {
+        _panWithLeft = left;
+        Mouse.Captured?.ReleaseMouseCapture();
+        _panning = true;
+        _panStart = point;
+        _panOrigin = _pan;
+        _stage.CaptureMouse();
+        Mouse.OverrideCursor = Cursors.SizeAll;
+    }
+
+    private void ContinueCanvasPan(Point point) => MoveTo(_panOrigin + (point - _panStart));
+
     private void EndPan()
     {
         _panning = false;
+        _panWithLeft = false;
         Mouse.OverrideCursor = null;
         if (_stage.IsMouseCaptured)
         {
@@ -1796,7 +1916,7 @@ public sealed class ImageEditorWindow : PinWindow
         _adjustTarget = null;
         _anglePicture = null;
         var normal = ImageOps.Normalize(image);
-        Editor.Items.Add(new ImageAnnotation { Image = normal, Rect = new Rect(0, 0, normal.PixelWidth, normal.PixelHeight) });
+        Editor.Items.Add(new ImageAnnotation { Image = normal, Rect = new Rect(0, 0, normal.PixelWidth, normal.PixelHeight), IsInitialImage = true });
         SetBitmap(ImageOps.Blank(normal.PixelWidth, normal.PixelHeight));
         Editor.InvalidateVisual();
         UpdateUndoButtons();
@@ -2062,13 +2182,16 @@ public sealed class ImageEditorWindow : PinWindow
     }
 
     /// <summary>What is selected now (a 多选, the one element, or nothing).</summary>
-    public IReadOnlyList<Annotation> SelectedElements => _group.Count > 0 ? _group : _selected != null ? new[] { _selected } : Array.Empty<Annotation>();
+    private protected override IReadOnlyList<Annotation> ElementSelection => SelectedElements;
 
-    private static bool Selectable(Annotation item) => item is not (CutoutAnnotation or WatermarkAnnotation) && !item.Hidden;
+    public IReadOnlyList<Annotation> SelectedElements => (_group.Count > 0 ? (IEnumerable<Annotation>)_group : _selected != null ? new[] { _selected } : Array.Empty<Annotation>()).Where(CanModifyElement).ToList();
+
+    private static bool Selectable(Annotation item) => item is not (CutoutAnnotation or WatermarkAnnotation) && !item.Hidden && !item.Protected;
 
     /// <summary>Selects these (one: the plain selection with its handles; several: a 多选).</summary>
     public void SelectElements(IEnumerable<Annotation> items)
     {
+        ApplyOriginalProtection();
         var list = items.Where(Selectable).Distinct().ToList();
         ClearGroup();
         if (list.Count == 1)
@@ -2177,11 +2300,7 @@ public sealed class ImageEditorWindow : PinWindow
         if (_group.Count > 1 && InGroup(point))
         {
             // Inside the 多选: they move together.
-            _groupMoving = true;
-            _groupMoved = false;
-            _groupLast = point;
-            _history.Arm(Editor.Items);
-            _stage.CaptureMouse();
+            BeginGroupMove(point, (Keyboard.Modifiers & ModifierKeys.Alt) != 0);
             e.Handled = true;
             return;
         }
@@ -2206,6 +2325,27 @@ public sealed class ImageEditorWindow : PinWindow
         Editor.Marquee = new Rect(point, point);
         _stage.CaptureMouse();
         Editor.InvalidateVisual();
+    }
+
+    private void BeginGroupMove(Point point, bool copy, bool captureMouse = true)
+    {
+        BeforeElementMutation();
+        _groupDragSelection = _group.Select(item => Editor.Items.IndexOf(item)).ToArray();
+        _groupMoving = true;
+        _groupCopyDrag = copy;
+        _groupMoved = false;
+        _groupLast = point;
+        _history.Arm(Editor.Items);
+        if (captureMouse) _stage.CaptureMouse();
+    }
+
+    private void CommitGroupDuplicateDrag()
+    {
+        if (!_groupCopyDrag) return;
+        _groupCopyDrag = false;
+        var copies = _group.Where(CanModifyElement).Select(AnnotationClipboard.CloneForDuplication).ToList();
+        Editor.Items.AddRange(copies);
+        SelectElements(copies);
     }
 
     private void Stage_SelectMove(object sender, MouseEventArgs e)
@@ -2239,6 +2379,7 @@ public sealed class ImageEditorWindow : PinWindow
             {
                 _groupMoved = true;
                 _history.CommitArmed();
+                CommitGroupDuplicateDrag();
                 UpdateUndoButtons();
                 _groupStart = GroupBounds();
                 _groupPress = _groupLast;
@@ -2291,6 +2432,10 @@ public sealed class ImageEditorWindow : PinWindow
         }
 
         _groupMoving = false;
+        _groupCopyDrag = false;
+        _groupMoved = false;
+        _groupDragSelection = Array.Empty<int>();
+        _history.Disarm();
         Editor.Guides = null;
     }
 
@@ -2578,6 +2723,11 @@ public sealed class ImageEditorWindow : PinWindow
 
     public void Flip(bool horizontal)
     {
+        if (_lockOriginalImage && Editor.Items.OfType<ImageAnnotation>().Any(p => p.IsInitialImage))
+        {
+            FlipSelectedElements(horizontal); // protected base stays; selected new layers can still be flipped
+            return;
+        }
         var op = horizontal ? 'H' : 'V';
         Orient(() => ApplyOrientation(op, record: false));
     }
@@ -2585,6 +2735,15 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>The whole canvas turns (pictures and annotations follow, all stay elements).</summary>
     public void Turn(bool clockwise)
     {
+        if (_lockOriginalImage && Editor.Items.OfType<ImageAnnotation>().Any(p => p.IsInitialImage))
+        {
+            var subjects = SelectedElements.Where(CanModifyElement).ToList();
+            if (subjects.Count > 0) GeometryStep(EditGroup.Turn, () =>
+            {
+                foreach (var item in subjects) item.Rotation = Math.IEEERemainder(item.Rotation + (clockwise ? 90 : -90), 360);
+            });
+            return;
+        }
         Orient(() =>
         {
             if (!clockwise)
@@ -2710,6 +2869,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>The picture's pixels replaced by what lies at <paramref name="local"/> of the old ones (at the same scale and angle).</summary>
     private static void PlaceLocal(ImageAnnotation picture, Rect local, BitmapSource result)
     {
+        if (picture.Protected) return;
         var r = picture.Rect;
         var scaleX = r.Width / picture.Image!.PixelWidth;
         var scaleY = r.Height / picture.Image.PixelHeight;
@@ -2792,6 +2952,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>A merged picture of the session takes the place of what it was made of (at the topmost one's layer).</summary>
     private void Realize(ImageAnnotation picture)
     {
+        if (!CanModifyElement(picture)) return;
         if (!ReferenceEquals(picture, _sessionMerged) || _sessionItems == null || Editor.Items.Contains(picture))
         {
             return;
@@ -2805,6 +2966,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>矩形裁切 of a selection: the picture keeps what lies in <paramref name="area"/> (canvas pixels), cut straight.</summary>
     public void CropPicture(ImageAnnotation picture, Rect area)
     {
+        if (!CanModifyElement(picture)) return;
         if (picture.Image == null || Rect.Intersect(AnnotationEditor.RotatedBounds(picture), area) is var inside && inside.IsEmpty || inside.Width < 1 || inside.Height < 1)
         {
             Notice("裁切区域没有碰到选中的元素");
@@ -2846,6 +3008,7 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>调节框 of a selection: each element moves, scales and turns with the box (they stay editable).</summary>
     public void TransformItems(IReadOnlyList<Annotation> items, Rect from, Rect to, double angle, bool mirrorX = false, bool mirrorY = false)
     {
+        if (!items.Any(CanModifyElement)) return;
         if (from.Width < 0.5 || from.Height < 0.5)
         {
             return;
@@ -2858,6 +3021,7 @@ public sealed class ImageEditorWindow : PinWindow
         {
             foreach (var item in items)
             {
+                if (!CanModifyElement(item)) continue;
                 var b = item.Bounds;
                 var centre = new Point(b.X + b.Width / 2, b.Y + b.Height / 2);
                 // Turned over: each element mirrored, and its place within the box too.
@@ -3058,6 +3222,7 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void StartSession(EditorOverlayMode mode)
     {
+        ApplyOriginalProtection();
         if (!_hasImage)
         {
             return;
@@ -3075,7 +3240,7 @@ public sealed class ImageEditorWindow : PinWindow
         // canvas (矩形裁切) or the first picture.
         _sessionItems = null;
         _sessionMerged = null;
-        var subject = _group.Count > 1 ? _group.ToList() : _selected is { } one and not WatermarkAnnotation ? new List<Annotation> { one } : null;
+        var subject = _group.Count > 1 ? _group.Where(CanModifyElement).ToList() : _selected is { } one and not WatermarkAnnotation && CanModifyElement(one) ? new List<Annotation> { one } : null;
         ImageAnnotation? picture;
         if (subject is [ImageAnnotation single])
         {
@@ -3342,6 +3507,7 @@ public sealed class ImageEditorWindow : PinWindow
 
     private protected override bool EditorKey(Key key, bool control)
     {
+        if (key == Key.Space && !control && !DrawingGestureActive && !_textEditor.IsActive) return true; // pan chord, not toolbar toggle
         if (_overlay != null)
         {
             switch (key)
@@ -3542,6 +3708,8 @@ public sealed class ImageEditorWindow : PinWindow
             menu.Items.Add(align);
             Add($"置于顶层（{_group.Count} 个）", () => MoveGroupLayer(true), "");
             Add($"置于底层（{_group.Count} 个）", () => MoveGroupLayer(false), "");
+            Add("左右翻转选中元素", () => FlipSelectedElements(true), "");
+            Add("上下翻转选中元素", () => FlipSelectedElements(false), "");
             Add("删除选中的元素", DeleteGroup, "Delete");
             menu.Items.Add(new Separator());
         }
@@ -3557,6 +3725,8 @@ public sealed class ImageEditorWindow : PinWindow
                 Add("复制元素", () => AnnotationClipboard.Copy(element), "Ctrl+C");
             }
 
+            Add("左右翻转", () => FlipSelectedElements(true), "");
+            Add("上下翻转", () => FlipSelectedElements(false), "");
             Add("删除元素", () =>
             {
                 _history.Checkpoint(Editor.Items);
@@ -3685,18 +3855,29 @@ public sealed class ImageEditorWindow : PinWindow
     /// <summary>A capture's undo steps know nothing of the picture element: each gets it (at the bottom).</summary>
     public override void AdoptHistory(AnnotationHistory history)
     {
-        if (Editor.Items.OfType<ImageAnnotation>().FirstOrDefault() is { } picture)
+        if (Editor.Items.OfType<ImageAnnotation>().FirstOrDefault(p => p.IsInitialImage) is { } picture)
         {
+            var inferLegacyOriginal = _inferLegacyOriginal;
+            var insertOriginal = _insertOriginalInHistory;
             history.ForEachStep(step =>
             {
-                if (!step.OfType<ImageAnnotation>().Any())
+                var images = step.OfType<ImageAnnotation>().ToList();
+                if (images.Count == 0 || (insertOriginal && !images.Any(p => p.IsInitialImage)))
                 {
                     step.Insert(0, picture.Clone());
+                }
+                else if (inferLegacyOriginal && !images.Any(p => p.IsInitialImage))
+                {
+                    images[0].IsInitialImage = true; // v1 editor scene: migrate its old image snapshots as well
                 }
             });
         }
 
         base.AdoptHistory(history);
+        // Imported steps remain lazy, but new editor snapshots carry canvas State.
+        // A pin-only journal cannot encode that owner state; use the editor's bounded history for new steps.
+        _history.StoreSnapshot = null;
+        _history.StoreTransformedSteps = null;
     }
 
     // ------------------------------------------------------------------ open, drop, save, copy, pin

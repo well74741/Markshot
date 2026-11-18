@@ -10,7 +10,8 @@ public sealed partial class PinArchive
     {
         private readonly BinaryWriter _w;
         private readonly ResourceWriter _resources;
-        public AnnotationWriter(BinaryWriter writer, ResourceWriter resources) { _w = writer; _resources = resources; }
+        private readonly int _schemaVersion;
+        public AnnotationWriter(BinaryWriter writer, ResourceWriter resources, int schemaVersion = Version) { _w = writer; _resources = resources; _schemaVersion = schemaVersion; }
         public void Number(double n) { if (!double.IsFinite(n)) throw new InvalidDataException("Non-finite archive value"); _w.Write(n); }
         public void Point(Point p) { Number(p.X); Number(p.Y); }
         public void Vector(Vector p) { Number(p.X); Number(p.Y); }
@@ -47,7 +48,7 @@ public sealed partial class PinArchive
                     _ => throw new InvalidDataException("Unsupported annotation type")
                 };
                 _w.Write((byte)tag);
-                Color(a.Color); Number(a.Thickness); _w.Write(a.Fill); Number(a.CornerRadius); Number(a.Opacity); Number(a.Rotation); _w.Write(a.Hidden);
+                Color(a.Color); Number(a.Thickness); _w.Write(a.Fill); Number(a.CornerRadius); Number(a.Opacity); Number(a.Rotation); _w.Write(a.Hidden); if (_schemaVersion >= 2) { _w.Write(a.FlipX); _w.Write(a.FlipY); }
                 _w.Write(a.EraseMasks != null);
                 if (a.EraseMasks != null)
                 {
@@ -65,7 +66,7 @@ public sealed partial class PinArchive
                         Pen(p); _w.Write(p.Bends.Count); foreach (var pair in p.Bends.OrderBy(pair => pair.Key)) { _w.Write(pair.Key); Vector(pair.Value); } break;
                     case PenAnnotation p: Pen(p); break;
                     case ImageAnnotation p:
-                        Rect(p.Rect); Image(p.Image); Image(p.Origin); Adjust(p.Adjust); Number(p.Radius); Number(p.ShadowSize); Number(p.BorderWidth); Color(p.BorderColor); break;
+                        Rect(p.Rect); Image(p.Image); Image(p.Origin); Adjust(p.Adjust); Number(p.Radius); Number(p.ShadowSize); Number(p.BorderWidth); Color(p.BorderColor); if (_schemaVersion >= 2) _w.Write(p.IsInitialImage); break;
                     case MosaicAnnotation p:
                         Rect(p.Rect); Number(p.BlockSize); Number(p.Blur); _w.Write(p.Gaussian); Number(p.Feather); Image(p.Pattern); Rect(p.PatternRect); break;
                     case WatermarkAnnotation p:
@@ -128,6 +129,7 @@ public sealed partial class PinArchive
                     13 => new MosaicBrushAnnotation(), 14 => new SpotlightAnnotation(), _ => throw new InvalidDataException("Unknown annotation tag")
                 };
                 a.Color = Color(); a.Thickness = Positive(); a.Fill = _r.ReadBoolean(); a.CornerRadius = Positive(); a.Opacity = Number(); a.Rotation = Number(); a.Hidden = _r.ReadBoolean();
+                if (_resources.SchemaVersion >= 2) { a.FlipX = _r.ReadBoolean(); a.FlipY = _r.ReadBoolean(); }
                 if (_r.ReadBoolean())
                 {
                     var masks = Count(100_000); a.EraseMasks = new List<EraseStroke>(masks);
@@ -145,7 +147,7 @@ public sealed partial class PinArchive
                         Pen(p); var bends = Count(); for (var j = 0; j < bends; j++) { var key = _r.ReadInt32(); if (key < 0 || key + 1 >= p.Points.Count) throw new InvalidDataException("Invalid bend"); p.Bends.Add(key, Vector()); } break;
                     case PenAnnotation p: Pen(p); break;
                     case ImageAnnotation p:
-                        p.Rect = Rect(); p.Image = Image(); p.Origin = Image(); p.Adjust = Adjust(); p.Radius = Positive(); p.ShadowSize = Positive(); p.BorderWidth = Positive(); p.BorderColor = Color(); break;
+                        p.Rect = Rect(); p.Image = Image(); p.Origin = Image(); p.Adjust = Adjust(); p.Radius = Positive(); p.ShadowSize = Positive(); p.BorderWidth = Positive(); p.BorderColor = Color(); if (_resources.SchemaVersion >= 2) p.IsInitialImage = _r.ReadBoolean(); break;
                     case MosaicAnnotation p:
                         p.Rect = Rect(); p.BlockSize = Positive(); p.Blur = Positive(); p.Gaussian = _r.ReadBoolean(); p.Feather = Positive(); p.Pattern = Image(); p.PatternRect = Rect(); break;
                     case WatermarkAnnotation p:

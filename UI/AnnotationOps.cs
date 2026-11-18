@@ -274,7 +274,7 @@ internal static class AnnotationOps
         var touched = false;
         foreach (var item in items)
         {
-            if (!item.Erasable)
+            if (item.Protected || !item.Erasable)
             {
                 continue;
             }
@@ -303,6 +303,7 @@ internal static class AnnotationOps
         for (var i = items.Count - 1; i >= 0; i--)
         {
             var annotation = items[i];
+            if (annotation.Protected) continue;
             if (annotation is PenAnnotation and not PolylineAnnotation or MosaicBrushAnnotation or WatermarkAnnotation)
             {
                 continue;
@@ -316,6 +317,9 @@ internal static class AnnotationOps
                 testPoint = AnnotationEditor.RotatePoint(point, center, -annotation.Rotation);
             }
 
+            var frame = annotation.Bounds;
+            if (annotation.FlipX) testPoint.X = frame.Left + frame.Right - testPoint.X;
+            if (annotation.FlipY) testPoint.Y = frame.Top + frame.Bottom - testPoint.Y;
             if ((byContent ? annotation.HitContent(testPoint, tolerance) : annotation.HitTest(testPoint, tolerance)) && !annotation.IsErasedAt(point))
             {
                 return annotation;
@@ -548,6 +552,7 @@ internal static class AnnotationOps
     /// <summary>Turns an element over within its own box (text stays readable; symmetric shapes need nothing).</summary>
     public static void Mirror(Annotation annotation, bool horizontal)
     {
+        if (annotation.Protected) return;
         var box = annotation.Bounds;
         var cx = box.X + box.Width / 2;
         var cy = box.Y + box.Height / 2;
@@ -596,6 +601,10 @@ internal static class AnnotationOps
                 }
 
                 break;
+            case NumberAnnotation number:
+                number.Center = Map(number.Center);
+                if (number.Tail is { } tail) number.Tail = Map(tail);
+                break;
             case ImageAnnotation picture:
             {
                 var turn = new ScaleTransform(horizontal ? -1 : 1, horizontal ? 1 : -1);
@@ -603,6 +612,28 @@ internal static class AnnotationOps
                 picture.Origin = picture.Origin == null ? null : ImageOps.Normalize(new TransformedBitmap(picture.Origin, turn));
                 break;
             }
+        }
+    }
+
+    /// <summary>Flip selected elements in their combined frame; text remains editable (glyph mirror, not rasterisation).</summary>
+    public static void FlipElements(IReadOnlyList<Annotation> selection, bool horizontal)
+    {
+        var items = selection.Where(a => !a.Protected).ToList();
+        var frame = Rect.Empty;
+        foreach (var item in items) frame.Union(AnnotationEditor.RotatedBounds(item));
+        if (frame.IsEmpty) return;
+        foreach (var item in items)
+        {
+            var box = item.Bounds;
+            if (item is TextAnnotation)
+            {
+                if (horizontal) item.FlipX = !item.FlipX; else item.FlipY = !item.FlipY;
+            }
+            else Mirror(item, horizontal);
+            // Reflection in canvas axes also reverses the local rotation.
+            item.Rotation = -item.Rotation;
+            item.Translate(horizontal ? frame.Left + frame.Right - box.Left - box.Right : 0,
+                horizontal ? 0 : frame.Top + frame.Bottom - box.Top - box.Bottom);
         }
     }
 
@@ -621,9 +652,9 @@ internal static class AnnotationOps
             var h = m.RecordedSize.Height;
             masks[i] = op switch
             {
-                'H' => new EraseStroke(m.Points.Select(p => new Point(w - p.X, p.Y)).ToList(), m.Width, m.RecordedSize),
-                'V' => new EraseStroke(m.Points.Select(p => new Point(p.X, h - p.Y)).ToList(), m.Width, m.RecordedSize),
-                _ => new EraseStroke(m.Points.Select(p => new Point(p.Y, w - p.X)).ToList(), m.Width, new Size(h, w))
+                'H' => new EraseStroke(m.Points.Select(p => new Point(w - p.X, p.Y)).ToList(), m.Width, m.RecordedSize, m.Strength, m.Softness),
+                'V' => new EraseStroke(m.Points.Select(p => new Point(p.X, h - p.Y)).ToList(), m.Width, m.RecordedSize, m.Strength, m.Softness),
+                _ => new EraseStroke(m.Points.Select(p => new Point(p.Y, w - p.X)).ToList(), m.Width, new Size(h, w), m.Strength, m.Softness)
             };
         }
 
@@ -648,6 +679,7 @@ internal static class AnnotationOps
         foreach (var item in items)
         {
             var copy = item.Clone();
+            copy.Protected = false; // editor lock is not a normal pin edit restriction
             copy.Translate(-origin.X, -origin.Y);
             switch (copy)
             {
@@ -680,6 +712,14 @@ internal static class AnnotationClipboard
     public static bool CanCopy(Annotation annotation) =>
         annotation is PolylineAnnotation || annotation is not (PenAnnotation or MosaicBrushAnnotation or WatermarkAnnotation);
 
+    public static Annotation CloneForDuplication(Annotation source)
+    {
+        var copy = source.Clone();
+        copy.Protected = false;
+        if (copy is ImageAnnotation image) image.IsInitialImage = false;
+        return copy;
+    }
+
     public static void Copy(Annotation annotation)
     {
         _item = annotation.Clone();
@@ -704,7 +744,7 @@ internal static class AnnotationClipboard
         }
 
         _pastes++;
-        var copy = _item.Clone();
+        var copy = CloneForDuplication(_item);
         var offset = 16 * _pastes;
         copy.Translate(offset, offset);
         var bounds = copy.Bounds;

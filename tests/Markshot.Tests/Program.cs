@@ -79,6 +79,7 @@ static class Program
         if (mode == "round76") Round76Test.Run();
         if (mode == "round78") Round78Test.Run();
         if (mode == "round79") Round79Test.Run();
+        if (mode == "round80") Round80Test.Run();
         if (mode == "mtprobe") MtProbe.Run();
         if (mode == "pageprobe") PageProbe.Run();
         if (mode == "captureprobe") CaptureProbe.Run();

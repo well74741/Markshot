@@ -165,7 +165,7 @@ public partial class PinWindow
             return;
         }
 
-        if (_selected == null)
+        if (_selected == null || !CanModifyElement(_selected))
         {
             return;
         }
@@ -677,9 +677,16 @@ public partial class PinWindow
     /// <summary>Rotate / resize / E-rotate / R-scale of the selected element. True when it consumed the move.</summary>
     private bool TransformSelected(Point point)
     {
-        if (_selected == null)
+        if (_selected == null || !CanModifyElement(_selected))
         {
             return false;
+        }
+
+        if (_duplicateSource != null && _movingSelected && (_dragRotate || _dragScale))
+        {
+            if ((point - _pressPoint).Length * _zoom < 3) return true;
+            CommitDuplicateDrag();
+            _dragMoved = true;
         }
 
         if ((_rotatingAnnotation || _resizingAnnotation) && !_transformStarted)
@@ -961,7 +968,7 @@ public partial class PinWindow
             return;
         }
 
-        if (_selected != null && key is Key.Delete or Key.Back)
+        if (_selected != null && CanModifyElement(_selected) && key is Key.Delete or Key.Back)
         {
             _history.Checkpoint(Editor.Items);
             Editor.Items.Remove(_selected);
@@ -971,7 +978,7 @@ public partial class PinWindow
             return;
         }
 
-        if (_selected != null && key is Key.Left or Key.Right or Key.Up or Key.Down)
+        if (_selected != null && CanModifyElement(_selected) && key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
             var amount = shift ? 10.0 : 1.0;
             var dx = key == Key.Left ? -amount : key == Key.Right ? amount : 0;
@@ -1017,6 +1024,9 @@ public partial class PinWindow
     private protected void Redo() => ApplyHistory(_history.Redo);
 
     /// <summary>Right before an undo / redo step (the editor ends a colour preview there).</summary>
+    private protected virtual bool CanModifyElement(Annotation item) => !item.Protected;
+    private protected virtual void ElementsChanged() { }
+
     private protected virtual void BeforeHistory()
     {
     }
@@ -1032,6 +1042,7 @@ public partial class PinWindow
         }
 
         _number = Editor.Items.OfType<NumberAnnotation>().Select(n => n.Number).DefaultIfEmpty(0).Max() + 1;
+        ElementsChanged();
         UpdateUndoButtons();
         Editor.InvalidateVisual();
     }
@@ -1057,6 +1068,12 @@ public partial class PinWindow
                 Toolbar.PickColor(picked);
             }
 
+            e.Handled = true;
+            return;
+        }
+
+        if (e.ClickCount == 1 && !_textEditor.IsActive && (Keyboard.Modifiers & ModifierKeys.Alt) != 0 && BeginDuplicateDrag(point))
+        {
             e.Handled = true;
             return;
         }
@@ -1305,6 +1322,7 @@ public partial class PinWindow
 
         if (_movingSelected && _selected != null)
         {
+            if (e.LeftButton != MouseButtonState.Pressed || !CanModifyElement(_selected)) return;
             var dx = point.X - _lastPoint.X;
             var dy = point.Y - _lastPoint.Y;
             if (Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01)
@@ -1316,6 +1334,7 @@ public partial class PinWindow
 
                 if (!_dragMoved)
                 {
+                    CommitDuplicateDrag();
                     _moveOrigin = _selected.Bounds;
                     _movePress = _pressPoint;
                 }
@@ -1354,7 +1373,7 @@ public partial class PinWindow
     /// Right-click while the left button is still down undoes the gesture in progress
     /// (drawing, erasing, moving / resizing / rotating, dragging a text or the watermark).
     /// </summary>
-    private bool CancelGesture()
+    private protected virtual bool CancelGesture()
     {
         if (_textEditor.IsFraming)
         {
@@ -1384,6 +1403,7 @@ public partial class PinWindow
 
         if (_resizingAnnotation || _rotatingAnnotation || _movingSelected || _textPress != null || _draggingWatermark != null)
         {
+            _duplicateSource = null;
             var target = _selected ?? _textPress;
             var index = target != null ? Editor.Items.IndexOf(target) : -1;
             var reverted = _history.CancelGesture(Editor.Items);
@@ -1516,6 +1536,7 @@ public partial class PinWindow
 
         if (_movingSelected)
         {
+            _duplicateSource = null;
             _movingSelected = false;
             _history.Disarm();
             var clicked = _pendingTextClick && !_dragMoved;
@@ -1807,6 +1828,7 @@ public partial class PinWindow
 
     private protected void SelectAnnotation(Annotation annotation)
     {
+        if (!CanModifyElement(annotation)) return;
         _selected = annotation;
         _tool = AnnotationTool.None;
         Toolbar.SetTool(AnnotationTool.None);
@@ -1853,7 +1875,7 @@ public partial class PinWindow
 
     private bool TryBeginAnnotationTransform(Point point)
     {
-        if (_selected == null)
+        if (_selected == null || !CanModifyElement(_selected))
         {
             return false;
         }
@@ -1897,6 +1919,7 @@ public partial class PinWindow
 
     private protected void ClearSelection()
     {
+        _duplicateSource = null;
         _freshSelection = null;
         _selected = null;
         Editor.Selected = null;

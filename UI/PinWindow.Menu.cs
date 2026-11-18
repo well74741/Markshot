@@ -41,6 +41,12 @@ public partial class PinWindow
             Add("复制选中文字", () => ClipboardService.CopyText(TextLayer.SelectedText), gesture: "Ctrl+C");
         }
 
+        if (_editMode && _selected != null && CanModifyElement(_selected))
+        {
+            Add("左右翻转元素", () => FlipSelectedElements(true));
+            Add("上下翻转元素", () => FlipSelectedElements(false));
+            Separator();
+        }
         Add("复制图片", Copy, gesture: TextLayer.HasSelection ? null : "Ctrl+C");
         Add("另存为…", Save, gesture: "Ctrl+S");
         Separator();

@@ -281,6 +281,8 @@ public partial class PinWindow : Window
         {
             if (e.LeftButton != MouseButtonState.Pressed)
             {
+                if (_editMode && _selected != null && CanModifyElement(_selected) &&
+                    AnnotationEditor.RotatedBounds(_selected).Contains(ToPixels(e.GetPosition(ImageHost)))) return; // selected element's menu
                 if (_editMode && _active == null && !_erasing && _polyline == null && RightClickDeselects(e))
                 {
                     _suppressContextMenu = true;
@@ -774,6 +776,13 @@ public partial class PinWindow : Window
             }
         }
 
+        if (_editMode && e.ClickCount == 1 && !_textEditor.IsActive &&
+            (Keyboard.Modifiers & ModifierKeys.Alt) != 0 && BeginDuplicateDrag(ToPixels(e.GetPosition(ImageHost))))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (_editMode && (_tool == AnnotationTool.None || _tool == AnnotationTool.Select))
         {
             var point = ToPixels(e.GetPosition(ImageHost));
@@ -1008,6 +1017,7 @@ public partial class PinWindow : Window
 
         if (_movingSelected && _selected != null)
         {
+            if (e.LeftButton != MouseButtonState.Pressed || !CanModifyElement(_selected)) return;
             var point = ToPixels(e.GetPosition(ImageHost));
             var dx = point.X - _lastPoint.X;
             var dy = point.Y - _lastPoint.Y;
@@ -1020,6 +1030,7 @@ public partial class PinWindow : Window
 
                 if (!_dragMoved)
                 {
+                    CommitDuplicateDrag();
                     BeginMoveSnap();
                 }
 
@@ -1112,6 +1123,7 @@ public partial class PinWindow : Window
         _rotatingAnnotation = false;
         if (_movingSelected)
         {
+            _duplicateSource = null;
             _movingSelected = false;
             var clicked = _pendingTextClick && !_dragMoved;
             _pendingTextClick = false;

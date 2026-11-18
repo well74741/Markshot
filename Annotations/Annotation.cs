@@ -47,6 +47,12 @@ public abstract class Annotation
     /// <summary>Not drawn meanwhile (the editor's overlay shows it while a box / warp is open).</summary>
     public bool Hidden { get; set; }
 
+    /// <summary>Transient edit protection (the editor's original-image lock); not an undoable style.</summary>
+    public bool Protected { get; set; }
+    /// <summary>Glyph mirrors used for text; geometric elements use their own coordinate mirror.</summary>
+    public bool FlipX { get; set; }
+    public bool FlipY { get; set; }
+
     public abstract void Draw(DrawingContext dc);
 
     /// <summary>
@@ -320,14 +326,14 @@ public abstract class Annotation
     public void AddEraseStroke(IReadOnlyList<Point> canvasPoints, double width, double strength = 1, double softness = 0)
     {
         var bounds = Bounds;
-        if (bounds.IsEmpty || canvasPoints.Count == 0)
+        if (Protected || bounds.IsEmpty || canvasPoints.Count == 0)
         {
             return;
         }
 
         var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         var local = canvasPoints
-            .Select(p => GeometryUtil.Rotate(p, center, -Rotation))
+            .Select(p => Unmirror(GeometryUtil.Rotate(p, center, -Rotation), bounds))
             .Select(p => new Point(p.X - bounds.X, p.Y - bounds.Y))
             .ToList();
         EraseMasks ??= new List<EraseStroke>();
@@ -347,8 +353,11 @@ public abstract class Annotation
 
         var bounds = Bounds;
         var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
-        return mask.FillContains(GeometryUtil.Rotate(canvasPoint, center, -Rotation));
+        return mask.FillContains(Unmirror(GeometryUtil.Rotate(canvasPoint, center, -Rotation), bounds));
     }
+
+    private Point Unmirror(Point p, Rect bounds) => new(FlipX ? bounds.Left + bounds.Right - p.X : p.X,
+        FlipY ? bounds.Top + bounds.Bottom - p.Y : p.Y);
 
     public virtual Rect Bounds => Rect.Empty;
 
@@ -1141,6 +1150,9 @@ public class PenAnnotation : Annotation
 /// </summary>
 public sealed class ImageAnnotation : Annotation
 {
+    /// <summary>The image the document was opened on (retained through clone/undo/archive, never by a pasted copy).</summary>
+    public bool IsInitialImage { get; set; }
+
     public Rect Rect { get; set; }
 
     /// <summary>What is shown (colours applied; a smaller copy while a slider moves).</summary>
@@ -1400,7 +1412,7 @@ public static class Cutouts
         for (var i = 0; i < index; i++)
         {
             var item = items[i];
-            if (!Carries(item) || item.Bounds.IsEmpty)
+            if (item.Protected || !Carries(item) || item.Bounds.IsEmpty)
             {
                 continue;
             }

@@ -350,7 +350,7 @@ public sealed class AnnotationEditor : FrameworkElement
 
         var bounds = annotation.Bounds;
         var pops = 0;
-        if (liveEraser != null && annotation.Erasable && !bounds.IsEmpty)
+        if (liveEraser != null && !annotation.Protected && annotation.Erasable && !bounds.IsEmpty)
         {
             var area = RotatedBounds(annotation);
             area.Inflate(annotation.Thickness * 2 + 4, annotation.Thickness * 2 + 4);
@@ -369,6 +369,12 @@ public sealed class AnnotationEditor : FrameworkElement
         }
 
         // Its erased parts: worked out once in the element's frame, moved along with it.
+        if ((annotation.FlipX || annotation.FlipY) && !bounds.IsEmpty)
+        {
+            dc.PushTransform(new ScaleTransform(annotation.FlipX ? -1 : 1, annotation.FlipY ? -1 : 1,
+                bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+            pops++;
+        }
         if (annotation.EraseClip() is { } clip)
         {
             dc.PushClip(clip);
@@ -499,7 +505,7 @@ public sealed class AnnotationEditor : FrameworkElement
         var needAll = ordered.Any(item => item is not CutoutAnnotation && !Cutouts.Carries(item));
         for (var i = ordered.Count - 1; i >= 0; i--)
         {
-            clips[i] = Cutouts.Carries(ordered[i]) ? cuttingOutside : allOutside;
+            clips[i] = ordered[i].Protected ? null : Cutouts.Carries(ordered[i]) ? cuttingOutside : allOutside;
             if (ordered[i] is CutoutAnnotation cutout)
             {
                 if (needAll)

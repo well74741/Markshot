@@ -18,7 +18,7 @@ public sealed record PinArchiveState(PinSnapshot Snapshot, AnnotationHistory His
 public sealed partial class PinArchive
 {
     public const string Extension = ".markpin";
-    private const int Version = 1;
+    private const int Version = 2;
     private const long MaxMetadataBytes = 64L * 1024 * 1024;
     private const long MaxImageBytes = 512L * 1024 * 1024;
     public const long MaxPackageBytes = 512L * 1024 * 1024;
@@ -97,7 +97,10 @@ public sealed partial class PinArchive
         catch { if (File.Exists(target)) File.Delete(target); throw; }
     }
 
-    public static PinArchive Create(PinArchiveState state, string path)
+    public static PinArchive Create(PinArchiveState state, string path) => Create(state, path, Version);
+    internal static PinArchive CreateLegacyForTests(PinArchiveState state, string path) => Create(state, path, 1);
+
+    private static PinArchive Create(PinArchiveState state, string path, int schemaVersion)
     {
         var target = Path.GetFullPath(path);
         var staging = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -109,13 +112,13 @@ public sealed partial class PinArchive
             {
                 var resources = new ResourceWriter(zip);
                 var undo = 0;
-                foreach (var step in state.History.UndoSteps) WriteStep(zip, resources, "undo/" + undo++, step);
+                foreach (var step in state.History.UndoSteps) WriteStep(zip, resources, "undo/" + undo++, step, schemaVersion);
                 var redo = 0;
-                foreach (var step in state.History.RedoSteps) WriteStep(zip, resources, "redo/" + redo++, step);
+                foreach (var step in state.History.RedoSteps) WriteStep(zip, resources, "redo/" + redo++, step, schemaVersion);
                 Data(zip, "current", w =>
                 {
-                    var a = new AnnotationWriter(w, resources);
-                    w.Write(Version); a.Image(state.Snapshot.Image); a.Image(state.Snapshot.BaseImage);
+                    var a = new AnnotationWriter(w, resources, schemaVersion);
+                    w.Write(schemaVersion); a.Image(state.Snapshot.Image); a.Image(state.Snapshot.BaseImage);
                     w.Write(state.Snapshot.Left); w.Write(state.Snapshot.Top); a.Number(state.Snapshot.Zoom); a.Number(state.Snapshot.Opacity);
                     a.Number(state.CornerRadius); w.Write(state.ShapedShadow); a.Text(state.Orientation);
                     a.Image(state.Untranslated); a.Image(state.Translated); a.Text(state.TranslationText); a.Text(state.SourceLabel); a.Text(state.TargetLabel); w.Write(state.ShowsOriginal);
@@ -148,12 +151,12 @@ public sealed partial class PinArchive
         using var output = zip.CreateEntry(name, CompressionLevel.Optimal).Open(); buffer.CopyTo(output);
     }
 
-    private static void WriteStep(ZipArchive zip, ResourceWriter resources, string name, AnnotationHistory.ArchiveStep step)
+    private static void WriteStep(ZipArchive zip, ResourceWriter resources, string name, AnnotationHistory.ArchiveStep step, int schemaVersion = Version)
     {
         // PinWindow has no extra state callbacks; refuse foreign owner extras instead of silently
         // discarding them or constructing unknown private/user types.
         if (step.Extra != null) throw new InvalidDataException("Unsupported history extra state");
-        Data(zip, name, w => new AnnotationWriter(w, resources).Items(step.Items));
+        Data(zip, name, w => new AnnotationWriter(w, resources, schemaVersion).Items(step.Items));
     }
 
     private Func<AnnotationHistory.ArchiveStep>? StoreStep(AnnotationHistory.ArchiveStep step)
@@ -227,7 +230,9 @@ public sealed partial class PinArchive
         return ReadData(FilePath, "current", r =>
         {
             var a = new AnnotationReader(r, resources);
-            if (r.ReadInt32() != Version) throw new InvalidDataException("Unsupported pin archive version");
+            var version = r.ReadInt32();
+            if (version is not (1 or Version)) throw new InvalidDataException("Unsupported pin archive version");
+            resources.SchemaVersion = version;
             var image = a.Image() ?? throw new InvalidDataException("Missing composed image");
             var baseImage = a.Image() ?? throw new InvalidDataException("Missing base image");
             var left = r.ReadInt32(); var top = r.ReadInt32(); var zoom = a.Number(); var opacity = a.Number();
@@ -246,7 +251,7 @@ public sealed partial class PinArchive
 
     public BitmapSource LoadImage() => ReadData(FilePath, "current", r =>
     {
-        if (r.ReadInt32() != Version) throw new InvalidDataException("Unsupported pin archive version");
+        if (r.ReadInt32() is not (1 or Version)) throw new InvalidDataException("Unsupported pin archive version");
         return new AnnotationReader(r, new ResourceReader(FilePath, _lease)).Image() ?? throw new InvalidDataException("Missing image");
     });
 
@@ -352,6 +357,7 @@ public sealed partial class PinArchive
 
     private sealed class ResourceReader
     {
+        public int SchemaVersion { get; set; } = Version;
         private readonly string _path;
         private readonly OwnedFile? _lease;
         private readonly Func<string, BitmapSource>? _fallback;

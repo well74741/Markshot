@@ -247,9 +247,18 @@ public partial class OverlayWindow : Window
                 return;
             }
 
+            var selectionPoint = ToPixels(e.GetPosition(InputLayer));
+            if (_selectedAnnotation is { } selected && AnnotationEditor.RotatedBounds(selected).Contains(selectionPoint))
+            {
+                _rightReset = false;
+                _suppressContextMenu = true;
+                e.Handled = true;
+                ShowSelectedElementMenu();
+                return;
+            }
             _suppressContextMenu = true;
             e.Handled = true;
-            var point = ToPixels(e.GetPosition(InputLayer));
+            var point = selectionPoint;
             if (!_hasSelection)
             {
                 // Right-drag draws a freehand (lasso) capture; Shift adds straight segments.

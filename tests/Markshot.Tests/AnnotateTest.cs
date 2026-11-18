@@ -514,14 +514,14 @@ static class AnnotateTest
             var items2 = ((AnnotationEditor)Get(se2, "Editor")).Items;
             var photo = items2.OfType<ImageAnnotation>().First();
             var styleSection = (FrameworkElement)typeof(ImageEditorWindow).GetField("_styleSection", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;
-            Check(styleSection.Visibility == Visibility.Visible && !((UIElement)styleSection.Tag).IsEnabled, "元素样式 always shown, resting while no picture is selected");
+            Check(styleSection.Visibility == Visibility.Visible && !((FrameworkElement)typeof(ImageEditorWindow).GetField("_radiusRow", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!).IsEnabled, "元素样式 always shown, resting while no picture is selected");
             var heightBefore = styleSection.ActualHeight;
             se2.SelectElements(new Annotation[] { photo });
             Pump(100);
             Check(((UIElement)styleSection.Tag).IsEnabled && Math.Abs(styleSection.ActualHeight - heightBefore) < 40, "… usable for a selected picture, without the panel jumping");
             se2.SelectElements(Array.Empty<Annotation>());
             Pump(100);
-            Check(styleSection.Visibility == Visibility.Visible && !((UIElement)styleSection.Tag).IsEnabled, "… and resting again when nothing is selected");
+            Check(styleSection.Visibility == Visibility.Visible && !((FrameworkElement)typeof(ImageEditorWindow).GetField("_radiusRow", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!).IsEnabled, "… and resting again when nothing is selected");
             se2.SelectElements(new Annotation[] { photo });
             Pump(400);
             var footer = (FrameworkElement)typeof(ImageEditorWindow).GetField("_resetAllFooter", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(se2)!;

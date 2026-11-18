@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.79`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.80`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -26,7 +26,7 @@ D:\Practice\AItest\Deepseek_projects\Markshot
 
 ```powershell
 Set-Location 'D:\Practice\AItest\Deepseek_projects\Markshot'
-Get-Process Markshot -ErrorAction SilentlyContinue | Stop-Process -Force
+# 不要结束用户正在运行的 Markshot；测试使用独立进程及隔离配置。
 dotnet build -c Release
 dotnet publish Markshot.csproj -c Release -r win-x64 --self-contained false `
   -p:PublishSingleFile=true -o publish
@@ -645,6 +645,21 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.80 0.8.80 变更
+
+- 元素 Alt 拖动复制：截图 / 贴图批注 / 编辑器共用 CloneForDuplication，首个实际移动才加入副本，保持鼠标抓取偏移，单击不复制，一次撤销撤回整次操作；编辑器多选一次克隆整组，不写系统剪贴板。
+  副本保留独立擦除 Mask，但清除 Protected 与 IsInitialImage。绘图中的 Alt 中心绘制 / 画笔吸色，以及普通贴图的文字绕过拖动按键保持原语义。
+- 选中元素右键菜单新增左右 / 上下翻转。FlipElements 按选中组整体范围镜像；文本以 FlipX / FlipY 镜像字形，保持可编辑，绘制 / 命中 / 擦除均使用相同逆镜像坐标。
+- 编辑器先 Space 后左键平移画布，中键仍可平移；绘制途中 Space 保留移动当前图形。平移只改变视图偏移，不修改元素坐标。
+- 元素样式第一行增加「锁定原始图片」，配置 LockOriginalImage 默认关闭、切换后记忆。IsInitialImage 随 Clone / Undo / 归档保留；运行时 Protected 在恢复或元素变化后重算，禁止命中、拖动、变形、删除、调色及抠除。
+  新图层仍可编辑，Cutouts.Bake 与实时 / 导出 DrawLayers 均跳过锁图；既有擦除不因加锁恢复。锁保护图片，不禁止改变画布尺寸或可见范围。原图取消选中后，锁开关仍可操作。
+- PinArchive 格式升至 v2，新增字形镜像及原图身份字段，不写入运行时保护；仍读真实 v1 数据及其懒加载撤销步骤。不要只改 v2 包头充当旧版兼容测试。
+  v1 编辑器场景导入时同步迁移旧撤销步骤的原图身份；截图步骤即使含粘贴图片，仍补原始底图。旧步骤继续懒读取，但新增编辑器快照含画布 State，不能套用只存元素的贴图日志，改用编辑器已有受限历史预算。
+- 组合手势：多选拖动右键撤回整组，清理捕获 / 复制标志并恢复原选择；Alt 复制在 E / R 变形分支之前创建副本；小于拖动阈值的抖动不提交历史、不清 Redo。
+  复制前先完成既有角度预览和调色，防止刷新面板回滚原件；元素画布轴镜像同时反转 Rotation，并保留擦除强度 / 软边。
+- TranslationWindow 改为非 Topmost，OCR / 翻译按普通窗口层级显示。
+- round80 验证复制 / 取消 / 撤销 / 多选、画布平移、显式与回退 API 原图保护、抠除预览 / 烘焙 / 输出一致性、图片像素与文字翻转、v1 / v2 归档兼容及窗口层级。测试复制不捕获实际鼠标，不注入桌面输入，配置与剪贴板继续隔离。
 
 ## 8.1.79 0.8.79 变更
 

@@ -33,6 +33,9 @@ public sealed class AppConfig
     /// <summary>贴图上的文字可直接拖选复制 (a text layer from OCR); off: a drag on text moves the pin.</summary>
     public bool PinTextSelect { get; set; } = true;
 
+    /// <summary>Protect the image originally opened in the image editor; new images/annotations stay editable.</summary>
+    public bool LockOriginalImage { get; set; }
+
     public string PinFlipHorizontalHotkey { get; set; } = "Q";
 
     public string PinFlipVerticalHotkey { get; set; } = "W";
