@@ -86,6 +86,21 @@ internal sealed class RecordPreviewWindow : Window
         PreviewMouseLeftButtonDown += OnDown;
         PreviewMouseMove += OnMove;
         PreviewMouseLeftButtonUp += OnUp;
+        // The bar handles Space while it has the keyboard; a click on the picture gives the
+        // keyboard to this window, so Space plays / pauses from here as well.
+        PreviewKeyDown += (sender, e) =>
+        {
+            if (AnnotationOps.RealKey(e) != Key.Space || Keyboard.FocusedElement is TextBox)
+            {
+                return; // typing goes to the box (the trim inputs); other keys go on
+            }
+
+            if (_controller.Phase == RecordPhase.Preview)
+            {
+                TogglePlay();
+                e.Handled = true;
+            }
+        };
         SourceInitialized += (_, _) =>
         {
             var handle = new WindowInteropHelper(this).Handle;

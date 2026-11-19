@@ -1818,10 +1818,9 @@ public sealed class ImageEditorWindow : PinWindow
             ReclaimKeyboard();
         }
 
-        if (e.ChangedButton == MouseButton.Middle || (e.ChangedButton == MouseButton.Left &&
-            Keyboard.IsKeyDown(Key.Space) && !_textEditor.IsActive && !DrawingGestureActive && _overlay == null))
+        if (e.ChangedButton == MouseButton.Middle)
         {
-            BeginCanvasPan(e.GetPosition(_stage), e.ChangedButton == MouseButton.Left);
+            BeginCanvasPan(e.GetPosition(_stage), left: false);
             e.Handled = true;
         }
     }
@@ -1838,7 +1837,7 @@ public sealed class ImageEditorWindow : PinWindow
             return;
         }
 
-        if ((_panWithLeft ? e.LeftButton : e.MiddleButton) != MouseButtonState.Pressed)
+        if (e.MiddleButton != MouseButtonState.Pressed)
         {
             EndPan(); // the release happened elsewhere
             return;
@@ -1850,18 +1849,15 @@ public sealed class ImageEditorWindow : PinWindow
 
     private void Stage_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (_panning && e.ChangedButton == (_panWithLeft ? MouseButton.Left : MouseButton.Middle))
+        if (_panning && e.ChangedButton == MouseButton.Middle)
         {
             EndPan();
             e.Handled = true;
         }
     }
 
-    private bool _panWithLeft;
-
-    private void BeginCanvasPan(Point point, bool left)
+    private void BeginCanvasPan(Point point, bool left = false)
     {
-        _panWithLeft = left;
         Mouse.Captured?.ReleaseMouseCapture();
         _panning = true;
         _panStart = point;
@@ -1875,7 +1871,6 @@ public sealed class ImageEditorWindow : PinWindow
     private void EndPan()
     {
         _panning = false;
-        _panWithLeft = false;
         Mouse.OverrideCursor = null;
         if (_stage.IsMouseCaptured)
         {
@@ -3367,7 +3362,7 @@ public sealed class ImageEditorWindow : PinWindow
         ImageHost.Children.Add(_overlay);
         _sessionText.Text = mode switch
         {
-            EditorOverlayMode.Crop => picture != null ? "拖出选中元素要保留的区域，拖边角调整。Enter 应用，Esc 取消" : "拖出画布要保留的区域，拖边角调整。Enter 应用，Esc 取消",
+            EditorOverlayMode.Crop => picture != null ? "拖出选中元素要保留的区域，拖边角调整。Enter 应用，Esc 取消" : "拖出画布要保留的区域，拖边角调整；向外拉会扩大画布。Enter 应用，Esc 取消",
             EditorOverlayMode.Path => "按住鼠标沿要保留的部分画一圈（按住 Shift 走直线）。Enter 应用，Esc 取消",
             EditorOverlayMode.Mesh => "先单击图片交叉拆分一次，然后拖动交点、边角和蓝色手柄弯曲图片。Enter 应用，Esc 取消",
             EditorOverlayMode.Transform => "拖四角等比缩放（Shift 自由），框边外拖动旋转（Shift 15°）。Enter 或点击远处应用，Esc 取消",
@@ -3417,12 +3412,51 @@ public sealed class ImageEditorWindow : PinWindow
                 break;
             case EditorOverlayMode.Crop:
             {
+                // 矩形裁切 pulled past the picture: the canvas grows to hold it (the picture itself is not scaled or moved).
                 var r = overlay.Crop;
-                var left = (int)Math.Round(r.Left);
-                var top = (int)Math.Round(r.Top);
+                var left = (int)Math.Floor(r.Left);
+                var top = (int)Math.Floor(r.Top);
+                var right = (int)Math.Ceiling(r.Right);
+                var bottom = (int)Math.Ceiling(r.Bottom);
+                var width = _baseImage.PixelWidth;
+                var height = _baseImage.PixelHeight;
+                var shiftX = 0;
+                var shiftY = 0;
+                if (left < 0)
+                {
+                    shiftX = -left;
+                    width += shiftX;
+                    left = 0;
+                    right += shiftX;
+                }
+
+                if (top < 0)
+                {
+                    shiftY = -top;
+                    height += shiftY;
+                    top = 0;
+                    bottom += shiftY;
+                }
+
+                width = Math.Max(width, right);
+                height = Math.Max(height, bottom);
+                if (shiftX != 0 || shiftY != 0 || width != _baseImage.PixelWidth || height != _baseImage.PixelHeight)
+                {
+                    // One undo step: the canvas grows to what was dragged out, then the crop is cut from it.
+                    GeometryStep(EditGroup.Cut, () =>
+                    {
+                        foreach (var item in Editor.Items)
+                        {
+                            item.Translate(shiftX, shiftY);
+                        }
+
+                        SetBitmap(CanvasFill(width, height));
+                    });
+                }
+
                 CropTo(new Int32Rect(left, top,
-                    Math.Clamp((int)Math.Round(r.Right) - left, 1, _baseImage.PixelWidth - left),
-                    Math.Clamp((int)Math.Round(r.Bottom) - top, 1, _baseImage.PixelHeight - top)));
+                    Math.Clamp(right - left, 1, width - left),
+                    Math.Clamp(bottom - top, 1, height - top)));
                 break;
             }
 
@@ -3507,7 +3541,6 @@ public sealed class ImageEditorWindow : PinWindow
 
     private protected override bool EditorKey(Key key, bool control)
     {
-        if (key == Key.Space && !control && !DrawingGestureActive && !_textEditor.IsActive) return true; // pan chord, not toolbar toggle
         if (_overlay != null)
         {
             switch (key)
@@ -4291,8 +4324,9 @@ public sealed class ImageEditorWindow : PinWindow
         var crop = overlay.Crop;
         if (int.TryParse(_cropWidth.Text.Trim(), out var width) && int.TryParse(_cropHeight.Text.Trim(), out var height))
         {
-            width = Math.Clamp(width, 2, (int)Math.Max(2, _baseImage.PixelWidth - crop.X));
-            height = Math.Clamp(height, 2, (int)Math.Max(2, _baseImage.PixelHeight - crop.Y));
+            // Typed sizes may exceed the canvas (the crop grows it when applied), but not move its corner.
+            width = Math.Clamp(width, 2, 30000);
+            height = Math.Clamp(height, 2, 30000);
             overlay.Crop = new Rect(crop.X, crop.Y, width, height);
             overlay.InvalidateVisual();
             UpdateSessionBar();

@@ -1,5 +1,6 @@
 // 录屏 — from SketchPlayer: ported from the screen recorder of the author's SketchPlayer project
 // (see SketchPlayer docs/技术文档_录屏.md), rebuilt for WPF / .NET.
+using System.Windows;
 using Markshot.Core.Recording;
 
 namespace Markshot.UI.Recording;
@@ -239,6 +240,8 @@ public sealed class RecorderController
         _config.LastY = Rect.Y;
         _config.LastWidth = Rect.Width;
         _config.LastHeight = Rect.Height;
+        // The recorder's area is a capture region too: R in a capture brings back the last recording area.
+        App.Config.RememberRegion(new Rect(Rect.X, Rect.Y, Rect.Width, Rect.Height));
         _saveConfig();
         _tick.Stop();
         _countdown.Stop();

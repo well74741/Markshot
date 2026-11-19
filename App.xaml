@@ -75,6 +75,9 @@
         <Style TargetType="ContextMenu">
             <Setter Property="Background" Value="{DynamicResource T_FF1E1E1E}" />
             <Setter Property="Foreground" Value="{DynamicResource T_FFF0F0F0}" />
+            <!-- A menu inherits the placement target's font size (the inline text editor's can be 80+ px):
+                 it always shows at its own size instead of stretching with the text being typed. -->
+            <Setter Property="FontSize" Value="12" />
             <Setter Property="BorderBrush" Value="{DynamicResource T_33FFFFFF}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="4" />

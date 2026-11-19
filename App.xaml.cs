@@ -378,6 +378,9 @@ public partial class App : Application
                 TogglePinsShown();
                 _float?.RefreshPinsButton();
                 break;
+            case "Exit":
+                ShutdownApp();
+                break;
             default:
                 StartCapture();
                 break;

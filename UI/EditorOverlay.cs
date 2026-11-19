@@ -123,7 +123,8 @@ public sealed class EditorOverlay : FrameworkElement
         return brush;
     }
 
-    private Point ToImage(Point dip) => new(Math.Clamp(dip.X / Zoom, 0, _imageWidth), Math.Clamp(dip.Y / Zoom, 0, _imageHeight));
+    private Point ToImage(Point dip) => new(Math.Clamp(dip.X / Zoom, -ExpandMargin, _imageWidth + ExpandMargin), Math.Clamp(dip.Y / Zoom, -ExpandMargin, _imageHeight + ExpandMargin));
+    private const double ExpandMargin = 20000; // a crop dragged past the picture keeps following the mouse
 
     private Point ToDip(Point pixel) => new(pixel.X * Zoom, pixel.Y * Zoom);
 
@@ -146,7 +147,10 @@ public sealed class EditorOverlay : FrameworkElement
             case EditorOverlayMode.Crop:
             {
                 var crop = ToDip(Crop);
-                dc.DrawGeometry(Dim, null, new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(all), new RectangleGeometry(crop)));
+                // A crop pulled past the picture dims nothing outside it (that part is not part of the picture yet).
+                var inside = Rect.Intersect(crop, all);
+                var outsideCrop = inside.IsEmpty ? new RectangleGeometry(crop) : new RectangleGeometry(inside);
+                dc.DrawGeometry(Dim, null, new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(all), outsideCrop));
                 dc.DrawRectangle(null, accent, crop);
                 var thin = new Pen(new SolidColorBrush(Color.FromArgb(0x60, 255, 255, 255)), 1);
                 for (var i = 1; i < 3; i++)
@@ -848,15 +852,18 @@ public sealed class EditorOverlay : FrameworkElement
                 return;
         }
 
+        // 矩形裁切 may be pulled past the picture: the canvas grows to hold what was dragged out.
+        // Everything stays in canvas pixels; the caller decides whether to grow the canvas.
+
         double left = r.Left, top = r.Top, right = r.Right, bottom = r.Bottom;
         if (_drag!.Contains('w'))
         {
-            left = Math.Min(pixel.X, right - 2);
+            left = Math.Min(pixel.X, right - 2); // may go past 0: the canvas grows to hold it
         }
 
         if (_drag.Contains('e'))
         {
-            right = Math.Max(pixel.X, left + 2);
+            right = Math.Max(pixel.X, left + 2); // may go past the picture's right edge
         }
 
         if (_drag.Contains('n'))

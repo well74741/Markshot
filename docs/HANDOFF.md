@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.80`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.81`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,16 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.81 0.8.81 变更
+
+- 编辑器矩形裁切支持向外拉：`EditorOverlay.ToImage` 放宽 ±20000、边角不再夹紧在图片内、变暗区域与图片求交；
+  `ApplySession` 画布裁切先把画布扩到拉出范围（元素平移、`SetBitmap`，一步撤销）再裁切，`ApplyCropSize` 输入放宽到 30000。水印沿用画布尺寸操作的重铺语义。
+- 录屏关闭时 `App.Config.RememberRegion(录屏区域)`：截图 R 的最近区域包含录屏框（RecorderConfig.Last\* 仍保留）。
+- 全局 ContextMenu 样式锁定 FontSize=12：右键菜单不再继承输入框的大字号被拉伸。
+- 悬浮按钮右键菜单底部加「退出 Markshot」→ `FloatAction("Exit")` → `ShutdownApp()`；Round53 菜单断言同步。
+- 录屏预览窗口自己响应空格播放/暂停（点击画面后键盘焦点在预览窗口；输入框聚焦时不拦截）。
+- 撤销：空格+左键平移画布尝试过两版（Keyboard.IsKeyDown / 自跟踪 _spaceHeld），锁定原图场景仍不可靠，已整体回退；空格恢复 0.8.80 语义（退出批注/打开工具栏），画布平移只用中键。
 
 ## 8.1.80 0.8.80 变更
 

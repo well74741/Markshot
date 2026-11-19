@@ -1212,6 +1212,9 @@ public sealed class FloatButtonWindow : Window
         var close = new MenuItem { Header = "关闭悬浮按钮" };
         close.Click += (_, _) => _close();
         menu.Items.Add(close);
+        var exit = new MenuItem { Header = "退出 Markshot", ToolTip = "关闭所有贴图和窗口，完全退出程序" };
+        exit.Click += (_, _) => Run("Exit");
+        menu.Items.Add(exit);
         return menu;
     }
 

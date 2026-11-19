@@ -110,11 +110,11 @@ static class Round80Test
             editor.SelectElements(Array.Empty<Annotation>());
 
             var pan = editor.PanOffset; var imagePlace = original.Rect;
-            Call(editor, "BeginCanvasPan", new Point(50, 50), true);
+            Call(editor, "BeginCanvasPan", new Point(50, 50), false);
             Call(editor, "ContinueCanvasPan", new Point(70, 80));
-            Check((editor.PanOffset - pan - new Vector(20, 30)).Length < 1 && original.Rect == imagePlace, "Space then left-drag pans the canvas, not any element");
+            Check((editor.PanOffset - pan - new Vector(20, 30)).Length < 1 && original.Rect == imagePlace, "middle-drag pans the canvas, not any element");
             Call(editor, "EndPan");
-            Check(!(bool)Get<object>(editor, "_panning") && Source("UI/ImageEditorWindow.cs").Contains("Keyboard.IsKeyDown(Key.Space)"), "pan ends cleanly; left Space chord is wired before selection");
+            Check(!(bool)Get<object>(editor, "_panning"), "pan ends cleanly");
 
             // Use a fresh scene to ensure all target fallbacks are blocked, not redirected to a new image.
             canvas.Items.Clear(); canvas.Items.Add(original); history.Clear();
