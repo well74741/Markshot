@@ -109,6 +109,36 @@ static class Round80Test
             Check(canvas.Items.Count == count && history.Depth == depth && !Get<bool>(editor, "_groupCopyDrag"), "group Alt click/cancel creates no copy and leaves no stale drag");
             editor.SelectElements(Array.Empty<Annotation>());
 
+            // Ctrl+C with a multi-selection copies the elements (not the composed canvas picture): sizes stay,
+            // their places among themselves stay, and neither the background nor the locked original comes along.
+            // A clean scene (the locked original only) so what comes back is exactly what was copied.
+            var initial = canvas.Items.OfType<ImageAnnotation>().FirstOrDefault(p => p.IsInitialImage) ?? canvas.Items.OfType<ImageAnnotation>().FirstOrDefault();
+            canvas.Items.RemoveAll(item => item != initial);
+            var shapeA = new RectAnnotation { Rect = new Rect(20, 20, 40, 30), Fill = true, Color = Colors.Lime };
+            var shapeB = new EllipseAnnotation { Rect = new Rect(70, 20, 30, 25), Color = Colors.Yellow, Thickness = 2 };
+            canvas.Items.Add(shapeA);
+            canvas.Items.Add(shapeB);
+            editor.SelectElements(new Annotation[] { shapeA, shapeB });
+            editor.OriginalImageLocked = true;
+            var originalImage = initial.Image;
+            Call(editor, "Copy");
+            editor.SelectElements(Array.Empty<Annotation>());
+            Call(editor, "PasteAnnotation");
+            var pastedRects = canvas.Items.OfType<RectAnnotation>().Where(r => !ReferenceEquals(r, shapeA)).ToList();
+            var pastedEllipses = canvas.Items.OfType<EllipseAnnotation>().Where(e => !ReferenceEquals(e, shapeB)).ToList();
+            Check(canvas.Items.Count == 5 && pastedRects.Count == 1 && pastedEllipses.Count == 1 &&
+                  pastedRects[0].Bounds.Size == shapeA.Bounds.Size && pastedEllipses[0].Bounds.Size == shapeB.Bounds.Size &&
+                  (pastedRects[0].Bounds.Location - shapeA.Bounds.Location).Length is > 0.5 and < 40 &&
+                  pastedEllipses[0].Bounds.Location - pastedRects[0].Bounds.Location == shapeB.Bounds.Location - shapeA.Bounds.Location,
+                "a group paste keeps each element's size and their places among themselves");
+            Check(canvas.Items.OfType<ImageAnnotation>().Count() == 1 && ReferenceEquals(initial.Image, originalImage),
+                "a group copy/paste brings neither the canvas background nor the locked original");
+            Check(Get<ToggleButton>(editor, "_lockOriginalSwitch").IsChecked == true, "the lock switch stays on while its group is copied");
+            Check(editor.SelectedElements.Count == 2, "a pasted group is selected together");
+            Call(editor, "Undo");
+            Check(canvas.Items.Count == 3 && canvas.Items.OfType<ImageAnnotation>().Count() == 1, "one undo removes the whole group paste");
+            editor.OriginalImageLocked = false;
+
             var pan = editor.PanOffset; var imagePlace = original.Rect;
             Call(editor, "BeginCanvasPan", new Point(50, 50), false);
             Call(editor, "ContinueCanvasPan", new Point(70, 80));

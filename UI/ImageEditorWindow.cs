@@ -54,6 +54,7 @@ public sealed class ImageEditorWindow : PinWindow
     private bool _lockOriginalImage;
     private ToggleButton? _lockOriginalSwitch;
     private FrameworkElement? _lockOriginalRow;
+    private System.Windows.Shapes.Rectangle? _lockBody;
     private Border? _resetAllFooter;
     private FrameworkElement? _panelStack;
     private FrameworkElement? _radiusRow;
@@ -436,8 +437,18 @@ public sealed class ImageEditorWindow : PinWindow
         App.Config.Save();
         ApplyOriginalProtection();
         SelectElements(SelectedElements.Where(CanModifyElement).ToList());
+        ShowLockIcon(locked);
         RefreshPanel();
         Editor.InvalidateVisual();
+    }
+
+    /// <summary>The lock icon shows only while the original picture is protected (the accent colour through its mask).</summary>
+    private void ShowLockIcon(bool locked)
+    {
+        if (_lockBody != null)
+        {
+            _lockBody.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private protected override void ElementsChanged()
@@ -743,8 +754,31 @@ public sealed class ImageEditorWindow : PinWindow
         _borderColorRow = BorderColorRow();
         _opacityRow = StyleSlider("透明度", "Opacity", 0, 100);
         _styleSliders["Opacity"].Slider.Minimum = 5;
-        _lockOriginalSwitch = new ToggleButton { Content = "锁定原始图片", Style = (Style)FindResource("PlateToggle"), IsChecked = _lockOriginalImage,
+        _lockOriginalSwitch = new ToggleButton { Style = (Style)FindResource("PlateToggle"), IsChecked = _lockOriginalImage,
             ToolTip = "保护最初打开的图片，不能拖动、变形、擦除或删除；新增图片和批注仍可编辑" };
+        // The lock icon (a white mask, coloured by its background) shows only while the picture is protected.
+        _lockBody = new System.Windows.Shapes.Rectangle
+        {
+            Width = 13,
+            Height = 13,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 5, 0),
+            Fill = new ImageBrush(new BitmapImage(new Uri("pack://application:,,,/Markshot;component/Assets/Icons/lock.png")))
+            {
+                Stretch = Stretch.Uniform
+            }
+        };
+        _lockBody.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, Theme.Key(0xFF4C8DFF));
+        _lockBody.OpacityMask = new ImageBrush(new BitmapImage(new Uri("pack://application:,,,/Markshot;component/Assets/Icons/lock.png")))
+        {
+            Stretch = Stretch.Uniform
+        };
+        _lockOriginalSwitch.Content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { _lockBody, new TextBlock { Text = "锁定原始图片", VerticalAlignment = VerticalAlignment.Center } }
+        };
+        ShowLockIcon(_lockOriginalImage);
         _lockOriginalSwitch.Click += (_, _) => SetOriginalLock(_lockOriginalSwitch.IsChecked == true);
         _lockOriginalRow = new StackPanel { Margin = new Thickness(0, 0, 0, 10), Children = { _lockOriginalSwitch } };
         _styleSection = Section("元素样式", null, _lockOriginalRow, _radiusRow, _shadowRow, _borderRow, _borderColorRow, _opacityRow);
@@ -1341,6 +1375,7 @@ public sealed class ImageEditorWindow : PinWindow
         {
             _lockOriginalSwitch.IsChecked = _lockOriginalImage;
             _lockOriginalSwitch.IsEnabled = Editor.Items.OfType<ImageAnnotation>().Any(p => p.IsInitialImage);
+            ShowLockIcon(_lockOriginalImage);
         }
         foreach (var row in new[] { _radiusRow, _shadowRow, _borderRow, _borderColorRow, _opacityRow })
         {
@@ -2469,10 +2504,24 @@ public sealed class ImageEditorWindow : PinWindow
         Editor.InvalidateVisual();
     }
 
+    /// <summary>A pasted group is selected together: it moves and transforms as one.</summary>
+    private protected override void PasteGroupSelection(IReadOnlyList<Annotation> pasted) => SelectElements(pasted);
+
+    /// <summary>Ctrl+C with a 多选: the elements are copied (the composed canvas picture is not).</summary>
+    private protected override bool CopySelectionOrCanvas()
+    {
+        if (_group.Count < 2 || _group.Any(item => !AnnotationClipboard.CanCopy(item)))
+        {
+            return false;
+        }
+
+        AnnotationClipboard.CopyGroup(_group);
+        return true;
+    }
+
     /// <summary>Pasted (Ctrl+V / 粘贴图片): it stays selected to be placed; Esc takes it back, Enter or a click elsewhere keeps it.</summary>
     private protected override void OnPasted(Annotation element, int depth)
     {
-        ClearGroup();
         _pendingPaste = element;
         _pasteDepth = depth;
         UpdateHint();
@@ -4018,6 +4067,12 @@ public sealed class ImageEditorWindow : PinWindow
 
     private protected override void Copy()
     {
+        if (_group.Count >= 2 && _group.All(AnnotationClipboard.CanCopy))
+        {
+            AnnotationClipboard.CopyGroup(_group); // elements, not the composed canvas picture
+            return;
+        }
+
         if (_hasImage && ClipboardService.CopyImage(ComposeEditedImage()))
         {
             MarkKept();

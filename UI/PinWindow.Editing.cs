@@ -245,33 +245,49 @@ public partial class PinWindow
 
     private protected void PasteAnnotation()
     {
-        if (PastePicture())
+        // A group copied as elements pastes as elements (never the composed canvas picture,
+        // even when the system clipboard holds a newer picture).
+        if (!AnnotationClipboard.HasGroup && PastePicture())
         {
             return;
         }
 
-        if (AnnotationClipboard.Paste(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight)) is not { } pasted)
+        var pasted = AnnotationClipboard.PasteGroup(new Rect(0, 0, _baseImage.PixelWidth, _baseImage.PixelHeight));
+        if (pasted.Count == 0)
         {
             return;
         }
 
         var depth = _history.Depth;
         _history.Checkpoint(Editor.Items);
-        if (pasted is MosaicAnnotation mosaic)
+        foreach (var item in pasted.OfType<MosaicAnnotation>())
         {
-            MosaicBuilder.Rebuild(mosaic, MosaicSource);
+            MosaicBuilder.Rebuild(item, MosaicSource);
         }
 
-        Editor.Items.Add(pasted);
-        if (pasted is NumberAnnotation)
-        {
-            _number++;
-        }
-
+        Editor.Items.AddRange(pasted);
+        _number += pasted.Count(item => item is NumberAnnotation);
         UpdateUndoButtons();
-        SelectQuietly(pasted);
-        OnPasted(pasted, depth);
+        if (pasted.Count == 1)
+        {
+            SelectQuietly(pasted[0]);
+            OnPasted(pasted[0], depth);
+        }
+        else
+        {
+            PasteGroupSelection(pasted);
+            OnPasted(pasted[0], depth);
+        }
     }
+
+    /// <summary>A pasted group is selected together (the editor); the pin keeps its single selection.</summary>
+    private protected virtual void PasteGroupSelection(IReadOnlyList<Annotation> pasted)
+    {
+        SelectQuietly(pasted[0]);
+    }
+
+    /// <summary>The editor's 多选 is copied as elements (true = handled here).</summary>
+    private protected virtual bool CopySelectionOrCanvas() => false;
 
     private void ConvertSelected(AnnotationTool variant)
     {
@@ -848,6 +864,12 @@ public partial class PinWindow
 
         if (control && key == Key.C)
         {
+            if (CopySelectionOrCanvas())
+            {
+                e.Handled = true;
+                return;
+            }
+
             if (_selected != null && AnnotationClipboard.CanCopy(_selected))
             {
                 AnnotationClipboard.Copy(_selected);

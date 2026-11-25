@@ -120,7 +120,7 @@ public partial class App : Application
             {
                 _lastErrorShown = Environment.TickCount64;
                 var message = args.Exception.Message;
-                Dispatcher.BeginInvoke(new Action(() => _tray?.ShowBalloon("Markshot 出错了", message + "（详情见日志，可用托盘“导出诊断信息”反馈）")),
+                Dispatcher.BeginInvoke(new Action(() => _tray?.ShowBalloon("Markshot 出错了", message + "（详情见日志）")),
                     DispatcherPriority.ApplicationIdle);
             }
         };
@@ -165,7 +165,6 @@ public partial class App : Application
             () => _closedPins.Count > 0 || History.Last != null,
             () => _pins.Any(pin => pin.IsClickThrough),
             RecorderMenuItems,
-            ExportDiagnostics,
             ShowPinHistory,
             () => OpenEditor(),
             ToggleHotkeys,

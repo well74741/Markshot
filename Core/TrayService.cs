@@ -21,7 +21,6 @@ public sealed class TrayService : IDisposable
         Func<bool>? canRestore = null,
         Func<bool>? anyClickThrough = null,
         Func<IEnumerable<(string Header, Action Action)>>? recorderItems = null,
-        Action? diagnostics = null,
         Action? pinHistory = null,
         Action? imageEditor = null,
         Action? toggleHotkeys = null,
@@ -99,10 +98,6 @@ public sealed class TrayService : IDisposable
 
             Add("设置…", settings);
             Add("帮助", HelpDocument.Open);
-            if (diagnostics != null)
-            {
-                Add("导出诊断信息", diagnostics);
-            }
             menu.Items.Add(new System.Windows.Controls.Separator());
             Add("退出", exit);
             return menu;

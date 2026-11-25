@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.81`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.82`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,15 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.82 0.8.82 变更
+
+- 多选复制粘贴修复：病因是多选时 `_selected == null`，Ctrl+C 走 `ComposeEditedImage` 把整画布（含背景和锁定原图）写系统剪贴板，Ctrl+V 被 `PastePicture` 缩到 80% 当图片贴回。
+  现在 `AnnotationClipboard.CopyGroup / PasteGroup` 组级复制元素（保持尺寸与组内相对位置），编辑器 `Copy` / `CopySelectionOrCanvas` 多选复制组、
+  `PasteAnnotation` 组粘贴优先于系统剪贴板图、`PasteGroupSelection` 组选（`OnPasted` 不再 ClearGroup）。round80 组复制断言需净场景（只留锁定原图），否则旧元素混入。
+- 锁开关图标：ui-icons/锁定.png 归一化（alpha 通道 → 白色蒙版 64×64）为 Assets/Icons/lock.png；Rectangle + ImageBrush OpacityMask 着主题蓝，
+  未锁定 Collapsed、锁定后 Visible；主题切换经 SetResourceReference。图标归一化不要用亮度做 alpha（深灰图标会全白）。
+- 托盘菜单去掉「导出诊断信息」（TrayService diagnostics 参数与菜单项移除；`ExportDiagnostics` 方法保留；错误气泡文案改为「详情见日志」）。
 
 ## 8.1.81 0.8.81 变更
 

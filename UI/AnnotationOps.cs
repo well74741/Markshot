@@ -705,9 +705,10 @@ internal static class AnnotationOps
 internal static class AnnotationClipboard
 {
     private static Annotation? _item;
+    private static List<Annotation>? _group; // a 多选 copied together (Ctrl+C with several selected)
     private static int _pastes;
 
-    public static bool HasContent => _item != null;
+    public static bool HasContent => _item != null || _group is { Count: > 0 };
 
     public static bool CanCopy(Annotation annotation) =>
         annotation is PolylineAnnotation || annotation is not (PenAnnotation or MosaicBrushAnnotation or WatermarkAnnotation);
@@ -723,9 +724,30 @@ internal static class AnnotationClipboard
     public static void Copy(Annotation annotation)
     {
         _item = annotation.Clone();
+        _group = null;
         _pastes = 0;
         _copiedAt = GetClipboardSequenceNumber();
     }
+
+    /// <summary>Ctrl+C with several elements selected: the group is copied as elements (never the composed canvas picture).</summary>
+    public static void CopyGroup(IReadOnlyList<Annotation> selection)
+    {
+        var items = selection.Where(item => CanCopy(item) && !item.Protected).Select(CloneForDuplication).ToList();
+        if (items.Count == 0) return;
+        if (items.Count == 1)
+        {
+            Copy(items[0]);
+            return;
+        }
+
+        _group = items;
+        _item = null;
+        _pastes = 0;
+        _copiedAt = GetClipboardSequenceNumber();
+    }
+
+    /// <summary>True when the last copy was a group: pasting gives the elements back, not a picture.</summary>
+    public static bool HasGroup => _group is { Count: > 1 };
 
     private static uint _copiedAt;
 
@@ -756,6 +778,42 @@ internal static class AnnotationClipboard
         }
 
         return copy;
+    }
+
+    /// <summary>A group paste keeps its elements' places among themselves; a single element comes back as one.</summary>
+    public static List<Annotation> PasteGroup(Rect canvas)
+    {
+        var result = new List<Annotation>();
+        if (_group is { Count: > 1 } items)
+        {
+            _pastes++;
+            var offset = 16 * _pastes;
+            var frame = Rect.Empty;
+            foreach (var item in items) frame.Union(item.Bounds);
+            foreach (var source in items)
+            {
+                var copy = CloneForDuplication(source);
+                copy.Translate(offset, offset);
+                var bounds = copy.Bounds;
+                if (!canvas.IsEmpty && !canvas.Contains(new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2)))
+                {
+                    // Pasted into another canvas (capture -> pin …): the whole group goes to the middle together.
+                    copy.Translate(canvas.X + canvas.Width / 2 - (frame.X + frame.Width / 2) + offset - 16,
+                        canvas.Y + canvas.Height / 2 - (frame.Y + frame.Height / 2) + offset - 16);
+                }
+
+                result.Add(copy);
+            }
+
+            return result;
+        }
+
+        if (Paste(canvas) is { } single)
+        {
+            result.Add(single);
+        }
+
+        return result;
     }
 }
 
