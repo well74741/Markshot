@@ -2416,7 +2416,22 @@ public sealed class ImageEditorWindow : PinWindow
             }
 
             var box = GroupBounds();
-            var place = Snap(_group, new Rect(_groupStart.X + point.X - _groupPress.X, _groupStart.Y + point.Y - _groupPress.Y, _groupStart.Width, _groupStart.Height));
+            // Shift locks the group move to one axis (like a single element and the pin window).
+            var gx = point.X - _groupPress.X;
+            var gy = point.Y - _groupPress.Y;
+            if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+            {
+                if (Math.Abs(gx) >= Math.Abs(gy))
+                {
+                    gy = 0;
+                }
+                else
+                {
+                    gx = 0;
+                }
+            }
+
+            var place = Snap(_group, new Rect(_groupStart.X + gx, _groupStart.Y + gy, _groupStart.Width, _groupStart.Height));
             foreach (var member in _group)
             {
                 member.Translate(place.X - box.X, place.Y - box.Y);

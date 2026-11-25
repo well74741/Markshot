@@ -1,6 +1,6 @@
 # Markshot 开发交接文档
 
-> 面向接替开发的智能体/开发者。项目当前是 `0.8.82`，WPF + .NET 8，Windows 专用。
+> 面向接替开发的智能体/开发者。项目当前是 `0.8.83`，WPF + .NET 8，Windows 专用。
 > 版本号约定（0.8 起）：每次修改按两位小数递增 0.8.01 → 0.8.02 …，写在 `Markshot.csproj` 的
 > `InformationalVersion`（显示用，`Core/AppVersion.Display`）；`AssemblyVersion/FileVersion` 用对应的数字形式（0.8.02 → 0.8.2.0）。
 > 本文件不包含 API Key；密钥只放在运行目录的 `config.json`，该文件被 `.gitignore` 忽略。
@@ -645,6 +645,18 @@ un.ps1 batch1 menu`。
 - 编辑器：矩形裁切清掉 `_rotationBase`（之后的角度从裁切结果算，不会还原到裁切前的图）；调节框会话中把 `Img` 透明、批注层隐藏（不再整体压暗），没盖住的地方显示棋盘格；
   会话开始后把键盘焦点给窗口（Enter / Esc 直接生效）；尺寸标签 `_cropSize` 同时服务裁切和调节框（调节框按中心改尺寸，放在旋转后外接框上方）。
 - 截图悬停框动画回到 140 ms。设置抽屉的咖啡图标区域也响应悬停 / 拖动。
+
+## 8.1.83 0.8.83 变更
+
+- Shift 轴向移动：`PinWindow.LockToAxis(dx, dy, shift)` 是唯一实现（Shift 按下时取位移较大的方向，另一轴归零；不按 Shift 原样返回），
+  `MoveSelectedTo` 用它算位移，多选整组移动在 `ImageEditorWindow` 的组移动分支里按 `_groupPress` 做同样判断，截图 `OverlayWindow.Input` 的拖动批注分支按 `_dragStart` 判断。
+  注意截图分支必须用「点相对拖动起点」而不是相对上一帧，否则 Shift 只压住单帧抖动、轨迹仍是斜的。
+- 文字跳动修复：`BeginMoveSnap` 改为 `BeginMoveSnap(Point? pointer = null)`，拖动第一帧传入当帧指针（`PinWindow.xaml.cs` / `MouseMove` 的 `_movingSelected` 分支写 `_movePress = point`）。
+  病因是原来用 `_pressPoint`（按下时的旧坐标）作基准，字号放大后文字框的 `Bounds` 与按下点偏移不同，首帧就整段跳过去。
+- 快捷托盘（悬浮图标悬停展开的竖向快捷栏）本轮**未发布**：多轮定位 / 对齐 / 判定未收敛，已整体回退到 0.8.82 的 `FloatButtonWindow.cs`、`SettingsWindow.*`、`AppConfig.cs`、`Motion.cs`、`Native.cs`、`ReorderBehavior.cs`。
+  下一轮重做时的约定：先新建独立的托盘窗口类（照 `UI/ToolbarHostWindow.cs` 的范式：`SizeToContent`、`SetWindowPos` 按物理像素定位、`WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`），
+  定位直接以悬浮图标窗口的 `PixelBounds` 为锚点算，不要在 `FloatButtonWindow` 已有的两行布局里塞第三个面板；显示时长 / 鼠标判定 / 标签避让全部复用悬浮菜单的同一套代码，不另写一份。
+- round80 增补：Shift 轴向（横向优先 / 竖向优先 / 不按时自由）与文字首帧不跳、精确跟随、撤销复位。
 
 ## 8.1.82 0.8.82 变更
 

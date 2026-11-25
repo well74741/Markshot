@@ -218,18 +218,32 @@ public partial class PinWindow
     private Rect _moveOrigin;
     private Point _movePress;
 
-    private protected void BeginMoveSnap()
+    private protected void BeginMoveSnap(Point? pointer = null)
     {
         _moveOrigin = _selected!.Bounds;
-        _movePress = _pressPoint;
+        _movePress = pointer ?? _pressPoint;
     }
 
     private protected void MoveSelectedWithSnap(Point point) => MoveSelectedTo(point);
 
-    /// <summary>The selected element follows the pointer from where the drag began (the editor snaps it).</summary>
+    /// <summary>Shift keeps a move 横平竖直: the larger direction wins, the other stays put.</summary>
+    internal static (double Dx, double Dy) LockToAxis(double dx, double dy, bool shift)
+    {
+        if (!shift)
+        {
+            return (dx, dy);
+        }
+
+        return Math.Abs(dx) >= Math.Abs(dy) ? (dx, 0) : (0, dy);
+    }
+
+    /// <summary>The selected element follows the pointer from where the drag began (the editor snaps it).
+    /// Shift locks the move to one axis (like the pin): it combines with the other keys freely.</summary>
     private void MoveSelectedTo(Point point)
     {
-        var wanted = new Rect(_moveOrigin.X + point.X - _movePress.X, _moveOrigin.Y + point.Y - _movePress.Y, _moveOrigin.Width, _moveOrigin.Height);
+        var (dx, dy) = LockToAxis(point.X - _movePress.X, point.Y - _movePress.Y,
+            (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
+        var wanted = new Rect(_moveOrigin.X + dx, _moveOrigin.Y + dy, _moveOrigin.Width, _moveOrigin.Height);
         var place = SnapMove(_selected!, wanted);
         var now = _selected!.Bounds;
         _selected.Translate(place.X - now.X, place.Y - now.Y);
@@ -1358,7 +1372,7 @@ public partial class PinWindow
                 {
                     CommitDuplicateDrag();
                     _moveOrigin = _selected.Bounds;
-                    _movePress = _pressPoint;
+                    _movePress = point; // this frame's pointer: the move must not jump by an older press
                 }
 
                 _dragMoved = true;

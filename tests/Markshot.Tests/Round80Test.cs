@@ -35,7 +35,15 @@ static class Round80Test
     static object? Call(object value, string name, params object[] args)
     {
         for (var t = value.GetType(); t != null; t = t.BaseType)
-            if (t.GetMethod(name, Any) is { } method) return method.Invoke(value, args);
+        {
+            // Overloads (CloseTray / CloseTray(bool)): pick by the argument count.
+            var methods = t.GetMethods(Any).Where(m => m.Name == name && m.GetParameters().Length == args.Length).ToList();
+            if (methods.Count > 0)
+            {
+                return methods[0].Invoke(value, args);
+            }
+        }
+
         throw new Exception("Missing method " + name);
     }
     static string Source(string name) => File.ReadAllText(Repo.File(name)).Replace("\r\n", "\n");
@@ -83,10 +91,13 @@ static class Round80Test
             Check((bool)Call(editor, "BeginDuplicateDrag", new Point(40, 35), false)!, "begin duplicate drag again");
             Call(editor, "CommitDuplicateDrag");
             var copy = canvas.Items.OfType<RectAnnotation>().Last();
-            Call(editor, "BeginMoveSnap");
+            Call(editor, "BeginMoveSnap", new Point(48, 41)); // the drag's first frame (no jump from an older press)
             Get<CheckBox>(editor, "_snapMoves").IsChecked = false;
+            var droppedAt = copy.Rect;
+            Call(editor, "MoveSelectedWithSnap", new Point(48, 41));
+            Check(copy.Rect == droppedAt, "the first move frame leaves the copy where it was dropped");
             Call(editor, "MoveSelectedWithSnap", new Point(88, 71));
-            Check(canvas.Items.Count == 3 && shape.Rect == new Rect(20, 20, 40, 30) && copy.Rect == new Rect(68, 56, 40, 30),
+            Check(canvas.Items.Count == 3 && shape.Rect == new Rect(20, 20, 40, 30) && copy.Rect == new Rect(droppedAt.X + 40, droppedAt.Y + 30, 40, 30),
                 $"copy follows the drag offset; original is unchanged ({shape.Rect} / {copy.Rect})");
             Check(!ReferenceEquals(copy.EraseMasks, shape.EraseMasks) && copy.EraseMasks?.Count == 1, "copied eraser gaps are independent and move with the copy");
             Set(editor, "_movingSelected", false); Mouse.Captured?.ReleaseMouseCapture();
@@ -194,6 +205,38 @@ static class Round80Test
         }
         finally { Mouse.Captured?.ReleaseMouseCapture(); editor.CloseWithoutAsking(); Markshot.App.Config.LockOriginalImage = previousLock; Markshot.App.Config.EditorSnap = previousSnap; }
 
+        // A text whose font was resized moves exactly where the pointer puts it (no jump on the first frame).
+        var textMove = new ImageEditorWindow(Image()) { ShowActivated = false, Opacity = 0 };
+        textMove.Show(); Pump(100);
+        try
+        {
+            var scene = Get<AnnotationEditor>(textMove, "Editor");
+            var undo = Get<AnnotationHistory>(textMove, "_history");
+            var text = new TextAnnotation { Text = "字", Position = new Point(30, 30), FontSize = 84 };
+            Markshot.App.Config.EditorSnap = false; // the move itself is under test, not the snapping
+            scene.Items.Add(text);
+            textMove.SelectElements(new[] { text });
+            var before = text.Position;
+            undo.Checkpoint(scene.Items);
+            Call(textMove, "BeginMoveSnap", new Point(40, 50)); // the drag's first frame
+            Call(textMove, "MoveSelectedWithSnap", new Point(40, 50));
+            Check(text.Position == before, $"the first move frame leaves the text where it was (no jump: {text.Position})");
+            Call(textMove, "MoveSelectedWithSnap", new Point(70, 90));
+            Check((text.Position - before - new Vector(30, 40)).Length < 0.001,
+                $"a resized text follows the pointer exactly ({text.Position}, was {before})");
+            Call(textMove, "Undo");
+            Check(scene.Items.OfType<TextAnnotation>().Single().Position == before, "undo puts the text back where it was");
+
+            // Shift locks a move to one axis (the larger direction wins); without it the move is free.
+            var lockAxis = typeof(PinWindow).GetMethod("LockToAxis", Any)!;
+            (double Dx, double Dy) Axis(double dx, double dy, bool shift) =>
+                ((double, double))lockAxis.Invoke(null, new object[] { dx, dy, shift })!;
+            Check(Axis(60, 10, true) == (60d, 0d), "Shift keeps a mostly horizontal move on X only");
+            Check(Axis(10, -90, true) == (0d, -90d), "Shift keeps a mostly vertical move on Y only");
+            Check(Axis(60, 10, false) == (60d, 10d), "without Shift a move follows the pointer on both axes");
+        }
+        finally { textMove.CloseWithoutAsking(); }
+
         // Pending transforms must never mutate an Alt-copy's source; previews are a separate preceding edit.
         var transforms = new ImageEditorWindow(Image()) { ShowActivated = false, Opacity = 0 };
         transforms.Show(); Pump(100);
@@ -219,6 +262,8 @@ static class Round80Test
                 "undoing the copy retains the separately committed preceding angle");
         }
         finally { transforms.CloseWithoutAsking(); }
+
+
 
         var capture = new OverlayWindow(Image(), new Int32Rect(-4000, -4000, 140, 100)) { ShowActivated = false };
         try

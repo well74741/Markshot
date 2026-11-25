@@ -551,7 +551,25 @@ public partial class OverlayWindow
                 if (!_dragMoved) CommitDuplicateElementDrag();
                 _dragMoved = true;
                 ClearAnnotationHover();
-                _selectedAnnotation.Translate(dx, dy);
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+                {
+                    // 横平竖直: the larger direction wins (it combines with the other keys freely).
+                    if (Math.Abs(point.X - _dragStart.X) >= Math.Abs(point.Y - _dragStart.Y))
+                    {
+                        point.Y = _dragStart.Y;
+                    }
+                    else
+                    {
+                        point.X = _dragStart.X;
+                    }
+
+                    _selectedAnnotation.Translate(point.X - _lastAnnotationPoint.X, point.Y - _lastAnnotationPoint.Y);
+                }
+                else
+                {
+                    _selectedAnnotation.Translate(dx, dy);
+                }
+
                 _lastAnnotationPoint = point;
                 Editor.InvalidateVisual();
             }

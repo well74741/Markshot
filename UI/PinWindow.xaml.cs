@@ -1031,7 +1031,7 @@ public partial class PinWindow : Window
                 if (!_dragMoved)
                 {
                     CommitDuplicateDrag();
-                    BeginMoveSnap();
+                    BeginMoveSnap(point);
                 }
 
                 _dragMoved = true;
